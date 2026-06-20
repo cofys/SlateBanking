@@ -1,0 +1,30 @@
+discord:
+  token: 
+  guild_id: '1318760740966109225'
+  review_channel_id: 1404915674458882152
+  loan_channel_id: 1404915850946805890
+  announcement_channel_id: 1405335565783666759
+  admin_roles:
+  - BankAdmin
+  - BankClerk
+bank:
+  name: Vance & Hamilton
+  corp_name: VH
+  corp_id: 325
+  loan_pool: 'loan_pool'
+  min_initial_deposit: 200
+  withdrawal_tax_percent: 2.0
+  deposit_tax_percent: 0.0
+  gov_tax_cut_percent: 0.25
+  theme_color: '0x0A2351'
+  deposit_check_window_hours: 6
+  loan_interest_rate: 5
+  loan_term_type: monthly
+  terms_url: https://discord.com/channels/1318760740966109225/1404968774276218900
+api:
+  base_url: https://api.cityrp.org/citycorp
+  api_key: 
+  cityrp_uuid: 
+  node_secret: "" 
+  port: 2140
+  host: "0.0.0.0"

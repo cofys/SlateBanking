@@ -1,0 +1,10 @@
+discord.py
+SQLAlchemy
+apscheduler
+PyYAML
+aiohttp
+reportlab
+bcrypt
+fastapi 
+uvicorn 
+pydantic
