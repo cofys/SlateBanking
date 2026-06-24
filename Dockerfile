@@ -40,8 +40,8 @@ COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/src/db/schema.ts ./src/db/schema.ts
 
-# Ensure the /app directory is writable by the node user so it can create slate_saas.db
-RUN chown -R node:node /app
+# Create the data directory and ensure it is writable by the node user
+RUN mkdir -p /app/data && chown -R node:node /app/data /app/drizzle
 
 # Switch to non-root user
 USER node
