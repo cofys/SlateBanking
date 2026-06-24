@@ -141,9 +141,9 @@ export function DashboardLayout() {
             </h2>
           </div>
           <div className="flex items-center gap-4">
-            <button className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors">
+            <Link to="/settings" className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors">
               <Settings size={14} className="text-white/60" />
-            </button>
+            </Link>
           </div>
         </header>
 

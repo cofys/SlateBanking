@@ -171,7 +171,7 @@ export function BankSettings() {
                 className="flex-1 bg-transparent px-4 py-2.5 text-sm text-white focus:outline-none placeholder:text-white/20" 
               />
             </div>
-            <p className="text-xs text-white/40 mt-1.5 flex items-center gap-2">Point your CNAME record to <span className="font-mono text-[10px] text-white/60 bg-white/10 px-1 rounded">host.slate.saas</span></p>
+            <p className="text-xs text-white/40 mt-1.5 flex items-center gap-2">Point your CNAME record to <span className="font-mono text-[10px] text-white/60 bg-white/10 px-1 rounded">{window.location.host}</span></p>
           </div>
         </div>
 

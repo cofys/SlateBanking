@@ -55,6 +55,13 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
 
 ## 💳 Global Architecture
 
+### SaaS Admin Dashboard
+The SaaS Admin Dashboard acts as the superuser control panel for managing the entire Slate infrastructure.
+- **Global Settings (`/settings`)**: Controls top-level platform configurations such as maintenance mode, new bank provisioning, and rate limits.
+- **Platform Monitoring (`/` and `/transactions`)**: Real-time aggregation of transaction volumes and system health metrics.
+- **Bank Management (`/banks`)**: View and manage all tenant bank instances.
+- **CityCorp Network (`/citycorp`)**: View and manage the central city ledger logs and integrations.
+
 ### Onyx Network (Payment Service Provider)
 Onyx is a Stripe-like processing layer bridging funds across entirely different banks. 
 - **Onyx Merchants**: Entities can register external API keys to route collected funds dynamically into a designated destination account.

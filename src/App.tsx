@@ -7,6 +7,7 @@ import { OnyxSettings } from "./pages/OnyxSettings";
 import { CityCorpLogs } from "./pages/CityCorpLogs";
 import { TransactionsList } from "./pages/TransactionsList";
 import { CitizenPortal } from "./pages/CitizenPortal";
+import { GlobalSettings } from "./pages/GlobalSettings";
 import { BankPortal } from "./pages/BankPortal";
 import { BankOverview } from "./pages/BankOverview";
 import { BankAccounts } from "./pages/BankAccounts";
@@ -75,6 +76,7 @@ function App() {
           <Route path="transactions" element={<TransactionsList />} />
           <Route path="onyx" element={<OnyxSettings />} />
           <Route path="citycorp" element={<CityCorpLogs />} />
+          <Route path="settings" element={<GlobalSettings />} />
         </Route>
       </Routes>
     </BrowserRouter>

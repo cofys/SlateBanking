@@ -115,15 +115,24 @@ async function startServer() {
       });
 
       res.send(`
-        <html>
-          <body>
+        <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
+          <body style="margin: 0; padding: 2rem; text-align: center;">
             <script>
-              if (window.opener) {
-                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
-                window.close();
-              } else {
-                window.location.href = '/';
-              }
+              try {
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                }
+              } catch(e) {}
+              
+              try {
+                localStorage.setItem('oauth_auth_success', Date.now().toString());
+              } catch(e) {}
+
+              window.close();
+              
+              setTimeout(() => {
+                document.body.innerHTML = '<div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;"><h2>Authentication Successful!</h2><p style="color: rgba(255,255,255,0.7);">You can now safely close this window.</p></div>';
+              }, 1000);
             </script>
             <p>Authentication successful. This window should close automatically.</p>
           </body>

@@ -50,7 +50,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+      if (origin !== window.location.origin) {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
@@ -58,7 +58,19 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       }
     };
     window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'oauth_auth_success') {
+        checkSession();
+        localStorage.removeItem('oauth_auth_success');
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   const login = async () => {
