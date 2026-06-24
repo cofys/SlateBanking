@@ -4,8 +4,8 @@ WORKDIR /app
 FROM base AS builder
 # Copy package files
 COPY package*.json ./
-# Install all dependencies including devDependencies
-RUN npm ci
+# Install all dependencies including devDependencies and optional native binaries
+RUN npm install --include=optional --force
 
 # Copy the rest of the application code
 COPY . .
@@ -33,7 +33,7 @@ COPY package*.json ./
 
 # Install only production dependencies.
 # We also install drizzle-kit so it's available for the start script.
-RUN npm ci --omit=dev && npm install drizzle-kit
+RUN npm install --omit=dev --include=optional --force && npm install drizzle-kit
 
 # Copy the built assets from the builder
 COPY --from=builder /app/dist ./dist
