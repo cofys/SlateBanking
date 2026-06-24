@@ -40,7 +40,9 @@ async function startServer() {
     // In preview mode, use the APP_URL provided by environment if available.
     // Otherwise fallback to req.headers.origin or host.
     const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const origin = process.env.APP_URL || (req.headers.origin ? req.headers.origin : `${protocol}://${req.headers.host}`);
+    let origin = process.env.APP_URL || (req.headers.origin ? req.headers.origin : `${protocol}://${req.headers.host}`);
+    // Trim trailing slash if present
+    if (origin.endsWith('/')) origin = origin.slice(0, -1);
     return `${origin}/api/auth/discord/callback`;
   };
 
