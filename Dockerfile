@@ -32,8 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package.json ./
 
 # Install only production dependencies.
-# We also install drizzle-kit so it's available for the start script.
-RUN npm install --omit=dev --include=optional --force && npm install drizzle-kit
+RUN npm install --omit=dev --include=optional --force
+# Install drizzle-kit so it's available for the start script.
+RUN npm install drizzle-kit
 
 # Copy the built assets from the builder
 COPY --from=builder /app/dist ./dist
