@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+dist
+.env
+.git
+.gitignore
+.vscode
+slate_saas.db
+slate_saas.db-shm
+slate_saas.db-wal
