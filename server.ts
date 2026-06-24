@@ -39,8 +39,9 @@ async function startServer() {
   const getRedirectUri = (req: express.Request) => {
     // In preview mode, use the APP_URL provided by environment if available.
     // Otherwise fallback to req.headers.origin or host.
-    const origin = process.env.APP_URL || (req.headers.origin ? req.headers.origin : `http://${req.headers.host}`);
-    return `${origin}/api/auth/callback`;
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const origin = process.env.APP_URL || (req.headers.origin ? req.headers.origin : `${protocol}://${req.headers.host}`);
+    return `${origin}/api/auth/discord/callback`;
   };
 
   app.get('/api/auth/url', (req, res) => {
@@ -55,7 +56,7 @@ async function startServer() {
     res.json({ url: authUrl });
   });
 
-  app.get('/api/auth/callback', async (req, res) => {
+  app.get('/api/auth/discord/callback', async (req, res) => {
     const { code } = req.query;
     if (!code) return res.status(400).send("No code provided");
 

@@ -75,7 +75,7 @@ Since funds occasionally cross from Bank A to Bank B, the platform leverages int
 ### Discord OAuth Context & JWT
 Instead of simple passwords, the platform mandates Discord authentication. 
 - `/api/auth/url` generates the Discord OAuth2 prompt, requesting `identify email` scopes.
-- `/api/auth/callback` handles the return code, exchanges it for a token via Discord's API, and subsequently builds a secure JWT.
+- `/api/auth/discord/callback` handles the return code, exchanges it for a token via Discord's API, and subsequently builds a secure JWT.
 - The JWT payload (`discordId`, `username`, `avatarUrl`, `isGlobalAdmin`) is encrypted with `JWT_SECRET` and stored in an HTTP-only, secure, sameSite=none cookie (`auth_token`).
 - Tokens are set to expire in 7 days.
 
@@ -106,7 +106,7 @@ Every bank defined in the platform can attach a unique Discord Bot Token to its 
 
 ### Authentication Routes
 - `GET /api/auth/url` - Generate Discord OAuth redirect.
-- `GET /api/auth/callback` - Process Discord OAuth code.
+- `GET /api/auth/discord/callback` - Process Discord OAuth code.
 - `GET /api/auth/me` - Validate session cookie and return identity.
 - `POST /api/auth/logout` - Invalidate session cookie.
 
