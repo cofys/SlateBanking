@@ -40,11 +40,8 @@ COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/src/db/schema.ts ./src/db/schema.ts
 
-# Create the data directory and ensure it is writable by the node user
-RUN mkdir -p /app/data && chown -R node:node /app/data /app/drizzle
-
-# Switch to non-root user
-USER node
+# Create the data directory
+RUN mkdir -p /app/data
 
 # Expose the application port
 EXPOSE 3000

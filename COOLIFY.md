@@ -15,13 +15,8 @@ To prevent your database from resetting on every deployment, you MUST map a pers
    - **Destination Path (Container Path)**: `/app/data`
 5. Save the configuration.
 
-### 2. Verify File Permissions
-The `Dockerfile` has already been configured to ensure the `/app/data` directory is owned by the `node` user, so SQLite can write to it without permission errors:
-
-```dockerfile
-# Create the data directory and ensure it is writable by the node user
-RUN mkdir -p /app/data && chown -R node:node /app/data
-```
+### 2. File Permissions
+The `Dockerfile` has been updated to run as root by default to avoid permission issues with mounted host volumes in Coolify. SQLite can write to `/app/data` without permission errors.
 
 ### 3. Deploy
 1. Click **Deploy** to rebuild and restart your container.
