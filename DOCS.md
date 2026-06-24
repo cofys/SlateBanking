@@ -7,7 +7,7 @@ Welcome to the internal technical documentation for Slate SaaS. This platform pr
 - **Frontend:** React, Tailwind CSS, Vite.
 - **Backend:** Node.js, Express, SQLite (via Drizzle ORM).
 - **Hosting:** Pterodactyl natively supported via `SERVER_PORT` injection and simple `npm run build && npm start` command sequence.
-- **Database:** SQLite (`sqlite.db` stored locally).
+- **Database:** SQLite.
 
 ## Multi-Tenancy
 

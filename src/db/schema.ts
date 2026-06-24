@@ -259,3 +259,4 @@ export const invoices = sqliteTable("invoices", {
   status: text("status").default("pending"), // pending, paid, overdue
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+

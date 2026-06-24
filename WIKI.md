@@ -11,7 +11,7 @@ Slate SaaS is a multi-tenant banking management platform designed for gaming and
 ### Core Stack
 - **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, React Router DOM, Recharts for data visualization.
 - **Backend**: Node.js, Express (with `helmet`, `cors`, `express-rate-limit`, `cookie-parser`).
-- **Database**: SQLite (local `slate_saas.db` with WAL mode enabled) driven by Drizzle ORM.
+- **Database**: SQLite driven by Drizzle ORM.
 - **Authentication**: Discord OAuth via manual JWT cookies.
 - **Hosting**: Pre-configured for seamless execution on Pterodactyl Panels (binds automatically to `SERVER_PORT`).
 
@@ -160,7 +160,7 @@ Every bank defined in the platform can attach a unique Discord Bot Token to its 
 
 ## 🗄️ Database Schema Deep Dive
 
-The platform relies on a single `sqlite.db` configured via `drizzle.config.ts`. Here are the definitive tables from `src/db/schema.ts`:
+The platform relies on a SQLite database configured via `drizzle.config.ts`. Here are the definitive tables from `src/db/schema.ts`:
 
 - **`users`**: Global identity mapping table linking Discord IDs to Minecraft UUIDs and Usernames.
 - **`banks`**: The foundational tenant row. Contains `discordToken`, `status`, `brandingColor`, etc.
