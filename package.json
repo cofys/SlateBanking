@@ -57,6 +57,7 @@
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.31.10",
+    "lightningcss-linux-arm64-gnu": "^1.32.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
