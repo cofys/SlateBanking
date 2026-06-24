@@ -33,13 +33,12 @@ COPY package.json ./
 
 # Install only production dependencies.
 RUN npm install --omit=dev --include=optional --force
-# Install drizzle-kit so it's available for the start script.
-RUN npm install drizzle-kit
 
 # Copy the built assets from the builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder /app/src/db/schema.ts ./src/db/schema.ts
 
 # Ensure the /app directory is writable by the node user so it can create slate_saas.db
 RUN chown -R node:node /app
