@@ -3,7 +3,7 @@ WORKDIR /app
 
 FROM base AS builder
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
 # Install all dependencies including devDependencies and optional native binaries
 RUN npm install --include=optional --force
 
@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
 
 # Install only production dependencies.
 # We also install drizzle-kit so it's available for the start script.
