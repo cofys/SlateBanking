@@ -36,6 +36,7 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   balance: integer("balance").notNull().default(0), // stored in cents or lowest denominaton to avoid floats
   creditLimit: integer("credit_limit").notNull().default(0), // For credit accounts
   isActive: integer("is_active", { mode: "boolean" }).default(true),
+  isFrozen: integer("is_frozen", { mode: "boolean" }).default(false),
   isSystem: integer("is_system", { mode: "boolean" }).default(false),
   systemCategory: text("system_category"), // e.g., "vault_cash", "fee_revenue", "interest_revenue", "clearinghouse"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
@@ -49,6 +50,7 @@ export const transactions = sqliteTable("transactions", {
   amount: integer("amount").notNull(),
   type: text("type").notNull(), // "transfer", "deposit", "withdraw", "onyx_payment"
   description: text("description"),
+  isFlagged: integer("is_flagged", { mode: "boolean" }).default(false),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
 });
 

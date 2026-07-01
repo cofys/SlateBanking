@@ -37,6 +37,8 @@ import { BankInvoices } from "./pages/BankInvoices";
 
 import { PublicDocs } from "./pages/PublicDocs";
 
+import { BankCompliance } from "./pages/BankCompliance";
+
 function App() {
   return (
     <BrowserRouter>
@@ -54,6 +56,7 @@ function App() {
           <Route path="accounts" element={<BankAccounts />} />
           <Route path="accounts/:accountId" element={<BankAccountDetail />} />
           <Route path="transactions" element={<BankTransactions />} />
+          <Route path="compliance" element={<BankCompliance />} />
           <Route path="loans" element={<BankLoans />} />
           <Route path="vaults" element={<BankVaults />} />
           <Route path="cards" element={<BankCards />} />

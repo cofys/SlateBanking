@@ -499,9 +499,15 @@ async function startServer() {
     const { banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
     try {
-      const { name, discordToken, corpId, corpApiUuid, corpApiKey } = req.body;
+      const { name, discordToken, corpId, corpApiUuid, corpApiKey, cityCorpAppId, cityCorpAppSecret } = req.body;
       await db.update(banks).set({
-        name, discordToken, corpId: corpId ? parseInt(corpId) : null, corpApiUuid, corpApiKey
+        name, 
+        discordToken, 
+        corpId: corpId ? parseInt(corpId) : null, 
+        corpApiUuid, 
+        corpApiKey,
+        cityCorpAppId,
+        cityCorpAppSecret
       }).where(eq(banks.id, req.params.id));
       res.json({ success: true });
     } catch (e) {
@@ -639,7 +645,7 @@ async function startServer() {
     const { v4: uuidv4 } = await import("uuid");
     
     try {
-      const { name, guildId, discordToken, customDomain, corpId, corpApiUuid, corpApiKey } = req.body;
+      const { name, guildId, discordToken, customDomain, corpId, corpApiUuid, corpApiKey, cityCorpAppId, cityCorpAppSecret } = req.body;
       const newBank = {
         id: uuidv4(),
         name,
@@ -649,6 +655,8 @@ async function startServer() {
         corpId,
         corpApiUuid,
         corpApiKey,
+        cityCorpAppId,
+        cityCorpAppSecret,
         status: "offline",
         createdAt: new Date(),
       };
@@ -3943,6 +3951,8 @@ async function startServer() {
          finalToId = toAccountRes[0].id;
       }
 
+      const isFlagged = parsedAmount >= 1000000;
+
       // Record in local DB
       const tx = {
         id: uuidv4(),
@@ -3952,6 +3962,7 @@ async function startServer() {
         type: type,
         amount: parsedAmount,
         description: description || `Manual ${type}`,
+        isFlagged: isFlagged,
         timestamp: new Date()
       };
 
@@ -4252,6 +4263,59 @@ async function startServer() {
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Internal error during migration parsing" });
+    }
+  });
+
+  // --- Compliance APIs ---
+  app.get("/api/banks/:bankId/compliance/flagged", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { transactions } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    try {
+      const data = await db.select().from(transactions).where(and(eq(transactions.bankId, req.params.bankId), eq(transactions.isFlagged, true)));
+      res.json(data);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.post("/api/banks/:bankId/compliance/flagged/:txId/resolve", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { transactions } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      await db.update(transactions).set({ isFlagged: false }).where(eq(transactions.id, req.params.txId));
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.get("/api/banks/:bankId/compliance/frozen", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { bankAccounts } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    try {
+      const data = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, req.params.bankId), eq(bankAccounts.isFrozen, true)));
+      res.json(data);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.post("/api/banks/:bankId/compliance/frozen/:accId/unfreeze", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { bankAccounts } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      await db.update(bankAccounts).set({ isFrozen: false }).where(eq(bankAccounts.id, req.params.accId));
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
     }
   });
 

@@ -27,6 +27,8 @@ export function BanksList() {
   const [corpId, setCorpId] = useState("");
   const [corpApiUuid, setCorpApiUuid] = useState("");
   const [corpApiKey, setCorpApiKey] = useState("");
+  const [cityCorpAppId, setCityCorpAppId] = useState("");
+  const [cityCorpAppSecret, setCityCorpAppSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const fetchBanks = async () => {
@@ -56,7 +58,8 @@ export function BanksList() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           name, guildId, discordToken, customDomain,
-          corpId: Number(corpId), corpApiUuid, corpApiKey 
+          corpId: Number(corpId), corpApiUuid, corpApiKey,
+          cityCorpAppId, cityCorpAppSecret
         })
       });
       setShowAddModal(false);
@@ -263,7 +266,7 @@ export function BanksList() {
               </div>
 
               <div className="pt-2 border-t border-white/5 space-y-4">
-                <h3 className="text-sm font-medium text-white/90">CityCorp Integration (Required)</h3>
+                <h3 className="text-sm font-medium text-white/90">CityCorp Bot API Integration</h3>
                 <div>
                   <label className="block text-xs text-white/70 mb-1">Corporation ID</label>
                   <input 
@@ -276,7 +279,7 @@ export function BanksList() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-white/70 mb-1">API Auth UUID</label>
+                  <label className="block text-xs text-white/70 mb-1">Bot Auth UUID</label>
                   <input 
                     required
                     value={corpApiUuid}
@@ -286,13 +289,38 @@ export function BanksList() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-white/70 mb-1">API Key</label>
+                  <label className="block text-xs text-white/70 mb-1">Bot API Key</label>
                   <input 
                     required
                     type="password"
                     value={corpApiKey}
                     onChange={(e) => setCorpApiKey(e.target.value)}
                     placeholder="CityCorp API Key"
+                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/5 space-y-4">
+                <h3 className="text-sm font-medium text-white/90">CityCorp OAuth Integration (Whitelabel)</h3>
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Application ID</label>
+                  <input 
+                    required
+                    value={cityCorpAppId}
+                    onChange={(e) => setCityCorpAppId(e.target.value)}
+                    placeholder="e.g. 4"
+                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Application Secret</label>
+                  <input 
+                    required
+                    type="password"
+                    value={cityCorpAppSecret}
+                    onChange={(e) => setCityCorpAppSecret(e.target.value)}
+                    placeholder="OAuth Secret"
                     className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   />
                 </div>

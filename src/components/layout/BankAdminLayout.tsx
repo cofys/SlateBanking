@@ -118,6 +118,7 @@ export function BankAdminLayout() {
     {
       title: "Operations",
       links: [
+        { name: "Compliance", path: `/bank/${bankId}/compliance`, icon: ShieldCheck },
         { name: "Clearinghouse", path: `/bank/${bankId}/clearinghouse`, icon: Building2 },
         { name: "Audit Log", path: `/bank/${bankId}/audit`, icon: ShieldCheck },
         { name: "Bulk Tools", path: `/bank/${bankId}/tools`, icon: Wrench },
