@@ -19,10 +19,20 @@ export class CityCorpWebSocket {
   private bankId: string;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private isClosed = false;
+  private reconnectDelay = 5000; // Start with 5 seconds
+  private maxReconnectDelay = 300000; // Max 5 minutes
+  private failureCount = 0;
 
   constructor(bankId: string, apiUuid: string, apiKey: string) {
     this.bankId = bankId;
     this.url = "wss://api.cityrp.org/citycorp";
+    
+    if (!apiKey || apiKey.trim() === "" || !apiUuid || apiUuid.trim() === "") {
+      this.isClosed = true;
+      console.log(`[Bank ${this.bankId}] CityCorp WebSocket event subscription is disabled (missing credentials).`);
+      return;
+    }
+
     const authString = `${apiUuid}:${apiKey}`;
     const authEncoded = Buffer.from(authString).toString("base64");
     this.headers = {
@@ -32,13 +42,15 @@ export class CityCorpWebSocket {
 
   public connect() {
     if (this.isClosed) return;
-    console.log(`[Bank ${this.bankId}] Connecting to CityCorp Event Stream...`);
+    console.log(`[Bank ${this.bankId}] Connecting to CityCorp Event Stream (attempt #${this.failureCount + 1})...`);
     
     try {
       this.ws = new WebSocket(this.url, { headers: this.headers });
 
       this.ws.on("open", () => {
         console.log(`[Bank ${this.bankId}] WebSocket Connected! Listening for real-time transactions...`);
+        this.reconnectDelay = 5000;
+        this.failureCount = 0;
       });
 
       this.ws.on("message", async (data) => {
@@ -51,16 +63,21 @@ export class CityCorpWebSocket {
       });
 
       this.ws.on("error", (error) => {
-        console.error(`[Bank ${this.bankId}] WebSocket Error:`, error.message);
+        this.failureCount++;
+        // Use warn instead of error to avoid cluttering error logs for transient issues
+        console.warn(`[Bank ${this.bankId}] WebSocket Connection Issue: ${error.message}`);
       });
 
       this.ws.on("close", () => {
-        console.log(`[Bank ${this.bankId}] WebSocket Closed. Reconnecting in 5 seconds...`);
         this.ws = null;
-        this.scheduleReconnect();
+        if (!this.isClosed) {
+          console.log(`[Bank ${this.bankId}] WebSocket Closed. Reconnecting in ${this.reconnectDelay / 1000} seconds...`);
+          this.scheduleReconnect();
+        }
       });
-    } catch (e) {
-      console.error(`[Bank ${this.bankId}] WebSocket Connection Failed:`, e);
+    } catch (e: any) {
+      this.failureCount++;
+      console.warn(`[Bank ${this.bankId}] WebSocket Connection Exception:`, e.message || e);
       this.scheduleReconnect();
     }
   }
@@ -68,14 +85,21 @@ export class CityCorpWebSocket {
   private scheduleReconnect() {
     if (this.isClosed) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    
     this.reconnectTimer = setTimeout(() => {
+      // Exponential backoff
+      this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, this.maxReconnectDelay);
       this.connect();
-    }, 5000);
+    }, this.reconnectDelay);
   }
 
   public close() {
     this.isClosed = true;
-    if (this.ws) this.ws.close();
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch (e) {}
+    }
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
   }
 

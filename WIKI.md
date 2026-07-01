@@ -139,6 +139,7 @@ Every bank defined in the platform can attach a unique Discord Bot Token to its 
 - **Analytics**: `GET / analytics` (Returns revenue, deposit matrices, charts).
 - **Accounts**: `GET / accounts`, `POST / accounts`.
 - **Customers**: `GET / customers` (List unique users possessing an account in the bank), `GET / customers/:discordId`.
+  - Added support for Identity Reassignment: `POST /api/banks/:bankId/customers/:discordId/update-id` updates the owner discord ID for all accounts under a customer. `POST /api/banks/:bankId/accounts/:accountId/update-owner` reassigns a specific account.
 - **Staff Control**: `GET / team`, `POST / team`, `DELETE / team/:id`.
 - **Audit**: `GET / audit` (Immutable action logs).
 - **Clearinghouse**: `GET / clearinghouse` (Bank's net positioning).
@@ -192,3 +193,25 @@ To expand Slate SaaS, always follow the tri-level approach:
 1. **Schema Definitions (`src/db/schema.ts`)**: Add your Drizzle-ORM tables or columns. Push structural changes using `npx -y drizzle-kit push`.
 2. **Server Endpoints (`server.ts`)**: Construct your Express router mappings making sure to use `await db.select()`, `await db.insert()` inside logic structures. Ensure new APIs correctly implement the `requireBankStaff` or `requireGlobalAdmin` middleware when mutating sensitive arrays. Note that the frontend proxies `/api/*` to the Node.js backend.
 3. **Frontend UIs (`src/pages/*`)**: Utilize modern React functional structures, consume the data in `useEffect`, and leverage Tailwind CSS with Lucide React Icons for a polished, highly-crafted professional dark aesthetic. Components should generally align strictly to the `BankAdminLayout` or `DashboardLayout` for seamless auth ingestion.
+
+## Changelog
+
+### June 25th 2026 Update
+- **Bot Interactions**: Transitioned from purely slash commands to rich Button/Modal interactions. Admins can spawn a persistent interactive ATM message in a channel using `/spawn_atm`.
+- **Financial Products**: Added new database schemas for `loanProducts`, `creditProducts`, and `bankCustomers` (for KYC and notes). Introduced a new `BankProducts.tsx` page for managing these configured products.
+- **CityCorp Dev Portal (OAuth)**: Added a placeholder on the Citizen Portal dashboard preparing for the new CityCorp OAuth linking process, replacing the manual in-game deposit workflow.
+
+### June 29th 2026 Update
+- **Intelligent Bulk Account Imports**: Overhauled the `/api/banks/:bankId/import` auto-import logic. Added an intelligent Discord ID parser that extracts 17-20 digit sequences directly from remote account names. Non-matching accounts are automatically isolated with unique individual unassigned IDs (`unassigned_name`), preventing them from grouping together into a single massive false "top customer".
+- **Advanced Customer Profiles**: Fully activated and completed the customer detail and editing subsystem (`BankCustomerDetail.tsx`). Connected the `bankCustomers` table with backend support (`GET /customers/:discordId` and `POST /customers/:discordId/profile`) to track and update Internal Notes and KYC Verification status (`pending`, `approved`, `rejected`).
+- **Granular Account Reassignment Controls**: Added inline administrative Pencil icons in customer profiles allowing staff to reassign *individual* accounts' owner Discord IDs instantly, giving banks granular, robust, and highly configurable controls.
+- **Visual Identity for Unassigned Imports**: Styled unassigned customers with distinct amber visual badges, alert banners, and instructional labels to keep customer lists pristine.
+
+### June 30th 2026 Update
+- **Whitelabel CityCorp OAuth Integration**: Completely eliminated centralized profile validation in favor of a bank-level whitelabeled integration. Added `cityCorpAppId` and `cityCorpAppSecret` configuration columns to the `banks` table, and `mcUuid`, `mcUsername`, and `cityCorpToken` columns to the `bankCustomers` table.
+- **Bank-Specific Admin Settings**: Added a new configuration panel inside `BankSettings.tsx` where CEOs can manage their CityCorp Developer Application credentials and see their exact Redirect callback URI (`/api/portal/:bankId/oauth/callback`).
+- **Whitelabeled Client Verification Flow**: Updated `BankPortal.tsx` to display a beautiful Minecraft Verification card. Users can click "Verify with CityCorp" to redirect to the bank's own CityCorp OAuth app, verify, and receive automated, whitelabeled linkage. Shows active character names and Minecraft skin avatars natively.
+- **Global Citizen Profiles**: Upgraded `CitizenPortal.tsx` and the `/api/citizen/lookup` endpoint to fetch and aggregate active, bank-specific linked Minecraft characters and whitelabel verified profiles globally across all Slate network institutions.
+- **Automated Operations Engine**: Integrated `node-cron` daemon within the core server to evaluate and process automated daily cron jobs (e.g. `daily_processing_cron`) at `0 0 * * *`. The engine loops over all banks automatically generating daily interest for active loans and generating `SYSTEM` audit logs without manual endpoints.
+- **Double-Entry General Ledger**: The system now properly auto-provisions internal `SYSTEM` accounts during bank creation (e.g., Vault Cash, Fee Revenue, Payroll Expense). Re-engineered the core `/transactions` endpoint to enforce 100% compliance with Double Entry accounting standards. User deposits now accurately shift balances from the `Vault Cash` Asset GL to the user's liability GL.
+- **Granular RBAC Enforcements**: Implemented robust internal Role-Based Access Control (`requireRole`) middleware. Explicitly segregated sensitive endpoints (`/settings`, `/team`) to strictly enforce `owner` and `admin` roles, preventing unauthorized access by standard bank tellers or support members.

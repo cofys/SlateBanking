@@ -9,13 +9,13 @@
     "start": "node -e \"require('fs').mkdirSync('data', { recursive: true })\" && drizzle-kit push && node dist/server.cjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "seed": "tsx scripts/seed.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@radix-ui/react-slot": "^1.2.4",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/node-cron": "^3.0.11",
     "@vitejs/plugin-react": "^5.0.4",
     "better-sqlite3": "^12.11.1",
     "class-variance-authority": "^0.7.1",
@@ -34,6 +34,7 @@
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "node-cron": "^4.5.0",
     "pg": "^8.22.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

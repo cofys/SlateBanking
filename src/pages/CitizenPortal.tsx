@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, Lock, Unlock, Link2, BookOpen } from "lucide-react";
+import { Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, Lock, Unlock, Link2, BookOpen, LogIn, LogOut } from "lucide-react";
 import { format } from "date-fns";
+import { useAuth } from "../lib/AuthContext";
 
 export function CitizenPortal() {
-  const [discordId, setDiscordId] = useState("");
+  const { user, login, logout, isLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
@@ -14,6 +15,12 @@ export function CitizenPortal() {
       .then(r => r.json())
       .then(d => setOnyxMerchants(d || []));
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      handleSearch();
+    }
+  }, [user]);
 
   const toggleCardVisibility = (id: string) => {
     setVisibleCardIds(prev => ({ ...prev, [id]: !prev[id] }));
@@ -26,13 +33,11 @@ export function CitizenPortal() {
     return `•••• •••• •••• ${chunks[3] || "0000"}`;
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!discordId) return;
-    
+  const handleSearch = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch(`/api/citizen/lookup?discordId=${discordId}`);
+      const res = await fetch(`/api/citizen/lookup`);
       if (res.ok) {
         setUserData(await res.json());
       } else {
@@ -45,9 +50,18 @@ export function CitizenPortal() {
     setLoading(false);
   };
 
+  if (isLoading) {
+    return <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center text-white/50">Loading...</div>;
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 mt-6 mb-20 px-4">
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-4 gap-4">
+         {user && (
+           <button onClick={logout} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors bg-white/5 px-4 py-2 rounded-full border border-red-500/20">
+             <LogOut size={16} /> Logout
+           </button>
+         )}
          <a href="/docs" className="flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors bg-white/5 px-4 py-2 rounded-full border border-white/10">
            <BookOpen size={16} /> API Documentation
          </a>
@@ -60,37 +74,90 @@ export function CitizenPortal() {
         <p className="text-white/50 max-w-lg mx-auto">Access your global financial profile across all banks connected to the Slate Network.</p>
       </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 md:p-10 shadow-2xl backdrop-blur-sm max-w-xl mx-auto">
-        <form onSubmit={handleSearch} className="space-y-4">
+      {!user ? (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 md:p-10 shadow-2xl backdrop-blur-sm max-w-xl mx-auto text-center space-y-6">
           <div>
-            <label className="block text-sm font-medium text-white/70 mb-2">Discord User ID</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search size={18} className="text-white/30" />
-              </div>
-              <input
-                required
-                type="text"
-                value={discordId}
-                onChange={(e) => setDiscordId(e.target.value)}
-                placeholder="e.g. 2938491823901"
-                className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 shadow-inner"
-              />
-            </div>
-            <p className="text-xs text-white/40 mt-2">To find your ID, enable Developer Mode in Discord, right-click your profile, and select 'Copy User ID'.</p>
+            <h2 className="text-xl font-medium text-white mb-2">Authentication Required</h2>
+            <p className="text-white/50 text-sm">Please securely authenticate with Discord to access your financial portfolio.</p>
           </div>
           <button 
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            onClick={login}
+            className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-[#5865F2]/20 flex items-center justify-center gap-2"
           >
-            {loading ? "Searching Ledger..." : "Access Portfolio"} <ArrowRight size={18} />
+            <LogIn size={18} /> Login with Discord
           </button>
-        </form>
-      </div>
+        </div>
+      ) : (
+        <>
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-sm max-w-xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+             {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Avatar" className="w-12 h-12 rounded-full border-2 border-white/10" />
+             ) : (
+                <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <Search size={20} />
+                </div>
+             )}
+             <div>
+               <p className="text-white font-medium">{user.username}</p>
+               <p className="text-white/40 text-xs font-mono">{user.discordId}</p>
+             </div>
+          </div>
+          <button 
+            onClick={handleSearch}
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 px-4 rounded-lg transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+
+        {userData?.verifiedProfiles?.length > 0 ? (
+          <div className="bg-[#0f0f15] border border-white/10 rounded-2xl p-6 max-w-xl mx-auto space-y-4 shadow-xl mt-6 text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h3 className="text-white font-medium flex items-center gap-2">
+              <ShieldCheck className="text-emerald-400" size={18} />
+              Whitelabel Verified Bank Profiles
+            </h3>
+            <p className="text-xs text-white/50">Your active, bank-specific Minecraft profiles verified via whitelabel CityCorp OAuth:</p>
+            <div className="space-y-3">
+              {userData.verifiedProfiles.map((prof: any) => (
+                <div key={prof.bankId} className="flex items-center justify-between bg-white/[0.02] border border-white/5 p-3 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <img 
+                      src={`https://mc-heads.net/avatar/${prof.mcUuid}/32`} 
+                      alt="Skin avatar" 
+                      className="w-8 h-8 rounded border border-white/10" 
+                      referrerPolicy="no-referrer"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-white">{prof.bankName}</p>
+                      <p className="text-xs text-white/40 font-mono">Minecraft Name: {prof.mcUsername}</p>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Verified Profile
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-[#0f0f15] border border-amber-500/10 rounded-2xl p-5 mt-6 max-w-xl mx-auto flex items-center justify-between shadow-xl text-left">
+             <div className="flex items-center gap-4">
+               <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-400 shrink-0">
+                 <Link2 size={24} />
+               </div>
+               <div>
+                 <h3 className="font-medium text-white text-sm">Whitelabel Profile Verification</h3>
+                 <p className="text-white/50 text-xs mt-1">To verify your Minecraft and CityCorp profile, visit your specific bank's portal page and click "Verify with CityCorp" under Identity Verification.</p>
+               </div>
+             </div>
+          </div>
+        )}
 
       {userData && !userData.error && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 mt-8">
+
           <div className="flex items-center gap-2 mb-6">
             <ShieldCheck className="text-emerald-400" size={20} />
             <h2 className="text-lg font-medium text-white/90">Verified Network Assets</h2>
@@ -149,7 +216,7 @@ export function CitizenPortal() {
                       method: 'POST',
                       headers: {'Content-Type': 'application/json'},
                       body: JSON.stringify({
-                        discordId,
+                        discordId: user.discordId,
                         fromAccountId: form.fromAccountId.value,
                         toAccountId: form.toAccountId.value,
                         amount: form.amount.value
@@ -211,7 +278,7 @@ export function CitizenPortal() {
                          'x-api-key': fd.get("apiKey") as string
                       },
                       body: JSON.stringify({
-                        userDiscordId: discordId,
+                        userDiscordId: user.discordId,
                         amountCents: Math.round(parseFloat(fd.get("amount") as string) * 100),
                         description: fd.get("description") || "Onyx Quick Pay from Citizen Portal",
                         sourceAccountId: fd.get("fromAccountId")
@@ -310,7 +377,7 @@ export function CitizenPortal() {
                                const res = await fetch('/api/citizen/pay-invoice', {
                                  method: 'POST',
                                  headers: {'Content-Type': 'application/json'},
-                                 body: JSON.stringify({ discordId, invoiceId: inv.id })
+                                 body: JSON.stringify({ discordId: user.discordId, invoiceId: inv.id })
                                });
                                const d = await res.json();
                                if (!res.ok) alert(d.error || "Failed");
@@ -464,7 +531,7 @@ export function CitizenPortal() {
                             const res = await fetch(`/api/citizen/cards/${card.id}/lock`, {
                               method: 'PATCH',
                               headers: {'Content-Type': 'application/json'},
-                              body: JSON.stringify({ discordId, isLocked: !card.isLocked })
+                              body: JSON.stringify({ discordId: user.discordId, isLocked: !card.isLocked })
                             });
                             if (res.ok) handleSearch(new Event('submit') as unknown as React.FormEvent);
                             else alert("Failed to lock/unlock card");
@@ -502,7 +569,7 @@ export function CitizenPortal() {
                </div>
                <div className="divide-y divide-white/5">
                  {userData.recentTx.map((tx: any, i: number) => {
-                   const isIncoming = tx.toDiscordId === discordId;
+                   const isIncoming = tx.toDiscordId === user.discordId;
                    return (
                      <div key={i} className="px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
                        <div className="flex gap-4 items-center">
@@ -552,7 +619,7 @@ export function CitizenPortal() {
                              headers: {"Content-Type": "application/json"},
                              body: JSON.stringify({
                                 bankId: act.bankId,
-                                discordId,
+                                discordId: user.discordId,
                                 accountId: act.id,
                                 principalAmount: parseFloat(fd.get("principalAmount") as string) * 100,
                                 purpose: fd.get("purpose")
@@ -601,7 +668,7 @@ export function CitizenPortal() {
                              headers: {"Content-Type": "application/json"},
                              body: JSON.stringify({
                                 bankId: act.bankId,
-                                discordId,
+                                discordId: user.discordId,
                                 accountId: act.id,
                                 requestedLimit: parseFloat(fd.get("requestedLimit") as string) * 100,
                                 monthlyIncome: parseFloat(fd.get("monthlyIncome") as string) * 100,
@@ -645,6 +712,8 @@ export function CitizenPortal() {
         <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-center text-sm font-medium">
           {userData.error}
         </div>
+      )}
+      </>
       )}
     </div>
   );

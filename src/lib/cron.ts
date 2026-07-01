@@ -7,7 +7,7 @@ import { CityCorpClient } from "./citycorp_api";
 export function startCronJobs() {
   console.log("[Cron] Starting background automated pipelines...");
   
-  // Run every 10 seconds for development demonstration
+  // Run every 60 seconds
   setInterval(async () => {
     try {
       const now = new Date();
@@ -107,7 +107,7 @@ export function startCronJobs() {
     } catch (e) {
       console.error("[Cron] Error processing jobs:", e);
     }
-  }, 10 * 1000); 
+  }, 60 * 1000); 
 
   // CityCorp Periodic Ping (Every 5 minutes, checking status of the first configured bank)
   setInterval(async () => {

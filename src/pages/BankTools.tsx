@@ -8,18 +8,6 @@ export function BankTools() {
   const [running, setRunning] = useState(false);
   const [complete, setComplete] = useState(false);
 
-  const handleRun = (e: React.FormEvent) => {
-    e.preventDefault();
-    setRunning(true);
-    setComplete(false);
-    
-    // Fake a heavy process
-    setTimeout(() => {
-      setRunning(false);
-      setComplete(true);
-    }, 2000);
-  };
-
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
       <div className="mb-8">
@@ -331,9 +319,7 @@ export function BankTools() {
                  setComplete(false);
                  const form = e.target as HTMLFormElement;
                  
-                 // Reuse citizen transfer but as admin we must hit an admin route or fake discord auth
-                 // Actually the citizen portal route works for anything if we just provide the sender ID
-                 // But wait, the standard transaction route allows inter-bank!
+                 // Use the standard transaction route for wire transfers
                  try {
                      const res = await fetch(`/api/banks/${bank.id}/transactions`, {
                        method: 'POST',

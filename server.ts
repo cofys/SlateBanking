@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
+import cron from "node-cron";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { botManager } from "./src/lib/bot_manager";
@@ -164,6 +165,18 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const token = req.cookies.auth_token;
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      (req as any).user = decoded;
+      next();
+    } catch(e) {
+      res.status(401).json({ error: "Invalid token" });
+    }
+  };
+
   const requireGlobalAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const token = req.cookies.auth_token;
     if (!token) return res.status(401).json({ error: "Unauthorized" });
@@ -203,6 +216,23 @@ async function startServer() {
     } catch(e) {
       res.status(401).json({ error: "Invalid token" });
     }
+  };
+
+  const requireRole = (allowedRoles: string[]) => {
+    return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      // First ensure they are bank staff (this runs after requireBankStaff, or we can just call requireBankStaff manually here)
+      // Actually, since requireBankStaff sets req.staffRole and req.user, we should just assume it was called BEFORE requireRole in the chain.
+      const user = (req as any).user;
+      if (user && user.isGlobalAdmin) return next();
+      
+      const role = (req as any).staffRole;
+      if (!role) return res.status(403).json({ error: "Forbidden - No role assigned" });
+      
+      if (!allowedRoles.includes(role)) {
+         return res.status(403).json({ error: `Forbidden - Requires one of roles: ${allowedRoles.join(', ')}` });
+      }
+      next();
+    };
   };
 
   const sendWebhook = async (bankId: string, message: string) => {
@@ -438,7 +468,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/transactions/recent", async (req, res) => {
+  app.get("/api/transactions/recent", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { transactions, banks } = await import("./src/db/schema");
     const { desc, eq } = await import("drizzle-orm");
@@ -464,7 +494,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/banks/:id", async (req, res) => {
+  app.put("/api/banks/:id", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -480,7 +510,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/banks/:id", async (req, res) => {
+  app.delete("/api/banks/:id", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -498,7 +528,7 @@ async function startServer() {
     }
   });
   
-  app.post("/api/banks/:id/bot-status", async (req, res) => {
+  app.post("/api/banks/:id/bot-status", requireGlobalAdmin, async (req, res) => {
     const { botManager } = await import("./src/lib/bot_manager");
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");
@@ -527,7 +557,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/stats", async (req, res) => {
+  app.get("/api/stats", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks, bankAccounts, transactions } = await import("./src/db/schema");
     const { count, sum, eq, gte } = await import("drizzle-orm");
@@ -580,12 +610,12 @@ async function startServer() {
     }
   });
 
-  app.get("/api/bots/status", (req, res) => {
+  app.get("/api/bots/status", requireGlobalAdmin, (req, res) => {
     res.json(botManager.getBankStatuses());
   });
 
   // Banks API
-  app.get("/api/banks", async (req, res) => {
+  app.get("/api/banks", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");
     try {
@@ -603,9 +633,9 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks", async (req, res) => {
+  app.post("/api/banks", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
-    const { banks } = await import("./src/db/schema");
+    const { banks, bankAccounts } = await import("./src/db/schema");
     const { v4: uuidv4 } = await import("uuid");
     
     try {
@@ -623,6 +653,28 @@ async function startServer() {
         createdAt: new Date(),
       };
       await db.insert(banks).values(newBank);
+
+      // Provision System GL Accounts (Double-Entry Ledger Base)
+      const systemAccounts = [
+        { name: "Vault Cash", cat: "vault_cash", type: "system_asset" },
+        { name: "Fee Revenue", cat: "fee_revenue", type: "system_revenue" },
+        { name: "Interest Revenue", cat: "interest_revenue", type: "system_revenue" },
+        { name: "Payroll Expense", cat: "payroll_expense", type: "system_expense" },
+        { name: "Clearinghouse", cat: "clearinghouse", type: "system_asset" }
+      ];
+
+      for (const sys of systemAccounts) {
+         await db.insert(bankAccounts).values({
+            id: uuidv4(),
+            bankId: newBank.id,
+            ownerDiscordId: "SYSTEM",
+            accountName: sys.name,
+            accountType: sys.type,
+            isSystem: true,
+            systemCategory: sys.cat,
+            createdAt: new Date(),
+         });
+      }
       
       // Attempt to provision bot
       try {
@@ -674,7 +726,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/onyx/settings", async (req, res) => {
+  app.get("/api/onyx/settings", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { onyxSettings } = await import("./src/db/schema");
     try {
@@ -706,7 +758,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/onyx/merchants", async (req, res) => {
+  app.get("/api/onyx/merchants", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { onyxMerchants } = await import("./src/db/schema");
     try {
@@ -718,7 +770,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/onyx/settlements", async (req, res) => {
+  app.get("/api/onyx/settlements", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { clearinghouseSettlements, banks } = await import("./src/db/schema");
     const { desc, eq } = await import("drizzle-orm");
@@ -748,7 +800,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/onyx/merchants", async (req, res) => {
+  app.post("/api/onyx/merchants", requireGlobalAdmin, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { onyxMerchants } = await import("./src/db/schema");
     const { v4: uuidv4 } = await import("uuid");
@@ -941,7 +993,7 @@ async function startServer() {
   // INVOICES API
   // ==========================
 
-  app.get("/api/banks/:bankId/invoices", async (req, res) => {
+  app.get("/api/banks/:bankId/invoices", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { invoices } = await import("./src/db/schema");
     const { eq, desc } = await import("drizzle-orm");
@@ -954,7 +1006,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/invoices", async (req, res) => {
+  app.post("/api/banks/:bankId/invoices", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { invoices, bankAccounts } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -989,7 +1041,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/banks/:bankId/invoices/:invoiceId/status", async (req, res) => {
+  app.put("/api/banks/:bankId/invoices/:invoiceId/status", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { invoices } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -999,6 +1051,141 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.get("/api/portal/:bankId/oauth/url", requireAuth, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      const bankId = req.params.bankId;
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank) return res.status(404).json({ error: "Bank not found" });
+      if (!bank.cityCorpAppId) {
+        return res.status(400).json({ error: "CityCorp OAuth is not configured for this bank" });
+      }
+
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/portal/${bankId}/oauth/callback`;
+      const state = encodeURIComponent(JSON.stringify({
+        bankId,
+        discordId: (req as any).user.discordId
+      }));
+
+      const scopes = "corp.player.info.get,corp.get";
+      const authUrl = `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+
+      res.json({ url: authUrl });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Internal error" });
+    }
+  });
+
+  app.get("/api/portal/:bankId/oauth/callback", async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks, bankCustomers, auditLogs } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bankId = req.params.bankId;
+      const code = req.query.client_secret as string;
+      const stateStr = req.query.state as string;
+
+      if (!code || !stateStr) {
+        return res.status(400).send("Missing code or state in CityCorp OAuth callback");
+      }
+
+      const parsedState = JSON.parse(decodeURIComponent(stateStr));
+      const discordId = parsedState.discordId;
+
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank || !bank.cityCorpAppId || !bank.cityCorpAppSecret) {
+        return res.status(400).send("Bank CityCorp OAuth credentials are not configured");
+      }
+
+      const bodyParams = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_secret: code,
+        app_id: bank.cityCorpAppId,
+        token: bank.cityCorpAppSecret
+      });
+
+      console.log("Exchanging CityCorp OAuth code for token with body:", bodyParams.toString());
+      const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: bodyParams.toString()
+      });
+
+      if (!tokenResponse.ok) {
+        const errText = await tokenResponse.text();
+        console.error("CityCorp Token exchange failed:", errText);
+        return res.status(400).send(`Failed to exchange token with CityCorp: ${errText}`);
+      }
+
+      const tokenData = await tokenResponse.json();
+      const token = tokenData.token;
+      const minecraftUuid = tokenData.minecraft_uuid;
+
+      if (!token || !minecraftUuid) {
+        return res.status(400).send("CityCorp returned an invalid token response");
+      }
+
+      const authHeader = 'Basic ' + Buffer.from(`${minecraftUuid}:${token}`).toString('base64');
+      console.log("Fetching player info from CityCorp...");
+      const playerRes = await fetch("https://api.cityrp.org/citycorp/player", {
+        headers: { "Authorization": authHeader, "User-Agent": "SlateBankBot/1.0" }
+      });
+
+      let mcUsername = "Citizen";
+      if (playerRes.ok) {
+        const playerData = await playerRes.json();
+        mcUsername = playerData.username || playerData.name || mcUsername;
+        console.log(`Successfully fetched player name from CityCorp: ${mcUsername}`);
+      } else {
+        console.warn(`Could not fetch player name from CityCorp API, falling back to: ${mcUsername}`);
+      }
+
+      const existing = await db.select().from(bankCustomers).where(
+        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
+      ).limit(1);
+
+      if (existing.length > 0) {
+        await db.update(bankCustomers).set({
+          mcUuid: minecraftUuid,
+          mcUsername: mcUsername,
+          cityCorpToken: token,
+          kycStatus: "approved"
+        }).where(and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId)));
+      } else {
+        await db.insert(bankCustomers).values({
+          id: uuidv4(),
+          bankId: bankId,
+          discordId: discordId,
+          kycStatus: "approved",
+          mcUuid: minecraftUuid,
+          mcUsername: mcUsername,
+          cityCorpToken: token,
+          notes: "Profile verified via whitelabel CityCorp OAuth Gateway",
+          createdAt: new Date()
+        });
+      }
+
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: bankId,
+        userDiscordId: discordId,
+        action: "profile_validated",
+        details: `Validated whitelabeled CityCorp profile. Linked Minecraft UUID: ${minecraftUuid}, Username: ${mcUsername}`,
+        timestamp: new Date()
+      });
+
+      res.redirect(`/portal/${bankId}?oauth=success&username=${encodeURIComponent(mcUsername)}`);
+    } catch (e: any) {
+      console.error("CityCorp OAuth Callback Exception:", e);
+      res.status(500).send(`Internal error in CityCorp OAuth Callback: ${e.message}`);
     }
   });
 
@@ -1017,15 +1204,20 @@ async function startServer() {
     }
   });
 
-  app.get("/api/portal/:bankId/lookup", async (req, res) => {
+  app.get("/api/portal/:bankId/lookup", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
-    const { banks, bankAccounts, transactions, invoices, cards, bankSettings } = await import("./src/db/schema");
+    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers } = await import("./src/db/schema");
     const { eq, and, or, desc, inArray } = await import("drizzle-orm");
 
     try {
-      const discordId = req.query.discordId as string;
+      const discordId = (req as any).user.discordId;
       const bankId = req.params.bankId;
       if (!discordId) return res.status(400).json({ error: "Missing discordId" });
+
+      const customerResult = await db.select().from(bankCustomers).where(
+        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
+      ).limit(1);
+      const customer = customerResult[0] || null;
 
       const userAccounts = await db.select({
         id: bankAccounts.id,
@@ -1040,7 +1232,11 @@ async function startServer() {
       .where(and(eq(bankAccounts.ownerDiscordId, discordId), eq(bankAccounts.bankId, bankId)));
 
       if (userAccounts.length === 0) {
-         return res.json({ accounts: [], recentTx: [], pendingInvoices: [], cards: [] });
+         return res.json({ accounts: [], recentTx: [], pendingInvoices: [], cards: [], customer: customer ? {
+           kycStatus: customer.kycStatus,
+           mcUsername: customer.mcUsername,
+           mcUuid: customer.mcUuid
+         } : null });
       }
 
       const accountIds = userAccounts.map(a => a.id);
@@ -1102,7 +1298,12 @@ async function startServer() {
         accounts: userAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
-        cards: userCards
+        cards: userCards,
+        customer: customer ? {
+          kycStatus: customer.kycStatus,
+          mcUsername: customer.mcUsername,
+          mcUuid: customer.mcUuid
+        } : null
       });
     } catch (e) {
       console.error(e);
@@ -1110,14 +1311,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/portal/:bankId/pay-invoice", async (req, res) => {
+  app.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, invoices } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { discordId, invoiceId } = req.body;
+      const { invoiceId } = req.body; const discordId = (req as any).user.discordId;
       const bankId = req.params.bankId;
 
       const [inv] = await db.select().from(invoices).where(and(eq(invoices.id, invoiceId), eq(invoices.bankId, bankId)));
@@ -1156,14 +1357,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/portal/:bankId/transfer", async (req, res) => {
+  app.post("/api/portal/:bankId/transfer", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { discordId, fromAccountId, toAccountId, amount } = req.body;
+      const { fromAccountId, toAccountId, amount } = req.body; const discordId = (req as any).user.discordId;
       const bankId = req.params.bankId;
       const amnt = Math.round(parseFloat(amount) * 100);
 
@@ -1198,13 +1399,13 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/portal/:bankId/cards/:cardId/lock", async (req, res) => {
+  app.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { cards, bankAccounts } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
 
     try {
-      const { discordId, isLocked } = req.body;
+      const { isLocked } = req.body; const discordId = (req as any).user.discordId;
       const [card] = await db.select().from(cards).where(eq(cards.id, req.params.cardId));
       
       if (!card || card.bankId !== req.params.bankId) return res.status(404).json({ error: "Card not found" });
@@ -1222,14 +1423,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/citizen/loans/apply", async (req, res) => {
+  app.post("/api/citizen/loans/apply", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { loans, bankSettings, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     
     try {
-      const { bankId, discordId, accountId, principalAmount, purpose } = req.body;
+      const { bankId, accountId, principalAmount, purpose } = req.body; const discordId = (req as any).user.discordId;
       if (!bankId || !discordId || !accountId || !principalAmount) return res.status(400).json({ error: "Missing fields" });
 
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
@@ -1283,14 +1484,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/citizen/credit/apply", async (req, res) => {
+  app.post("/api/citizen/credit/apply", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { creditApplications, bankSettings, cards, bankAccounts } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-       const { bankId, discordId, accountId, requestedLimit, monthlyIncome, purpose } = req.body;
+       const { bankId, accountId, requestedLimit, monthlyIncome, purpose } = req.body; const discordId = (req as any).user.discordId;
        if (!bankId || !discordId || !accountId || !requestedLimit || !monthlyIncome) return res.status(400).json({ error: "Missing fields" });
 
        const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
@@ -1347,13 +1548,13 @@ async function startServer() {
     }
   });
 
-    app.get("/api/citizen/lookup", async (req, res) => {
+    app.get("/api/citizen/lookup", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks, bankAccounts, transactions, invoices, cards, loans } = await import("./src/db/schema");
     const { eq, and, or, desc, inArray } = await import("drizzle-orm");
 
     try {
-      const discordId = req.query.discordId as string;
+      const discordId = (req as any).user.discordId;
       if (!discordId) {
         return res.status(400).json({ error: "Missing discordId" });
       }
@@ -1459,12 +1660,25 @@ async function startServer() {
          )
       );
 
+      const { bankCustomers } = await import("./src/db/schema");
+      const verifiedProfiles = await db.select({
+        bankId: bankCustomers.bankId,
+        bankName: banks.name,
+        mcUsername: bankCustomers.mcUsername,
+        mcUuid: bankCustomers.mcUuid,
+        kycStatus: bankCustomers.kycStatus
+      })
+      .from(bankCustomers)
+      .leftJoin(banks, eq(bankCustomers.bankId, banks.id))
+      .where(eq(bankCustomers.discordId, discordId));
+
       res.json({
         accounts: userAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
         cards: userCards,
-        loans: userLoans
+        loans: userLoans,
+        verifiedProfiles: verifiedProfiles || []
       });
     } catch (e) {
       console.error(e);
@@ -1472,13 +1686,13 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/citizen/cards/:cardId/lock", async (req, res) => {
+  app.patch("/api/citizen/cards/:cardId/lock", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { cards, bankAccounts } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
 
     try {
-      const { discordId, isLocked } = req.body;
+      const { isLocked } = req.body; const discordId = (req as any).user.discordId;
       const [card] = await db.select().from(cards).where(eq(cards.id, req.params.cardId));
       
       if (!card) return res.status(404).json({ error: "Card not found" });
@@ -1496,7 +1710,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/citizen/pay-loan", async (req, res) => {
+  app.post("/api/citizen/pay-loan", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, loans } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -1542,14 +1756,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/citizen/pay-invoice", async (req, res) => {
+  app.post("/api/citizen/pay-invoice", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, invoices } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { discordId, invoiceId } = req.body;
+      const { invoiceId } = req.body; const discordId = (req as any).user.discordId;
 
       const [inv] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
       if (!inv || inv.status !== 'pending') return res.status(404).json({ error: "Invoice not found or already paid" });
@@ -1588,14 +1802,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/citizen/transfer", async (req, res) => {
+  app.post("/api/citizen/transfer", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, bankSettings, interBankTransfers, clearinghouseBalances } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { discordId, fromAccountId, toAccountId, amount } = req.body;
+      const { fromAccountId, toAccountId, amount } = req.body; const discordId = (req as any).user.discordId;
       const parsedAmount = Math.round(parseFloat(amount) * 100);
       if (parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
 
@@ -1716,8 +1930,43 @@ async function startServer() {
     }
   });
 
+  app.post("/api/banks/:bankId/customers/:discordId/update-id", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { bankAccounts, auditLogs } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bId = req.params.bankId;
+      const oldId = req.params.discordId;
+      const { newDiscordId } = req.body;
+
+      if (!newDiscordId || typeof newDiscordId !== 'string') {
+        return res.status(400).json({ error: "Missing or invalid newDiscordId" });
+      }
+
+      await db.update(bankAccounts)
+        .set({ ownerDiscordId: newDiscordId })
+        .where(and(eq(bankAccounts.bankId, bId), eq(bankAccounts.ownerDiscordId, oldId)));
+
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: bId,
+        userDiscordId: 'Operator', // Ideally this should be req.user.id if we had operator auth middleware here
+        action: 'customer_id_updated',
+        details: `Updated discord ID from ${oldId} to ${newDiscordId} for all accounts`,
+        timestamp: new Date()
+      });
+
+      res.json({ success: true, newDiscordId });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Whitelabeled Bank Operator API
-  app.post("/api/banks/:bankId/customers/:discordId/freeze", async (req, res) => {
+  app.post("/api/banks/:bankId/customers/:discordId/freeze", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, auditLogs } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -1748,7 +1997,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/audit", async (req, res) => {
+  app.get("/api/banks/:bankId/audit", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { auditLogs } = await import("./src/db/schema");
     const { eq, desc } = await import("drizzle-orm");
@@ -1761,7 +2010,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/customers", async (req, res) => {
+  app.get("/api/banks/:bankId/customers", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts } = await import("./src/db/schema");
     const { eq, sum, count, min } = await import("drizzle-orm");
@@ -1790,7 +2039,7 @@ async function startServer() {
   });
 
   // Team Management
-  app.get("/api/banks/:bankId/team", async (req, res) => {
+  app.get("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owner", "admin"])], async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankStaff } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -1803,7 +2052,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/team", async (req, res) => {
+  app.post("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owner", "admin"])], async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankStaff } = await import("./src/db/schema");
     const { v4: uuidv4 } = await import("uuid");
@@ -1823,7 +2072,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/banks/:bankId/team/:staffId", async (req, res) => {
+  app.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requireRole(["owner"])], async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankStaff } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -1836,9 +2085,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/customers/:discordId", async (req, res) => {
+  app.get("/api/banks/:bankId/customers/:discordId", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
-    const { bankAccounts, transactions } = await import("./src/db/schema");
+    const { bankAccounts, transactions, bankCustomers } = await import("./src/db/schema");
     const { eq, or, inArray, desc, and } = await import("drizzle-orm");
     try {
       const dbAccounts = await db.select().from(bankAccounts).where(
@@ -1861,12 +2110,18 @@ async function startServer() {
         ).orderBy(desc(transactions.timestamp)).limit(50);
       }
       
+      const customerRecord = await db.select().from(bankCustomers).where(
+        and(eq(bankCustomers.bankId, req.params.bankId), eq(bankCustomers.discordId, req.params.discordId))
+      ).limit(1);
+      
       res.json({
         discordId: req.params.discordId,
         accounts: dbAccounts,
         transactions: txList,
         totalBalance: dbAccounts.reduce((sum, a) => sum + a.balance, 0),
-        firstJoined: dbAccounts.length ? dbAccounts.reduce((min, a) => new Date(a.createdAt) < min ? new Date(a.createdAt) : min, new Date()) : null
+        firstJoined: dbAccounts.length ? dbAccounts.reduce((min, a) => new Date(a.createdAt) < min ? new Date(a.createdAt) : min, new Date()) : null,
+        notes: customerRecord[0]?.notes || "",
+        kycStatus: customerRecord[0]?.kycStatus || "pending"
       });
     } catch (e) {
       console.error(e);
@@ -1874,7 +2129,44 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/accounts/:accountId", async (req, res) => {
+  app.post("/api/banks/:bankId/customers/:discordId/profile", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { bankCustomers } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const { notes, kycStatus } = req.body;
+      const bankId = req.params.bankId;
+      const discordId = req.params.discordId;
+
+      const existing = await db.select().from(bankCustomers).where(
+        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
+      ).limit(1);
+
+      if (existing.length > 0) {
+        await db.update(bankCustomers)
+          .set({ notes: notes || "", kycStatus: kycStatus || "pending" })
+          .where(and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId)));
+      } else {
+        await db.insert(bankCustomers).values({
+          id: uuidv4(),
+          bankId,
+          discordId,
+          notes: notes || "",
+          kycStatus: kycStatus || "pending",
+          createdAt: new Date()
+        });
+      }
+
+      res.json({ success: true, notes, kycStatus });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Internal error" });
+    }
+  });
+
+  app.get("/api/banks/:bankId/accounts/:accountId", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, or, desc, and } = await import("drizzle-orm");
@@ -1905,7 +2197,42 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/settings", async (req, res) => {
+  app.post("/api/banks/:bankId/accounts/:accountId/update-owner", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { bankAccounts, auditLogs } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bId = req.params.bankId;
+      const accId = req.params.accountId;
+      const { newDiscordId } = req.body;
+
+      if (!newDiscordId || typeof newDiscordId !== 'string') {
+        return res.status(400).json({ error: "Missing or invalid newDiscordId" });
+      }
+
+      await db.update(bankAccounts)
+        .set({ ownerDiscordId: newDiscordId })
+        .where(and(eq(bankAccounts.bankId, bId), eq(bankAccounts.id, accId)));
+
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: bId,
+        userDiscordId: 'Operator',
+        action: 'account_owner_updated',
+        details: `Reassigned account ${accId} to Discord ID ${newDiscordId}`,
+        timestamp: new Date()
+      });
+
+      res.json({ success: true, newDiscordId });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/banks/:bankId/settings", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankSettings, banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -1936,14 +2263,19 @@ async function startServer() {
           enableTreasury: true
         } as any;
       }
-      res.json({ ...settings, customDomain: bank?.customDomain || "" });
+      res.json({
+        ...settings,
+        customDomain: bank?.customDomain || "",
+        cityCorpAppId: bank?.cityCorpAppId || "",
+        cityCorpAppSecret: bank?.cityCorpAppSecret || ""
+      });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
     }
   });
 
-  app.put("/api/banks/:bankId/settings", async (req, res) => {
+  app.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["owner", "admin"])], async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankSettings, banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -1952,6 +2284,13 @@ async function startServer() {
       
       if (req.body.customDomain !== undefined) {
          await db.update(banks).set({ customDomain: req.body.customDomain }).where(eq(banks.id, bId));
+      }
+
+      if (req.body.cityCorpAppId !== undefined || req.body.cityCorpAppSecret !== undefined) {
+         const updateData: any = {};
+         if (req.body.cityCorpAppId !== undefined) updateData.cityCorpAppId = req.body.cityCorpAppId;
+         if (req.body.cityCorpAppSecret !== undefined) updateData.cityCorpAppSecret = req.body.cityCorpAppSecret;
+         await db.update(banks).set(updateData).where(eq(banks.id, bId));
       }
 
       const data = {
@@ -1991,7 +2330,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/accounts", async (req, res) => {
+  app.get("/api/banks/:bankId/accounts", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts } = await import("./src/db/schema");
     const { eq, desc } = await import("drizzle-orm");
@@ -2007,7 +2346,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/accounts", async (req, res) => {
+  app.post("/api/banks/:bankId/accounts", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -2123,7 +2462,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/import", async (req, res) => {
+  app.post("/api/banks/:bankId/import", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -2155,10 +2494,16 @@ async function startServer() {
         
         for (const remoteAccount of listData.accounts) {
           if (!localAccountNames.has(remoteAccount.name)) {
+            // Check for a 17-20 digit Discord ID in the name (e.g. Player (123456789012345678))
+            const discordMatch = remoteAccount.name.match(/\b\d{17,20}\b/);
+            const inferredOwner = discordMatch 
+              ? discordMatch[0] 
+              : `unassigned_${remoteAccount.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
             await db.insert(bankAccounts).values({
               id: uuidv4(),
               bankId: bank.id,
-              ownerDiscordId: 'imported', // Or infer if possible
+              ownerDiscordId: inferredOwner,
               accountName: remoteAccount.name,
               balance: Math.round(remoteAccount.balance * 100) || 0,
               createdAt: new Date(),
@@ -2192,7 +2537,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/banks/:bankId/accounts/:accountId", async (req, res) => {
+  app.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, auditLogs } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -2221,7 +2566,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/analytics", async (req, res) => {
+  app.get("/api/banks/:bankId/analytics", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { transactions, bankAccounts } = await import("./src/db/schema");
     const { eq, and, gte } = await import("drizzle-orm");
@@ -2271,7 +2616,7 @@ async function startServer() {
   });
 
   // --- Clearinghouse APIs ---
-  app.get("/api/banks/:bankId/clearinghouse", async (req, res) => {
+  app.get("/api/banks/:bankId/clearinghouse", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { clearinghouseBalances, clearinghouseSettlements, banks, interBankTransfers } = await import("./src/db/schema");
     const { eq, or, desc } = await import("drizzle-orm");
@@ -2324,7 +2669,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/clearinghouse/settle", async (req, res) => {
+  app.post("/api/banks/:bankId/clearinghouse/settle", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { clearinghouseBalances, clearinghouseSettlements } = await import("./src/db/schema");
     const { eq, sql } = await import("drizzle-orm");
@@ -2431,7 +2776,7 @@ async function startServer() {
      }
   });
 
-  app.post("/api/banks/:bankId/wire", async (req, res) => {
+  app.post("/api/banks/:bankId/wire", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, clearinghouseBalances } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -2509,7 +2854,7 @@ async function startServer() {
   });
 
   // --- Subscriptions APIs ---
-  app.get("/api/banks/:bankId/subscriptions", async (req, res) => {
+  app.get("/api/banks/:bankId/subscriptions", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { subscriptions, bankAccounts } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -2543,7 +2888,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/subscriptions", async (req, res) => {
+  app.post("/api/banks/:bankId/subscriptions", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { subscriptions, bankAccounts } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -2580,7 +2925,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/banks/:bankId/subscriptions/:subId", async (req, res) => {
+  app.patch("/api/banks/:bankId/subscriptions/:subId", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { subscriptions } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -2597,7 +2942,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/subscriptions/:subId/charge", async (req, res) => {
+  app.post("/api/banks/:bankId/subscriptions/:subId/charge", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { subscriptions, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -2646,7 +2991,7 @@ async function startServer() {
   });
 
   // --- Payroll APIs ---
-  app.get("/api/banks/:bankId/payroll", async (req, res) => {
+  app.get("/api/banks/:bankId/payroll", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { payrollJobs, bankAccounts } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -2679,7 +3024,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/payroll", async (req, res) => {
+  app.post("/api/banks/:bankId/payroll", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { payrollJobs, bankAccounts } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -2715,7 +3060,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/banks/:bankId/payroll/:jobId", async (req, res) => {
+  app.patch("/api/banks/:bankId/payroll/:jobId", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { payrollJobs } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -2732,7 +3077,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/payroll/:jobId/run", async (req, res) => {
+  app.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { payrollJobs, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -2782,7 +3127,7 @@ async function startServer() {
   });
 
   // --- Treasury APIs ---
-  app.get("/api/banks/:bankId/treasury", async (req, res) => {
+  app.get("/api/banks/:bankId/treasury", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, vaultDeposits, loans, transactions } = await import("./src/db/schema");
     const { eq, sum, and, desc, sql } = await import("drizzle-orm");
@@ -2862,7 +3207,7 @@ async function startServer() {
   });
 
   // --- Escrow APIs ---
-  app.get("/api/banks/:bankId/escrows", async (req, res) => {
+  app.get("/api/banks/:bankId/escrows", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { escrows, bankAccounts } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -2897,7 +3242,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/escrows", async (req, res) => {
+  app.post("/api/banks/:bankId/escrows", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { escrows, bankAccounts } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -2931,7 +3276,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/escrows/:escrowId/fund", async (req, res) => {
+  app.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { escrows, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -2966,7 +3311,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/escrows/:escrowId/release", async (req, res) => {
+  app.post("/api/banks/:bankId/escrows/:escrowId/release", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { escrows, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -2999,7 +3344,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/escrows/:escrowId/refund", async (req, res) => {
+  app.post("/api/banks/:bankId/escrows/:escrowId/refund", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { escrows, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -3033,7 +3378,7 @@ async function startServer() {
   });
 
   // --- Loan APIs ---
-  app.get("/api/banks/:bankId/loans", async (req, res) => {
+  app.get("/api/banks/:bankId/loans", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { loans } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -3046,7 +3391,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/loans", async (req, res) => {
+  app.post("/api/banks/:bankId/loans", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { loans, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -3196,7 +3541,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/loans/:loanId/pay", async (req, res) => {
+  app.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { loans, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -3247,7 +3592,7 @@ async function startServer() {
   });
 
   // --- Vault APIs ---
-  app.get("/api/banks/:bankId/vaults", async (req, res) => {
+  app.get("/api/banks/:bankId/vaults", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { vaultDeposits, bankAccounts } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -3273,7 +3618,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/vaults", async (req, res) => {
+  app.post("/api/banks/:bankId/vaults", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { vaultDeposits, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -3326,7 +3671,7 @@ async function startServer() {
     }
   });
   
-  app.post("/api/banks/:bankId/vaults/:vaultId/release", async (req, res) => {
+  app.post("/api/banks/:bankId/vaults/:vaultId/release", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { vaultDeposits, bankAccounts, transactions } = await import("./src/db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
@@ -3371,7 +3716,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/cards", async (req, res) => {
+  app.get("/api/banks/:bankId/cards", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { cards, bankAccounts } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -3399,7 +3744,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/cards", async (req, res) => {
+  app.post("/api/banks/:bankId/cards", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { cards, bankAccounts } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -3438,7 +3783,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/banks/:bankId/cards/:cardId", async (req, res) => {
+  app.patch("/api/banks/:bankId/cards/:cardId", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { cards } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -3458,7 +3803,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/developer", async (req, res) => {
+  app.get("/api/banks/:bankId/developer", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -3479,7 +3824,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/developer/roll", async (req, res) => {
+  app.post("/api/banks/:bankId/developer/roll", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -3498,7 +3843,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/transactions", async (req, res) => {
+  app.get("/api/banks/:bankId/transactions", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { transactions, bankAccounts } = await import("./src/db/schema");
     const { eq, desc } = await import("drizzle-orm");
@@ -3523,7 +3868,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/transactions", async (req, res) => {
+  app.post("/api/banks/:bankId/transactions", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -3538,10 +3883,20 @@ async function startServer() {
       const parsedAmount = Math.round(parseFloat(amount) * 100);
       if (parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
 
+      // Find the Vault Cash system account for this bank
+      const sysAccountRes = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bank.id), eq(bankAccounts.systemCategory, 'vault_cash'))).limit(1);
+      const vaultCashAccount = sysAccountRes.length > 0 ? sysAccountRes[0] : null;
+
       // Identify source account ID for internal DB
       const accountRes = await db.select().from(bankAccounts).where(eq(bankAccounts.accountName, accountName)).limit(1);
       if (accountRes.length === 0) return res.status(404).json({ error: "Source account not found locally" });
       const account = accountRes[0];
+
+      let toAccountRes = [];
+      if (type === 'transfer' && toAccountName) {
+        toAccountRes = await db.select().from(bankAccounts).where(eq(bankAccounts.accountName, toAccountName)).limit(1);
+        if (toAccountRes.length === 0) return res.status(404).json({ error: "Destination account not found locally" });
+      }
 
       // Execute on CityCorp if configured
       if (bank.corpId && bank.corpApiUuid && bank.corpApiKey) {
@@ -3573,12 +3928,27 @@ async function startServer() {
         }
       }
 
+      // Enforce Double Entry Ledger Rules
+      let finalFromId = null;
+      let finalToId = null;
+
+      if (type === 'deposit') {
+         finalFromId = vaultCashAccount ? vaultCashAccount.id : null;
+         finalToId = account.id;
+      } else if (type === 'withdraw') {
+         finalFromId = account.id;
+         finalToId = vaultCashAccount ? vaultCashAccount.id : null;
+      } else if (type === 'transfer') {
+         finalFromId = account.id;
+         finalToId = toAccountRes[0].id;
+      }
+
       // Record in local DB
       const tx = {
         id: uuidv4(),
         bankId: bank.id,
-        fromAccountId: account.id,
-        toAccountId: type === 'transfer' ? toAccountName : null,
+        fromAccountId: finalFromId,
+        toAccountId: finalToId,
         type: type,
         amount: parsedAmount,
         description: description || `Manual ${type}`,
@@ -3587,15 +3957,18 @@ async function startServer() {
 
       await db.insert(transactions).values(tx);
 
-      // Adjust balances in local DB
-      const newFromBalance = type === 'deposit' ? account.balance + parsedAmount : account.balance - parsedAmount;
-      await db.update(bankAccounts).set({ balance: newFromBalance }).where(eq(bankAccounts.id, account.id));
-
-      if (type === 'transfer') {
-        const toAccountRes = await db.select().from(bankAccounts).where(eq(bankAccounts.accountName, toAccountName)).limit(1);
-        if (toAccountRes.length > 0) {
-           await db.update(bankAccounts).set({ balance: toAccountRes[0].balance + parsedAmount }).where(eq(bankAccounts.id, toAccountRes[0].id));
-        }
+      // Adjust balances in local DB (Double Entry)
+      if (finalFromId) {
+         const fromAccRes = await db.select().from(bankAccounts).where(eq(bankAccounts.id, finalFromId)).limit(1);
+         if (fromAccRes.length > 0) {
+            await db.update(bankAccounts).set({ balance: fromAccRes[0].balance - parsedAmount }).where(eq(bankAccounts.id, finalFromId));
+         }
+      }
+      if (finalToId) {
+         const toAccRes = await db.select().from(bankAccounts).where(eq(bankAccounts.id, finalToId)).limit(1);
+         if (toAccRes.length > 0) {
+            await db.update(bankAccounts).set({ balance: toAccRes[0].balance + parsedAmount }).where(eq(bankAccounts.id, finalToId));
+         }
       }
 
       // Add audit log
@@ -3616,7 +3989,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/mass-action", async (req, res) => {
+  app.post("/api/banks/:bankId/tools/mass-action", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, auditLogs } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -3666,7 +4039,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/purge-zero", async (req, res) => {
+  app.post("/api/banks/:bankId/tools/purge-zero", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, auditLogs } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -3701,7 +4074,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/daily-processing", async (req, res) => {
+  app.post("/api/banks/:bankId/tools/daily-processing", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, auditLogs, loans, subscriptions } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -3743,7 +4116,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/data-migration", async (req, res) => {
+  app.post("/api/banks/:bankId/tools/data-migration", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, auditLogs } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -3917,6 +4290,52 @@ async function startServer() {
   } catch (e) {
     console.error("Failed to load banks mapping", e);
   }
+
+  // Automated Operations Engine (Cron)
+  cron.schedule("0 0 * * *", async () => {
+    console.log("Running Daily Automated Operations Engine...");
+    const { db } = await import("./src/db/index");
+    const { banks, loans, auditLogs } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const allBanks = await db.select().from(banks);
+      for (const bank of allBanks) {
+        let notes = [];
+        
+        // 1. Process Loans (accrue interest)
+        const openLoans = await db.select().from(loans).where(and(eq(loans.bankId, bank.id), eq(loans.status, 'active')));
+        let loansAccrued = 0;
+        for (const loan of openLoans) {
+          if (loan.interestRate && loan.principalAmount) {
+            const dailyInterest = Math.round((loan.principalAmount * (loan.interestRate / 100)) / 365);
+            if (dailyInterest > 0) {
+              await db.update(loans)
+                .set({ remainingAmount: loan.remainingAmount + dailyInterest })
+                .where(eq(loans.id, loan.id));
+              loansAccrued++;
+            }
+          }
+        }
+        if (loansAccrued > 0) notes.push(`Accrued interest on ${loansAccrued} loans.`);
+
+        if (notes.length > 0) {
+          await db.insert(auditLogs).values({
+             id: uuidv4(),
+             bankId: bank.id,
+             userDiscordId: 'SYSTEM',
+             action: `daily_processing_cron`,
+             details: `Automated Engine Executed. ${notes.join(' ')}`,
+             timestamp: new Date()
+          });
+        }
+      }
+      console.log("Daily Automated Operations Engine completed.");
+    } catch (e) {
+      console.error("Failed automated operations engine run:", e);
+    }
+  });
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);

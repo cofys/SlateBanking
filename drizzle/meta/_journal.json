@@ -15,6 +15,13 @@
       "when": 1781133547241,
       "tag": "0001_long_sir_ram",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782791136158,
+      "tag": "0002_naive_christian_walker",
+      "breakpoints": true
     }
   ]
 }

@@ -1,16 +1,26 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, Lock, Unlock, Loader2, Link2 } from "lucide-react";
+import { useAuth } from "../lib/AuthContext";
+import { Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, Lock, Unlock, Loader2, Link2, LogIn, LogOut } from "lucide-react";
 import { format } from "date-fns";
 
 export function BankPortal() {
   const { bankId } = useParams();
+  const { user, login, logout, isLoading } = useAuth();
   const [bank, setBank] = useState<any>(null);
-  const [discordId, setDiscordId] = useState("");
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
   const [onyxMerchants, setOnyxMerchants] = useState<any[]>([]);
+  const [oauthSuccess, setOauthSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("oauth") === "success") {
+      setOauthSuccess(params.get("username"));
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     fetch(`/api/portal/${bankId}/info`)
@@ -24,6 +34,12 @@ export function BankPortal() {
       .then(d => setOnyxMerchants(d || []));
   }, [bankId]);
 
+  useEffect(() => {
+    if (user && bank) handleSearch();
+  }, [user, bank]);
+
+  const colorCss = bank?.settings?.colorScheme || 'indigo';
+
   const toggleCardVisibility = (id: string) => {
     setVisibleCardIds(prev => ({ ...prev, [id]: !prev[id] }));
   };
@@ -35,87 +51,164 @@ export function BankPortal() {
     return `•••• •••• •••• ${chunks[3] || "0000"}`;
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!discordId) return;
-    
+  const handleSearch = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch(`/api/portal/${bankId}/lookup?discordId=${discordId}`);
+      const res = await fetch(`/api/portal/${bankId}/lookup`);
       if (res.ok) {
         setUserData(await res.json());
       } else {
         setUserData({ error: "No accounts found for this Discord ID at this bank." });
       }
     } catch (e) {
-      setUserData({ error: "Service unavailable." });
-    } finally {
-      setLoading(false);
+      console.error(e);
+      setUserData({ error: "System error while fetching data." });
     }
+    setLoading(false);
   };
 
-  if (!bank) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-white/50 w-8 h-8" /></div>;
-
-  const colorCss = bank.settings?.colorScheme === 'emerald' ? 'emerald' : 
-                   bank.settings?.colorScheme === 'rose' ? 'rose' : 
-                   bank.settings?.colorScheme === 'amber' ? 'amber' :
-                   bank.settings?.colorScheme === 'zinc' ? 'zinc' : 'indigo';
+  if (isLoading || !bank) return <div className="p-10 text-center text-white/50">Loading bank portal...</div>;
 
   return (
-    <div className={`max-w-4xl mx-auto px-4 py-12 animate-in fade-in duration-500 min-h-screen`} style={{ '--brand-color': 'theme("colors.' + colorCss + '.500")' } as React.CSSProperties}>
-      <div className="text-center mb-12">
-        {bank.settings?.logoUrl ? (
-           <img src={bank.settings.logoUrl} alt={bank.name} className="h-16 mx-auto mb-6 rounded-xl object-contain bg-white/5 p-2" />
-        ) : (
-           <div className={`w-16 h-16 mx-auto mb-6 rounded-2xl bg-${colorCss}-500/20 flex items-center justify-center border border-${colorCss}-500/30 shadow-lg shadow-${colorCss}-500/10`}>
-             <Wallet className={`text-${colorCss}-400`} size={32} />
-           </div>
-        )}
-        <h1 className="text-4xl font-bold tracking-tight mb-3">
-          {bank.name} Portal
-        </h1>
-        <p className="text-white/50 text-lg">
-          Secure access to your {bank.name} accounts and services.
-        </p>
+    <div className="max-w-4xl mx-auto space-y-8 mt-6 mb-20 px-4">
+      <div className="text-center space-y-3 mb-12">
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center font-bold text-3xl mx-auto shadow-xl shadow-indigo-500/20">
+          {bank.name.substring(0, 2).toUpperCase()}
+        </div>
+        <h1 className="text-3xl font-semibold tracking-tight">{bank.name} Portal</h1>
+        <p className="text-white/50 max-w-lg mx-auto">Access your accounts and manage your finances securely.</p>
       </div>
 
-      <div className="bg-[#0f0f15] border border-white/10 rounded-2xl p-6 shadow-2xl max-w-xl mx-auto mb-12">
-        <form onSubmit={handleSearch}>
-          <label className="block text-sm font-medium text-white/70 mb-2">
-            Enter your Discord ID to authenticate
-          </label>
-          <div className="flex gap-4">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pt-0.5">
-                <Search size={18} className="text-white/30" />
-              </div>
-              <input
-                required
-                type="text"
-                value={discordId}
-                onChange={(e) => setDiscordId(e.target.value)}
-                placeholder="e.g. 2938491823901"
-                className={`w-full bg-[#0a0a0c] border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder-white/30 focus:outline-none focus:border-${colorCss}-500/50 shadow-inner`}
-              />
+      {oauthSuccess && (
+        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-5 text-emerald-300 text-sm flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎉</span>
+            <div>
+              <p className="font-semibold text-white">Profile Successfully Verified!</p>
+              <p className="text-white/60 text-xs mt-0.5">Your Minecraft profile <strong>{oauthSuccess}</strong> is now linked and validated with {bank.name}.</p>
             </div>
-            <button 
-              disabled={loading}
-              type="submit" 
-              className={`bg-${colorCss}-500 hover:bg-${colorCss}-400 text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2 shadow-lg shadow-${colorCss}-500/20`}
-            >
-              {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (
-                <>Access <ArrowRight size={18} /></>
-              )}
-            </button>
           </div>
-        </form>
-      </div>
+          <button onClick={() => setOauthSuccess(null)} className="text-white/40 hover:text-white/80 font-bold px-2 py-1">×</button>
+        </div>
+      )}
+
+      {!user ? (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 md:p-10 shadow-2xl backdrop-blur-sm max-w-xl mx-auto text-center space-y-6">
+          <div>
+            <h2 className="text-xl font-medium text-white mb-2">Authentication Required</h2>
+            <p className="text-white/50 text-sm">Please securely authenticate with Discord to access your {bank.name} portfolio.</p>
+          </div>
+          <button 
+            onClick={login}
+            className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-[#5865F2]/20 flex items-center justify-center gap-2"
+          >
+            <LogIn size={18} /> Login with Discord
+          </button>
+        </div>
+      ) : (
+        <>
+        <div className="flex justify-end mb-4">
+           <button onClick={logout} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors bg-white/5 px-4 py-2 rounded-full border border-red-500/20">
+             <LogOut size={16} /> Logout
+           </button>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-sm max-w-xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+             {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Avatar" className="w-12 h-12 rounded-full border-2 border-white/10" />
+             ) : (
+                <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <Search size={20} />
+                </div>
+             )}
+             <div>
+               <p className="text-white font-medium">{user.username}</p>
+               <p className="text-white/40 text-xs font-mono">{user.discordId}</p>
+             </div>
+          </div>
+          <button 
+            onClick={handleSearch}
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 px-4 rounded-lg transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+        </>
+      )}
 
       {userData && !userData.error && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="flex items-center gap-2 mb-6">
+          <div className="flex items-center gap-2 mb-2">
             <ShieldCheck className={`text-${colorCss}-400`} size={20} />
             <h2 className="text-xl font-semibold text-white/90">Identity Verified</h2>
+          </div>
+
+          {/* Linked Minecraft & CityCorp Profile Panel */}
+          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+            <div className="flex items-center gap-4">
+              {userData.customer?.mcUuid ? (
+                <img 
+                  src={`https://mc-heads.net/avatar/${userData.customer.mcUuid}/64`} 
+                  alt="Minecraft avatar" 
+                  className="w-16 h-16 rounded-xl border border-white/10" 
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                  <Link2 size={28} />
+                </div>
+              )}
+              <div className="text-left">
+                <h3 className="font-semibold text-lg text-white">
+                  {userData.customer?.mcUsername ? `Linked Minecraft: ${userData.customer.mcUsername}` : "Unlinked Minecraft Profile"}
+                </h3>
+                <p className="text-sm text-white/50 mt-0.5">
+                  {userData.customer?.mcUsername 
+                    ? `Your account is whitelabel validated. Welcome, ${userData.customer.mcUsername}!`
+                    : `Link your Minecraft character with ${bank.name} to complete whitelabel profile validation.`}
+                </p>
+                {userData.customer?.mcUuid && (
+                  <p className="text-xs text-white/35 font-mono mt-1">UUID: {userData.customer.mcUuid}</p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              {userData.customer?.mcUsername ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                  Profile Verified
+                </span>
+              ) : (
+                bank.cityCorpAppId ? (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/portal/${bankId}/oauth/url`);
+                        if (res.ok) {
+                          const data = await res.json();
+                          window.location.href = data.url;
+                        } else {
+                          const errData = await res.json();
+                          alert(errData.error || "Failed to initiate login flow.");
+                        }
+                      } catch (err) {
+                        alert("Error connecting to validation service.");
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold py-2.5 px-5 rounded-lg text-sm transition-all shadow-lg shadow-amber-500/10 cursor-pointer"
+                  >
+                    Verify with CityCorp
+                  </button>
+                ) : (
+                  <span className="text-xs text-white/40 italic">
+                    CityCorp validation not yet configured by staff.
+                  </span>
+                )
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -145,14 +238,14 @@ export function BankPortal() {
             <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm max-w-xl mx-auto">
                <h3 className="font-medium text-lg mb-4 text-white/90 text-center">Execute Transfer</h3>
                <form onSubmit={async (e) => {
-                  e.preventDefault();
+                  
                   const form = e.target as any;
                   try {
                     const res = await fetch(`/api/portal/${bankId}/transfer`, {
                       method: 'POST',
                       headers: {'Content-Type': 'application/json'},
                       body: JSON.stringify({
-                        discordId,
+                        discordId: user?.discordId,
                         fromAccountId: form.fromAccountId.value,
                         toAccountId: form.toAccountId.value,
                         amount: form.amount.value
@@ -198,7 +291,7 @@ export function BankPortal() {
                  <Link2 size={20} className={`text-${colorCss}-400`} /> Onyx Quick Pay
                </h3>
                <form onSubmit={async (e) => {
-                  e.preventDefault();
+                  
                   const form = e.target as HTMLFormElement;
                   const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
                   const fd = new FormData(form);
@@ -211,7 +304,7 @@ export function BankPortal() {
                          'x-api-key': fd.get("apiKey") as string
                       },
                       body: JSON.stringify({
-                        userDiscordId: discordId,
+                        userDiscordId: user?.discordId,
                         amountCents: Math.round(parseFloat(fd.get("amount") as string) * 100),
                         description: fd.get("description") || "Onyx Quick Pay from Portal"
                       })
@@ -309,7 +402,7 @@ export function BankPortal() {
                                const res = await fetch(`/api/portal/${bankId}/pay-invoice`, {
                                  method: 'POST',
                                  headers: {'Content-Type': 'application/json'},
-                                 body: JSON.stringify({ discordId, invoiceId: inv.id })
+                                 body: JSON.stringify({ discordId: user?.discordId, invoiceId: inv.id })
                                });
                                const d = await res.json();
                                if (!res.ok) alert(d.error || "Failed");
@@ -389,7 +482,7 @@ export function BankPortal() {
                             const res = await fetch(`/api/portal/${bankId}/cards/${card.id}/lock`, {
                               method: 'PATCH',
                               headers: {'Content-Type': 'application/json'},
-                              body: JSON.stringify({ discordId, isLocked: !card.isLocked })
+                              body: JSON.stringify({ discordId: user?.discordId, isLocked: !card.isLocked })
                             });
                             if (res.ok) handleSearch(new Event('submit') as unknown as React.FormEvent);
                             else alert("Failed to lock/unlock card");
@@ -427,7 +520,7 @@ export function BankPortal() {
                </div>
                <div className="divide-y divide-white/5">
                  {userData.recentTx.map((tx: any, i: number) => {
-                   const isIncoming = tx.toDiscordId === discordId;
+                   const isIncoming = tx.toDiscordId === user?.discordId;
                    return (
                      <div key={i} className="px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
                        <div className="flex gap-4 items-center">

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, useParams, Link } from "react-router-dom";
-import { ArrowLeft, Wallet, Activity, CreditCard, Clock, Lock, Trash2, ArrowUpRight, ArrowDownRight, Plus, Minus, Loader2 } from "lucide-react";
+import { ArrowLeft, Wallet, Activity, CreditCard, Clock, Lock, Trash2, ArrowUpRight, ArrowDownRight, Plus, Minus, Loader2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 
 export function BankAccountDetail() {
@@ -106,9 +106,33 @@ export function BankAccountDetail() {
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Active
               </span>
               <span className="flex items-center gap-1.5"><Clock size={14} /> Opened {format(new Date(account.createdAt), "MMM d, yyyy")}</span>
-              <Link to={`/bank/${bank.id}/customers/${account.ownerDiscordId}`} className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors">
-                Owner ID: <span className="font-mono">{account.ownerDiscordId}</span>
-              </Link>
+              <div className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors">
+                Owner ID: 
+                <Link to={`/bank/${bank.id}/customers/${account.ownerDiscordId}`} className="font-mono hover:underline">
+                  {account.ownerDiscordId}
+                </Link>
+                <button
+                  onClick={async () => {
+                    const newId = prompt("Enter new Discord ID for this account:", account.ownerDiscordId);
+                    if (!newId || newId === account.ownerDiscordId) return;
+                    const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/update-owner`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ newDiscordId: newId })
+                    });
+                    if (res.ok) {
+                      fetchAcc();
+                    } else {
+                      const err = await res.json();
+                      alert(`Failed to update owner: ${err.error || 'Unknown error'}`);
+                    }
+                  }}
+                  className="text-white/40 hover:text-white transition-colors ml-1"
+                  title="Reassign Account Owner"
+                >
+                  <Pencil size={14} />
+                </button>
+              </div>
             </div>
           </div>
           <div className="text-right">

@@ -128,6 +128,7 @@ export function BankAdminLayout() {
       title: "Configuration",
       links: [
         { name: "Staff & Team", path: `/bank/${bankId}/team`, icon: Users2 },
+        { name: "Financial Products", path: `/bank/${bankId}/products`, icon: Briefcase },
         { name: "Settings", path: `/bank/${bankId}/settings`, icon: Settings },
       ]
     }

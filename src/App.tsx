@@ -1,3 +1,4 @@
+import { BankProducts } from "./pages/BankProducts";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
 import { BankAdminLayout } from "./components/layout/BankAdminLayout";
@@ -66,6 +67,7 @@ function App() {
           <Route path="tools" element={<BankTools />} />
           <Route path="developer" element={<BankDeveloper />} />
           <Route path="team" element={<BankTeam />} />
+          <Route path="products" element={<BankProducts />} />
           <Route path="settings" element={<BankSettings />} />
         </Route>
 

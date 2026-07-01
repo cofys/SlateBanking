@@ -83,29 +83,55 @@ export function BankCustomers() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {customers.filter((c: any) => c.discordId.includes(searchTerm)).map((c: any) => (
-                <tr key={c.discordId} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => navigate(`/bank/${bank.id}/customers/${c.discordId}`)}>
-                  <td className="px-6 py-4 whitespace-nowrap text-white font-medium">
-                    <div className="flex items-center gap-3">
-                       <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-colors">
-                         <User size={14} className="" />
-                       </div>
-                       {c.discordId}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-white/70">
-                    {c.accountCount} account(s)
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-emerald-400 font-medium">
-                      ${(c.totalBalance / 100).toFixed(2)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-white/50 whitespace-nowrap">
-                    {c.firstJoined ? format(new Date(c.firstJoined), "MMM d, yyyy") : "-"}
-                  </td>
-                </tr>
-              ))}
+              {customers.filter((c: any) => {
+                const isUnassigned = c.discordId.startsWith("unassigned_") || c.discordId === "imported";
+                const searchLower = searchTerm.toLowerCase();
+                const displayName = c.discordId === "imported" 
+                  ? "Legacy Imported Accounts"
+                  : c.discordId.startsWith("unassigned_")
+                    ? `Unassigned (${c.discordId.replace("unassigned_", "").replace(/_/g, " ")})`
+                    : c.discordId;
+                return displayName.toLowerCase().includes(searchLower) || c.discordId.toLowerCase().includes(searchLower);
+              }).map((c: any) => {
+                const isUnassigned = c.discordId.startsWith("unassigned_") || c.discordId === "imported";
+                const displayName = c.discordId === "imported" 
+                  ? "Legacy Imported Accounts"
+                  : c.discordId.startsWith("unassigned_")
+                    ? `Unassigned: ${c.discordId.replace("unassigned_", "").replace(/_/g, " ").replace(/\b\w/g, (l:string)=>l.toUpperCase())}`
+                    : c.discordId;
+                return (
+                  <tr key={c.discordId} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => navigate(`/bank/${bank.id}/customers/${c.discordId}`)}>
+                    <td className="px-6 py-4 whitespace-nowrap text-white font-medium">
+                      <div className="flex items-center gap-3 font-sans">
+                         <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                           isUnassigned 
+                             ? 'bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20' 
+                             : 'bg-white/10 text-white/80 group-hover:bg-indigo-500/20 group-hover:text-indigo-400'
+                         }`}>
+                           <User size={14} />
+                         </div>
+                         <div className="flex flex-col">
+                           <span>{displayName}</span>
+                           {isUnassigned && (
+                             <span className="text-[10px] text-amber-500/80 font-medium">Click profile to assign Discord ID</span>
+                           )}
+                         </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-white/70">
+                      {c.accountCount} account(s)
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-emerald-400 font-medium">
+                        ${(c.totalBalance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-white/50 whitespace-nowrap text-xs">
+                      {c.firstJoined ? format(new Date(c.firstJoined), "MMM d, yyyy") : "-"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

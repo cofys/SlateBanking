@@ -46,7 +46,9 @@ export function BankSettings() {
       autoApproveLoans: formData.get("autoApproveLoans") === "on",
       autoApproveCreditCards: formData.get("autoApproveCreditCards") === "on",
       maxAutoApproveLoanAmount: parseFloat(formData.get("maxAutoApproveLoanAmount") as string) || 1000000,
-      customDomain: formData.get("customDomain")
+      customDomain: formData.get("customDomain"),
+      cityCorpAppId: formData.get("cityCorpAppId"),
+      cityCorpAppSecret: formData.get("cityCorpAppSecret")
     };
 
     fetch(`/api/banks/${bank.id}/settings`, {
@@ -256,6 +258,48 @@ export function BankSettings() {
              <span className="text-sm group-hover:text-emerald-400 transition-colors">Require KYC for new accounts (Simulated)</span>
           </label>
          </div>
+
+        {/* Whitelabel CityCorp Integration */}
+        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold mb-6">
+            <Layers className="text-amber-400" size={20} />
+            Whitelabel CityCorp OAuth Integration
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide flex items-center gap-2">
+                CityCorp Application ID
+              </label>
+              <input 
+                name="cityCorpAppId" 
+                type="text" 
+                placeholder="e.g. 4"
+                defaultValue={settings?.cityCorpAppId || ""} 
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+              />
+              <p className="text-xs text-white/40 mt-1.5">Your registered application ID on the CityCorp Developer Portal.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide flex items-center gap-2">
+                CityCorp App Token (Secret)
+              </label>
+              <input 
+                name="cityCorpAppSecret" 
+                type="password" 
+                placeholder="e.g. crp_vance_..."
+                defaultValue={settings?.cityCorpAppSecret || ""} 
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+              />
+              <p className="text-xs text-white/40 mt-1.5">Your secret token starting with crp_ used to authorize player profile validation.</p>
+            </div>
+          </div>
+          <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-200 leading-relaxed">
+            <strong>Configuration Guideline:</strong> Ensure your application's <strong>Redirect URI</strong> in the CityCorp Developer Portal is configured precisely to:<br />
+            <code className="text-white bg-black/40 px-1.5 py-0.5 rounded select-all font-mono">
+              {window.location.origin}/api/portal/{bank?.id}/oauth/callback
+            </code>
+          </div>
+        </div>
 
         {/* Feature Toggles */}
         <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">

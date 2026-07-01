@@ -16,6 +16,8 @@ export const banks = sqliteTable("banks", {
   corpId: integer("corp_id"),
   corpApiUuid: text("corp_api_uuid"),
   corpApiKey: text("corp_api_key"),
+  cityCorpAppId: text("city_corp_app_id"),
+  cityCorpAppSecret: text("city_corp_app_secret"),
   customDomain: text("custom_domain"),
   brandingColor: text("branding_color").default("#4f46e5"), // indigo-600
   logoUrl: text("logo_url"),
@@ -30,10 +32,12 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   bankId: text("bank_id").references(() => banks.id).notNull(),
   ownerDiscordId: text("owner_discord_id").notNull(),
   accountName: text("account_name").notNull(), // e.g. "Main Checking" or "Corp Savings"
-  accountType: text("account_type").default("personal"), // "personal", "business", "payroll"
+  accountType: text("account_type").default("personal"), // "personal", "business", "payroll", "system_asset", "system_revenue", "system_expense", "system_liability"
   balance: integer("balance").notNull().default(0), // stored in cents or lowest denominaton to avoid floats
   creditLimit: integer("credit_limit").notNull().default(0), // For credit accounts
   isActive: integer("is_active", { mode: "boolean" }).default(true),
+  isSystem: integer("is_system", { mode: "boolean" }).default(false),
+  systemCategory: text("system_category"), // e.g., "vault_cash", "fee_revenue", "interest_revenue", "clearinghouse"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
@@ -257,6 +261,40 @@ export const invoices = sqliteTable("invoices", {
   description: text("description"),
   dueDate: integer("due_date", { mode: "timestamp" }).notNull(),
   status: text("status").default("pending"), // pending, paid, overdue
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const bankCustomers = sqliteTable("bank_customers", {
+  id: text("id").primaryKey(),
+  bankId: text("bank_id").references(() => banks.id).notNull(),
+  discordId: text("discord_id").notNull(),
+  kycStatus: text("kyc_status").default("pending"), 
+  mcUuid: text("mc_uuid"),
+  mcUsername: text("mc_username"),
+  cityCorpToken: text("city_corp_token"),
+  notes: text("notes"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const loanProducts = sqliteTable("loan_products", {
+  id: text("id").primaryKey(),
+  bankId: text("bank_id").references(() => banks.id).notNull(),
+  name: text("name").notNull(),
+  interestRate: integer("interest_rate").notNull(), 
+  maxAmount: integer("max_amount").notNull(),
+  termDays: integer("term_days").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const creditProducts = sqliteTable("credit_products", {
+  id: text("id").primaryKey(),
+  bankId: text("bank_id").references(() => banks.id).notNull(),
+  name: text("name").notNull(),
+  interestRate: integer("interest_rate").notNull(), 
+  maxLimit: integer("max_limit").notNull(),
+  rewardsPercent: integer("rewards_percent").default(0),
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 

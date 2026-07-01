@@ -16,7 +16,11 @@ async function getBankClient(bankId: string) {
 const commands = [
   new SlashCommandBuilder()
     .setName('bank')
-    .setDescription('Open the Bank Dashboard.'),
+    .setDescription('Open the Bank Dashboard (Personal).'),
+  new SlashCommandBuilder()
+    .setName('spawn_atm')
+    .setDescription('Admin only: Spawn a permanent ATM menu in this channel.')
+    .setDefaultMemberPermissions(8) // Administrator only
 ].map(command => command.toJSON());
 
 export async function registerBankCommands(token: string, clientId: string) {
@@ -30,7 +34,10 @@ export async function registerBankCommands(token: string, clientId: string) {
 export async function handleBankInteraction(bankId: string, interaction: Interaction<CacheType>) {
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'bank') {
-      await showMainMenu(interaction);
+      await showMainMenu(interaction, true);
+    } else if (interaction.commandName === 'spawn_atm') {
+      await showMainMenu(interaction, false);
+      await interaction.reply({ content: "ATM spawned below.", ephemeral: true });
     }
     return;
   }
@@ -46,7 +53,16 @@ export async function handleBankInteraction(bankId: string, interaction: Interac
   }
 }
 
-async function showMainMenu(interaction: ChatInputCommandInteraction | ButtonInteraction) {
+
+async function safeReplyOrUpdate(interaction: ButtonInteraction, payload: any) {
+  if (interaction.message.flags.has(64)) {
+    await interaction.update(payload);
+  } else {
+    await interaction.reply({ ...payload, ephemeral: true });
+  }
+}
+
+async function showMainMenu(interaction: ChatInputCommandInteraction | ButtonInteraction, isEphemeral: boolean = true) {
   const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId('bank_balances').setLabel('💳 Account Balances').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('bank_transfer').setLabel('🔄 Transfer Funds').setStyle(ButtonStyle.Success),
@@ -62,8 +78,13 @@ async function showMainMenu(interaction: ChatInputCommandInteraction | ButtonInt
   const msg = {
     content: '🏦 **Welcome to the Bank Dashboard**\nSelect an option below to manage your finances:',
     components: [row1, row2],
-    ephemeral: true
+    ephemeral: isEphemeral
   };
+
+  if (!isEphemeral && interaction.channel) {
+    await (interaction.channel as any).send({ content: msg.content, components: msg.components });
+    return;
+  }
 
   if (interaction.deferred || interaction.replied) {
     await interaction.editReply(msg);
@@ -88,7 +109,7 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
   } else if (cid === 'bank_history') {
     await handleHistory(bankId, interaction);
   } else if (cid === 'bank_in_game_info') {
-    await interaction.update({ 
+    await safeReplyOrUpdate(interaction, { 
       content: '📥 **In-Game Commands**\n\nTo manage your money in-game, find an ATM or bank teller and use the following commands:\n\n**Deposit**: `/c account deposit CityCorp <account_name> <amount>`\n**Withdraw**: `/c account withdraw CityCorp <account_name> <amount>`', 
       components: [backButtonRow] 
     });
@@ -175,12 +196,12 @@ async function handleBalance(bankId: string, interaction: ButtonInteraction) {
   );
 
   if (accounts.length === 0) {
-    await interaction.update({ content: 'You do not have any bank accounts open here. Tap "Open Account" to create one.', components: [backButtonRow] });
+    await safeReplyOrUpdate(interaction, { content: 'You do not have any bank accounts open here. Tap "Open Account" to create one.', components: [backButtonRow] });
     return;
   }
 
   const list = accounts.map(a => `**${a.accountName}**: $${(a.balance / 100).toFixed(2)}`).join('\n');
-  await interaction.update({ 
+  await safeReplyOrUpdate(interaction, { 
     content: `🏦 **Your Open Accounts**\n${list}`, 
     components: [backButtonRow]
   });
@@ -330,7 +351,7 @@ async function handleLeaderboard(bankId: string, interaction: ButtonInteraction)
     .limit(10);
     
   if (topAccounts.length === 0) {
-    await interaction.update({ content: 'No accounts in this bank yet.', components: [backButtonRow] });
+    await safeReplyOrUpdate(interaction, { content: 'No accounts in this bank yet.', components: [backButtonRow] });
     return;
   }
   
@@ -338,7 +359,7 @@ async function handleLeaderboard(bankId: string, interaction: ButtonInteraction)
     `**${i + 1}.** <@${acc.ownerDiscordId}> - **${acc.accountName}**: $${(acc.balance / 100).toFixed(2)}`
   ).join('\n');
   
-  await interaction.update({ content: `🏆 **Richest Accounts Leaderboard**\n\n${leaderboardTxt}`, components: [backButtonRow] });
+  await safeReplyOrUpdate(interaction, { content: `🏆 **Richest Accounts Leaderboard**\n\n${leaderboardTxt}`, components: [backButtonRow] });
 }
 
 async function handleHistory(bankId: string, interaction: ButtonInteraction) {
@@ -348,7 +369,7 @@ async function handleHistory(bankId: string, interaction: ButtonInteraction) {
     .where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, interaction.user.id)));
     
   if (myAccounts.length === 0) {
-    await interaction.update({ content: 'You have no accounts in this bank.', components: [backButtonRow] });
+    await safeReplyOrUpdate(interaction, { content: 'You have no accounts in this bank.', components: [backButtonRow] });
     return;
   }
   
@@ -366,7 +387,7 @@ async function handleHistory(bankId: string, interaction: ButtonInteraction) {
     .limit(15);
     
   if (txHistory.length === 0) {
-    await interaction.update({ content: 'No recent transactions found.', components: [backButtonRow] });
+    await safeReplyOrUpdate(interaction, { content: 'No recent transactions found.', components: [backButtonRow] });
     return;
   }
   
@@ -383,6 +404,6 @@ async function handleHistory(bankId: string, interaction: ButtonInteraction) {
     historyTxt += `${prefix} $${(tx.amount / 100).toFixed(2)} (${tx.type}) - <t:${Math.floor(tx.timestamp.getTime()/1000)}:R> - ${tx.description}\n`;
   }
   
-  await interaction.update({ content: `📜 **Your Recent Transactions**\n\n${historyTxt}`, components: [backButtonRow] });
+  await safeReplyOrUpdate(interaction, { content: `📜 **Your Recent Transactions**\n\n${historyTxt}`, components: [backButtonRow] });
 }
 
