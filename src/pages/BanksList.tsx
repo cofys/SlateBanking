@@ -423,20 +423,34 @@ export function BanksList() {
               </div>
 
               <div className="pt-2 border-t border-white/5 space-y-4">
-                <h3 className="text-sm font-medium text-white/90">CityCorp Bot API Integration</h3>
-                <div>
-                  <label className="block text-xs text-white/70 mb-1">Corporation ID</label>
-                  <input 
-                    required
-                    type="number"
-                    value={corpId}
-                    onChange={(e) => setCorpId(e.target.value)}
-                    placeholder="e.g. 1"
-                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-                  />
+                <h3 className="text-sm font-medium text-white/90">CityCorp Integration</h3>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-white/70 mb-1">Corporation ID</label>
+                    <input 
+                      required
+                      type="number"
+                      value={corpId}
+                      onChange={(e) => setCorpId(e.target.value)}
+                      placeholder="e.g. 1"
+                      className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-white/70 mb-1">Application ID (OAuth)</label>
+                    <input 
+                      required
+                      value={cityCorpAppId}
+                      onChange={(e) => setCityCorpAppId(e.target.value)}
+                      placeholder="e.g. 4"
+                      className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
                 </div>
+
                 <div>
-                  <label className="block text-xs text-white/70 mb-1">Bot Auth UUID</label>
+                  <label className="block text-xs text-white/70 mb-1">Bot Auth UUID (Minecraft UUID)</label>
                   <input 
                     required
                     value={corpApiUuid}
@@ -445,41 +459,24 @@ export function BanksList() {
                     className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-white/70 mb-1">Bot API Key</label>
-                  <input 
-                    required
-                    type="password"
-                    value={corpApiKey}
-                    onChange={(e) => setCorpApiKey(e.target.value)}
-                    placeholder="CityCorp API Key"
-                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
 
-              <div className="pt-2 border-t border-white/5 space-y-4">
-                <h3 className="text-sm font-medium text-white/90">CityCorp OAuth Integration (Whitelabel)</h3>
                 <div>
-                  <label className="block text-xs text-white/70 mb-1">Application ID</label>
-                  <input 
-                    required
-                    value={cityCorpAppId}
-                    onChange={(e) => setCityCorpAppId(e.target.value)}
-                    placeholder="e.g. 4"
-                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-white/70 mb-1">Application Secret</label>
+                  <label className="block text-xs text-white/70 mb-1">CityCorp App Token (API Key & Secret)</label>
                   <input 
                     required
                     type="password"
                     value={cityCorpAppSecret}
-                    onChange={(e) => setCityCorpAppSecret(e.target.value)}
-                    placeholder="OAuth Secret"
-                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCityCorpAppSecret(val);
+                      setCorpApiKey(val);
+                    }}
+                    placeholder="e.g. crp_vance_..."
+                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-white/20"
                   />
+                  <p className="text-[10px] text-white/40 mt-1">
+                    CityCorp issues a single unified <strong>App Token</strong> (starting with <code className="text-indigo-300">crp_</code>). This functions as both your Bot API Key for general ledger sync and your Whitelabel OAuth Secret.
+                  </p>
                 </div>
               </div>
               

@@ -2501,7 +2501,10 @@ async function startServer() {
       if (req.body.cityCorpAppId !== undefined || req.body.cityCorpAppSecret !== undefined) {
          const updateData: any = {};
          if (req.body.cityCorpAppId !== undefined) updateData.cityCorpAppId = req.body.cityCorpAppId;
-         if (req.body.cityCorpAppSecret !== undefined) updateData.cityCorpAppSecret = req.body.cityCorpAppSecret;
+         if (req.body.cityCorpAppSecret !== undefined) {
+            updateData.cityCorpAppSecret = req.body.cityCorpAppSecret;
+            updateData.corpApiKey = req.body.cityCorpAppSecret; // Unified App Token synchronizes to corpApiKey
+         }
          await db.update(banks).set(updateData).where(eq(banks.id, bId));
       }
 

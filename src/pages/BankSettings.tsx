@@ -281,7 +281,7 @@ export function BankSettings() {
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide flex items-center gap-2">
-                CityCorp App Token (Secret)
+                CityCorp App Token (API Key & Secret)
               </label>
               <input 
                 name="cityCorpAppSecret" 
@@ -290,7 +290,9 @@ export function BankSettings() {
                 defaultValue={settings?.cityCorpAppSecret || ""} 
                 className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
-              <p className="text-xs text-white/40 mt-1.5">Your secret token starting with crp_ used to authorize player profile validation.</p>
+              <p className="text-xs text-white/40 mt-1.5">
+                CityCorp issues a single unified <strong>App Token</strong> (starting with <code className="text-indigo-300">crp_</code>) which functions as both your Bot API Key and your Whitelabel OAuth Secret.
+              </p>
             </div>
           </div>
           <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-200 leading-relaxed">
