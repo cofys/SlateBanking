@@ -2047,7 +2047,7 @@ async function startServer() {
   });
 
   // Team Management
-  app.get("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owner", "admin"])], async (req, res) => {
+  app.get("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { bankStaff } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -2060,7 +2060,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owner", "admin"])], async (req, res) => {
+  app.post("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { bankStaff } = await import("./src/db/schema");
     const { v4: uuidv4 } = await import("uuid");
@@ -2080,7 +2080,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requireRole(["owner"])], async (req, res) => {
+  app.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requireRole(["owner"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { bankStaff } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -2283,7 +2283,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["owner", "admin"])], async (req, res) => {
+  app.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { bankSettings, banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -3879,7 +3879,7 @@ async function startServer() {
   app.post("/api/banks/:bankId/transactions", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, banks } = await import("./src/db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
@@ -3900,7 +3900,7 @@ async function startServer() {
       if (accountRes.length === 0) return res.status(404).json({ error: "Source account not found locally" });
       const account = accountRes[0];
 
-      let toAccountRes = [];
+      let toAccountRes: any[] = [];
       if (type === 'transfer' && toAccountName) {
         toAccountRes = await db.select().from(bankAccounts).where(eq(bankAccounts.accountName, toAccountName)).limit(1);
         if (toAccountRes.length === 0) return res.status(404).json({ error: "Destination account not found locally" });
