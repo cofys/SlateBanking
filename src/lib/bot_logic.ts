@@ -233,7 +233,7 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     await handleHistory(bankId, interaction);
   } else if (cid === 'bank_in_game_info') {
     await safeReplyOrUpdate(interaction, { 
-      content: '📥 **In-Game Commands**\n\nTo manage your money in-game, find an ATM or bank teller and use the following commands:\n\n**Deposit**: `/c account deposit <corpname> <account_name> <amount>`\n**Withdraw**: `/c account withdraw <corpname> <account_name> <amount>`', 
+      content: '📥 **In-Game Commands**\n\nTo manage your money in-game, find an ATM or bank teller and use the following commands:\n\n**Deposit**: `/c account deposit corpname accountname amount`\n**Withdraw**: `/c account withdraw corpname accountname amount`', 
       components: [backButtonRow] 
     });
   } else if (cid === 'bank_open_account') {

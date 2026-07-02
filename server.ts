@@ -21,7 +21,7 @@ async function startServer() {
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false
   }));
-  app.use(express.json());
+  app.use(express.json({ limit: "50mb" }));
   app.use(cookieParser());
   app.use(cors());
 
@@ -513,6 +513,210 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.put("/api/banks/:id/billing", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      const { plan, billingStatus, platformFeePercent } = req.body;
+      await db.update(banks).set({
+        plan: plan || "standard",
+        billingStatus: billingStatus || "active",
+        platformFeePercent: platformFeePercent !== undefined ? Math.round(Number(platformFeePercent) * 100) : 200
+      }).where(eq(banks.id, req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Failed to update billing settings" });
+    }
+  });
+
+  app.post("/api/banks/:id/upload-db", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { bankAccounts, transactions, auditLogs } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+    const fs = await import("fs");
+    const path = await import("path");
+    
+    let tempFilePath = "";
+    try {
+      const { content } = req.body;
+      if (!content) {
+        return res.status(400).json({ error: "Missing file content" });
+      }
+      
+      const bankId = req.params.id;
+      const tempDir = path.join(process.cwd(), "data", "temp");
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      
+      tempFilePath = path.join(tempDir, `${bankId}_${Date.now()}_temp.db`);
+      const buffer = Buffer.from(content, "base64");
+      fs.writeFileSync(tempFilePath, buffer);
+      
+      // Open the uploaded SQLite database using better-sqlite3
+      const DatabaseConstructor = (await import("better-sqlite3")).default;
+      const uploadDb = new DatabaseConstructor(tempFilePath);
+      
+      // Find all tables in the uploaded database
+      const tables = uploadDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
+      
+      let accountsImported = 0;
+      let transactionsImported = 0;
+      
+      // We'll search for common legacy table names
+      const accountsTable = tables.find(t => 
+        ['accounts', 'bank_accounts', 'users', 'players', 'clients', 'customers'].includes(t.name.toLowerCase())
+      )?.name;
+      
+      const transactionsTable = tables.find(t => 
+        ['transactions', 'transfers', 'history', 'ledger', 'audit_logs'].includes(t.name.toLowerCase())
+      )?.name;
+      
+      if (!accountsTable) {
+        uploadDb.close();
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        return res.status(400).json({ 
+          error: `Could not identify an accounts or users table. Tables found: ${tables.map(t => t.name).join(", ")}` 
+        });
+      }
+      
+      // Query columns of the accounts table to map dynamically
+      const columnsInfo = uploadDb.prepare(`PRAGMA table_info(${accountsTable})`).all() as { name: string }[];
+      const colNames = columnsInfo.map(c => c.name.toLowerCase());
+      
+      const idCol = columnsInfo.find(c => ['id', 'uuid', 'discord_id', 'discordid', 'owner', 'player'].includes(c.name.toLowerCase()))?.name;
+      const nameCol = columnsInfo.find(c => ['name', 'account_name', 'accountname', 'username', 'title'].includes(c.name.toLowerCase()))?.name;
+      const balanceCol = columnsInfo.find(c => ['balance', 'amount', 'money', 'cents', 'total'].includes(c.name.toLowerCase()))?.name;
+      const discordIdCol = columnsInfo.find(c => ['discord_id', 'discordid', 'owner_discord_id', 'user_id', 'userid'].includes(c.name.toLowerCase()))?.name;
+      
+      if (!balanceCol) {
+        uploadDb.close();
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        return res.status(400).json({ error: `Could not find a balance/amount column in table '${accountsTable}'` });
+      }
+      
+      // Read accounts
+      const legacyAccounts = uploadDb.prepare(`SELECT * FROM ${accountsTable}`).all() as any[];
+      
+      for (const legacyAcc of legacyAccounts) {
+        const rawDiscordId = discordIdCol ? legacyAcc[discordIdCol] : (idCol ? legacyAcc[idCol] : null);
+        if (!rawDiscordId) continue;
+        
+        const discordId = rawDiscordId.toString();
+        const accountName = nameCol ? legacyAcc[nameCol] : `Legacy Account (${discordId})`;
+        
+        let balanceVal = legacyAcc[balanceCol] || 0;
+        let balanceCents = Math.round(Number(balanceVal) * 100);
+        if (colNames.includes('cents') || balanceCol.toLowerCase().includes('cents')) {
+          balanceCents = Number(balanceVal);
+        }
+        
+        // Check if account already exists
+        const existing = await db.select().from(bankAccounts).where(
+          and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, discordId))
+        );
+        
+        let targetAccountId;
+        if (existing.length === 0) {
+          targetAccountId = uuidv4();
+          await db.insert(bankAccounts).values({
+            id: targetAccountId,
+            bankId,
+            ownerDiscordId: discordId,
+            accountName: accountName.toString(),
+            balance: balanceCents,
+            isActive: true,
+            createdAt: new Date()
+          });
+          accountsImported++;
+        } else {
+          targetAccountId = existing[0].id;
+          await db.update(bankAccounts).set({ balance: existing[0].balance + balanceCents }).where(eq(bankAccounts.id, targetAccountId));
+        }
+        
+        // If transactions table exists, let's map them for this account
+        if (transactionsTable) {
+          const txColumns = uploadDb.prepare(`PRAGMA table_info(${transactionsTable})`).all() as { name: string }[];
+          const txColNames = txColumns.map(c => c.name.toLowerCase());
+          
+          const txAmountCol = txColumns.find(c => ['amount', 'value', 'price', 'cents', 'total'].includes(c.name.toLowerCase()))?.name;
+          const txTypeCol = txColumns.find(c => ['type', 'category', 'action'].includes(c.name.toLowerCase()))?.name;
+          const txDescCol = txColumns.find(c => ['description', 'memo', 'note', 'reason', 'details'].includes(c.name.toLowerCase()))?.name;
+          const txTimeCol = txColumns.find(c => ['timestamp', 'date', 'created_at', 'createdat', 'time'].includes(c.name.toLowerCase()))?.name;
+          const txAccountCol = txColumns.find(c => ['account_id', 'accountid', 'account', 'owner', 'player'].includes(c.name.toLowerCase()))?.name;
+          
+          if (txAmountCol) {
+            let query = `SELECT * FROM ${transactionsTable}`;
+            let params: any[] = [];
+            if (txAccountCol) {
+              query += ` WHERE ${txAccountCol} = ?`;
+              params.push(legacyAcc[idCol || discordIdCol || 'id']);
+            }
+            
+            try {
+              const legacyTransactions = uploadDb.prepare(query).all(params) as any[];
+              for (const legacyTx of legacyTransactions) {
+                let txAmt = legacyTx[txAmountCol] || 0;
+                let txAmtCents = Math.round(Number(txAmt) * 100);
+                if (txColNames.includes('cents') || txAmountCol.toLowerCase().includes('cents')) {
+                  txAmtCents = Number(txAmt);
+                }
+                
+                const txType = txTypeCol ? legacyTx[txTypeCol] : 'deposit';
+                const txDesc = txDescCol ? legacyTx[txDescCol] : 'Legacy imported transaction';
+                const txTime = txTimeCol ? new Date(legacyTx[txTimeCol]) : new Date();
+                
+                const isOutflow = ['withdraw', 'withdrawal', 'fee', 'tax', 'debit'].includes(txType.toString().toLowerCase()) || txAmtCents < 0;
+                
+                await db.insert(transactions).values({
+                  id: uuidv4(),
+                  bankId,
+                  fromAccountId: isOutflow ? targetAccountId : null,
+                  toAccountId: !isOutflow ? targetAccountId : null,
+                  type: isOutflow ? 'withdraw' : 'deposit',
+                  amount: Math.abs(txAmtCents),
+                  description: txDesc.toString(),
+                  timestamp: txTime
+                });
+                transactionsImported++;
+              }
+            } catch (txErr) {
+              console.error("Failed to import transactions for account", discordId, txErr);
+            }
+          }
+        }
+      }
+      
+      uploadDb.close();
+      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+      
+      // Audit Log entry
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId,
+        userDiscordId: "GlobalAdmin",
+        action: "database_import",
+        details: `Imported bank.db SQLite migration file. Accounts created: ${accountsImported}, Transactions: ${transactionsImported}`,
+        timestamp: new Date()
+      });
+      
+      res.json({
+        success: true,
+        accountsImported,
+        transactionsImported
+      });
+    } catch (e: any) {
+      console.error(e);
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
+        try { fs.unlinkSync(tempFilePath); } catch (_) {}
+      }
+      res.status(500).json({ error: e.message || "Failed to process database migration" });
     }
   });
 

@@ -9,6 +9,7 @@ export function BankInvoices() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState<any | null>(null);
   
   const fetchInvoices = () => {
     setLoading(true);
@@ -170,14 +171,25 @@ export function BankInvoices() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                       {inv.status === 'pending' && (
+                       <div className="flex justify-end gap-3 items-center">
                          <button 
-                           onClick={() => handleCancel(inv.id)}
-                           className="text-white/50 hover:text-red-400 transition-colors text-xs font-medium"
+                           type="button"
+                           onClick={() => setSelectedInvoiceForPrint(inv)}
+                           className="text-indigo-400 hover:text-indigo-300 transition-colors text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                          >
-                           Cancel
+                           <FileText size={12} />
+                           Invoice PDF
                          </button>
-                       )}
+                         {inv.status === 'pending' && (
+                           <button 
+                             type="button"
+                             onClick={() => handleCancel(inv.id)}
+                             className="text-white/50 hover:text-red-400 transition-colors text-xs font-medium cursor-pointer"
+                           >
+                             Cancel
+                           </button>
+                         )}
+                       </div>
                     </td>
                   </tr>
                 ))}
@@ -185,6 +197,176 @@ export function BankInvoices() {
           </table>
         )}
       </div>
+
+      {selectedInvoiceForPrint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
+          <style dangerouslySetInnerHTML={{__html: `
+            @media print {
+              body * {
+                visibility: hidden;
+              }
+              #printable-invoice, #printable-invoice * {
+                visibility: visible;
+              }
+              #printable-invoice {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                background: white !important;
+                color: black !important;
+              }
+            }
+          `}} />
+          <div className="bg-[#0f0f15] border border-white/10 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] print:max-h-none print:border-0 print:shadow-none print:w-full print:bg-white print:rounded-none">
+            {/* Header controls (hidden on print) */}
+            <div className="bg-[#0a0a0c] border-b border-white/10 px-6 py-4 flex justify-between items-center print:hidden">
+              <div className="flex items-center gap-2">
+                <FileText className="text-indigo-400" size={18} />
+                <span className="font-semibold text-white">Invoice Document (PDF Preview)</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button 
+                  type="button"
+                  onClick={() => window.print()}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-all cursor-pointer"
+                >
+                  Print / Save PDF
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setSelectedInvoiceForPrint(null)}
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors text-white cursor-pointer"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Document Area */}
+            <div id="printable-invoice" className="p-12 overflow-y-auto bg-white text-slate-900 font-sans print:p-0 print:overflow-visible flex-1 flex flex-col justify-between">
+              <div>
+                {/* Official Invoice Letterhead */}
+                <div className="flex justify-between items-start border-b-2 border-indigo-900 pb-8 mb-8">
+                  <div>
+                    <h1 className="text-3xl font-extrabold tracking-tight text-indigo-950 uppercase">{bank.name}</h1>
+                    <p className="text-xs font-mono text-indigo-800 tracking-wider mt-1">Onyx Clearinghouse Member No. #{bank.id.substring(0, 8).toUpperCase()}</p>
+                    <p className="text-xs text-slate-500 mt-4 leading-normal">
+                      100 Financial Plaza, Suite 400<br />
+                      Global Digital Clearing, ONYX-900<br />
+                      support@{bank.name.toLowerCase().replace(/\s+/g, '')}.com
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <h2 className="text-3xl font-extrabold text-indigo-950 uppercase tracking-wider">INVOICE</h2>
+                    <p className="text-xs font-mono text-slate-500 mt-1">Invoice ID: {selectedInvoiceForPrint.id}</p>
+                    <div className="mt-4 inline-block">
+                      <span className={`px-2.5 py-1 rounded text-xs font-mono font-bold uppercase tracking-wider ${
+                        selectedInvoiceForPrint.status === 'paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                        selectedInvoiceForPrint.status === 'cancelled' ? 'bg-zinc-100 text-zinc-800 border border-zinc-300' :
+                        (new Date(selectedInvoiceForPrint.dueDate) < new Date() && selectedInvoiceForPrint.status === 'pending') ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                        'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}>
+                        {selectedInvoiceForPrint.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Billing Addresses */}
+                <div className="grid grid-cols-2 gap-8 mb-10 text-sm">
+                  <div>
+                    <h3 className="text-xs font-mono uppercase text-indigo-900 tracking-wider mb-2 font-bold">Biller (Receiver)</h3>
+                    <p className="font-bold text-slate-900">{bank.name} Operator Ledger</p>
+                    <p className="font-mono text-xs text-slate-500 mt-1">Account ID: {selectedInvoiceForPrint.billerAccountId}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-mono uppercase text-indigo-900 tracking-wider mb-2 font-bold">Customer (Billed Party)</h3>
+                    <p className="font-bold text-slate-900">Registered Client Member Account</p>
+                    <p className="font-mono text-xs text-slate-500 mt-1">Account ID: {selectedInvoiceForPrint.customerAccountId}</p>
+                  </div>
+                </div>
+
+                {/* Dates Block */}
+                <div className="grid grid-cols-3 gap-4 mb-10 bg-slate-50 border border-slate-100 rounded-xl p-4 text-xs">
+                  <div>
+                    <span className="text-slate-400 block uppercase font-mono tracking-wider">Date Issued</span>
+                    <span className="font-bold text-slate-800">{format(new Date(), "MMMM d, yyyy")}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block uppercase font-mono tracking-wider">Due Date</span>
+                    <span className="font-bold text-slate-800">{format(new Date(selectedInvoiceForPrint.dueDate), "MMMM d, yyyy")}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block uppercase font-mono tracking-wider">Payment Term</span>
+                    <span className="font-bold text-slate-800">Net Payable Upon Receipt</span>
+                  </div>
+                </div>
+
+                {/* Itemized Line Items */}
+                <div className="mb-10">
+                  <h3 className="text-xs font-mono uppercase text-indigo-900 tracking-wider mb-3 font-bold">Line Items</h3>
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b-2 border-slate-300 text-slate-500 uppercase font-mono tracking-wider">
+                        <th className="py-2.5 font-semibold">Service Description</th>
+                        <th className="py-2.5 font-semibold text-right">Qty</th>
+                        <th className="py-2.5 font-semibold text-right">Unit Price</th>
+                        <th className="py-2.5 font-semibold text-right">Total Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      <tr>
+                        <td className="py-4">
+                          <span className="font-bold text-slate-900 text-sm">{selectedInvoiceForPrint.description}</span>
+                          <span className="block text-[10px] text-slate-400 mt-1">Standard digital billing ledger transaction entry.</span>
+                        </td>
+                        <td className="py-4 text-right font-mono text-slate-700">1</td>
+                        <td className="py-4 text-right font-mono text-slate-700">${(selectedInvoiceForPrint.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="py-4 text-right font-mono font-bold text-slate-900">${(selectedInvoiceForPrint.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Calculation breakdown */}
+                <div className="flex justify-end text-sm">
+                  <div className="w-80 space-y-2 border-t border-slate-200 pt-4">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Subtotal:</span>
+                      <span className="font-mono">${(selectedInvoiceForPrint.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500">
+                      <span>Clearing Fees (0.00%):</span>
+                      <span className="font-mono">$0.00</span>
+                    </div>
+                    <div className="flex justify-between border-t-2 border-indigo-900 pt-2 text-indigo-950 font-bold text-base">
+                      <span>Total Due (USD):</span>
+                      <span className="font-mono">${(selectedInvoiceForPrint.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Legal disclosure and Stamp */}
+              <div className="border-t border-slate-200 pt-8 mt-12 flex justify-between items-end text-[10px] text-slate-400 leading-normal">
+                <div>
+                  <p className="font-semibold text-slate-500 uppercase tracking-wide mb-1">Slate SaaS Global Clearing System Invoice</p>
+                  <p className="max-w-xl">
+                    This invoice was generated electronically via the secure Onyx Global Clearing and settlement system. Authorized agents and compliance officers can trace transaction reference hashes using public docs and audit trails. Settlement must occur directly from registered bank balances.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="border border-indigo-900/20 rounded-full px-5 py-3.5 inline-block bg-indigo-50/10 text-indigo-950 font-serif italic text-center text-xs tracking-wider border-dashed">
+                    Slate Authorized<br />
+                    <span className="font-sans text-[8px] font-mono uppercase text-indigo-800 not-italic tracking-widest font-bold">SECURE INVOICE</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

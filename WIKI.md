@@ -221,3 +221,8 @@ To expand Slate SaaS, always follow the tri-level approach:
 - **Compliance & Fraud Module**: Deployed a dedicated "Compliance" Operations dashboard (`BankCompliance.tsx`) inside the bank portal. 
   - **Transaction Monitoring**: High-value transactions (over $10,000) are automatically marked as `isFlagged` inside the double-entry general ledger to support BSA/AML workflows, alerting bank compliance staff.
   - **Asset Freezing**: Bank accounts can now be given an `isFrozen` status, isolating suspicious deposits or stopping outflows. The Compliance UI allows for manual review and subsequent unfreezing of assets or resolution of flags.
+
+### July 2nd 2026 Update
+- **Finance-Grade CD Savings Vaults**: Upgraded the old savings vaults into an authentic, sophisticated "Certificates of Deposit" (CD) system. It features real-time accrued interest based on total days elapsed vs. total maturity days, projected maturity value calculations (using current interest rate/APR), and a visual maturity progress bar. Includes real-time risk mitigation displays showing early forfeit warnings and specialized redeem capabilities.
+- **Official Print & PDF Exporting Engine**: Integrated client-side rendering overrides supporting instant print-to-PDF workflows for Bank Invoices and Ledger Statements. It features an automated `@media print` style injection that dynamically hides normal UI elements, scrollbars, and buttons, isolates only the formal, elegant corporate document container on a pristine white A4 background, and opens the native print dialog for pixel-perfect PDF rendering.
+

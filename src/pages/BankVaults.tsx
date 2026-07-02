@@ -121,75 +121,126 @@ export function BankVaults() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {vaults.map(vault => {
+             const createdAt = new Date(vault.createdAt);
              const lockedUntil = new Date(vault.lockedUntil);
              const now = new Date();
              const isLocked = vault.status === "locked";
              const isReady = isLocked && now >= lockedUntil;
              
+             // Time calculations
+             const totalDurationMs = lockedUntil.getTime() - createdAt.getTime();
+             const elapsedMs = now.getTime() - createdAt.getTime();
+             const totalDays = Math.max(1, Math.round(totalDurationMs / (1000 * 60 * 60 * 24)));
+             const daysElapsed = Math.min(totalDays, Math.max(0, Math.round(elapsedMs / (1000 * 60 * 60 * 24))));
+             const progressPercent = totalDurationMs > 0 ? Math.min(100, Math.max(0, (elapsedMs / totalDurationMs) * 100)) : 100;
+
+             // Financial projections
+             const principalUSD = vault.amount / 100;
+             const rateFraction = vault.interestRate / 10000;
+             
+             const accruedInterestUSD = (principalUSD * rateFraction) * (daysElapsed / 365);
+             const maturityInterestUSD = (principalUSD * rateFraction) * (totalDays / 365);
+             const maturityValueUSD = principalUSD + maturityInterestUSD;
+             
              return (
-              <div key={vault.id} className="relative group bg-slate-900 border border-white/10 rounded-2xl p-6 overflow-hidden flex flex-col justify-between">
-                
-                <div className="flex justify-between items-start mb-6 relative z-10">
-                  <div className="flex items-center gap-2">
-                    <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-400">
-                      <Lock size={20} />
-                    </div>
-                  </div>
-                  <div>
-                    {vault.status === "locked" ? (
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${isReady ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
-                        {isReady ? "READY" : "LOCKED"}
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 rounded text-xs font-medium bg-slate-800 text-slate-400 uppercase">
-                        {vault.status.replace('_', ' ')}
-                      </span>
-                    )}
-                  </div>
-                </div>
+               <div key={vault.id} className="relative group bg-[#0e0e15] border border-amber-500/10 hover:border-amber-500/30 rounded-2xl p-6 overflow-hidden flex flex-col justify-between shadow-xl transition-all duration-300 hover:-translate-y-1">
+                 
+                 <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/[0.02] rounded-full blur-2xl pointer-events-none group-hover:bg-amber-500/[0.04] transition-all" />
+                 
+                 <div className="flex justify-between items-start mb-4 relative z-10">
+                   <div className="flex items-center gap-2">
+                     <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                       <Lock size={20} className="group-hover:rotate-12 transition-transform" />
+                     </div>
+                     <div>
+                       <span className="text-[10px] font-mono tracking-wider text-amber-500 font-semibold block uppercase">Series CD-2026</span>
+                       <span className="text-white font-semibold text-sm">Certificate of Deposit</span>
+                     </div>
+                   </div>
+                   <div>
+                     {vault.status === "locked" ? (
+                       <span className={`px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider ${isReady ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border border-amber-500/20"}`}>
+                         {isReady ? "Mature" : "Accruing"}
+                       </span>
+                     ) : (
+                       <span className="px-2 py-1 rounded text-[10px] font-mono font-semibold bg-slate-800 text-slate-400 uppercase tracking-wider">
+                         {vault.status.replace("_", " ")}
+                       </span>
+                     )}
+                   </div>
+                 </div>
 
-                <div className="relative z-10 mb-6">
-                  <div className="text-sm text-white/50 mb-1">Locked Amount</div>
-                  <div className="text-3xl font-mono text-white tracking-tight">
-                    ${(vault.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </div>
-                </div>
+                 <div className="relative z-10 mb-5 bg-[#08080c] border border-white/[0.03] rounded-xl p-4">
+                   <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider mb-1">Face Value (Principal)</div>
+                   <div className="text-3xl font-mono font-semibold text-white tracking-tight flex items-baseline">
+                     <span className="text-amber-500/80 text-xl font-sans mr-0.5">$</span>
+                     {principalUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                   </div>
+                   
+                   {isLocked && (
+                     <div className="mt-4 space-y-1.5">
+                       <div className="flex justify-between text-[10px] font-mono text-white/50">
+                         <span>Maturity Progress</span>
+                         <span>{progressPercent.toFixed(0)}% ({daysElapsed}/{totalDays} days)</span>
+                       </div>
+                       <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                         <div 
+                           className="bg-gradient-to-r from-amber-600 to-amber-400 h-full rounded-full transition-all duration-500"
+                           style={{ width: `${progressPercent}%` }}
+                         />
+                       </div>
+                     </div>
+                   )}
+                 </div>
 
-                <div className="space-y-3 relative z-10">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-white/50 flex items-center gap-1.5"><Wallet size={14}/> Account</span>
-                    <span className="text-white/90 font-medium">{vault.accountName}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-white/50 flex items-center gap-1.5"><Clock size={14}/> Unlocks</span>
-                    <span className="text-white/90 font-medium">{lockedUntil.toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-white/50">APR</span>
-                    <span className="text-emerald-400 font-medium font-mono">{(vault.interestRate / 100).toFixed(2)}%</span>
-                  </div>
-                </div>
+                 <div className="space-y-2.5 relative z-10 text-xs border-t border-white/5 pt-4">
+                   <div className="flex items-center justify-between text-xs">
+                     <span className="text-white/40 flex items-center gap-1.5"><Wallet size={12}/> Target Account</span>
+                     <span className="text-white/80 font-medium font-mono text-right truncate max-w-[140px]">{vault.accountName}</span>
+                   </div>
+                   <div className="flex items-center justify-between text-xs">
+                     <span className="text-white/40 flex items-center gap-1.5"><Clock size={12}/> Maturity Date</span>
+                     <span className="text-white/80 font-medium font-mono">{lockedUntil.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</span>
+                   </div>
+                   <div className="flex items-center justify-between text-xs">
+                     <span className="text-white/40">Interest Rate (APR)</span>
+                     <span className="text-emerald-400 font-bold font-mono">{(vault.interestRate / 100).toFixed(2)}%</span>
+                   </div>
+                   <div className="flex items-center justify-between text-xs border-t border-white/[0.04] pt-2.5">
+                     <span className="text-white/40">Accrued Interest</span>
+                     <span className="text-emerald-400/90 font-mono font-medium">+${accruedInterestUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                   </div>
+                   <div className="flex items-center justify-between text-xs">
+                     <span className="text-white/40">Est. Maturity Yield</span>
+                     <span className="text-amber-400 font-bold font-mono">${maturityValueUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                   </div>
+                 </div>
 
-                {isLocked && (
-                  <div className="mt-6 relative z-10">
-                    <button 
-                      onClick={() => handleRelease(vault.id)}
-                      className={`w-full py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-colors border ${isReady ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-transparent' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'}`}
-                    >
-                      <Unlock size={16} />
-                      {isReady ? "Claim Vault" : "Force Early Release"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
+                 {isLocked && (
+                   <div className="mt-5 relative z-10 space-y-2">
+                     {!isReady && (
+                       <p className="text-[10px] font-mono text-red-400/70 text-center leading-normal">
+                         ⚠ Warning: Early release forfeits all accrued interest.
+                       </p>
+                     )}
+                     <button 
+                       onClick={() => handleRelease(vault.id)}
+                       className={`w-full py-2.5 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-all border ${isReady ? "bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white border-transparent shadow-lg shadow-emerald-900/20 cursor-pointer" : "bg-transparent hover:bg-red-500/10 text-red-400 border-red-500/20 hover:border-red-500/40 cursor-pointer"}`}
+                     >
+                       <Unlock size={14} />
+                       {isReady ? "Redeem Certificate" : "Forfeit Interest & Withdraw"}
+                     </button>
+                   </div>
+                 )}
+               </div>
+             );
           })}
         </div>
       )}
 
-      {/* Add Vault Modal */}
+            {/* Add Vault Modal */}
       <AnimatePresence>
         {showAddModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">

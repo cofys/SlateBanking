@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, useParams, Link } from "react-router-dom";
-import { ArrowLeft, Wallet, Activity, CreditCard, Clock, Lock, Trash2, ArrowUpRight, ArrowDownRight, Plus, Minus, Loader2, Pencil } from "lucide-react";
+import { ArrowLeft, Wallet, Activity, CreditCard, Clock, Lock, Trash2, ArrowUpRight, ArrowDownRight, Plus, Minus, Loader2, Pencil, FileText, XCircle } from "lucide-react";
 import { format } from "date-fns";
 
 export function BankAccountDetail() {
@@ -13,6 +13,7 @@ export function BankAccountDetail() {
   const [wireToBankId, setWireToBankId] = useState('');
   const [wireToAccountName, setWireToAccountName] = useState('');
   const [txSubmitting, setTxSubmitting] = useState(false);
+  const [showPrintStatement, setShowPrintStatement] = useState(false);
 
   // For retrieving networks in wire transfer
   const [networkBanks, setNetworkBanks] = useState<any[]>([]);
@@ -288,6 +289,14 @@ export function BankAccountDetail() {
                 <Activity className="text-emerald-400" size={18} />
                 Ledger History
               </h3>
+              <button 
+                type="button"
+                onClick={() => setShowPrintStatement(true)}
+                className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border border-indigo-500/20 cursor-pointer"
+              >
+                <FileText size={14} />
+                Export Statement (PDF)
+              </button>
             </div>
             
             <div className="flex-1 overflow-y-auto min-h-[400px]">
@@ -328,6 +337,154 @@ export function BankAccountDetail() {
           </div>
         </div>
       </div>
+
+      {showPrintStatement && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
+          <style dangerouslySetInnerHTML={{__html: `
+            @media print {
+              body * {
+                visibility: hidden;
+              }
+              #printable-statement, #printable-statement * {
+                visibility: visible;
+              }
+              #printable-statement {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                background: white !important;
+                color: black !important;
+              }
+            }
+          `}} />
+          <div className="bg-[#0f0f15] border border-white/10 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] print:max-h-none print:border-0 print:shadow-none print:w-full print:bg-white print:rounded-none">
+            {/* Header controls (hidden on print) */}
+            <div className="bg-[#0a0a0c] border-b border-white/10 px-6 py-4 flex justify-between items-center print:hidden">
+              <div className="flex items-center gap-2">
+                <FileText className="text-indigo-400" size={18} />
+                <span className="font-semibold text-white">Official Bank Statement (PDF Preview)</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button 
+                  type="button"
+                  onClick={() => window.print()}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-all cursor-pointer"
+                >
+                  Print / Save PDF
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowPrintStatement(false)}
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors text-white cursor-pointer"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Document Area */}
+            <div id="printable-statement" className="p-12 overflow-y-auto bg-white text-slate-900 font-sans print:p-0 print:overflow-visible flex-1 flex flex-col justify-between">
+              <div>
+                {/* Official Statement Letterhead */}
+                <div className="flex justify-between items-start border-b-2 border-indigo-900 pb-8 mb-8">
+                  <div>
+                    <h1 className="text-3xl font-extrabold tracking-tight text-indigo-950 uppercase">{bank.name}</h1>
+                    <p className="text-xs font-mono text-indigo-800 tracking-wider mt-1">Onyx Clearinghouse Member No. #{bank.id.substring(0, 8).toUpperCase()}</p>
+                    <p className="text-xs text-slate-500 mt-4 leading-normal">
+                      100 Financial Plaza, Suite 400<br />
+                      Global Digital Clearing, ONYX-900<br />
+                      support@{bank.name.toLowerCase().replace(/\s+/g, '')}.com
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <h2 className="text-xl font-bold text-indigo-950 uppercase tracking-wide">Account Statement</h2>
+                    <p className="text-xs font-mono text-slate-500 mt-1">Date Issued: {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    <div className="mt-6 bg-slate-50 border border-slate-200 rounded-lg p-3 text-left inline-block">
+                      <span className="text-[10px] font-mono uppercase text-slate-400 block tracking-wider">Statement Period</span>
+                      <span className="text-xs font-bold text-slate-800">Inception to Present</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Account Owner Info & Balance Summary */}
+                <div className="grid grid-cols-2 gap-8 mb-10">
+                  <div>
+                    <h3 className="text-xs font-mono uppercase text-indigo-900 tracking-wider mb-2 font-bold">Prepared For</h3>
+                    <div className="text-sm">
+                      <p className="font-bold text-slate-900">Discord ID: {account.ownerDiscordId}</p>
+                      <p className="text-slate-600 mt-1">Account Holder Portal Status: Verified Elite Member</p>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-mono uppercase text-slate-500 block tracking-wider">Statement Balance</span>
+                      <span className="text-2xl font-mono font-bold text-slate-900">${(account.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="text-right text-xs text-slate-500">
+                      <p>Account Type: Commercial Ledger</p>
+                      <p className="mt-1">Currency: USD Equivalent</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transaction Ledger Table */}
+                <div>
+                  <h3 className="text-xs font-mono uppercase text-indigo-900 tracking-wider mb-3 font-bold">Ledger Transactions</h3>
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b-2 border-slate-300 text-slate-500 uppercase font-mono tracking-wider">
+                        <th className="py-2.5 font-semibold">Date & Time</th>
+                        <th className="py-2.5 font-semibold">Description</th>
+                        <th className="py-2.5 font-semibold">Type</th>
+                        <th className="py-2.5 font-semibold text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {transactions?.map((tx: any) => {
+                        const isCredit = tx.type === 'deposit' || (tx.type === 'transfer' && tx.toAccountId === account.accountName);
+                        return (
+                          <tr key={tx.id} className="text-slate-700">
+                            <td className="py-3 font-mono text-slate-500">
+                              {format(new Date(tx.timestamp), "yyyy-MM-dd HH:mm")}
+                            </td>
+                            <td className="py-3">
+                              <span className="font-medium text-slate-900">{tx.description || 'System transfer'}</span>
+                              <span className="block text-[10px] text-slate-400 font-mono mt-0.5">{tx.id}</span>
+                            </td>
+                            <td className="py-3 capitalize text-slate-600">
+                              {tx.type}
+                            </td>
+                            <td className={`py-3 text-right font-mono font-bold ${isCredit ? 'text-emerald-700' : 'text-rose-700'}`}>
+                              {isCredit ? '+' : '-'}${(tx.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Legal disclosures & Stamp */}
+              <div className="border-t border-slate-200 pt-8 mt-12 flex justify-between items-end text-[10px] text-slate-400 leading-normal">
+                <div>
+                  <p className="font-semibold text-slate-500 uppercase tracking-wide mb-1">Slate SaaS Regulatory Compliance</p>
+                  <p className="max-w-xl">
+                    This document serves as an official accounting of transactions recorded securely on the Slate distributed SaaS database ledger. Deposits and transfers are cleared in accordance with the Onyx Global Network bylaws. Please report any discrepancies to your bank operator immediately.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="border border-indigo-900/20 rounded-full px-4 py-3 inline-block bg-indigo-50/10 text-indigo-950 font-serif italic text-center text-xs tracking-wider border-dashed">
+                    Slate Verified<br />
+                    <span className="font-sans text-[8px] font-mono uppercase text-indigo-800 not-italic tracking-widest font-bold">SECURE LEDGER</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

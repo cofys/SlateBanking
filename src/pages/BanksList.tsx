@@ -1,5 +1,5 @@
 import { Plus, Server, CheckCircle, XCircle, Loader2, Database, Settings as SettingsIcon, ArrowUpRight } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
 interface BankInstance {
@@ -10,6 +10,9 @@ interface BankInstance {
   status: string;
   createdAt: string;
   corpId?: number;
+  plan?: string;
+  billingStatus?: string;
+  platformFeePercent?: number;
 }
 
 export function BanksList() {
@@ -18,6 +21,81 @@ export function BanksList() {
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [showManageModal, setShowManageModal] = useState<string | null>(null);
+
+  // Database Migration & Billing States
+  const [isUploadingDb, setIsUploadingDb] = useState(false);
+  const [showBillingModal, setShowBillingModal] = useState(false);
+  const [billingPlan, setBillingPlan] = useState("standard");
+  const [billingStatus, setBillingStatus] = useState("active");
+  const [billingFee, setBillingFee] = useState("2.00");
+  const [savingBilling, setSavingBilling] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const openBilling = (bank: BankInstance) => {
+    setBillingPlan(bank.plan || "standard");
+    setBillingStatus(bank.billingStatus || "active");
+    const percent = bank.platformFeePercent !== undefined ? (bank.platformFeePercent / 100).toFixed(2) : "2.00";
+    setBillingFee(percent);
+    setShowBillingModal(true);
+  };
+
+  const handleSaveBilling = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBank) return;
+    setSavingBilling(true);
+    try {
+      const res = await fetch(`/api/banks/${selectedBank.id}/billing`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: billingPlan,
+          billingStatus: billingStatus,
+          platformFeePercent: parseFloat(billingFee) || 2.0
+        })
+      });
+      if (res.ok) {
+        setShowBillingModal(false);
+        fetchBanks();
+      } else {
+        const data = await res.json();
+        alert("Error saving billing: " + (data.error || "Failed"));
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    }
+    setSavingBilling(false);
+  };
+
+  const handleUploadDb = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedBank) return;
+
+    setIsUploadingDb(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = (reader.result as string).split(',')[1];
+        const res = await fetch(`/api/banks/${selectedBank.id}/upload-db`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, content: base64 })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`Migration Successful!\n\nImported ${data.accountsImported} accounts and ${data.transactionsImported} transactions into ${selectedBank.name}.`);
+          fetchBanks();
+        } else {
+          alert("Error: " + (data.error || "Failed to process database file"));
+        }
+      } catch (err: any) {
+        console.error(err);
+        alert("Upload failed: " + err.message);
+      } finally {
+        setIsUploadingDb(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Form State
   const [name, setName] = useState("");
@@ -119,11 +197,90 @@ export function BanksList() {
         </div>
         <button 
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 bg-white text-black px-4 py-2 rounded-md text-sm font-medium hover:bg-white/90 transition-colors"
+          className="flex items-center gap-2 bg-white text-black px-4 py-2 rounded-md text-sm font-medium hover:bg-white/90 transition-colors cursor-pointer"
         >
           <Plus size={16} />
           Provision New Bank
         </button>
+
+        {showBillingModal && selectedBank && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+            <div className="bg-[#0f0f15] border border-white/10 rounded-xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+              <div className="bg-[#0a0a0c] border-b border-white/10 px-6 py-4 flex justify-between items-center">
+                <h3 className="font-semibold text-white">SaaS Configuration: {selectedBank.name}</h3>
+                <button 
+                  onClick={() => setShowBillingModal(false)}
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors text-white"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+              <form onSubmit={handleSaveBilling} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">
+                    Subscription Plan
+                  </label>
+                  <select
+                    value={billingPlan}
+                    onChange={e => setBillingPlan(e.target.value)}
+                    className="w-full bg-[#16161d] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="starter">Starter Plan ($9.99/mo)</option>
+                    <option value="standard">Standard Plan ($19.99/mo)</option>
+                    <option value="enterprise">Enterprise Plan ($49.99/mo)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">
+                    Billing Status
+                  </label>
+                  <select
+                    value={billingStatus}
+                    onChange={e => setBillingStatus(e.target.value)}
+                    className="w-full bg-[#16161d] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="active">Active</option>
+                    <option value="trialing">Trialing</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">
+                    Platform Transaction Fee (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={billingFee}
+                    onChange={e => setBillingFee(e.target.value)}
+                    className="w-full bg-[#16161d] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="2.00"
+                    required
+                  />
+                  <span className="text-[10px] text-white/30 mt-1 block">Charges standard transaction routing fees for transfer activities.</span>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button 
+                    type="submit" 
+                    disabled={savingBilling}
+                    className="flex-1 bg-white hover:bg-white/90 text-black text-sm py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {savingBilling ? <Loader2 size={16} className="animate-spin" /> : "Save Configuration"}
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowBillingModal(false)}
+                    className="flex-1 bg-transparent border border-white/10 hover:bg-white/5 text-white text-sm py-2 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="border border-white/10 rounded-xl overflow-hidden bg-white/5">
@@ -444,12 +601,21 @@ export function BanksList() {
                      <span className="text-sm font-medium">Database Migration</span>
                    </div>
                    <p className="text-xs text-white/40 mb-4">Upload a legacy v1 SQLite database to merge its contents into this bank instance.</p>
-                   <button 
-                     onClick={() => alert("Legacy v1 database migration is coming soon.")}
-                     className="bg-white/10 hover:bg-white/20 transition-colors w-full font-medium text-xs py-2 rounded border border-white/10"
-                   >
-                     Upload bank.db
-                   </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingDb}
+                      className={`block bg-[#20202e] hover:bg-[#2c2c3e] text-[#a5b4fc] transition-colors w-full font-medium text-xs py-2.5 rounded border border-[#4f46e5]/20 text-center cursor-pointer ${isUploadingDb ? "opacity-50 pointer-events-none" : ""}`}
+                    >
+                      {isUploadingDb ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 size={12} className="animate-spin" /> Migrating...
+                        </span>
+                      ) : (
+                        "Upload bank.db"
+                      )}
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".db,.sqlite,application/x-sqlite3" onChange={handleUploadDb} className="hidden" disabled={isUploadingDb} />
                  </div>
 
                  <div className="bg-white/5 rounded-lg border border-white/5 p-4 flex flex-col justify-between">
@@ -459,7 +625,7 @@ export function BanksList() {
                    </div>
                    <p className="text-xs text-white/40 mb-4">Manage this client's billing status, subscription plan, and platform fees.</p>
                    <button 
-                     onClick={() => alert("Billing portal integration is currently disabled in preview.")}
+                     onClick={() => openBilling(selectedBank)}
                      className="bg-white/10 hover:bg-white/20 transition-colors w-full font-medium text-xs py-2 rounded border border-white/10"
                    >
                      Open Billing Settings

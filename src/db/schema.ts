@@ -24,6 +24,9 @@ export const banks = sqliteTable("banks", {
   apiKey: text("api_key"),
   webhookSecret: text("webhook_secret"),
   status: text("status").default("offline"),
+  plan: text("plan").default("standard"), // starter, standard, enterprise
+  billingStatus: text("billing_status").default("active"), // active, suspended, trialing
+  platformFeePercent: integer("platform_fee_percent").default(200), // e.g. 200 = 2.00%
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
