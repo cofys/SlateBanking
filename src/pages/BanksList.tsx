@@ -10,6 +10,11 @@ interface BankInstance {
   status: string;
   createdAt: string;
   corpId?: number;
+  corpApiUuid?: string;
+  corpApiKey?: string;
+  cityCorpAppId?: string;
+  cityCorpAppSecret?: string;
+  discordToken?: string;
   plan?: string;
   billingStatus?: string;
   platformFeePercent?: number;
@@ -108,6 +113,33 @@ export function BanksList() {
   const [cityCorpAppId, setCityCorpAppId] = useState("");
   const [cityCorpAppSecret, setCityCorpAppSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Editing Existing Bank Config State
+  const [isEditingConfig, setIsEditingConfig] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editGuildId, setEditGuildId] = useState("");
+  const [editDiscordToken, setEditDiscordToken] = useState("");
+  const [editCorpId, setEditCorpId] = useState("");
+  const [editCorpApiUuid, setEditCorpApiUuid] = useState("");
+  const [editCityCorpAppId, setEditCityCorpAppId] = useState("");
+  const [editCityCorpAppSecret, setEditCityCorpAppSecret] = useState("");
+  const [editCustomDomain, setEditCustomDomain] = useState("");
+
+  const activeSelectedBank = banks.find(b => b.id === showManageModal);
+
+  useEffect(() => {
+    if (activeSelectedBank) {
+      setEditName(activeSelectedBank.name || "");
+      setEditGuildId(activeSelectedBank.guildId || "");
+      setEditDiscordToken("");
+      setEditCorpId(activeSelectedBank.corpId ? activeSelectedBank.corpId.toString() : "");
+      setEditCorpApiUuid(activeSelectedBank.corpApiUuid || "");
+      setEditCityCorpAppId(activeSelectedBank.cityCorpAppId || "");
+      setEditCityCorpAppSecret(activeSelectedBank.cityCorpAppSecret || "");
+      setEditCustomDomain(activeSelectedBank.customDomain || "");
+      setIsEditingConfig(false);
+    }
+  }, [showManageModal, activeSelectedBank]);
 
   const fetchBanks = async () => {
     setLoading(true);
@@ -551,46 +583,187 @@ export function BanksList() {
                </div>
                
                <div className="grid grid-cols-2 gap-4">
-                 <div className="col-span-2 bg-white/5 rounded-lg border border-white/5 p-4">
-                   <div className="flex items-center justify-between mb-4">
-                     <div className="flex items-center gap-2 text-white/70">
-                       <SettingsIcon size={16} className="text-indigo-400" />
-                       <span className="text-sm font-medium">Bank Configuration</span>
-                     </div>
-                     <button 
-                       onClick={() => {
-                         // Copy current values to form state to let user edit them
-                         const newName = prompt("New Bank Name:", selectedBank.name);
-                         if (newName) {
-                           fetch(`/api/banks/${selectedBank.id}`, {
-                             method: "PUT",
-                             headers: { "Content-Type": "application/json" },
-                             body: JSON.stringify({ 
-                               name: newName, 
-                               discordToken: '', // Avoid overwriting without prompt
-                               corpId: selectedBank.corpId, 
-                               corpApiUuid: '',
-                               corpApiKey: '' 
-                             })
-                           }).then(() => fetchBanks());
-                         }
-                       }}
-                       className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded transition-colors"
-                     >
-                       Quick Edit Name
-                     </button>
-                   </div>
-                   <div className="grid grid-cols-2 gap-4 text-sm">
-                     <div>
-                       <span className="text-white/50 block text-xs">Guild ID</span>
-                       <span className="font-mono text-white/90">{selectedBank.guildId}</span>
-                     </div>
-                     <div>
-                       <span className="text-white/50 block text-xs">Custom Domain</span>
-                       <span className="text-white/90">{selectedBank.customDomain || 'Not configured'}</span>
-                     </div>
-                   </div>
-                 </div>
+                  <div className="col-span-2 bg-white/5 rounded-lg border border-white/5 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2 text-white/70">
+                        <SettingsIcon size={16} className="text-indigo-400" />
+                        <span className="text-sm font-medium">Bank Configuration</span>
+                      </div>
+                      {!isEditingConfig ? (
+                        <button 
+                          onClick={() => setIsEditingConfig(true)}
+                          className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded transition-colors font-medium"
+                        >
+                          Modify Settings / Credentials
+                        </button>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setIsEditingConfig(false)}
+                            className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded transition-colors font-medium"
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            onClick={() => {
+                              const body: any = {
+                                name: editName,
+                                guildId: editGuildId,
+                                corpId: editCorpId ? parseInt(editCorpId) : null,
+                                corpApiUuid: editCorpApiUuid,
+                                customDomain: editCustomDomain,
+                                cityCorpAppId: editCityCorpAppId,
+                              };
+
+                              if (editDiscordToken) {
+                                body.discordToken = editDiscordToken;
+                              }
+                              if (editCityCorpAppSecret) {
+                                body.cityCorpAppSecret = editCityCorpAppSecret;
+                                body.corpApiKey = editCityCorpAppSecret;
+                              }
+
+                              fetch(`/api/banks/${selectedBank.id}`, {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(body)
+                              })
+                              .then(r => r.json())
+                              .then(() => {
+                                setIsEditingConfig(false);
+                                fetchBanks();
+                                alert("Configuration saved successfully!");
+                              });
+                            }}
+                            className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded transition-colors font-medium"
+                          >
+                            Save Config
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {!isEditingConfig ? (
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-white/50 block text-xs">Bank Name</span>
+                          <span className="text-white/90">{selectedBank.name}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">Guild ID</span>
+                          <span className="font-mono text-white/90">{selectedBank.guildId}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">Custom Domain</span>
+                          <span className="text-white/90">{selectedBank.customDomain || 'Not configured'}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">Corporation ID (CityCorp)</span>
+                          <span className="font-mono text-white/90">{selectedBank.corpId || 'Not configured'}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">Bot Auth UUID (CityCorp)</span>
+                          <span className="font-mono text-white/90 truncate block max-w-[200px]" title={selectedBank.corpApiUuid}>{selectedBank.corpApiUuid || 'Not configured'}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">Application ID (CityCorp)</span>
+                          <span className="font-mono text-white/90">{selectedBank.cityCorpAppId || 'Not configured'}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">App Token / Bot API Key</span>
+                          <span className="font-mono text-white/90">
+                            {selectedBank.cityCorpAppSecret || selectedBank.corpApiKey ? '••••••••' : 'Not configured'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">Discord Bot Token</span>
+                          <span className="font-mono text-white/90">
+                            {selectedBank.discordToken ? '••••••••' : 'Not configured'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Bank Name</label>
+                            <input 
+                              type="text" 
+                              value={editName} 
+                              onChange={(e) => setEditName(e.target.value)}
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Guild ID</label>
+                            <input 
+                              type="text" 
+                              value={editGuildId} 
+                              onChange={(e) => setEditGuildId(e.target.value)}
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Custom Domain</label>
+                            <input 
+                              type="text" 
+                              value={editCustomDomain} 
+                              onChange={(e) => setEditCustomDomain(e.target.value)}
+                              placeholder="e.g. bank.yourdomain.com"
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Corporation ID (CityCorp)</label>
+                            <input 
+                              type="text" 
+                              value={editCorpId} 
+                              onChange={(e) => setEditCorpId(e.target.value)}
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Bot Auth UUID (Minecraft)</label>
+                            <input 
+                              type="text" 
+                              value={editCorpApiUuid} 
+                              onChange={(e) => setEditCorpApiUuid(e.target.value)}
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Application ID (CityCorp)</label>
+                            <input 
+                              type="text" 
+                              value={editCityCorpAppId} 
+                              onChange={(e) => setEditCityCorpAppId(e.target.value)}
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">App Token / Bot API Key</label>
+                            <input 
+                              type="password" 
+                              value={editCityCorpAppSecret} 
+                              onChange={(e) => setEditCityCorpAppSecret(e.target.value)}
+                              placeholder="Leave blank to keep current token"
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Discord Bot Token</label>
+                            <input 
+                              type="password" 
+                              value={editDiscordToken} 
+                              onChange={(e) => setEditDiscordToken(e.target.value)}
+                              placeholder="Leave blank to keep current token"
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                  <div className="bg-white/5 rounded-lg border border-white/5 p-4 flex flex-col justify-between">
                    <div className="flex items-center gap-2 text-white/70 mb-2">

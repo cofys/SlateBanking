@@ -499,16 +499,22 @@ async function startServer() {
     const { banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
     try {
-      const { name, discordToken, corpId, corpApiUuid, corpApiKey, cityCorpAppId, cityCorpAppSecret } = req.body;
-      await db.update(banks).set({
-        name, 
-        discordToken, 
-        corpId: corpId ? parseInt(corpId) : null, 
-        corpApiUuid, 
-        corpApiKey,
-        cityCorpAppId,
-        cityCorpAppSecret
-      }).where(eq(banks.id, req.params.id));
+      const b = req.body;
+      const updateData: any = {};
+      if (b.name !== undefined) updateData.name = b.name;
+      if (b.guildId !== undefined) updateData.guildId = b.guildId;
+      if (b.discordToken !== undefined && b.discordToken !== "") updateData.discordToken = b.discordToken;
+      if (b.corpId !== undefined) updateData.corpId = b.corpId !== null && b.corpId !== "" ? parseInt(b.corpId) : null;
+      if (b.corpApiUuid !== undefined) updateData.corpApiUuid = b.corpApiUuid;
+      if (b.corpApiKey !== undefined && b.corpApiKey !== "") updateData.corpApiKey = b.corpApiKey;
+      if (b.cityCorpAppId !== undefined) updateData.cityCorpAppId = b.cityCorpAppId;
+      if (b.cityCorpAppSecret !== undefined && b.cityCorpAppSecret !== "") {
+        updateData.cityCorpAppSecret = b.cityCorpAppSecret;
+        updateData.corpApiKey = b.cityCorpAppSecret; // Unified App Token synchronizes to corpApiKey
+      }
+      if (b.customDomain !== undefined) updateData.customDomain = b.customDomain;
+      
+      await db.update(banks).set(updateData).where(eq(banks.id, req.params.id));
       res.json({ success: true });
     } catch (e) {
       console.error(e);
