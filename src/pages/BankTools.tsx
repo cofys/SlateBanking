@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Wrench, Upload, Play, AlertTriangle, Loader2 } from "lucide-react";
+import { Wrench, Upload, Play, AlertTriangle, Loader2, Sparkles } from "lucide-react";
 
 export function BankTools() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -27,6 +27,7 @@ export function BankTools() {
             { id: "freeze-all", name: "Emergency Lock" },
             { id: "auto-import", name: "Auto-Import Accounts" },
             { id: "data-migration", name: "Intelligent Data Migration" },
+            { id: "seed-demo", name: "Populate Demo Data" },
           ].map(tool => (
             <button
               key={tool.id}
@@ -433,6 +434,58 @@ export function BankTools() {
                   {running ? "Analyzing & Importing Data..." : "Run Intelligent Import"}
                 </button>
               </form>
+            </div>
+          )}
+
+          {activeTool === "seed-demo" && (
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg"><Sparkles size={20} /></div>
+                <h3 className="text-xl font-bold">Populate Demo Data</h3>
+              </div>
+              <p className="text-white/60 text-sm mb-6 max-w-lg leading-relaxed">
+                Fills your bank with realistic mock roleplay data to demonstrate features to prospective customers or bankers. 
+                This will automatically create <strong>5 verified customers</strong>, <strong>9 diversified bank accounts</strong> (checking, savings, and payroll), <strong>10 historical ledger transactions</strong>, active loans, locked savings vaults, cards, payrolls, and support tickets.
+              </p>
+              
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6 max-w-md text-amber-200 text-xs space-y-2">
+                <p className="font-semibold flex items-center gap-1.5"><AlertTriangle size={14} /> Attention / Safety Warning</p>
+                <p>Executing this function will completely reset this specific bank instance by clearing existing custom accounts, ledger transactions, and customer relationships, establishing a pristine and fully-populated slate instead.</p>
+              </div>
+
+              {complete && !running && (
+                <div className="p-4 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-sm mb-6 max-w-md font-medium">
+                  ✨ Demo data successfully populated! Check your dashboard, accounts, transactions, and tools.
+                </div>
+              )}
+
+              <button 
+                disabled={running} 
+                onClick={() => {
+                   if (confirm("Are you sure you want to seed this bank with demo data? This will clear any existing data on this specific bank.")) {
+                     setRunning(true);
+                     setComplete(false);
+                     fetch(`/api/banks/${bank.id}/tools/seed-demo`, { method: "POST" })
+                       .then(r => {
+                          if (!r.ok) throw new Error("Seeding failed");
+                          return r.json();
+                       })
+                       .then(d => {
+                          setRunning(false);
+                          setComplete(true);
+                          alert("Demo data successfully populated!");
+                       })
+                       .catch(err => {
+                          setRunning(false);
+                          alert(err.message);
+                       });
+                   }
+                }}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 max-w-xs"
+              >
+                {running ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
+                {running ? "Seeding Slate..." : "Populate Demo Environment"}
+              </button>
             </div>
           )}
         </div>

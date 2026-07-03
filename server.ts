@@ -4479,6 +4479,280 @@ async function startServer() {
     }
   });
 
+  app.post("/api/banks/:bankId/tools/seed-demo", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { 
+      bankCustomers, 
+      bankAccounts, 
+      transactions, 
+      loans, 
+      escrows, 
+      vaultDeposits, 
+      cards, 
+      payrollJobs, 
+      subscriptions, 
+      invoices, 
+      supportTickets, 
+      auditLogs 
+    } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bId = req.params.bankId;
+
+      // 1. Purge all existing data for this bank to make it a perfect reset
+      await db.delete(transactions).where(eq(transactions.bankId, bId));
+      await db.delete(vaultDeposits).where(eq(vaultDeposits.bankId, bId));
+      await db.delete(cards).where(eq(cards.bankId, bId));
+      await db.delete(payrollJobs).where(eq(payrollJobs.bankId, bId));
+      await db.delete(subscriptions).where(eq(subscriptions.bankId, bId));
+      await db.delete(invoices).where(eq(invoices.bankId, bId));
+      await db.delete(loans).where(eq(loans.bankId, bId));
+      await db.delete(escrows).where(eq(escrows.bankId, bId));
+      await db.delete(supportTickets).where(eq(supportTickets.bankId, bId));
+      await db.delete(bankAccounts).where(eq(bankAccounts.bankId, bId));
+      await db.delete(bankCustomers).where(eq(bankCustomers.bankId, bId));
+      await db.delete(auditLogs).where(eq(auditLogs.bankId, bId));
+
+      // 2. Define Demo Customers
+      const demoUsers = [
+        { discordId: "1048576", mcUsername: "vance_charles", mcUuid: "e2920fca-31d0-4fdf-9730-805fc48f574d", notes: "Whitelabel tester & active roleplayer" },
+        { discordId: "2097152", mcUsername: "clara_mendez", mcUuid: "e502cfa1-77df-482f-897b-607ef89dc74f", notes: "Real-estate developer Clara's Holdings" },
+        { discordId: "3145728", mcUsername: "marcus_oak", mcUuid: "fa925c7e-85a9-4675-9273-df27d530f9a2", notes: "CEO of Oak Lumber Corp" },
+        { discordId: "4194304", mcUsername: "sarah_connor", mcUuid: "858a74e5-9e67-4d92-80f0-c515a8053678", notes: "Tactical defense consultant" },
+        { discordId: "5242880", mcUsername: "john_doe", mcUuid: "fc530ef2-5b96-4a4b-9705-5cae60eb1dfa", notes: "High net-worth asset investor" },
+      ];
+
+      for (const u of demoUsers) {
+        await db.insert(bankCustomers).values({
+          id: uuidv4(),
+          bankId: bId,
+          discordId: u.discordId,
+          kycStatus: "approved",
+          mcUuid: u.mcUuid,
+          mcUsername: u.mcUsername,
+          notes: u.notes,
+          createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        });
+      }
+
+      // 3. Define and Insert Bank Accounts
+      const accountsToCreate = [
+        { id: "acc_vance_checking", ownerDiscordId: "1048576", accountName: "Main Checking", accountType: "personal", balance: 1425000 },
+        { id: "acc_vance_savings", ownerDiscordId: "1048576", accountName: "High-Yield Vault", accountType: "personal", balance: 7500000 },
+        { id: "acc_vance_escrow", ownerDiscordId: "1048576", accountName: "Onyx Escrow Buffer", accountType: "business", balance: 500000 },
+        
+        { id: "acc_clara_checking", ownerDiscordId: "2097152", accountName: "Standard Checking", accountType: "personal", balance: 234050 },
+        { id: "acc_clara_savings", ownerDiscordId: "2097152", accountName: "Emerald Savings", accountType: "personal", balance: 1280000 },
+        
+        { id: "acc_marcus_checking", ownerDiscordId: "3145728", accountName: "Oak Lumber Corp", accountType: "business", balance: 18500000 },
+        { id: "acc_marcus_payroll", ownerDiscordId: "3145728", accountName: "Payroll Clearing", accountType: "payroll", balance: 4500000 },
+        
+        { id: "acc_sarah_checking", ownerDiscordId: "4194304", accountName: "Tactical Checking", accountType: "personal", balance: 85025 },
+        
+        { id: "acc_john_savings", ownerDiscordId: "5242880", accountName: "Savings Portfolio", accountType: "personal", balance: 15000000 }
+      ];
+
+      for (const acc of accountsToCreate) {
+        await db.insert(bankAccounts).values({
+          id: acc.id,
+          bankId: bId,
+          ownerDiscordId: acc.ownerDiscordId,
+          accountName: acc.accountName,
+          accountType: acc.accountType,
+          balance: acc.balance,
+          isActive: true,
+          createdAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000)
+        });
+      }
+
+      // 4. Seeding historical Transactions
+      const demoTransactions = [
+        { from: "acc_vance_checking", to: "acc_clara_checking", amount: 125000, type: "transfer", desc: "Contractor design services", daysAgo: 20 },
+        { from: null, to: "acc_marcus_checking", amount: 2500000, type: "deposit", desc: "Wholesale Lumber Invoice #884", daysAgo: 18 },
+        { from: "acc_sarah_checking", to: null, amount: 50000, type: "withdraw", desc: "ATM Cash Withdrawal", daysAgo: 15 },
+        { from: "acc_vance_checking", to: "acc_marcus_checking", amount: 1500, type: "transfer", desc: "Weekly Planters Subscription Charge", daysAgo: 12 },
+        { from: null, to: "acc_marcus_checking", amount: 350000, type: "onyx_payment", desc: "B2B Payment Gateway Settlement", daysAgo: 10 },
+        { from: null, to: "acc_john_savings", amount: 15000000, type: "deposit", desc: "Initial Portfolio Capital Injection", daysAgo: 9 },
+        { from: "acc_marcus_payroll", to: "acc_vance_checking", amount: 240000, type: "transfer", desc: "Biweekly Salary - Vance Charles", daysAgo: 5 },
+        { from: "acc_vance_checking", to: "acc_marcus_checking", amount: 5000, type: "transfer", desc: "Store order purchase", daysAgo: 3 },
+        { from: null, to: "acc_vance_checking", amount: 200000, type: "deposit", desc: "Gold ingot sales to game trade", daysAgo: 2 },
+        { from: "acc_clara_checking", to: null, amount: 20000, type: "withdraw", desc: "Cash withdrawal for local vendor", daysAgo: 1 }
+      ];
+
+      for (const tx of demoTransactions) {
+        await db.insert(transactions).values({
+          id: uuidv4(),
+          bankId: bId,
+          fromAccountId: tx.from,
+          toAccountId: tx.to,
+          amount: tx.amount,
+          type: tx.type,
+          description: tx.desc,
+          timestamp: new Date(Date.now() - tx.daysAgo * 24 * 60 * 60 * 1000)
+        });
+      }
+
+      // 5. Seeding Loans (active & pending)
+      await db.insert(loans).values({
+        id: "loan_vance_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        discordId: "1048576",
+        accountId: "acc_vance_checking",
+        principalAmount: 1500000,
+        remainingAmount: 1245000,
+        interestRate: 550, // 5.5%
+        nextPaymentDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        purpose: "Vehicle Acquisition - Obsidian Rover SUV",
+        status: "active",
+        createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
+      });
+
+      await db.insert(loans).values({
+        id: "loan_clara_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        discordId: "2097152",
+        accountId: "acc_clara_checking",
+        principalAmount: 500000,
+        remainingAmount: 500000,
+        interestRate: 800, // 8.0%
+        nextPaymentDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        purpose: "Office Upgrade & High-speed Terminal",
+        status: "pending",
+        createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
+      });
+
+      // 6. Seeding vault deposits (locked savings)
+      await db.insert(vaultDeposits).values({
+        id: "vault_vance_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        accountId: "acc_vance_savings",
+        amount: 2000000,
+        lockedUntil: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
+        interestRate: 450, // 4.5%
+        status: "locked",
+        createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
+      });
+
+      // 7. Seeding cards (debit and credit)
+      await db.insert(cards).values({
+        id: "card_vance_debit_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        accountId: "acc_vance_checking",
+        cardNumber: "4000123456789010",
+        cvv: "382",
+        expiryDate: "12/30",
+        isLocked: false,
+        type: "debit",
+        createdAt: new Date()
+      });
+
+      await db.insert(cards).values({
+        id: "card_clara_credit_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        accountId: "acc_clara_checking",
+        cardNumber: "4111222233334444",
+        cvv: "901",
+        expiryDate: "08/29",
+        isLocked: false,
+        type: "credit",
+        creditLimit: 500000,
+        creditUsed: 124050,
+        apr: 1800, // 18%
+        minimumPayment: 5000,
+        nextPaymentDate: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000),
+        createdAt: new Date()
+      });
+
+      // 8. Seeding payroll jobs
+      await db.insert(payrollJobs).values({
+        id: "payroll_vance_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        employerAccountId: "acc_marcus_checking",
+        employeeAccountId: "acc_vance_checking",
+        amount: 240000,
+        frequency: "biweekly",
+        nextRun: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+        isActive: true,
+        createdAt: new Date()
+      });
+
+      // 9. Seeding subscriptions
+      await db.insert(subscriptions).values({
+        id: "sub_vance_marcus_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        billerAccountId: "acc_marcus_checking",
+        customerAccountId: "acc_vance_checking",
+        amount: 4999,
+        frequency: "monthly",
+        nextRun: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000),
+        isActive: true,
+        description: "Oak Lumber VIP Club Host Tier 2",
+        createdAt: new Date()
+      });
+
+      // 10. Seeding invoices
+      await db.insert(invoices).values({
+        id: "invoice_marcus_vance_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        billerAccountId: "acc_marcus_checking",
+        customerAccountId: "acc_vance_checking",
+        amount: 150000,
+        description: "Lumber Supply Delivery for Estate",
+        dueDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+        status: "paid",
+        createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
+      });
+
+      await db.insert(invoices).values({
+        id: "invoice_marcus_clara_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        billerAccountId: "acc_marcus_checking",
+        customerAccountId: "acc_clara_checking",
+        amount: 45000,
+        description: "Consulting and Site Surveys",
+        dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+        status: "pending",
+        createdAt: new Date()
+      });
+
+      // 11. Seeding support tickets
+      await db.insert(supportTickets).values({
+        id: "ticket_marcus_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        discordId: "3145728",
+        subject: "Requesting credit limit expansion for lumber corp operations",
+        status: "open",
+        createdAt: new Date()
+      });
+
+      await db.insert(supportTickets).values({
+        id: "ticket_clara_" + uuidv4().slice(0, 8),
+        bankId: bId,
+        discordId: "2097152",
+        subject: "Question about credit card apr compounding schedule",
+        status: "open",
+        createdAt: new Date()
+      });
+
+      // 12. Seeding audit logs
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: bId,
+        userDiscordId: 'Operator',
+        action: `seed_demo`,
+        details: `Populated full suite of realistic demo roleplay data (5 customers, 9 accounts, 10 transactions, active loans, cards, payroll, subscriptions, and support tickets)`,
+        timestamp: new Date()
+      });
+
+      res.json({ success: true, message: "Pristine demo data successfully populated." });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Internal error seeding demo data" });
+    }
+  });
+
   // --- Compliance APIs ---
   app.get("/api/banks/:bankId/compliance/flagged", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");

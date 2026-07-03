@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, Link } from "react-router-dom";
-import { ArrowUpRight, ArrowDownRight, RefreshCw, Server, ExternalLink, Users, Wallet, Activity } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, RefreshCw, Server, ExternalLink, Users, Wallet, Activity, Sparkles, Loader2, AlertTriangle } from "lucide-react";
 import { formatMoney, formatNumber } from "../lib/utils";
 import { motion } from "motion/react";
 
@@ -8,6 +8,28 @@ export function BankOverview() {
   const { bank } = useOutletContext<{ bank: any }>();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
+  const [seededMsg, setSeededMsg] = useState("");
+
+  const handleSeedDemo = async () => {
+    if (!confirm("Are you sure you want to seed this bank with demo data? This will clear any existing data on this specific bank to establish a pristine slate.")) {
+       return;
+    }
+    setSeeding(true);
+    setSeededMsg("");
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/tools/seed-demo`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to populate demo data.");
+      setSeededMsg("✨ Bank successfully seeded! Refreshing dashboard...");
+      setTimeout(() => {
+         window.location.reload();
+      }, 1500);
+    } catch (err: any) {
+      alert(err.message || "An error occurred");
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   useEffect(() => {
     if (bank?.id) {
@@ -44,6 +66,37 @@ export function BankOverview() {
           View Client Portal <ExternalLink size={16} />
         </Link>
       </header>
+      
+      {/* Seeding Alert Banner */}
+      <div className="bg-gradient-to-r from-indigo-950/40 via-[#12121e] to-indigo-950/40 border border-indigo-500/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+        <div className="flex items-start gap-4">
+          <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl mt-0.5 sm:mt-0">
+            <Sparkles size={20} className={seeding ? "animate-pulse" : ""} />
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-white">Showcasing Slate? Populate realistic demo data!</h4>
+            <p className="text-xs text-white/50 mt-1 leading-relaxed">
+              Instantly seed 5 verified customers, 9 accounts, 10 historical transfers, active loans, locked savings vaults, cards, and support tickets to demonstrate Slate's power to prospective customers and bankers.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 w-full sm:w-auto self-stretch sm:self-auto justify-end">
+          {seededMsg ? (
+            <span className="text-xs text-emerald-400 font-medium px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl whitespace-nowrap animate-pulse">
+              {seededMsg}
+            </span>
+          ) : (
+            <button
+              disabled={seeding}
+              onClick={handleSeedDemo}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 hover:scale-[1.02] flex items-center gap-1.5 self-stretch sm:self-auto justify-center whitespace-nowrap shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20"
+            >
+              {seeding ? <Loader2 className="animate-spin" size={13} /> : <Sparkles size={13} />}
+              {seeding ? "Populating..." : "Populate Demo Data"}
+            </button>
+          )}
+        </div>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Total Liquidity */}
