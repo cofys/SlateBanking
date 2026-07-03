@@ -1,5 +1,6 @@
 import { Layers, ShieldCheck, CreditCard, Key, Plus, Loader2, ArrowRight } from "lucide-react";
 import { useState, useEffect } from "react";
+import { formatMoney } from "../lib/utils";
 
 interface Merchant {
   id: string;
@@ -214,7 +215,7 @@ export function OnyxSettings() {
                     <td className="py-3">{s.fromBankName || 'Unknown'}</td>
                     <td className="py-3 text-white/30 px-4"><ArrowRight size={14} /></td>
                     <td className="py-3">{s.toBankName || 'Unknown'}</td>
-                    <td className="py-3 text-right font-medium">${(s.amount / 100).toFixed(2)}</td>
+                    <td className="py-3 text-right font-mono font-semibold text-white">{formatMoney(s.amount)}</td>
                     <td className="py-3 text-right">
                       <span className={`px-2 py-0.5 rounded text-xs uppercase tracking-wider font-medium ${
                         s.status === 'settled' || s.status === 'success' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'

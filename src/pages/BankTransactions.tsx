@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { ArrowDownLeft, ArrowUpRight, Plus, Loader2, Search } from "lucide-react";
+import { formatMoney } from "../lib/utils";
 
 export function BankTransactions() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -215,8 +216,8 @@ export function BankTransactions() {
                     <td className="px-6 py-4 whitespace-nowrap text-white/60">
                       {new Date(tx.timestamp).toLocaleString()}
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-right font-medium ${colorClass}`}>
-                      ${(tx.amount / 100).toFixed(2)}
+                    <td className={`px-6 py-4 whitespace-nowrap text-right font-mono font-semibold ${colorClass}`}>
+                      {tx.type === 'deposit' || tx.type === 'onyx_payment' ? '+' : '-'}{formatMoney(tx.amount)}
                     </td>
                   </tr>
                 );

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area } from "recharts";
 import { TrendingUp, Users, ArrowRightLeft, DollarSign } from "lucide-react";
+import { formatMoney } from "../lib/utils";
 
 export function BankAnalytics() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -45,7 +46,7 @@ export function BankAnalytics() {
             <DollarSign size={16} />
             <h3 className="text-sm font-medium">Assets Under Custody</h3>
           </div>
-          <div className="text-2xl font-bold text-white">${(stats?.totalBalance / 100 || 0).toFixed(2)}</div>
+          <div className="text-2xl font-extrabold text-white tracking-tight font-mono">{formatMoney(stats?.totalBalance || 0)}</div>
         </div>
         <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-5">
           <div className="flex items-center gap-3 text-white/50 mb-2">

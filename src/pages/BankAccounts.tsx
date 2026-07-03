@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
-import { Plus, Trash2, Search } from "lucide-react";
+import { Plus, Trash2, Search, Wallet, User, Eye, ArrowRight } from "lucide-react";
+import { formatMoney } from "../lib/utils";
 
 export function BankAccounts() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -61,12 +62,12 @@ export function BankAccounts() {
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-8">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Customer Accounts</h2>
           <p className="text-white/60 text-sm mt-1">Manage active banking accounts for {bank.name}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={16} />
             <input 
@@ -74,12 +75,12 @@ export function BankAccounts() {
               placeholder="Search accounts..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-[#1a1a24] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors w-64"
+              className="bg-[#1a1a24] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors w-full sm:w-64"
             />
           </div>
           <button 
             onClick={() => setShowAdd(true)}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 hover:scale-[1.02] shadow-lg shadow-indigo-600/10"
           >
             <Plus size={16} /> Open Account
           </button>
@@ -87,30 +88,30 @@ export function BankAccounts() {
       </div>
 
       {showAdd && (
-        <div className="bg-[#0f0f15] border border-white/10 p-6 rounded-xl mb-8 flex flex-col items-start gap-4">
-          <h3 className="text-lg font-medium">Provision New Account</h3>
+        <div className="bg-[#0f0f15] border border-white/10 p-6 rounded-xl mb-8 flex flex-col items-start gap-4 shadow-xl">
+          <h3 className="text-lg font-medium text-white/90">Provision New Account</h3>
           <form onSubmit={handleAdd} className="w-full flex gap-4 md:items-end flex-col md:flex-row">
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Account Name</label>
-              <input name="accountName" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Checking" />
+              <input name="accountName" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="e.g. Checking" />
             </div>
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Owner Discord ID</label>
-              <input name="ownerDiscordId" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="123456789" />
+              <input name="ownerDiscordId" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="123456789" />
             </div>
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">MC Username</label>
-              <input name="minecraftUsername" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="Notch" />
+              <input name="minecraftUsername" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="Notch" />
             </div>
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Initial Balance ($)</label>
               <input name="initialBalance" type="number" step="0.01" defaultValue="0.00" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
             <div className="flex gap-2 w-full md:w-auto mt-4 md:mt-0">
-              <button disabled={submitting} type="submit" className="flex-1 bg-white/10 hover:bg-white/20 whitespace-nowrap px-6 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+              <button disabled={submitting} type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white whitespace-nowrap px-6 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
                 {submitting ? "Processing..." : "Create"}
               </button>
-              <button disabled={submitting} type="button" onClick={() => setShowAdd(false)} className="flex-1 bg-transparent border border-white/10 hover:bg-white/5 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+              <button disabled={submitting} type="button" onClick={() => setShowAdd(false)} className="flex-1 bg-transparent border border-white/10 hover:bg-white/5 text-white/80 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
                 Cancel
               </button>
             </div>
@@ -118,46 +119,68 @@ export function BankAccounts() {
         </div>
       )}
 
-      <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden overflow-x-auto">
+      <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden overflow-x-auto shadow-2xl">
         {loading ? (
            <div className="p-8 text-center text-white/50">Loading accounts...</div>
         ) : accounts.length === 0 ? (
            <div className="p-8 text-center text-white/50">No accounts found. Provision one to get started.</div>
         ) : (
           <table className="w-full text-sm text-left min-w-[600px]">
-            <thead className="text-xs text-white/40 uppercase tracking-widest bg-white/5 border-b border-white/10">
+            <thead className="text-xs text-white/40 uppercase tracking-widest bg-white/[0.02] border-b border-white/10">
               <tr>
-                <th className="px-6 py-4 font-medium">Account Name</th>
-                <th className="px-6 py-4 font-medium">Owner Discord ID</th>
-                <th className="px-6 py-4 font-medium text-right">Balance</th>
-                <th className="px-6 py-4 font-medium text-right">Actions</th>
+                <th className="px-6 py-4 font-semibold">Account Name</th>
+                <th className="px-6 py-4 font-semibold">Owner Discord ID</th>
+                <th className="px-6 py-4 font-semibold text-right">Balance</th>
+                <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-white/5 bg-[#09090d]">
               {accounts.filter(acc => 
                 acc.accountName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                 acc.ownerDiscordId.includes(searchTerm) ||
                 acc.id.includes(searchTerm)
               ).map(acc => (
-                <tr key={acc.id} onClick={() => navigate(`/bank/${bank.id}/accounts/${acc.id}`)} className="hover:bg-white/5 transition-colors cursor-pointer group">
+                <tr key={acc.id} onClick={() => navigate(`/bank/${bank.id}/accounts/${acc.id}`)} className="hover:bg-white/[0.02] transition-colors cursor-pointer group">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="font-medium text-white group-hover:text-indigo-300 transition-colors">{acc.accountName}</div>
-                    <div className="text-xs text-white/40 font-mono mt-1">{acc.id.split('-')[0]}...</div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-500/5 text-indigo-400 flex items-center justify-center border border-indigo-500/10">
+                        <Wallet size={16} />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-white/95 group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                          {acc.accountName}
+                          <ArrowRight size={12} className="opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-indigo-400" />
+                        </div>
+                        <div className="text-xs text-white/30 font-mono mt-0.5">{acc.id}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap font-mono text-white/60">
-                    {acc.ownerDiscordId}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <User size={13} className="text-white/30" />
+                      <span className="font-mono text-white/70 text-xs">{acc.ownerDiscordId}</span>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right font-medium">
-                    ${(acc.balance / 100).toFixed(2)}
+                  <td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-emerald-400 font-mono text-base">
+                    {formatMoney(acc.balance)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDelete(acc.id); }}
-                      className="text-red-400 hover:bg-red-400/20 p-2 rounded transition-colors"
-                      title="Delete account"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                  <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={() => navigate(`/bank/${bank.id}/accounts/${acc.id}`)}
+                        className="text-white/60 hover:text-white hover:bg-white/5 p-2 rounded transition-colors"
+                        title="View detail"
+                      >
+                        <Eye size={16} />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(acc.id)}
+                        className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                        title="Delete account"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

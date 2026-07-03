@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { Download, Search } from "lucide-react";
+import { formatMoney } from "../lib/utils";
 
 export function TransactionsList() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -120,9 +121,9 @@ export function TransactionsList() {
                     <td className="px-6 py-4 text-white/70 max-w-xs truncate" title={tx.description}>
                       {tx.description || "-"}
                     </td>
-                    <td className="px-6 py-4 font-mono font-medium">
+                    <td className="px-6 py-4 font-mono font-semibold">
                       <span className={tx.type === 'deposit' || tx.type === 'onyx_payment' ? 'text-green-400' : 'text-red-400'}>
-                        {tx.type === 'deposit' || tx.type === 'onyx_payment' ? '+' : '-'}${((tx.amount || 0) / 100).toFixed(2)}
+                        {tx.type === 'deposit' || tx.type === 'onyx_payment' ? '+' : '-'}{formatMoney(tx.amount || 0)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right text-white/40 whitespace-nowrap">

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, Lock, Unlock, Link2, BookOpen, LogIn, LogOut } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "../lib/AuthContext";
+import { formatMoney } from "../lib/utils";
 
 export function CitizenPortal() {
   const { user, login, logout, isLoading } = useAuth();
@@ -194,7 +195,7 @@ export function CitizenPortal() {
                 <div className="p-5 flex items-end justify-between bg-[#0a0a0c]">
                   <p className="text-xs text-white/40 font-medium">Balance</p>
                   <p className="text-2xl font-mono tracking-tight text-white/90">
-                    ${((acc.balance || 0) / 100).toFixed(2)}
+                    {formatMoney(acc.balance || 0)}
                   </p>
                 </div>
               </div>
@@ -241,7 +242,7 @@ export function CitizenPortal() {
                    <select required name="fromAccountId" className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-blue-500/50">
                       {userData.accounts.map((acc: any) => (
                         <option key={acc.id} value={acc.id} disabled={acc.balance <= 0}>
-                           {acc.bankName} - {acc.accountName} (${(acc.balance / 100).toFixed(2)})
+                           {acc.bankName} - {acc.accountName} ({formatMoney(acc.balance)})
                         </option>
                       ))}
                    </select>
@@ -302,7 +303,7 @@ export function CitizenPortal() {
                    <select required name="fromAccountId" className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-blue-500/50">
                       {userData.accounts.map((acc: any) => (
                         <option key={acc.id} value={acc.id} disabled={acc.balance <= 0}>
-                           {acc.bankName} - {acc.accountName} (${(acc.balance / 100).toFixed(2)})
+                           {acc.bankName} - {acc.accountName} ({formatMoney(acc.balance)})
                         </option>
                       ))}
                    </select>
@@ -366,8 +367,8 @@ export function CitizenPortal() {
                         </p>
                       </div>
                       <div className="flex items-center gap-4 w-full md:w-auto">
-                        <span className="font-mono text-lg font-medium text-white">
-                          ${(inv.amount / 100).toFixed(2)}
+                        <span className="font-mono text-lg font-bold text-white">
+                          {formatMoney(inv.amount)}
                         </span>
                         <button 
                           onClick={async (e) => {
@@ -418,7 +419,7 @@ export function CitizenPortal() {
                            <div className="text-xs text-white/50">{loan.interestRate}% Interest Rate • Next Payment: {format(new Date(loan.nextPaymentDate), "PP")}</div>
                          </div>
                          <div className="text-right">
-                           <div className="text-xl font-mono text-white/90">${(loan.remainingAmount / 100).toFixed(2)}</div>
+                           <div className="text-xl font-mono font-semibold text-white/90">{formatMoney(loan.remainingAmount)}</div>
                            <div className="text-xs text-white/40 uppercase tracking-widest mt-1">Remaining Balance</div>
                          </div>
                        </div>
@@ -457,7 +458,7 @@ export function CitizenPortal() {
                              <select required name="fromAccountId" className="w-full bg-[#121216] border border-white/10 rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none">
                                 {userData.accounts.map((acc: any) => (
                                    <option key={acc.id} value={acc.id} disabled={acc.balance <= 0}>
-                                      {acc.accountName} (${(acc.balance/100).toFixed(2)})
+                                      {acc.accountName} ({formatMoney(acc.balance)})
                                    </option>
                                 ))}
                              </select>
@@ -587,7 +588,7 @@ export function CitizenPortal() {
                        </div>
                        <div className="text-right">
                          <p className={`font-mono font-medium ${isIncoming ? 'text-emerald-400' : 'text-white/80'}`}>
-                           {isIncoming ? '+' : '-'}${((tx.amount || 0) / 100).toFixed(2)}
+                           {isIncoming ? '+' : '-'}{formatMoney(tx.amount || 0)}
                          </p>
                        </div>
                      </div>

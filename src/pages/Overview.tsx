@@ -145,7 +145,7 @@ export function Overview() {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className={`text-sm font-mono font-medium ${tx.type === 'deposit' || tx.type === 'onyx_payment' ? 'text-green-400' : 'text-zinc-300'}`}>
-                      {tx.type === 'deposit' || tx.type === 'onyx_payment' ? '+' : '-'}${((tx.amount || 0) / 100).toFixed(2)}
+                      {tx.type === 'deposit' || tx.type === 'onyx_payment' ? '+' : '-'}{formatCurrency(tx.amount || 0)}
                     </p>
                   </div>
                 </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useOutletContext, useParams, Link } from "react-router-dom";
 import { ArrowLeft, Wallet, Activity, CreditCard, Clock, Lock, Trash2, ArrowUpRight, ArrowDownRight, Plus, Minus, Loader2, Pencil, FileText, XCircle } from "lucide-react";
 import { format } from "date-fns";
+import { formatMoney } from "../lib/utils";
 
 export function BankAccountDetail() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -137,9 +138,9 @@ export function BankAccountDetail() {
             </div>
           </div>
           <div className="text-right">
-             <div className="text-sm text-white/50 mb-1 uppercase tracking-wider font-semibold">Available Balance</div>
-             <div className="text-4xl font-light text-emerald-400">
-               ${(account.balance / 100).toFixed(2)}
+             <div className="text-xs text-white/40 mb-1 uppercase tracking-widest font-semibold">Available Balance</div>
+             <div className="text-4xl font-extrabold text-emerald-400 tracking-tight font-mono">
+               {formatMoney(account.balance)}
              </div>
           </div>
         </div>
@@ -321,8 +322,8 @@ export function BankAccountDetail() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className={`font-medium ${isCredit ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {isCredit ? '+' : '-'}${(tx.amount / 100).toFixed(2)}
+                          <div className={`font-semibold font-mono ${isCredit ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {isCredit ? '+' : '-'}{formatMoney(tx.amount)}
                           </div>
                           <div className="text-xs text-white/40 mt-1">
                             {format(new Date(tx.timestamp), "MMM d, yyyy HH:mm")}
@@ -419,7 +420,7 @@ export function BankAccountDetail() {
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 flex justify-between items-center">
                     <div>
                       <span className="text-xs font-mono uppercase text-slate-500 block tracking-wider">Statement Balance</span>
-                      <span className="text-2xl font-mono font-bold text-slate-900">${(account.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      <span className="text-2xl font-mono font-bold text-slate-900">{formatMoney(account.balance)}</span>
                     </div>
                     <div className="text-right text-xs text-slate-500">
                       <p>Account Type: Commercial Ledger</p>
@@ -456,7 +457,7 @@ export function BankAccountDetail() {
                               {tx.type}
                             </td>
                             <td className={`py-3 text-right font-mono font-bold ${isCredit ? 'text-emerald-700' : 'text-rose-700'}`}>
-                              {isCredit ? '+' : '-'}${(tx.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              {isCredit ? '+' : '-'}{formatMoney(tx.amount)}
                             </td>
                           </tr>
                         );

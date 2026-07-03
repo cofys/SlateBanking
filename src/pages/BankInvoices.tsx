@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Copy, Plus, FileText, CheckCircle, XCircle, ArrowRight, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { formatMoney } from "../lib/utils";
 
 export function BankInvoices() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -155,7 +156,7 @@ export function BankInvoices() {
                       {inv.customerAccountId.split('-')[0]}...
                     </td>
                     <td className="px-6 py-4">
-                      <div className="font-medium text-white/90">${(inv.amount / 100).toFixed(2)}</div>
+                      <div className="font-semibold font-mono text-white/90">{formatMoney(inv.amount)}</div>
                       <div className="text-xs text-white/50 mt-1">Due {format(new Date(inv.dueDate), "MMM d, yyyy")}</div>
                     </td>
                     <td className="px-6 py-4">

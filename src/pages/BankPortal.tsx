@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, Lock, Unlock, Loader2, Link2, LogIn, LogOut } from "lucide-react";
 import { format } from "date-fns";
+import { formatMoney } from "../lib/utils";
 
 export function BankPortal() {
   const { bankId } = useParams();
@@ -221,8 +222,8 @@ export function BankPortal() {
                       <p className="text-xs text-white/40 mt-1 uppercase tracking-wider">{acc.type} Account</p>
                     </div>
                   </div>
-                  <div className="text-2xl font-bold tabular-nums tracking-tight">
-                    ${(acc.balance / 100).toFixed(2)}
+                  <div className="text-2xl font-bold tabular-nums tracking-tight text-white font-mono">
+                    {formatMoney(acc.balance)}
                   </div>
                 </div>
                 <div className="bg-[#0a0a0c] px-5 py-3 text-xs text-white/40 flex justify-between items-center font-mono">
@@ -267,7 +268,7 @@ export function BankPortal() {
                    <select required name="fromAccountId" className={`w-full bg-[#0a0a0c] border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-${colorCss}-500/50`}>
                       {userData.accounts.map((acc: any) => (
                         <option key={acc.id} value={acc.id} disabled={acc.balance <= 0}>
-                           {acc.accountName} (${(acc.balance / 100).toFixed(2)})
+                           {acc.accountName} ({formatMoney(acc.balance)})
                         </option>
                       ))}
                    </select>
@@ -327,7 +328,7 @@ export function BankPortal() {
                    <select required name="fromAccountId" className={`w-full bg-[#0a0a0c] border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-${colorCss}-500/50`}>
                       {userData.accounts.map((acc: any) => (
                         <option key={acc.id} value={acc.id} disabled={acc.balance <= 0}>
-                           {acc.accountName} (${(acc.balance / 100).toFixed(2)})
+                           {acc.accountName} ({formatMoney(acc.balance)})
                         </option>
                       ))}
                    </select>
@@ -391,8 +392,8 @@ export function BankPortal() {
                         </p>
                       </div>
                       <div className="flex items-center gap-4 w-full md:w-auto">
-                        <span className="font-mono text-lg font-medium text-white">
-                          ${(inv.amount / 100).toFixed(2)}
+                        <span className="font-mono text-lg font-bold text-white">
+                          {formatMoney(inv.amount)}
                         </span>
                         <button 
                           onClick={async (e) => {
