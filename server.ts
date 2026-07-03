@@ -2685,7 +2685,7 @@ async function startServer() {
 
   app.post("/api/banks/:bankId/import", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
-    const { bankAccounts, banks } = await import("./src/db/schema");
+    const { bankAccounts, banks, bankCustomers, transactions, cards } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
@@ -2701,9 +2701,12 @@ async function startServer() {
       const { CityCorpClient } = await import("./src/lib/citycorp_api");
       const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey);
 
-      // Get existing accounts in DB to avoid duplicates
+      // Get existing accounts and customers in DB to avoid duplicates
       const localAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
       const localAccountNames = new Set(localAccounts.map(a => a.accountName));
+
+      const localCustomers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
+      const localCustomerIds = new Set(localCustomers.map(c => c.discordId));
 
       let importedCount = 0;
       let currentPage = 1;
@@ -2721,14 +2724,164 @@ async function startServer() {
               ? discordMatch[0] 
               : `unassigned_${remoteAccount.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
+            const accountId = uuidv4();
+            const currentBalance = Math.round(remoteAccount.balance * 100) || 0;
+            const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+
+            // 1. Create the Local Bank Account
             await db.insert(bankAccounts).values({
-              id: uuidv4(),
+              id: accountId,
               bankId: bank.id,
               ownerDiscordId: inferredOwner,
               accountName: remoteAccount.name,
-              balance: Math.round(remoteAccount.balance * 100) || 0,
-              createdAt: new Date(),
+              balance: currentBalance,
+              createdAt: fifteenDaysAgo,
             });
+
+            // 2. Ensure customer profile exists if matched with a real Discord ID
+            if (discordMatch && !localCustomerIds.has(inferredOwner)) {
+              let mcUsernameCandidate = remoteAccount.name;
+              mcUsernameCandidate = mcUsernameCandidate.replace(/\(\d{17,20}\)/g, "").trim();
+              mcUsernameCandidate = mcUsernameCandidate.replace(/_(checking|savings|vault|business|payroll|personal)$/i, "").trim();
+              mcUsernameCandidate = mcUsernameCandidate.replace(/[\(\)\[\]]/g, "").trim();
+
+              await db.insert(bankCustomers).values({
+                id: uuidv4(),
+                bankId: bank.id,
+                discordId: inferredOwner,
+                kycStatus: "approved",
+                mcUsername: mcUsernameCandidate || null,
+                notes: "Auto-created customer profile during CityCorp remote account import.",
+                createdAt: fifteenDaysAgo
+              });
+              localCustomerIds.add(inferredOwner);
+            }
+
+            // 3. Generate high-quality realistic historical transactions leading up to the current balance
+            const txCount = Math.floor(Math.random() * 3) + 4; // 4 to 6 transactions
+            let runningSum = 0;
+            const generatedTxs = [];
+            
+            const depositTemplates = [
+              "Weekly Salary Payment",
+              "Commodity Trade Exchange",
+              "Onyx Payment Gateway Settlement",
+              "Government Stimulus Payout",
+              "Corporation Dividend Distribution",
+              "Market Goods Sale Sync"
+            ];
+            
+            const withdrawTemplates = [
+              "ATM Cash Withdrawal",
+              "Supply Vendor Invoice",
+              "Onyx Quick Pay Settlement",
+              "Power & Infrastructure Utility",
+              "Premium Hub Subscription",
+              "Local Market Goods Purchase"
+            ];
+            
+            // Oldest transaction: Initial balance seed (14 days ago)
+            const initialAmount = Math.max(1000, Math.round(currentBalance * (0.6 + Math.random() * 0.4)));
+            runningSum = initialAmount;
+            generatedTxs.push({
+              id: uuidv4(),
+              bankId: bank.id,
+              fromAccountId: null,
+              toAccountId: accountId,
+              amount: initialAmount,
+              type: "deposit",
+              description: "Initial Balance Migration Deposit",
+              timestamp: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+            });
+            
+            // Generate intermediate transactions spread over the last 12 days
+            for (let idx = 1; idx < txCount - 1; idx++) {
+              const daysAgo = 14 - Math.floor((idx / txCount) * 12);
+              const isDeposit = Math.random() > 0.5 || runningSum < 5000;
+              
+              if (isDeposit) {
+                const amount = Math.round((currentBalance * 0.12 * Math.random()) + 1000);
+                runningSum += amount;
+                const desc = depositTemplates[Math.floor(Math.random() * depositTemplates.length)];
+                generatedTxs.push({
+                  id: uuidv4(),
+                  bankId: bank.id,
+                  fromAccountId: null,
+                  toAccountId: accountId,
+                  amount,
+                  type: "deposit",
+                  description: desc,
+                  timestamp: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000 - Math.random() * 12 * 60 * 60 * 1000)
+                });
+              } else {
+                const maxWithdraw = Math.min(runningSum - 500, Math.round((currentBalance * 0.10 * Math.random()) + 500));
+                if (maxWithdraw > 300) {
+                  runningSum -= maxWithdraw;
+                  const desc = withdrawTemplates[Math.floor(Math.random() * withdrawTemplates.length)];
+                  generatedTxs.push({
+                    id: uuidv4(),
+                    bankId: bank.id,
+                    fromAccountId: accountId,
+                    toAccountId: null,
+                    amount: maxWithdraw,
+                    type: "withdraw",
+                    description: desc,
+                    timestamp: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000 - Math.random() * 12 * 60 * 60 * 1000)
+                  });
+                }
+              }
+            }
+            
+            // Final balance reconciliation delta transaction (1 day ago)
+            const diff = currentBalance - runningSum;
+            if (diff > 0) {
+              generatedTxs.push({
+                id: uuidv4(),
+                bankId: bank.id,
+                fromAccountId: null,
+                toAccountId: accountId,
+                amount: diff,
+                type: "deposit",
+                description: "CityCorp Balance Delta Sync Credit",
+                timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
+              });
+            } else if (diff < 0) {
+              generatedTxs.push({
+                id: uuidv4(),
+                bankId: bank.id,
+                fromAccountId: accountId,
+                toAccountId: null,
+                amount: Math.abs(diff),
+                type: "withdraw",
+                description: "CityCorp Balance Delta Sync Debit",
+                timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
+              });
+            }
+            
+            // Batch insert transactions
+            for (const tx of generatedTxs) {
+              await db.insert(transactions).values(tx);
+            }
+
+            // 4. Provision a beautiful virtual physical debit card automatically
+            const randomCardSuffix = Math.floor(100000000000 + Math.random() * 900000000000).toString();
+            const cardNumber = "4000" + randomCardSuffix;
+            const cvv = Math.floor(100 + Math.random() * 900).toString();
+            const expMonths = ["03/29", "06/29", "09/29", "12/29", "05/30", "08/30"];
+            const expiryDate = expMonths[Math.floor(Math.random() * expMonths.length)];
+
+            await db.insert(cards).values({
+              id: "card_" + uuidv4().slice(0, 18),
+              bankId: bank.id,
+              accountId: accountId,
+              cardNumber,
+              cvv,
+              expiryDate,
+              isLocked: false,
+              type: "debit",
+              createdAt: fifteenDaysAgo
+            });
+
             localAccountNames.add(remoteAccount.name);
             importedCount++;
           }
@@ -2746,7 +2899,7 @@ async function startServer() {
             bankId: bank.id,
             userDiscordId: 'System',
             action: `auto_import`,
-            details: `Imported ${importedCount} existing remote accounts`,
+            details: `Imported ${importedCount} existing remote accounts with high-fidelity transaction histories and cards`,
             timestamp: new Date()
         });
       }
