@@ -422,6 +422,12 @@ export function BanksList() {
                   placeholder="e.g. Maze Bank"
                   className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
+
+                <p className="text-xs text-amber-400/80 mt-1 flex items-start gap-1">
+                  <span>⚠️</span>
+                  <span>Remember to also add this domain to your Coolify application's "Domains" field so the reverse proxy can route it here!</span>
+                </p>
+
               </div>
               <div>
                 <label className="block text-xs text-white/70 mb-1">Discord Server (Guild) ID</label>
