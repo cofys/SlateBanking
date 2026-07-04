@@ -90,7 +90,7 @@ export function BankCustomers() {
                   ? "Legacy Imported Accounts"
                   : c.discordId.startsWith("unassigned_")
                     ? `Unassigned (${c.discordId.replace("unassigned_", "").replace(/_/g, " ")})`
-                    : c.discordId;
+                    : (c.mcUsername ? `${c.mcUsername} (${c.discordId})` : c.discordId);
                 return displayName.toLowerCase().includes(searchLower) || c.discordId.toLowerCase().includes(searchLower);
               }).map((c: any) => {
                 const isUnassigned = c.discordId.startsWith("unassigned_") || c.discordId === "imported";
@@ -98,7 +98,7 @@ export function BankCustomers() {
                   ? "Legacy Imported Accounts"
                   : c.discordId.startsWith("unassigned_")
                     ? `Unassigned: ${c.discordId.replace("unassigned_", "").replace(/_/g, " ").replace(/\b\w/g, (l:string)=>l.toUpperCase())}`
-                    : c.discordId;
+                    : (c.mcUsername ? `${c.mcUsername} (${c.discordId})` : c.discordId);
                 return (
                   <tr key={c.discordId} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => navigate(`/bank/${bank.id}/customers/${c.discordId}`)}>
                     <td className="px-6 py-4 whitespace-nowrap text-white font-medium">

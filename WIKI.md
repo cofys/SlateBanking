@@ -243,5 +243,36 @@ To expand Slate SaaS, always follow the tri-level approach:
   - **Auto-Provisioned Debit Cards**: Every newly imported remote account is immediately provisioned with a custom virtual physical debit card (complete with security codes, card numbers, and expiration dates) to instantly populate the redesigned portal UI.
   - **Intelligent Customer Profiles**: Parses the remote account names to extract real Minecraft usernames and creates corresponding "KYC Approved" customer records if a valid Discord ID is present, creating linked profile states out-of-the-box.
 
+### Whitelabel Custom Domains (Coolify Setup Guide)
+To point custom client domains (e.g., `bank.mc-roleplay.com`) to a specific whitelabel bank instance inside Coolify, follow this architectural setup:
+
+1. **DNS Configuration (Client-side)**
+   - Have the whitelabel client create a **CNAME** record pointing their custom domain (`bank.mc-roleplay.com`) to your main application deployment domain (e.g., `slate.onyx-network.com`), or an **A Record** pointing directly to your Coolify server's public IP address.
+
+2. **Coolify Traefik / Nginx Reverse Proxy Configuration**
+   - Locate your application in the Coolify console.
+   - Go to the **Settings** or **Domains** section of the service.
+   - In the **Domains** field, Coolify supports comma-separated multiple domains. Append the client's custom domain to your main domain using a comma:
+     `https://slate.onyx-network.com, https://bank.mc-roleplay.com`
+   - Coolify will automatically provision a Let's Encrypt SSL certificate for the new domain and route its incoming HTTP/S traffic to your container.
+
+3. **Backend Host headers Routing**
+   - The application handles multi-tenancy dynamically. When a request hits your backend Express server, the server inspects the `Host` header of the incoming request (`req.headers.host`).
+   - The system matches the domain to the associated bank in the database (via a custom domain mapping field in bank settings or matching the subdomain pattern) and dynamically serves that whitelabel bank's logo, color scheme, and credentials.
 
 
+
+
+
+### July 3rd 2026 Update
+- **Loans File Management**: Upgraded the `BankLoans.tsx` operations dashboard. Clicking on any loan row now triggers an interactive, detailed modal overlay. This "whole loan file" view displays complete borrower identity details, origination purpose notes, remaining vs. original balances, interest rates, status, and origination/payment dates, resolving issues where loans were previously unclickable.
+- **Client Portal Loans Integration**: Introduced a new **My Loans** tab into the `BankPortal.tsx` (the neo-banking Client Portal). Clients can now view their active and pending loans, including remaining balances, origination principal, APR, and next payment dates directly within their financial Action Hub.
+
+### Custom Domains & Coolify Whitelabel Routing
+To route a custom domain for a whitelabel client to this application via Coolify:
+1. **DNS Setup**: Instruct the client to create an `A` record pointing their custom domain (e.g., `bank.theircommunity.com`) to the IP address of your Coolify server.
+2. **Coolify Configuration**:
+   - Go to your application settings in the Coolify dashboard.
+   - Under **Domains**, add the new custom domain (e.g., `https://bank.theircommunity.com`).
+   - Coolify's Traefik/Caddy reverse proxy will automatically provision a Let's Encrypt SSL certificate and route incoming traffic for that domain to your application's internal port.
+3. **Application Routing**: When traffic hits the server, the Express application inspects the `Host` header. If it matches a configured whitelabel domain in the database, it serves that specific bank's portal.

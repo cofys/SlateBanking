@@ -104,8 +104,8 @@ export function BankPortal() {
   const [onyxMerchants, setOnyxMerchants] = useState<any[]>([]);
   const [oauthSuccess, setOauthSuccess] = useState<string | null>(null);
   
-  // Interactive feature tab selection: "transfer" | "onyx" | "invoices"
-  const [activeTab, setActiveTab] = useState<"transfer" | "onyx" | "invoices">("transfer");
+  // Interactive feature tab selection: "transfer" | "onyx" | "invoices" | "loans"
+  const [activeTab, setActiveTab] = useState<"transfer" | "onyx" | "invoices" | "loans">("transfer");
   
   // Ledger search filter
   const [searchTerm, setSearchTerm] = useState("");
@@ -494,6 +494,19 @@ export function BankPortal() {
                       <span className="absolute top-2 right-4 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
                     )}
                   </button>
+                  <button
+                    onClick={() => setActiveTab("loans")}
+                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all duration-200 relative
+                      ${activeTab === "loans" 
+                        ? `${theme.bgLight} ${theme.textAccent} shadow-sm border border-white/5` 
+                        : "text-zinc-400 hover:text-white hover:bg-white/5"
+                      }`}
+                  >
+                    <Landmark size={14} /> My Loans
+                    {userData.loans?.some((l: any) => l.status === 'active') && (
+                      <span className="absolute top-2 right-4 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                    )}
+                  </button>
                 </div>
 
                 {/* Hub Body */}
@@ -772,6 +785,57 @@ export function BankPortal() {
                           <CheckCircle2 className="mx-auto text-emerald-400/80 mb-3" size={28} />
                           <p className="text-sm font-semibold text-white">Account Perfectly Current</p>
                           <p className="text-xs text-zinc-500 mt-1">There are no outstanding invoices or bills linked to your accounts.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === "loans" && (
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="font-bold text-white text-base">My Loans</h3>
+                        <p className="text-zinc-400 text-xs mt-1">View your current active loan balances and pay them off.</p>
+                      </div>
+
+                      {(!userData.loans || userData.loans.length === 0) ? (
+                        <div className="text-center py-6 border border-white/5 bg-white/[0.01] rounded-2xl">
+                          <Landmark size={24} className="mx-auto text-zinc-500 mb-2" />
+                          <p className="text-white/60 text-sm">No active or pending loans.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3 pt-2 max-h-96 overflow-y-auto">
+                          {userData.loans.map((loan: any) => (
+                            <div key={loan.id} className="bg-[#0a0a0f] border border-white/10 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-white font-medium text-sm">Loan #{loan.id.slice(0, 8)}</h4>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                    loan.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' :
+                                    loan.status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
+                                    'bg-indigo-500/20 text-indigo-400'
+                                  }`}>
+                                    {loan.status}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-zinc-400 mt-1">{loan.purpose || 'No description'}</p>
+                                <div className="mt-2 flex gap-4 text-xs font-mono text-zinc-500">
+                                  <span>Orig: {formatMoney(loan.principalAmount)}</span>
+                                  <span>APR: {(loan.interestRate / 100).toFixed(1)}%</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] uppercase text-zinc-500 font-bold mb-1">Remaining Balance</p>
+                                <p className="text-xl font-bold font-mono text-emerald-400">
+                                  {formatMoney(loan.remainingAmount)}
+                                </p>
+                                {loan.status !== 'paid' && (
+                                  <p className="text-[10px] text-zinc-400 mt-1">
+                                    Next Pmt: {new Date(loan.nextPaymentDate).toLocaleDateString()}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

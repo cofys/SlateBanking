@@ -1291,7 +1291,7 @@ async function startServer() {
       }));
 
       const scopes = "corp.player.info.get,corp.get";
-      const authUrl = `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+      const authUrl = `https://dashboard.cityrp.org/oauth/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
 
       res.json({ url: authUrl });
     } catch (e: any) {
@@ -1331,7 +1331,7 @@ async function startServer() {
       });
 
       console.log("Exchanging CityCorp OAuth code for token with body:", bodyParams.toString());
-      const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
+      const tokenResponse = await fetch("https://dashboard.cityrp.org/api/auth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: bodyParams.toString()
@@ -1353,7 +1353,7 @@ async function startServer() {
 
       const authHeader = 'Basic ' + Buffer.from(`${minecraftUuid}:${token}`).toString('base64');
       console.log("Fetching player info from CityCorp...");
-      const playerRes = await fetch("https://api.cityrp.org/citycorp/player", {
+      const playerRes = await fetch("https://api.cityrp.org/player", {
         headers: { "Authorization": authHeader, "User-Agent": "SlateBankBot/1.0" }
       });
 
@@ -1424,7 +1424,7 @@ async function startServer() {
 
   app.get("/api/portal/:bankId/lookup", requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
-    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers } = await import("./src/db/schema");
+    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans } = await import("./src/db/schema");
     const { eq, and, or, desc, inArray } = await import("drizzle-orm");
 
     try {
@@ -1450,7 +1450,7 @@ async function startServer() {
       .where(and(eq(bankAccounts.ownerDiscordId, discordId), eq(bankAccounts.bankId, bankId)));
 
       if (userAccounts.length === 0) {
-         return res.json({ accounts: [], recentTx: [], pendingInvoices: [], cards: [], customer: customer ? {
+         return res.json({ accounts: [], recentTx: [], pendingInvoices: [], cards: [], loans: [], customer: customer ? {
            kycStatus: customer.kycStatus,
            mcUsername: customer.mcUsername,
            mcUuid: customer.mcUuid
@@ -1512,11 +1512,17 @@ async function startServer() {
       .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
       .where(and(inArray(cards.accountId, accountIds), eq(cards.bankId, bankId)));
 
+      // Get user loans
+      const userLoans = await db.select()
+        .from(loans)
+        .where(and(eq(loans.discordId, discordId), eq(loans.bankId, bankId)));
+
       res.json({
         accounts: userAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
         cards: userCards,
+        loans: userLoans,
         customer: customer ? {
           kycStatus: customer.kycStatus,
           mcUsername: customer.mcUsername,
@@ -2230,16 +2236,18 @@ async function startServer() {
 
   app.get("/api/banks/:bankId/customers", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
-    const { bankAccounts } = await import("./src/db/schema");
+    const { bankAccounts, bankCustomers } = await import("./src/db/schema");
     const { eq, sum, count, min } = await import("drizzle-orm");
     try {
       const dbAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
+      const localCustomers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
       
       const customerMap = new Map<string, any>();
       for (const account of dbAccounts) {
         const dId = account.ownerDiscordId;
         if (!customerMap.has(dId)) {
-          customerMap.set(dId, { discordId: dId, accountCount: 0, totalBalance: 0, firstJoined: account.createdAt });
+          const profile = localCustomers.find(c => c.discordId === dId);
+          customerMap.set(dId, { discordId: dId, mcUsername: profile?.mcUsername || null, accountCount: 0, totalBalance: 0, firstJoined: account.createdAt });
         }
         const c = customerMap.get(dId);
         c.accountCount += 1;
@@ -3754,10 +3762,26 @@ async function startServer() {
   // --- Loan APIs ---
   app.get("/api/banks/:bankId/loans", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
-    const { loans } = await import("./src/db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { loans, bankCustomers } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
     try {
-      const bankLoans = await db.select().from(loans).where(eq(loans.bankId, req.params.bankId));
+      const bankLoans = await db.select({
+        id: loans.id,
+        bankId: loans.bankId,
+        discordId: loans.discordId,
+        accountId: loans.accountId,
+        principalAmount: loans.principalAmount,
+        remainingAmount: loans.remainingAmount,
+        interestRate: loans.interestRate,
+        nextPaymentDate: loans.nextPaymentDate,
+        purpose: loans.purpose,
+        status: loans.status,
+        createdAt: loans.createdAt,
+        mcUsername: bankCustomers.mcUsername,
+      })
+      .from(loans)
+      .leftJoin(bankCustomers, and(eq(loans.discordId, bankCustomers.discordId), eq(loans.bankId, bankCustomers.bankId)))
+      .where(eq(loans.bankId, req.params.bankId));
       res.json(bankLoans);
     } catch (e) {
       console.error(e);
@@ -4543,6 +4567,20 @@ async function startServer() {
               createdAt: new Date(item.createdAt || item.date || Date.now())
             });
             accountsImported++;
+
+            if (balanceCents > 0) {
+               await db.insert(transactions).values({
+                 id: uuidv4(),
+                 bankId: bId,
+                 fromAccountId: null,
+                 toAccountId: accId,
+                 type: 'deposit',
+                 amount: balanceCents,
+                 description: 'Initial balance from migration',
+                 timestamp: new Date(item.createdAt || item.date || Date.now())
+               });
+               transactionsImported++;
+            }
           } else {
             accId = existing[0].id; // Merge / attach to existing
           }

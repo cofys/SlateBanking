@@ -1,0 +1,9 @@
+--- src/lib/citycorp_api.ts
++++ src/lib/citycorp_api.ts
+@@ -4,7 +4,7 @@
+ 
+ export class CityCorpClient {
+-  private baseUrl = "https://api.cityrp.org/citycorp";
++  private baseUrl = "http://127.0.0.1:3000/mock-citycorp/api";
+   private corpId: number;
+   private apiUuid: string;

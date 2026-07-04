@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Landmark, Plus, RefreshCw, AlertCircle, Banknote, Calendar } from "lucide-react";
+import { Landmark, Plus, RefreshCw, AlertCircle, Banknote, Calendar, FileText, X, Percent, CheckCircle2, ShieldAlert, ArrowUpRight, DollarSign } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export function BankLoans() {
@@ -9,6 +9,8 @@ export function BankLoans() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
+  const [selectedLoan, setSelectedLoan] = useState<any | null>(null);
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [discordId, setDiscordId] = useState("");
   const [principalAmount, setPrincipalAmount] = useState("");
@@ -149,9 +151,20 @@ export function BankLoans() {
             </thead>
             <tbody className="divide-y divide-white/5">
               {loans.map(loan => (
-                <tr key={loan.id} className="hover:bg-white/5 transition-colors">
+                <tr 
+                  key={loan.id} 
+                  className="hover:bg-white/5 transition-colors cursor-pointer"
+                  onClick={() => setSelectedLoan(loan)}
+                >
                   <td className="p-4 text-sm font-medium text-white/90">
-                    <span className="font-mono">{loan.discordId}</span>
+                    {loan.mcUsername ? (
+                      <span className="flex items-center gap-2">
+                        {loan.mcUsername}
+                        <span className="text-[10px] text-white/40 font-mono">({loan.discordId})</span>
+                      </span>
+                    ) : (
+                      <span className="font-mono text-white/70">{loan.discordId}</span>
+                    )}
                   </td>
                   <td className="p-4 text-sm font-mono text-white/70">
                     ${(loan.principalAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -376,6 +389,102 @@ export function BankLoans() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* View Loan Modal */}
+      <AnimatePresence>
+        {selectedLoan && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="p-6 border-b border-white/5 flex justify-between items-center bg-slate-800/50">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Loan Details</h2>
+                  <p className="text-sm text-white/60 mt-1 font-mono">{selectedLoan.id}</p>
+                </div>
+                <button onClick={() => setSelectedLoan(null)} className="text-white/40 hover:text-white transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-6 grid grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Borrower Identity</p>
+                    <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                      <p className="text-white text-lg font-medium">{selectedLoan.mcUsername || "Unverified Citizen"}</p>
+                      <p className="font-mono text-white/50 text-xs mt-1">Discord ID: {selectedLoan.discordId}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Purpose / Notes</p>
+                    <div className="text-white/80 bg-black/20 p-3 rounded-xl border border-white/5 min-h-[80px]">
+                      {selectedLoan.purpose || <span className="text-white/30 italic">No notes provided</span>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl">
+                      <p className="text-xs text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-1"><DollarSign size={14} /> Remaining</p>
+                      <p className="font-mono text-emerald-300 text-xl font-medium">${(selectedLoan.remainingAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="bg-slate-800/50 border border-white/5 p-4 rounded-xl">
+                      <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Original</p>
+                      <p className="font-mono text-white/80 text-xl">${(selectedLoan.principalAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Status</p>
+                      <span className={`inline-block px-3 py-1 rounded text-sm uppercase font-semibold tracking-wider ${selectedLoan.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : selectedLoan.status === 'pending' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                        {selectedLoan.status}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Interest Rate</p>
+                      <p className="text-white text-lg font-medium">{(selectedLoan.interestRate / 100).toFixed(2)}% APR</p>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Important Dates</p>
+                    <div className="bg-black/20 rounded-xl border border-white/5 p-4 space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-white/60 text-sm">Origination Date</span>
+                        <span className="text-white text-sm">{new Date(selectedLoan.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-3 border-t border-white/5">
+                        <span className="text-white/60 text-sm">Next Payment Due</span>
+                        <span className="text-white text-sm font-medium {selectedLoan.status !== 'paid' && 'text-rose-400'}">
+                          {selectedLoan.status === 'paid' ? 'N/A' : new Date(selectedLoan.nextPaymentDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {selectedLoan.status === 'active' && (
+                    <button
+                      onClick={() => {
+                        setSelectedLoan(null);
+                        setPayLoanId(selectedLoan.id);
+                        setShowPayModal(true);
+                      }}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition-colors shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2"
+                    >
+                      <DollarSign size={18} /> Record Manual Payment
+                    </button>
+                  )}
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

@@ -3,7 +3,7 @@ import { cityCorpLogs } from "../db/schema";
 import { v4 as uuidv4 } from "uuid";
 
 export class CityCorpClient {
-  private baseUrl = "https://api.cityrp.org/citycorp";
+  private baseUrl = "https://api.cityrp.org";
   private corpId: number;
   private apiUuid: string;
   private apiKey: string;

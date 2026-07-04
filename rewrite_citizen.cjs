@@ -1,196 +1,54 @@
-import { useState, useEffect } from "react";
-import { Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, Lock, Unlock, Link2, BookOpen, LogIn, LogOut } from "lucide-react";
-import { format } from "date-fns";
-import { useAuth } from "../lib/AuthContext";
-import { formatMoney } from "../lib/utils";
+const fs = require('fs');
 
-export function CitizenPortal() {
-  const { user, login, logout, isLoading } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [userData, setUserData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<"assets" | "transfer" | "invoices" | "loans" | "apply">("assets");
-  const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
-  const [onyxMerchants, setOnyxMerchants] = useState<any[]>([]);
+const fileContent = fs.readFileSync('src/pages/CitizenPortal.tsx', 'utf8');
 
-  useEffect(() => {
-    fetch("/api/onyx/merchants")
-      .then(r => r.json())
-      .then(d => setOnyxMerchants(d || []));
-  }, []);
+// Find where `{userData && !userData.error && (` starts
+const startIndex = fileContent.indexOf('{userData && !userData.error && (');
+const endIndex = fileContent.lastIndexOf('{userData?.error && (');
 
-  useEffect(() => {
-    if (user) {
-      handleSearch();
-    }
-  }, [user]);
+if (startIndex === -1 || endIndex === -1) {
+    console.error("Could not find boundaries");
+    process.exit(1);
+}
 
-  const toggleCardVisibility = (id: string) => {
-    setVisibleCardIds(prev => ({ ...prev, [id]: !prev[id] }));
-  };
+// We will keep everything before startIndex and after endIndex.
+const before = fileContent.substring(0, startIndex);
+const after = fileContent.substring(endIndex);
 
-  const formatCardNumber = (num: string, visible: boolean) => {
-    if (!num) return "";
-    const chunks = num.match(/.{1,4}/g) || [];
-    if (visible) return chunks.join(" ");
-    return `•••• •••• •••• ${chunks[3] || "0000"}`;
-  };
-
-  const handleSearch = async (e?: React.FormEvent | React.MouseEvent) => {
-    e?.preventDefault();
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/citizen/lookup`);
-      if (res.ok) {
-        setUserData(await res.json());
-      } else {
-        setUserData({ error: "No accounts found for this Discord ID." });
-      }
-    } catch (e) {
-      console.error(e);
-      setUserData({ error: "System error while fetching data." });
-    }
-    setLoading(false);
-  };
-
-  if (isLoading) {
-    return <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center text-white/50">Loading...</div>;
-  }
-
-  return (
-    <div className="max-w-4xl mx-auto space-y-8 mt-6 mb-20 px-4">
-      <div className="flex justify-end mb-4 gap-4">
-         {user && (
-           <button onClick={logout} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors bg-white/5 px-4 py-2 rounded-full border border-red-500/20">
-             <LogOut size={16} /> Logout
-           </button>
-         )}
-         <a href="/docs" className="flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors bg-white/5 px-4 py-2 rounded-full border border-white/10">
-           <BookOpen size={16} /> API Documentation
-         </a>
-      </div>
-      <div className="text-center space-y-3 mb-12">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center font-bold text-3xl mx-auto shadow-xl shadow-blue-500/20">
-          C
-        </div>
-        <h1 className="text-3xl font-semibold tracking-tight">Citizen Gateway</h1>
-        <p className="text-white/50 max-w-lg mx-auto">Access your global financial profile across all banks connected to the Slate Network.</p>
-      </div>
-
-      {!user ? (
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 md:p-10 shadow-2xl backdrop-blur-sm max-w-xl mx-auto text-center space-y-6">
-          <div>
-            <h2 className="text-xl font-medium text-white mb-2">Authentication Required</h2>
-            <p className="text-white/50 text-sm">Please securely authenticate with Discord to access your financial portfolio.</p>
-          </div>
-          <button 
-            onClick={login}
-            className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-[#5865F2]/20 flex items-center justify-center gap-2"
-          >
-            <LogIn size={18} /> Login with Discord
-          </button>
-        </div>
-      ) : (
-        <>
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-sm max-w-xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
-             {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt="Avatar" className="w-12 h-12 rounded-full border-2 border-white/10" />
-             ) : (
-                <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">
-                  <Search size={20} />
-                </div>
-             )}
-             <div>
-               <p className="text-white font-medium">{user.username}</p>
-               <p className="text-white/40 text-xs font-mono">{user.discordId}</p>
-             </div>
-          </div>
-          <button 
-            onClick={handleSearch}
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 px-4 rounded-lg transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-
-        {userData?.verifiedProfiles?.length > 0 ? (
-          <div className="bg-[#0f0f15] border border-white/10 rounded-2xl p-6 max-w-xl mx-auto space-y-4 shadow-xl mt-6 text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h3 className="text-white font-medium flex items-center gap-2">
-              <ShieldCheck className="text-emerald-400" size={18} />
-              Whitelabel Verified Bank Profiles
-            </h3>
-            <p className="text-xs text-white/50">Your active, bank-specific Minecraft profiles verified via whitelabel CityCorp OAuth:</p>
-            <div className="space-y-3">
-              {userData.verifiedProfiles.map((prof: any) => (
-                <div key={prof.bankId} className="flex items-center justify-between bg-white/[0.02] border border-white/5 p-3 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <img 
-                      src={`https://mc-heads.net/avatar/${prof.mcUuid}/32`} 
-                      alt="Skin avatar" 
-                      className="w-8 h-8 rounded border border-white/10" 
-                      referrerPolicy="no-referrer"
-                    />
-                    <div>
-                      <p className="text-sm font-semibold text-white">{prof.bankName}</p>
-                      <p className="text-xs text-white/40 font-mono">Minecraft Name: {prof.mcUsername}</p>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    Verified Profile
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="bg-[#0f0f15] border border-amber-500/10 rounded-2xl p-5 mt-6 max-w-xl mx-auto flex items-center justify-between shadow-xl text-left">
-             <div className="flex items-center gap-4">
-               <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-400 shrink-0">
-                 <Link2 size={24} />
-               </div>
-               <div>
-                 <h3 className="font-medium text-white text-sm">Whitelabel Profile Verification</h3>
-                 <p className="text-white/50 text-xs mt-1">To verify your Minecraft and CityCorp profile, visit your specific bank's portal page and click "Verify with CityCorp" under Identity Verification.</p>
-               </div>
-             </div>
-          </div>
-        )}
-
-      {userData && !userData.error && (
+const newBlock = `{userData && !userData.error && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 mt-8">
 
           {/* Action Hub Navigation */}
           <div className="flex flex-wrap justify-center gap-2 p-1.5 bg-white/5 rounded-2xl border border-white/10 w-fit mx-auto backdrop-blur-md">
             <button
               onClick={() => setActiveTab("assets")}
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${activeTab === "assets" ? "bg-white/10 text-white shadow-sm border border-white/10" : "text-zinc-400 hover:text-white hover:bg-white/5"}`}
+              className={\`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 \${activeTab === "assets" ? "bg-white/10 text-white shadow-sm border border-white/10" : "text-zinc-400 hover:text-white hover:bg-white/5"}\`}
             >
               <Wallet size={16} /> My Assets
             </button>
             <button
               onClick={() => setActiveTab("transfer")}
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${activeTab === "transfer" ? "bg-white/10 text-white shadow-sm border border-white/10" : "text-zinc-400 hover:text-white hover:bg-white/5"}`}
+              className={\`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 \${activeTab === "transfer" ? "bg-white/10 text-white shadow-sm border border-white/10" : "text-zinc-400 hover:text-white hover:bg-white/5"}\`}
             >
               <ArrowRight size={16} /> Transfer & Pay
             </button>
             <button
               onClick={() => setActiveTab("invoices")}
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 relative ${activeTab === "invoices" ? "bg-amber-500/20 text-amber-400 shadow-sm border border-amber-500/20" : "text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10"}`}
+              className={\`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 relative \${activeTab === "invoices" ? "bg-amber-500/20 text-amber-400 shadow-sm border border-amber-500/20" : "text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10"}\`}
             >
               <Clock size={16} /> Bills
               {userData.pendingInvoices?.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />}
             </button>
             <button
               onClick={() => setActiveTab("loans")}
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 relative ${activeTab === "loans" ? "bg-blue-500/20 text-blue-400 shadow-sm border border-blue-500/20" : "text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10"}`}
+              className={\`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 relative \${activeTab === "loans" ? "bg-blue-500/20 text-blue-400 shadow-sm border border-blue-500/20" : "text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10"}\`}
             >
               <ShieldCheck size={16} /> Loans
               {userData.loans?.some((l: any) => l.status === 'active') && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-400 animate-pulse" />}
             </button>
             <button
               onClick={() => setActiveTab("apply")}
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${activeTab === "apply" ? "bg-emerald-500/20 text-emerald-400 shadow-sm border border-emerald-500/20" : "text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10"}`}
+              className={\`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2 \${activeTab === "apply" ? "bg-emerald-500/20 text-emerald-400 shadow-sm border border-emerald-500/20" : "text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10"}\`}
             >
               <CreditCard size={16} /> Apply
             </button>
@@ -254,7 +112,7 @@ export function CitizenPortal() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {userData.cards.map((card: any) => (
                         <div key={card.id} className="relative group">
-                          <div className={`relative overflow-hidden rounded-2xl p-6 shadow-xl border border-white/10 flex flex-col justify-between transition-all aspect-[1.586/1] ${card.isLocked ? 'bg-zinc-800 opacity-60 grayscale' : (card.type === 'credit' ? 'bg-gradient-to-br from-indigo-900 via-purple-900 to-black' : 'bg-gradient-to-br from-slate-800 via-slate-900 to-black')}`}>
+                          <div className={\`relative overflow-hidden rounded-2xl p-6 shadow-xl border border-white/10 flex flex-col justify-between transition-all aspect-[1.586/1] \${card.isLocked ? 'bg-zinc-800 opacity-60 grayscale' : (card.type === 'credit' ? 'bg-gradient-to-br from-indigo-900 via-purple-900 to-black' : 'bg-gradient-to-br from-slate-800 via-slate-900 to-black')}\`}>
                             <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay"></div>
                             
                             {/* Chip */}
@@ -304,7 +162,7 @@ export function CitizenPortal() {
                                 const btn = e.currentTarget;
                                 btn.disabled = true;
                                 try {
-                                  const res = await fetch(`/api/citizen/cards/${card.id}/lock`, {
+                                  const res = await fetch(\`/api/citizen/cards/\${card.id}/lock\`, {
                                     method: 'PATCH',
                                     headers: {'Content-Type': 'application/json'},
                                     body: JSON.stringify({ discordId: user.discordId, isLocked: !card.isLocked })
@@ -317,7 +175,7 @@ export function CitizenPortal() {
                                   btn.disabled = false;
                                 }
                               }}
-                              className={`flex-1 py-2 px-3 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition-all border ${card.isLocked ? 'bg-indigo-500 hover:bg-indigo-600 text-white border-transparent shadow-lg shadow-indigo-500/20' : 'bg-white/5 hover:bg-white/10 text-white/80 border-white/10'}`}
+                              className={\`flex-1 py-2 px-3 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition-all border \${card.isLocked ? 'bg-indigo-500 hover:bg-indigo-600 text-white border-transparent shadow-lg shadow-indigo-500/20' : 'bg-white/5 hover:bg-white/10 text-white/80 border-white/10'}\`}
                             >
                               {card.isLocked ? <Unlock size={14} /> : <Lock size={14} />}
                               {card.isLocked ? "Unlock Card" : "Lock Card"}
@@ -347,7 +205,7 @@ export function CitizenPortal() {
                           return (
                             <div key={i} className="px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
                               <div className="flex gap-4 items-center">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg border ${isIncoming ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
+                                <div className={\`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg border \${isIncoming ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}\`}>
                                   {isIncoming ? '+' : '-'}
                                 </div>
                                 <div>
@@ -358,7 +216,7 @@ export function CitizenPortal() {
                                 </div>
                               </div>
                               <div className="text-right">
-                                <p className={`font-mono font-medium text-lg ${isIncoming ? 'text-emerald-400' : 'text-white/90'}`}>
+                                <p className={\`font-mono font-medium text-lg \${isIncoming ? 'text-emerald-400' : 'text-white/90'}\`}>
                                   {isIncoming ? '+' : '-'}{formatMoney(tx.amount || 0)}
                                 </p>
                               </div>
@@ -452,7 +310,7 @@ export function CitizenPortal() {
                       const fd = new FormData(form);
                       submitBtn.disabled = true;
                       try {
-                        const onyxRes = await fetch(`/api/onyx/checkout`, {
+                        const onyxRes = await fetch(\`/api/onyx/checkout\`, {
                           method: 'POST',
                           headers: {
                              'Content-Type': 'application/json',
@@ -602,7 +460,7 @@ export function CitizenPortal() {
                             <div>
                               <h4 className="text-lg font-bold text-white/90 flex items-center gap-3">
                                 {loan.bankName}
-                                <span className={`text-[10px] px-2.5 py-0.5 rounded-full border uppercase tracking-wider font-bold ${loan.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30'}`}>
+                                <span className={\`text-[10px] px-2.5 py-0.5 rounded-full border uppercase tracking-wider font-bold \${loan.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30'}\`}>
                                   {loan.status}
                                 </span>
                               </h4>
@@ -829,13 +687,6 @@ export function CitizenPortal() {
 
           </div>
         </div>
-      )}{userData?.error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-center text-sm font-medium">
-          {userData.error}
-        </div>
-      )}
-      </>
-      )}
-    </div>
-  );
-}
+      )}`;
+
+fs.writeFileSync('src/pages/CitizenPortal.tsx', before + newBlock + after);
