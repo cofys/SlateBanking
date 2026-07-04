@@ -38,9 +38,50 @@ import { BankInvoices } from "./pages/BankInvoices";
 import { PublicDocs } from "./pages/PublicDocs";
 
 import { BankCompliance } from "./pages/BankCompliance";
+import { useState, useEffect } from "react";
+
 
 function App() {
+  const [customBankId, setCustomBankId] = useState<string | null>(null);
+  const [checkingDomain, setCheckingDomain] = useState(true);
+
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    // Don't lookup for default domains or localhost
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('run.app') || hostname.includes('onyx-network.com')) {
+       setCheckingDomain(false);
+       return;
+    }
+    
+    fetch(`/api/domain-lookup?domain=${hostname}`)
+      .then(res => res.json())
+      .then(data => {
+         if (data.bankId) setCustomBankId(data.bankId);
+         setCheckingDomain(false);
+      })
+      .catch(() => setCheckingDomain(false));
+  }, []);
+
+  if (checkingDomain) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center text-white">
+         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
+
+  if (customBankId) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/*" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal overrideBankId={customBankId} /></div>} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
+
   return (
+
     <BrowserRouter>
       <Routes>
         <Route path="/docs" element={<PublicDocs />} />

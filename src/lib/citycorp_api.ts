@@ -129,6 +129,34 @@ export class CityCorpClient {
     }
   }
 
+  
+  async getAccountTransactions(accountName: string, page: number = 1) {
+    const url = new URL(`${this.baseUrl}/corp/accounts/transactions`);
+    url.searchParams.append("corp_id", this.corpId.toString());
+    url.searchParams.append("account_name", accountName);
+    url.searchParams.append("page", page.toString());
+    
+    const startTime = Date.now();
+    try {
+      const res = await fetch(url.toString(), { headers: this.headers });
+      const latencyMs = Date.now() - startTime;
+      
+      if (res.ok) {
+         const data = await res.json();
+         await this.logApiResult("/corp/accounts/transactions", { account_name: accountName, page }, latencyMs, res.status, true);
+         return data;
+      }
+      
+      let errMsg = await res.text();
+      await this.logApiResult("/corp/accounts/transactions", { account_name: accountName, page }, latencyMs, res.status, false, errMsg);
+      return null;
+    } catch (e: any) {
+      const latencyMs = Date.now() - startTime;
+      await this.logApiResult("/corp/accounts/transactions", { account_name: accountName, page }, latencyMs, 0, false, e.message);
+      return null;
+    }
+  }
+
   async listAccounts(page: number = 1) {
     const url = new URL(`${this.baseUrl}/corp/accounts/list`);
     url.searchParams.append("corp_id", this.corpId.toString());

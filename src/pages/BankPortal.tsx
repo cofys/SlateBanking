@@ -94,8 +94,9 @@ const schemeMap: Record<string, ThemeConfig> = {
   },
 };
 
-export function BankPortal() {
-  const { bankId } = useParams();
+export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
+  const params = useParams();
+  const bankId = overrideBankId || params.bankId;
   const { user, login, logout, isLoading } = useAuth();
   const [bank, setBank] = useState<any>(null);
   const [loading, setLoading] = useState(false);

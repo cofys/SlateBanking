@@ -47,6 +47,25 @@ async function startServer() {
     return `${origin}/api/auth/discord/callback`;
   };
 
+  
+  app.get("/api/domain-lookup", async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const domain = req.query.domain as string;
+    
+    if (!domain) return res.json({ bankId: null });
+    
+    try {
+       const bank = await db.select().from(banks).where(eq(banks.customDomain, domain)).get();
+       if (bank) return res.json({ bankId: bank.id });
+       return res.json({ bankId: null });
+    } catch(e) {
+       console.error(e);
+       return res.json({ bankId: null });
+    }
+  });
+
   app.get('/api/auth/url', (req, res) => {
     const redirectUri = getRedirectUri(req);
     const params = new URLSearchParams({
@@ -2559,6 +2578,67 @@ async function startServer() {
     }
   });
 
+  
+  app.get("/api/banks/:bankId/products", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { loanProducts, creditProducts } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    
+    try {
+      const bankId = req.params.bankId;
+      const loansList = await db.select().from(loanProducts).where(eq(loanProducts.bankId, bankId));
+      const creditsList = await db.select().from(creditProducts).where(eq(creditProducts.bankId, bankId));
+      
+      res.json({ loans: loansList, credits: creditsList });
+    } catch(e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to fetch products" });
+    }
+  });
+
+  app.post("/api/banks/:bankId/products", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { loanProducts, creditProducts } = await import("./src/db/schema");
+    const { v4: uuidv4 } = await import("uuid");
+    
+    try {
+      const bankId = req.params.bankId;
+      const { type, name, interestRate, maxLimit, termDays, rewardsPercent } = req.body;
+      
+      if (!name || isNaN(interestRate) || isNaN(maxLimit)) {
+        return res.status(400).json({ error: "Invalid product data" });
+      }
+
+      if (type === 'loan') {
+        if (!termDays) return res.status(400).json({ error: "Term days required for loans" });
+        await db.insert(loanProducts).values({
+          id: uuidv4(),
+          bankId,
+          name,
+          interestRate: Number(interestRate),
+          maxAmount: Number(maxLimit) * 100, // convert to cents
+          termDays: Number(termDays),
+          createdAt: new Date()
+        });
+      } else {
+        await db.insert(creditProducts).values({
+          id: uuidv4(),
+          bankId,
+          name,
+          interestRate: Number(interestRate),
+          maxLimit: Number(maxLimit) * 100,
+          rewardsPercent: Number(rewardsPercent) || 0,
+          createdAt: new Date()
+        });
+      }
+      
+      res.json({ success: true });
+    } catch(e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to create product" });
+    }
+  });
+
   app.get("/api/banks/:bankId/accounts", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts } = await import("./src/db/schema");
@@ -2916,6 +2996,81 @@ async function startServer() {
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Internal error" });
+    }
+  });
+
+  
+  app.post("/api/banks/:bankId/accounts/:accountId/sync", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { bankAccounts, transactions, banks } = await import("./src/db/schema");
+    const { eq, and, desc } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bankId = req.params.bankId;
+      const accountId = req.params.accountId;
+      
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank || !bank.corpApiKey) return res.status(400).json({ error: "Bank CityCorp config missing" });
+      
+      const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
+      if (!account) return res.status(404).json({ error: "Account not found" });
+
+      const { CityCorpClient } = await import("./src/lib/citycorp_api");
+      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+      
+      // 1. Sync balance
+      const accountDetails = await client.getAccountDetails(account.accountName);
+      if (accountDetails && accountDetails.account) {
+         const remoteBalance = Math.round(Number(accountDetails.account.balance) * 100);
+         if (account.balance !== remoteBalance) {
+            await db.update(bankAccounts).set({ balance: remoteBalance }).where(eq(bankAccounts.id, account.id));
+         }
+      }
+      
+      // 2. Sync transactions
+      const txData = await client.getAccountTransactions(account.accountName, 1);
+      if (txData && txData.transactions && Array.isArray(txData.transactions)) {
+         // Get existing transactions to prevent duplicates
+         const existingTxs = await db.select().from(transactions).where(
+            and(eq(transactions.bankId, bankId), eq(transactions.toAccountId, account.id))
+         );
+         const existingTxIds = new Set(existingTxs.map(t => t.id));
+         const existingTxDescs = new Set(existingTxs.map(t => t.description + t.amount));
+         
+         let added = 0;
+         for (const tx of txData.transactions) {
+            // Check if we already have this transaction
+            let txAmount = tx.amount || tx.value || 0;
+            if (typeof txAmount === 'string') txAmount = parseFloat(txAmount.replace(/[^0-9.-]+/g,""));
+            
+            const isOutflow = tx.type === 'withdraw' || tx.type === 'transfer_out' || txAmount < 0;
+            const amountCents = Math.abs(Math.round(Number(txAmount) * 100));
+            const desc = tx.description || tx.memo || "Synced transaction";
+            
+            // Basic deduplication
+            if (!existingTxIds.has(tx.id) && !existingTxDescs.has(desc + amountCents)) {
+               await db.insert(transactions).values({
+                  id: tx.id || uuidv4(),
+                  bankId: bankId,
+                  fromAccountId: isOutflow ? account.id : null,
+                  toAccountId: !isOutflow ? account.id : null,
+                  type: isOutflow ? 'withdraw' : 'deposit',
+                  amount: amountCents,
+                  description: desc,
+                  timestamp: new Date(tx.timestamp || tx.date || tx.created_at || Date.now())
+               });
+               added++;
+               existingTxDescs.add(desc + amountCents);
+            }
+         }
+         return res.json({ success: true, syncedBalance: accountDetails?.account?.balance, addedTransactions: added });
+      }
+      
+      res.json({ success: true, message: "Balance synced, no transactions available." });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to sync with CityCorp" });
     }
   });
 
@@ -4201,7 +4356,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/banks/:bankId/developer", requireBankStaff, async (req, res) => {
+  app.get("/api/banks/:bankId/developer", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -4222,7 +4377,47 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/developer/roll", requireBankStaff, async (req, res) => {
+  
+  app.get("/api/banks/:bankId/developer", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    
+    try {
+      const bankId = req.params.bankId;
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank) return res.status(404).json({ error: "Bank not found" });
+      
+      res.json({
+         apiKey: bank.apiKey,
+         webhookSecret: bank.webhookSecret,
+         apiWebhookUrl: bank.apiWebhookUrl
+      });
+    } catch(e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to fetch developer settings" });
+    }
+  });
+
+  app.post("/api/banks/:bankId/developer", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    
+    try {
+      const bankId = req.params.bankId;
+      const { apiWebhookUrl } = req.body;
+      
+      await db.update(banks).set({ apiWebhookUrl }).where(eq(banks.id, bankId));
+      
+      res.json({ success: true });
+    } catch(e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to update webhook url" });
+    }
+  });
+
+  app.post("/api/banks/:bankId/developer/roll", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -4238,6 +4433,79 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  
+  
+  app.post("/api/banks/:bankId/transactions/sync", requireBankStaff, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { bankAccounts, transactions, banks } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bankId = req.params.bankId;
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank || !bank.corpApiKey) return res.status(400).json({ error: "Bank CityCorp config missing" });
+      
+      const { CityCorpClient } = await import("./src/lib/citycorp_api");
+      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+      
+      const accounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId));
+      let totalAdded = 0;
+      let accountsUpdated = 0;
+      
+      // Batch sync all accounts
+      for (const account of accounts) {
+         // 1. Sync balance
+         const accountDetails = await client.getAccountDetails(account.accountName);
+         if (accountDetails && accountDetails.account) {
+            const remoteBalance = Math.round(Number(accountDetails.account.balance) * 100);
+            if (account.balance !== remoteBalance) {
+               await db.update(bankAccounts).set({ balance: remoteBalance }).where(eq(bankAccounts.id, account.id));
+               accountsUpdated++;
+            }
+         }
+
+         // 2. Sync transactions
+         const txData = await client.getAccountTransactions(account.accountName, 1);
+         if (txData && txData.transactions && Array.isArray(txData.transactions)) {
+            const existingTxs = await db.select().from(transactions).where(
+               and(eq(transactions.bankId, bankId), eq(transactions.toAccountId, account.id))
+            );
+            const existingTxIds = new Set(existingTxs.map(t => t.id));
+            const existingTxDescs = new Set(existingTxs.map(t => t.description + t.amount));
+            
+            for (const tx of txData.transactions) {
+               let txAmount = tx.amount || tx.value || 0;
+               if (typeof txAmount === 'string') txAmount = parseFloat(txAmount.replace(/[^0-9.-]+/g,""));
+               
+               const isOutflow = tx.type === 'withdraw' || tx.type === 'transfer_out' || txAmount < 0;
+               const amountCents = Math.abs(Math.round(Number(txAmount) * 100));
+               const desc = tx.description || tx.memo || "Synced transaction";
+               
+               if (!existingTxIds.has(tx.id) && !existingTxDescs.has(desc + amountCents)) {
+                  await db.insert(transactions).values({
+                     id: tx.id || uuidv4(),
+                     bankId: bankId,
+                     fromAccountId: isOutflow ? account.id : null,
+                     toAccountId: !isOutflow ? account.id : null,
+                     type: isOutflow ? 'withdraw' : 'deposit',
+                     amount: amountCents,
+                     description: desc,
+                     timestamp: new Date(tx.timestamp || tx.date || tx.created_at || Date.now())
+                  });
+                  totalAdded++;
+                  existingTxDescs.add(desc + amountCents);
+               }
+            }
+         }
+      }
+      res.json({ success: true, addedTransactions: totalAdded, accountsUpdated });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to sync transactions" });
     }
   });
 
@@ -4390,7 +4658,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/mass-action", requireBankStaff, async (req, res) => {
+  app.post("/api/banks/:bankId/tools/mass-action", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, auditLogs } = await import("./src/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -4440,7 +4708,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/purge-zero", requireBankStaff, async (req, res) => {
+  app.post("/api/banks/:bankId/tools/purge-zero", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, auditLogs } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -4475,7 +4743,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/daily-processing", requireBankStaff, async (req, res) => {
+  app.post("/api/banks/:bankId/tools/daily-processing", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, auditLogs, loans, subscriptions } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -4517,7 +4785,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/data-migration", requireBankStaff, async (req, res) => {
+  app.post("/api/banks/:bankId/tools/data-migration", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { bankAccounts, transactions, auditLogs } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -4670,7 +4938,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/banks/:bankId/tools/seed-demo", requireBankStaff, async (req, res) => {
+  app.post("/api/banks/:bankId/tools/seed-demo", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("./src/db/index");
     const { 
       bankCustomers, 

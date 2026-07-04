@@ -19,8 +19,24 @@ export function BankAccountDetail() {
   // For retrieving networks in wire transfer
   const [networkBanks, setNetworkBanks] = useState<any[]>([]);
 
+  
   const fetchAcc = () => {
+    // Fire off a background sync first, but don't block the initial load if it's slow
+    fetch(`/api/banks/${bank.id}/accounts/${accountId}/sync`, { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+         if (d.addedTransactions > 0 || d.syncedBalance) {
+            // Re-fetch to get new transactions
+            fetch(`/api/banks/${bank.id}/accounts/${accountId}`)
+              .then(r => r.json())
+              .then(d2 => setData(d2))
+              .catch(console.error);
+         }
+      })
+      .catch(console.error);
+
     fetch(`/api/banks/${bank.id}/accounts/${accountId}`)
+
       .then(r => r.ok ? r.json() : Promise.reject(new Error("Failed to fetch")))
       .then(d => {
         setData(d);
@@ -261,7 +277,7 @@ export function BankAccountDetail() {
               Security & Admin
             </h3>
             <div className="space-y-3">
-              <button className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg text-sm transition-colors opacity-50 cursor-not-allowed">
+              <button onClick={() => alert("This feature is coming soon to the Slate bank portal.")}  className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg text-sm transition-colors opacity-50 cursor-not-allowed">
                 Freeze Account
               </button>
               <button 

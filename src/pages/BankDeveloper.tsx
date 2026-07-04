@@ -11,6 +11,7 @@ export function BankDeveloper() {
   
   const [apiKey, setApiKey] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
   const [loading, setLoading] = useState(true);
 
   const fetchKeys = async () => {
@@ -18,7 +19,8 @@ export function BankDeveloper() {
       const res = await fetch(`/api/banks/${bank.id}/developer`);
       const data = await res.json();
       setApiKey(data.apiKey);
-      setWebhookSecret(data.webhookSecret);
+        setWebhookSecret(data.webhookSecret);
+        setWebhookUrl(data.apiWebhookUrl || "");
     } catch (e) {
       console.error(e);
     } finally {
@@ -121,12 +123,41 @@ export function BankDeveloper() {
               <h3 className="text-xl font-bold">Webhooks</h3>
             </div>
             
-            <div className="bg-[#1a1a24] border border-white/10 rounded-lg p-6 text-center text-white/50 mb-4">
-              <p className="mb-4 text-sm">No webhooks configured.</p>
-              <button className="bg-white/10 hover:bg-white/15 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                Add Endpoint
-              </button>
+            
+            <div className="bg-[#1a1a24] border border-white/10 rounded-lg p-6">
+              <h4 className="text-sm font-bold mb-4">Webhook Endpoint URL</h4>
+              <div className="flex gap-2 mb-4">
+                <input 
+                  type="url" 
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                  placeholder="https://api.yourdomain.com/webhooks/slate"
+                />
+                <button 
+                  onClick={async () => {
+                     try {
+                        const res = await fetch(`/api/banks/${bank.id}/developer`, {
+                           method: "POST",
+                           headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify({ apiWebhookUrl: webhookUrl })
+                        });
+                        if (res.ok) alert("Webhook URL saved successfully.");
+                        else alert("Failed to save webhook URL.");
+                     } catch(e) {
+                        alert("Error saving webhook URL.");
+                     }
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Save URL
+                </button>
+              </div>
+              <p className="text-white/50 text-xs leading-relaxed">
+                We will send POST requests to this URL for all events occurring in your bank, such as new accounts, transactions, or card issuing. Ensure you verify the signature using your Webhook Secret.
+              </p>
             </div>
+
           </div>
         </div>
 

@@ -94,6 +94,25 @@ export function BankTransactions() {
             Export CSV
           </button>
           <button 
+            onClick={() => {
+              setLoading(true);
+              fetch(`/api/banks/${bank.id}/transactions/sync`, { method: "POST" })
+                .then(r => r.json())
+                .then(d => {
+                  if (d.error) alert(d.error);
+                  else if (d.addedTransactions > 0) alert(`Synced ${d.addedTransactions} new transactions.`);
+                  else alert("No new transactions found.");
+                  fetchTransactions();
+                }).catch(e => {
+                  console.error(e);
+                  setLoading(false);
+                });
+            }}
+            className="flex-1 sm:flex-none justify-center bg-transparent border border-indigo-500/50 hover:bg-indigo-500/10 text-indigo-400 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          >
+            Sync CityCorp
+          </button>
+          <button 
             onClick={() => setShowAdd(true)}
             className="flex-1 sm:flex-none justify-center bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
           >

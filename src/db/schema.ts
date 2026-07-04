@@ -23,6 +23,7 @@ export const banks = sqliteTable("banks", {
   logoUrl: text("logo_url"),
   apiKey: text("api_key"),
   webhookSecret: text("webhook_secret"),
+  apiWebhookUrl: text("api_webhook_url"),
   status: text("status").default("offline"),
   plan: text("plan").default("standard"), // starter, standard, enterprise
   billingStatus: text("billing_status").default("active"), // active, suspended, trialing

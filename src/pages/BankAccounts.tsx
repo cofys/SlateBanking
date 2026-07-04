@@ -14,7 +14,21 @@ export function BankAccounts() {
 
   const fetchAccounts = () => {
     setLoading(true);
+    // Background sync balances and transactions for all accounts
+    fetch(`/api/banks/${bank.id}/transactions/sync`, { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+         if (d.accountsUpdated > 0 || d.addedTransactions > 0) {
+            // Re-fetch to get new balances
+            fetch(`/api/banks/${bank.id}/accounts`)
+              .then(r => r.json())
+              .then(data => setAccounts(data));
+         }
+      })
+      .catch(console.error);
+
     fetch(`/api/banks/${bank.id}/accounts`)
+
       .then(r => r.json())
       .then(data => {
         setAccounts(data);

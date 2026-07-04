@@ -276,3 +276,25 @@ To route a custom domain for a whitelabel client to this application via Coolify
    - Under **Domains**, add the new custom domain (e.g., `https://bank.theircommunity.com`).
    - Coolify's Traefik/Caddy reverse proxy will automatically provision a Let's Encrypt SSL certificate and route incoming traffic for that domain to your application's internal port.
 3. **Application Routing**: When traffic hits the server, the Express application inspects the `Host` header. If it matches a configured whitelabel domain in the database, it serves that specific bank's portal.
+
+### Global Background Sync Engine
+- **CityCorp Unified Sync Strategy**: Engineered a global `/api/banks/:bankId/sync` transaction synchronization endpoint that fully populates a bank's account ledger with up-to-date balances and multi-paginated transaction history from the remote game servers. This solves the previous requirement for granular manual refreshes and brings automated parity directly to the `BankAccounts.tsx` dashboard and the `BankTransactions.tsx` master ledger. 
+- **Automated Silent Refresh**: When authorized bank staff navigate to the "Accounts" global index, the system dispatches a silent background sync operation to CityCorp. Any newly resolved ledger changes (deltas in account balance or unrecognized incoming/outgoing transactions) are silently injected into the Drizzle SQLite instance. The UI automatically re-fetches and patches the components without blocking the initial render, satisfying real-time tracking requirements immediately out-of-the-box.
+
+### Financial Product Creation
+- **Dynamic Lending & Credit Offerings**: Implemented the Product Creation modal (`BankProducts.tsx`). Bank administrators can now define specific parameter-driven products (e.g. Starter Loan, Infinite Cashback Credit Line) mapped directly to the `loanProducts` and `creditProducts` Drizzle tables. Allows defining exact variables such as Term Length, Base APR%, Maximum Disbursal Limit, and Rewards Percentages.
+
+### Developer API Webhooks
+- **Bank Events Egress Configuration**: Activated the "Add Endpoint" configuration flow in the `BankDeveloper.tsx` portal. System integrators and community script writers can specify an absolute URL (`apiWebhookUrl`) to receive standard RESTful POST requests directly from the Slate system, signed and encrypted with their secret API and Webhook keys. This opens up automated Slack/Discord notifications and remote application triggering.
+
+### Security & Access Control
+- **Hardened Admin Action Endpoints**: Completed a deep security audit of the API infrastructure. Hardened all high-stakes endpoints under the `developer` and `tools` routes (such as Webhook Configuration, API Key Rolling, Demo Data Seeding, Mass Purges, and Data Migrations) using `requireRole(["owner", "admin"])`. This ensures that standard bank tellers and agents cannot execute destructive actions or manipulate webhook egress vectors.
+
+### Whitelabel Custom Domain Engine
+- **Dynamic Hostname Interception**: Engineered a client-side and server-side domain resolution engine. The core `App.tsx` now inspects `window.location.hostname`. If it detects a non-native domain (e.g., `bank.clientdomain.com`), it halts the render, queries `/api/domain-lookup`, and dynamically renders the isolated `BankPortal` environment instead of the Global Admin dashboard, fully realizing the multi-tenant custom domain architecture.
+
+### Security & Access Control
+- **Hardened Admin Action Endpoints**: Completed a deep security audit of the API infrastructure. Hardened all high-stakes endpoints under the `developer` and `tools` routes (such as Webhook Configuration, API Key Rolling, Demo Data Seeding, Mass Purges, and Data Migrations) using `requireRole(["owner", "admin"])`. This ensures that standard bank tellers and agents cannot execute destructive actions or manipulate webhook egress vectors.
+
+### Whitelabel Custom Domain Engine
+- **Dynamic Hostname Interception**: Engineered a client-side and server-side domain resolution engine. The core `App.tsx` now inspects `window.location.hostname`. If it detects a non-native domain (e.g., `bank.clientdomain.com`), it halts the render, queries `/api/domain-lookup`, and dynamically renders the isolated `BankPortal` environment instead of the Global Admin dashboard, fully realizing the multi-tenant custom domain architecture.
