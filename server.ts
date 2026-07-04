@@ -67,10 +67,29 @@ async function startServer() {
     }
   });
 
-  app.get('/api/auth/url', (req, res) => {
+  
+  app.get('/api/auth/url', async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { like } = await import("drizzle-orm");
+
+    const hostname = req.hostname;
+    let clientId = process.env.DISCORD_CLIENT_ID || '';
+    
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
+       try {
+         const bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
+         if (bank && bank.discordClientId) {
+           clientId = bank.discordClientId;
+         }
+       } catch (e) {
+         console.error("Domain lookup error for OAuth URL:", e);
+       }
+    }
+
     const redirectUri = getRedirectUri(req);
     const params = new URLSearchParams({
-      client_id: process.env.DISCORD_CLIENT_ID || '',
+      client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: 'identify email', 
@@ -79,21 +98,44 @@ async function startServer() {
     res.json({ url: authUrl });
   });
 
+
+  
   app.get('/api/auth/discord/callback', async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { like } = await import("drizzle-orm");
+
     const { code } = req.query;
     if (!code) return res.status(400).send("No code provided");
+
+    const hostname = req.hostname;
+    let clientId = process.env.DISCORD_CLIENT_ID || '';
+    let clientSecret = process.env.DISCORD_CLIENT_SECRET || '';
+
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
+       try {
+         const bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
+         if (bank && bank.discordClientId && bank.discordClientSecret) {
+           clientId = bank.discordClientId;
+           clientSecret = bank.discordClientSecret;
+         }
+       } catch (e) {
+         console.error("Domain lookup error for OAuth Callback:", e);
+       }
+    }
 
     const redirectUri = getRedirectUri(req);
     try {
       const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
         method: 'POST',
         body: new URLSearchParams({
-          client_id: process.env.DISCORD_CLIENT_ID || '',
-          client_secret: process.env.DISCORD_CLIENT_SECRET || '',
+          client_id: clientId,
+          client_secret: clientSecret,
           grant_type: 'authorization_code',
           code: code.toString(),
           redirect_uri: redirectUri,
         }).toString(),
+
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
@@ -533,6 +575,8 @@ async function startServer() {
         updateData.corpApiKey = b.cityCorpAppSecret; // Unified App Token synchronizes to corpApiKey
       }
       if (b.customDomain !== undefined) updateData.customDomain = b.customDomain;
+      if (b.discordClientId !== undefined) updateData.discordClientId = b.discordClientId;
+      if (b.discordClientSecret !== undefined && b.discordClientSecret !== "") updateData.discordClientSecret = b.discordClientSecret;
       
       await db.update(banks).set(updateData).where(eq(banks.id, req.params.id));
       res.json({ success: true });
@@ -875,7 +919,7 @@ async function startServer() {
     const { v4: uuidv4 } = await import("uuid");
     
     try {
-      const { name, guildId, discordToken, customDomain, corpId, corpApiUuid, corpApiKey, cityCorpAppId, cityCorpAppSecret } = req.body;
+      const { name, guildId, discordToken, discordClientId, discordClientSecret, customDomain, corpId, corpApiUuid, corpApiKey, cityCorpAppId, cityCorpAppSecret } = req.body;
       const newBank = {
         id: uuidv4(),
         name,
@@ -887,6 +931,8 @@ async function startServer() {
         corpApiKey,
         cityCorpAppId,
         cityCorpAppSecret,
+        discordClientId,
+        discordClientSecret,
         status: "offline",
         createdAt: new Date(),
       };
@@ -2528,6 +2574,12 @@ async function startServer() {
     try {
       const bId = req.params.bankId;
       
+      if (req.body.discordClientId !== undefined) {
+         await db.update(banks).set({ discordClientId: req.body.discordClientId }).where(eq(banks.id, bId));
+      }
+      if (req.body.discordClientSecret !== undefined && req.body.discordClientSecret !== "") {
+         await db.update(banks).set({ discordClientSecret: req.body.discordClientSecret }).where(eq(banks.id, bId));
+      }
       if (req.body.customDomain !== undefined) {
          await db.update(banks).set({ customDomain: req.body.customDomain }).where(eq(banks.id, bId));
       }

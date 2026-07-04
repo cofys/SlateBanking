@@ -13,6 +13,8 @@ export const banks = sqliteTable("banks", {
   name: text("name").notNull(),
   guildId: text("guild_id").notNull(),
   discordToken: text("discord_token").notNull(),
+  discordClientId: text("discord_client_id"),
+  discordClientSecret: text("discord_client_secret"),
   corpId: integer("corp_id"),
   corpApiUuid: text("corp_api_uuid"),
   corpApiKey: text("corp_api_key"),

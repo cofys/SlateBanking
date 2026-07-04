@@ -107,6 +107,8 @@ export function BanksList() {
   const [guildId, setGuildId] = useState("");
   const [discordToken, setDiscordToken] = useState("");
   const [customDomain, setCustomDomain] = useState("");
+  const [discordClientId, setDiscordClientId] = useState("");
+  const [discordClientSecret, setDiscordClientSecret] = useState("");
   const [corpId, setCorpId] = useState("");
   const [corpApiUuid, setCorpApiUuid] = useState("");
   const [corpApiKey, setCorpApiKey] = useState("");
@@ -124,6 +126,8 @@ export function BanksList() {
   const [editCityCorpAppId, setEditCityCorpAppId] = useState("");
   const [editCityCorpAppSecret, setEditCityCorpAppSecret] = useState("");
   const [editCustomDomain, setEditCustomDomain] = useState("");
+  const [editDiscordClientId, setEditDiscordClientId] = useState("");
+  const [editDiscordClientSecret, setEditDiscordClientSecret] = useState("");
 
   const activeSelectedBank = banks.find(b => b.id === showManageModal);
 
@@ -137,6 +141,8 @@ export function BanksList() {
       setEditCityCorpAppId(activeSelectedBank.cityCorpAppId || "");
       setEditCityCorpAppSecret(activeSelectedBank.cityCorpAppSecret || "");
       setEditCustomDomain(activeSelectedBank.customDomain || "");
+      setEditDiscordClientId(activeSelectedBank.discordClientId || "");
+      setEditDiscordClientSecret(""); // Don't pre-fill secrets
       setIsEditingConfig(false);
     }
   }, [showManageModal, activeSelectedBank]);
@@ -167,7 +173,7 @@ export function BanksList() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          name, guildId, discordToken, customDomain,
+          name, guildId, discordToken, discordClientId, discordClientSecret, customDomain,
           corpId: Number(corpId), corpApiUuid, corpApiKey,
           cityCorpAppId, cityCorpAppSecret
         })
@@ -177,6 +183,8 @@ export function BanksList() {
       setGuildId("");
       setDiscordToken("");
       setCustomDomain("");
+      setDiscordClientId("");
+      setDiscordClientSecret("");
       setCorpId("");
       setCorpApiUuid("");
       setCorpApiKey("");
@@ -449,6 +457,17 @@ export function BanksList() {
                   placeholder="Paste bot token here..."
                   className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
+              
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Discord Client ID</label>
+                  <input value={discordClientId} onChange={(e) => setDiscordClientId(e.target.value)} className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Discord Client Secret</label>
+                  <input type="password" value={discordClientSecret} onChange={(e) => setDiscordClientSecret(e.target.value)} className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                </div>
               </div>
               <div>
                 <label className="block text-xs text-white/70 mb-1">Custom Domain (Optional)</label>
@@ -618,6 +637,8 @@ export function BanksList() {
                                 corpId: editCorpId ? parseInt(editCorpId) : null,
                                 corpApiUuid: editCorpApiUuid,
                                 customDomain: editCustomDomain,
+                                discordClientId: editDiscordClientId,
+                                discordClientSecret: editDiscordClientSecret,
                                 cityCorpAppId: editCityCorpAppId,
                               };
 
