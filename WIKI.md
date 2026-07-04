@@ -298,3 +298,7 @@ To route a custom domain for a whitelabel client to this application via Coolify
 
 ### Whitelabel Custom Domain Engine
 - **Dynamic Hostname Interception**: Engineered a client-side and server-side domain resolution engine. The core `App.tsx` now inspects `window.location.hostname`. If it detects a non-native domain (e.g., `bank.clientdomain.com`), it halts the render, queries `/api/domain-lookup`, and dynamically renders the isolated `BankPortal` environment instead of the Global Admin dashboard, fully realizing the multi-tenant custom domain architecture.
+
+### UI Refinements
+- **Dismissible Demo Data Banner**: The "Populate Demo Data" banner in the Bank Overview now natively respects user access levels. It performs a silent role validation against the bank's staff team, ensuring it only renders for `owner` and `admin` roles. Administrators can also permanently dismiss the banner using the new close button, which stores the preference in the client's local storage.
+- **Vite Host Header Relaxation**: Resolved Traefik "No available server" errors occurring when testing newly mapped custom domains (e.g. `testbank.azisle.com`) through Coolify. Updated the internal `vite.config.ts` to set `allowedHosts: true`, bypassing the strict Host validation that was silently rejecting incoming connections from non-primary whitelabel subdomains.

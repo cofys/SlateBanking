@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useOutletContext, Link } from "react-router-dom";
 import { ArrowUpRight, ArrowDownRight, RefreshCw, Server, ExternalLink, Users, Wallet, Activity, Sparkles, Loader2, AlertTriangle } from "lucide-react";
 import { formatMoney, formatNumber } from "../lib/utils";
+import { useAuth } from "../lib/AuthContext";
+import { X } from "lucide-react";
 import { motion } from "motion/react";
 
 export function BankOverview() {
@@ -31,8 +33,27 @@ export function BankOverview() {
     }
   };
 
+  
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    return localStorage.getItem(`hide_demo_banner_${bank?.id}`) === 'true';
+  });
+
+  const dismissBanner = () => {
+    localStorage.setItem(`hide_demo_banner_${bank?.id}`, 'true');
+    setBannerDismissed(true);
+  };
+
   useEffect(() => {
     if (bank?.id) {
+       // Check if user is admin/owner
+       fetch(`/api/banks/${bank.id}/team`)
+         .then(res => {
+            if (res.ok) setIsAdmin(true);
+         })
+         .catch(() => {});
+
        Promise.all([
           fetch(`/api/banks/${bank.id}/customers`).then(r => r.json()),
        ]).then(([customers]) => {
@@ -67,8 +88,14 @@ export function BankOverview() {
         </Link>
       </header>
       
+      
       {/* Seeding Alert Banner */}
-      <div className="bg-gradient-to-r from-indigo-950/40 via-[#12121e] to-indigo-950/40 border border-indigo-500/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+      {isAdmin && !bannerDismissed && (
+      <div className="bg-gradient-to-r from-indigo-950/40 via-[#12121e] to-indigo-950/40 border border-indigo-500/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl relative">
+        <button onClick={dismissBanner} className="absolute top-3 right-3 text-white/40 hover:text-white transition-colors">
+          <X size={16} />
+        </button>
+
         <div className="flex items-start gap-4">
           <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl mt-0.5 sm:mt-0">
             <Sparkles size={20} className={seeding ? "animate-pulse" : ""} />
@@ -97,6 +124,7 @@ export function BankOverview() {
           )}
         </div>
       </div>
+      )}
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Total Liquidity */}

@@ -57,7 +57,8 @@ async function startServer() {
     if (!domain) return res.json({ bankId: null });
     
     try {
-       const bank = await db.select().from(banks).where(eq(banks.customDomain, domain)).get();
+       const { like } = await import("drizzle-orm");
+       const bank = await db.select().from(banks).where(like(banks.customDomain, `%${domain}%`)).get();
        if (bank) return res.json({ bankId: bank.id });
        return res.json({ bankId: null });
     } catch(e) {
