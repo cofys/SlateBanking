@@ -312,3 +312,9 @@ To route a custom domain for a whitelabel client to this application via Coolify
 
 ### Code Quality Improvements
 - **Resolved Sync Service Type Errors**: Fixed strict null-checking constraint violations inside `server.ts` related to `CityCorpClient` class instantiation and transaction synchronization payload maps (`description` and `corpApiUuid`).
+
+### UI Improvements
+- **OAuth Fields Visibility**: Ensured `Discord Client ID` and `Discord Client Secret` fields are fully visible and editable in both the Global SaaS provisioning/management modal (`BanksList.tsx`) and the Whitelabel Bank Settings page (`BankSettings.tsx`).
+
+### UI Improvements - Continued
+- **Modal Editing Support**: Fixed a missing replacement operation where the "Discord Client ID" and "Discord Client Secret" fields were accidentally omitted from the interactive "Edit Config" view within the Global SaaS Admin interface. They are now fully supported for bidirectional updates.

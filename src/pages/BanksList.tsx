@@ -710,6 +710,18 @@ export function BanksList() {
                             {selectedBank.discordToken ? '••••••••' : 'Not configured'}
                           </span>
                         </div>
+
+                        <div>
+                          <span className="text-white/50 block text-xs">Discord Client ID</span>
+                          <span className="font-mono text-white/90">{selectedBank.discordClientId || 'Not configured'}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">Discord Client Secret</span>
+                          <span className="font-mono text-white/90">
+                            {selectedBank.discordClientSecret ? '••••••••' : 'Not configured'}
+                          </span>
+                        </div>
+
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -789,6 +801,27 @@ export function BanksList() {
                               className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
                             />
                           </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Discord Client ID</label>
+                            <input 
+                              type="text" 
+                              value={editDiscordClientId} 
+                              onChange={(e) => setEditDiscordClientId(e.target.value)}
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Discord Client Secret</label>
+                            <input 
+                              type="password" 
+                              value={editDiscordClientSecret} 
+                              onChange={(e) => setEditDiscordClientSecret(e.target.value)}
+                              placeholder="Leave blank to keep unchanged"
+                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
+                            />
+                          </div>
+
                         </div>
                       </div>
                     )}

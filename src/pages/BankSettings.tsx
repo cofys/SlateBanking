@@ -47,6 +47,8 @@ export function BankSettings() {
       autoApproveCreditCards: formData.get("autoApproveCreditCards") === "on",
       maxAutoApproveLoanAmount: parseFloat(formData.get("maxAutoApproveLoanAmount") as string) || 1000000,
       customDomain: formData.get("customDomain"),
+      discordClientId: formData.get("discordClientId"),
+      discordClientSecret: formData.get("discordClientSecret"),
       cityCorpAppId: formData.get("cityCorpAppId"),
       cityCorpAppSecret: formData.get("cityCorpAppSecret")
     };
@@ -175,6 +177,27 @@ export function BankSettings() {
             </div>
             <p className="text-xs text-white/40 mt-1.5 flex items-center gap-2">Point your CNAME record to <span className="font-mono text-[10px] text-white/60 bg-white/10 px-1 rounded">{window.location.host}</span></p>
           </div>
+
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Discord Client ID</label>
+              <input 
+                name="discordClientId" 
+                type="text" 
+                placeholder="For custom domain OAuth overrides"
+                defaultValue={settings?.discordClientId || ""} 
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Discord Client Secret</label>
+              <input 
+                name="discordClientSecret" 
+                type="password" 
+                placeholder="Leave blank to keep unchanged"
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+              />
+            </div>
+
         </div>
 
         {/* Support & Alerts */}
