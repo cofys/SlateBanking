@@ -14,6 +14,8 @@ interface BankInstance {
   corpApiKey?: string;
   cityCorpAppId?: string;
   cityCorpAppSecret?: string;
+  discordClientId?: string;
+  discordClientSecret?: string;
   discordToken?: string;
   plan?: string;
   billingStatus?: string;
@@ -559,9 +561,9 @@ export function BanksList() {
       )}
 
       {showManageModal && selectedBank && (
-        <div className="fixed inset-0 z-50 flex flex-col pt-20 items-center bg-black/80 backdrop-blur-sm overflow-y-auto pb-20">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl w-full max-w-3xl overflow-hidden shadow-2xl">
-            <div className="bg-[#0a0a0c] border-b border-white/10 px-6 py-4 flex justify-between items-center sticky top-0">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#0f0f15] border border-white/10 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="bg-[#0a0a0c] border-b border-white/10 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
               <div>
                 <h2 
                   className="text-xl font-semibold cursor-pointer hover:text-indigo-400 transition-colors inline-block"

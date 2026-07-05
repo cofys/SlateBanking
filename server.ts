@@ -3064,7 +3064,7 @@ async function startServer() {
       const accountId = req.params.accountId;
       
       const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-      if (!bank || !bank.corpApiKey) return res.status(400).json({ error: "Bank CityCorp config missing" });
+      if (!bank || !bank.corpApiKey || bank.corpId === null || bank.corpApiUuid === null) return res.status(400).json({ error: "Bank CityCorp config missing" });
       
       const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
       if (!account) return res.status(404).json({ error: "Account not found" });
@@ -3089,7 +3089,7 @@ async function startServer() {
             and(eq(transactions.bankId, bankId), eq(transactions.toAccountId, account.id))
          );
          const existingTxIds = new Set(existingTxs.map(t => t.id));
-         const existingTxDescs = new Set(existingTxs.map(t => t.description + t.amount));
+         const existingTxDescs = new Set(existingTxs.map(t => (t.description || "") + t.amount));
          
          let added = 0;
          for (const tx of txData.transactions) {
@@ -4500,7 +4500,7 @@ async function startServer() {
     try {
       const bankId = req.params.bankId;
       const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-      if (!bank || !bank.corpApiKey) return res.status(400).json({ error: "Bank CityCorp config missing" });
+      if (!bank || !bank.corpApiKey || bank.corpId === null || bank.corpApiUuid === null) return res.status(400).json({ error: "Bank CityCorp config missing" });
       
       const { CityCorpClient } = await import("./src/lib/citycorp_api");
       const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
@@ -4528,7 +4528,7 @@ async function startServer() {
                and(eq(transactions.bankId, bankId), eq(transactions.toAccountId, account.id))
             );
             const existingTxIds = new Set(existingTxs.map(t => t.id));
-            const existingTxDescs = new Set(existingTxs.map(t => t.description + t.amount));
+            const existingTxDescs = new Set(existingTxs.map(t => (t.description || "") + t.amount));
             
             for (const tx of txData.transactions) {
                let txAmount = tx.amount || tx.value || 0;

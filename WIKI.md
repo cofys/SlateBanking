@@ -306,3 +306,9 @@ To route a custom domain for a whitelabel client to this application via Coolify
 ### Multi-Tenant Custom Discord OAuth2 Auth
 - **Dynamic Credentials Interception**: Added `discordClientId` and `discordClientSecret` capabilities to the `banks` table schema. The `/api/auth/url` and `/api/auth/discord/callback` endpoints now inspect the incoming request's hostname. If a custom domain is detected (e.g. `testbank.azisle.com`), the auth routes dynamically substitute the global SaaS Discord credentials with the specific bank's provided Discord Application credentials.
 - **Independent Bot Auth**: This ensures that users authenticating on a bank's custom domain are prompted to authorize that specific bank's brand, name, and bot image in the Discord OAuth flow, preserving the complete whitelabel illusion.
+
+### Bug Fixes
+- **Modal Scrolling Fix**: Resolved a layout overflow issue where the "Edit Bank" Configuration modal in the Global SaaS Admin interface (`BanksList.tsx`) could not be scrolled horizontally/vertically on smaller viewports or when numerous integration fields were exposed. Replaced standard screen flexbox layout with \`max-h-[90vh] overflow-y-auto\` containment.
+
+### Code Quality Improvements
+- **Resolved Sync Service Type Errors**: Fixed strict null-checking constraint violations inside `server.ts` related to `CityCorpClient` class instantiation and transaction synchronization payload maps (`description` and `corpApiUuid`).

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Package, Plus, Percent, Clock, DollarSign, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { formatMoney } from "../lib/utils";
 
 export function BankProducts() {
   const { bank } = useOutletContext<{ bank: any }>();

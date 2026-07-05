@@ -1,6 +1,6 @@
-import { AlertTriangle, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers } from "lucide-react";
+import { AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers } from "lucide-react";
 
 export function BankSettings() {
   const { bank } = useOutletContext<{ bank: any }>();
