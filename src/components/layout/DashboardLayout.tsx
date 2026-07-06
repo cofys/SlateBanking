@@ -41,12 +41,12 @@ export function DashboardLayout() {
             className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors shadow-lg shadow-[#5865F2]/20"
           >
             <LogIn size={18} />
-            Login with Discord
+            Login with CityCorp
           </button>
           
           {user && !user.isGlobalAdmin && (
             <p className="text-red-400 text-sm mt-4 bg-red-400/10 p-3 rounded-md border border-red-400/20">
-              Access denied: Your Discord account (@{user.username}) does not have global admin privileges.
+              Access denied: Your Profile (@{user.username}) does not have global admin privileges.
             </p>
           )}
 

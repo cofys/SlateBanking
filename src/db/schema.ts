@@ -279,6 +279,7 @@ export const bankCustomers = sqliteTable("bank_customers", {
   kycStatus: text("kyc_status").default("pending"), 
   mcUuid: text("mc_uuid"),
   mcUsername: text("mc_username"),
+  linkedDiscordId: text("linked_discord_id"),
   cityCorpToken: text("city_corp_token"),
   notes: text("notes"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),

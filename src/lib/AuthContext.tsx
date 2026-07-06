@@ -10,14 +10,14 @@ export interface UserSession {
 interface AuthContextType {
   user: UserSession | null;
   isLoading: boolean;
-  login: () => void;
+  login: (bankId?: string) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  login: () => {},
+  login: (bankId?: string) => {},
   logout: () => {},
 });
 
@@ -73,9 +73,9 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     };
   }, []);
 
-  const login = async () => {
+  const login = async (bankId?: string) => {
     try {
-      const response = await fetch('/api/auth/url');
+      const response = await fetch(`/api/auth/url${bankId ? `?bankId=${bankId}` : ''}`);
       if (!response.ok) {
         throw new Error('Failed to get auth URL');
       }
@@ -86,7 +86,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         'width=600,height=700'
       );
       if (!authWindow) {
-        alert('Please allow popups for this site to connect your Discord account.');
+        alert('Please allow popups for this site to connect your Profile.');
       }
     } catch (error) {
       console.error('OAuth error:', error);

@@ -22,7 +22,7 @@ export function BankCustomers() {
   }, [bank]);
 
   const handleExportCSV = () => {
-     const headers = ['Discord ID', 'Accounts Held', 'Total Balance', 'Joined Date'];
+     const headers = ['Citizen ID', 'Accounts Held', 'Total Balance', 'Joined Date'];
      const csvContent = "data:text/csv;charset=utf-8," 
        + headers.join(",") + "\n"
        + customers.map(c => {
@@ -51,7 +51,7 @@ export function BankCustomers() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={16} />
             <input 
               type="text" 
-              placeholder="Search by Discord ID..." 
+              placeholder="Search by Citizen ID..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="bg-[#1a1a24] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors w-full sm:w-64"
@@ -76,7 +76,7 @@ export function BankCustomers() {
           <table className="w-full text-left text-sm min-w-[600px]">
             <thead className="bg-[#1a1a24] text-white/50 border-b border-white/10">
               <tr>
-                <th className="px-6 py-4 font-medium">Customer (Discord ID)</th>
+                <th className="px-6 py-4 font-medium">Customer (Citizen ID)</th>
                 <th className="px-6 py-4 font-medium">Accounts Held</th>
                 <th className="px-6 py-4 font-medium">Total Balance</th>
                 <th className="px-6 py-4 font-medium">Joined</th>
@@ -113,7 +113,7 @@ export function BankCustomers() {
                          <div className="flex flex-col">
                            <span>{displayName}</span>
                            {isUnassigned && (
-                             <span className="text-[10px] text-amber-500/80 font-medium">Click profile to assign Discord ID</span>
+                             <span className="text-[10px] text-amber-500/80 font-medium">Click profile to assign Citizen ID</span>
                            )}
                          </div>
                       </div>

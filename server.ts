@@ -71,20 +71,34 @@ async function startServer() {
   app.get('/api/auth/url', async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");
-    const { like } = await import("drizzle-orm");
-
+    const { like, eq } = await import("drizzle-orm");
     const hostname = req.hostname;
+    const bankId = req.query.bankId as string | undefined;
     let clientId = process.env.DISCORD_CLIENT_ID || '';
     
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
+    let bank = null;
+    if (bankId) {
+      try {
+        bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      } catch (e) {
+        console.error("Bank ID lookup error for OAuth URL:", e);
+      }
+    } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
        try {
-         const bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
-         if (bank && bank.discordClientId) {
-           clientId = bank.discordClientId;
-         }
+         bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
        } catch (e) {
          console.error("Domain lookup error for OAuth URL:", e);
        }
+    }
+
+    if (bank && bank.cityCorpAppId) {
+       const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
+       const state = encodeURIComponent(JSON.stringify({ bankId: bank.id }));
+       const scopes = "corp.player.info.get,corp.get";
+       const authUrl = `https://dashboard.cityrp.org/oauth/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+       return res.json({ url: authUrl });
+    } else if (bank && bank.discordClientId) {
+      clientId = bank.discordClientId;
     }
 
     const redirectUri = getRedirectUri(req);
@@ -100,6 +114,258 @@ async function startServer() {
 
 
   
+  
+  app.get('/api/auth/citycorp/callback', async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks, bankCustomers } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+    const { code, state: stateStr } = req.query;
+
+    if (!code || !stateStr) {
+      return res.status(400).send("Missing code or state in CityCorp OAuth callback");
+    }
+
+    try {
+      const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
+      const bankId = parsedState.bankId;
+
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank || !bank.cityCorpAppId || !bank.cityCorpAppSecret) {
+        return res.status(400).send("Bank CityCorp OAuth credentials are not configured");
+      }
+
+      const bodyParams = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_secret: code as string,
+        app_id: bank.cityCorpAppId,
+        token: bank.cityCorpAppSecret
+      });
+
+      const tokenResponse = await fetch("https://dashboard.cityrp.org/api/auth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: bodyParams.toString()
+      });
+
+      if (!tokenResponse.ok) {
+        return res.status(400).send("Failed to exchange token with CityCorp");
+      }
+
+      const tokenData = await tokenResponse.json();
+      const token = tokenData.token;
+      const minecraftUuid = tokenData.minecraft_uuid;
+
+      if (!token || !minecraftUuid) {
+        return res.status(400).send("Invalid token response");
+      }
+
+      const authHeader = 'Basic ' + Buffer.from(`${minecraftUuid}:${token}`).toString('base64');
+      const playerRes = await fetch("https://api.cityrp.org/player", {
+        headers: { "Authorization": authHeader, "User-Agent": "SlateBankBot/1.0" }
+      });
+
+      let mcUsername = "Citizen";
+      let avatarUrl = `https://crafatar.com/avatars/${minecraftUuid}?size=64&overlay=true`;
+
+      if (playerRes.ok) {
+        const playerData = await playerRes.json();
+        mcUsername = playerData.username || playerData.name || mcUsername;
+      }
+
+      // See if we have an existing customer via mcUuid
+      let customer = await db.select().from(bankCustomers).where(
+        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.mcUuid, minecraftUuid))
+      ).get();
+
+      let sessionDiscordId = "";
+
+      if (customer) {
+        sessionDiscordId = customer.discordId;
+        // Update their token just in case
+        await db.update(bankCustomers).set({
+          cityCorpToken: token,
+          mcUsername: mcUsername
+        }).where(eq(bankCustomers.id, customer.id));
+      } else {
+        sessionDiscordId = "mc_" + minecraftUuid;
+        await db.insert(bankCustomers).values({
+          id: uuidv4(),
+          bankId: bankId,
+          discordId: sessionDiscordId,
+          mcUuid: minecraftUuid,
+          mcUsername: mcUsername,
+          cityCorpToken: token,
+          kycStatus: "approved"
+        });
+      }
+
+      const payload = {
+        discordId: sessionDiscordId,
+        username: mcUsername,
+        avatarUrl: avatarUrl,
+        isGlobalAdmin: false
+      };
+
+      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      res.cookie('auth_token', signedToken, {
+        secure: true,
+        sameSite: 'none',
+        httpOnly: true,
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+
+      res.send(`
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${JSON.stringify(payload)} }, '*');
+              localStorage.setItem('oauth_auth_success', Date.now().toString());
+              window.close();
+            </script>
+            <p>Authentication successful! You can close this window.</p>
+          </body>
+        </html>
+      `);
+
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).send("Internal server error during CityCorp OAuth callback");
+    }
+  });
+
+  
+  app.get('/api/auth/discord/link', async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { like } = await import("drizzle-orm");
+    const hostname = req.hostname;
+    let clientId = process.env.DISCORD_CLIENT_ID || '';
+    
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
+       try {
+         const bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
+         if (bank && bank.discordClientId) {
+           clientId = bank.discordClientId;
+         }
+       } catch (e) {
+         console.error("Domain lookup error for Link OAuth URL:", e);
+       }
+    }
+
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/link/callback`;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'identify email', 
+    });
+    const authUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`;
+    res.json({ url: authUrl });
+  });
+
+  app.get('/api/auth/discord/link/callback', requireAuth, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { banks, bankCustomers, bankAccounts } = await import("./src/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { code } = req.query;
+
+    if (!code) return res.status(400).send("No code provided");
+
+    const hostname = req.hostname;
+    let clientId = process.env.DISCORD_CLIENT_ID || '';
+    let clientSecret = process.env.DISCORD_CLIENT_SECRET || '';
+
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
+       try {
+         const bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
+         if (bank && bank.discordClientId && bank.discordClientSecret) {
+           clientId = bank.discordClientId;
+           clientSecret = bank.discordClientSecret;
+         }
+       } catch (e) {
+         console.error("Domain lookup error for OAuth Callback:", e);
+       }
+    }
+
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/link/callback`;
+    try {
+      const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+        method: 'POST',
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'authorization_code',
+          code: code.toString(),
+          redirect_uri: redirectUri,
+        }).toString(),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+
+      if (!tokenResponse.ok) {
+        return res.status(400).send('Failed to fetch Discord token: ' + await tokenResponse.text());
+      }
+
+      const tokenData = await tokenResponse.json();
+      const userResponse = await fetch('https://discord.com/api/users/@me', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+
+      if (!userResponse.ok) {
+        return res.status(400).send('Failed to fetch Discord user');
+      }
+
+      const userData = await userResponse.json();
+      const realDiscordId = userData.id;
+      
+      const sessionDiscordId = (req as any).user.discordId;
+
+      if (sessionDiscordId.startsWith("mc_")) {
+        // Update bankCustomer to real discordId
+        await db.update(bankCustomers)
+          .set({ discordId: realDiscordId })
+          .where(eq(bankCustomers.discordId, sessionDiscordId));
+          
+        await db.update(bankAccounts)
+          .set({ ownerDiscordId: realDiscordId })
+          .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
+
+        // Generate new token
+        const isGlobalAdmin = userData.username === 'cofys' || userData.email === 'cofysmc@gmail.com';
+        const payload = {
+          discordId: realDiscordId,
+          username: (req as any).user.username,
+          avatarUrl: userData.avatar ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png` : undefined,
+          isGlobalAdmin
+        };
+
+        const jwt = require("jsonwebtoken");
+        const signedToken = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+        res.cookie('auth_token', signedToken, {
+          secure: true,
+          sameSite: 'none',
+          httpOnly: true,
+          maxAge: 7 * 24 * 60 * 60 * 1000
+        });
+      }
+
+      res.send(`
+        <html><body>
+          <script>
+            window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+            localStorage.setItem('oauth_auth_success', Date.now().toString());
+            window.close();
+          </script>
+          <p>Discord account linked successfully! You can close this window.</p>
+        </body></html>
+      `);
+
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).send("Internal server error during Discord linking");
+    }
+  });
+
   app.get('/api/auth/discord/callback', async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks } = await import("./src/db/schema");

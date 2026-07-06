@@ -311,7 +311,7 @@ export function BankTools() {
                 <h3 className="text-xl font-bold">Manual Wire Transfer</h3>
               </div>
               <p className="text-white/60 text-sm mb-6 max-w-lg">
-                Execute a priority wire transfer directly between user accounts using their Discord IDs.
+                Execute a priority wire transfer directly between user accounts using their Citizen IDs.
               </p>
               
               <form onSubmit={async (e) => {

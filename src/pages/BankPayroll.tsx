@@ -159,7 +159,7 @@ export function BankPayroll() {
                   </td>
                   <td className="p-4 text-sm font-medium text-white/90 flex flex-col">
                     <span>{job.employeeAccountName}</span>
-                    <span className="text-xs text-white/50 font-normal mt-0.5">{job.employeeDiscordId}</span>
+                    <span className="text-xs text-white/50 font-normal mt-0.5">{job.employeeCityCorpId}</span>
                   </td>
                   <td className="p-4 text-sm font-mono text-emerald-400 font-medium">
                     ${(job.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -228,7 +228,7 @@ export function BankPayroll() {
                   >
                     <option value="">Select funding account...</option>
                     {accounts.map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} ({acc.ownerDiscordId})</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} ({acc.ownerCityCorpId})</option>
                     ))}
                   </select>
                 </div>
@@ -243,7 +243,7 @@ export function BankPayroll() {
                   >
                     <option value="">Select receiving account...</option>
                     {accounts.filter(a => a.id !== employerAccountId).map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId})</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerCityCorpId})</option>
                     ))}
                   </select>
                 </div>

@@ -76,7 +76,7 @@ export function PublicDocs() {
                <div className="animate-in fade-in duration-500">
                   <h1 className="text-4xl font-bold tracking-tight mb-4">Welcome to Slate API</h1>
                   <p className="text-lg text-white/60 mb-8 leading-relaxed">
-                     Build financial integrations, automate payments across roleplay servers, or integrate full banking infrastructures directly into your Discord bots and Minecraft servers.
+                     Build financial integrations, automate payments across roleplay servers, or integrate full banking infrastructures directly into your CityCorp bots and Minecraft servers.
                   </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
@@ -167,9 +167,9 @@ export function PublicDocs() {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                            <tr>
-                              <td className="px-6 py-4 font-mono text-indigo-300">userDiscordId</td>
+                              <td className="px-6 py-4 font-mono text-indigo-300">userCityCorpId</td>
                               <td className="px-6 py-4 text-white/50">String</td>
-                              <td className="px-6 py-4 text-white/80">The Discord ID of the user purchasing the item. The network will pull funds from their default account.</td>
+                              <td className="px-6 py-4 text-white/80">The Citizen ID of the user purchasing the item. The network will pull funds from their default account.</td>
                            </tr>
                            <tr>
                               <td className="px-6 py-4 font-mono text-indigo-300">amountCents</td>
@@ -200,7 +200,7 @@ export function PublicDocs() {
   -H <span className="text-amber-400">"Content-Type: application/json"</span> \
   -H <span className="text-amber-400">"x-api-key: onyx_live_728b9c..."</span> \
   -d <span className="text-amber-400">'{'{'}
-  "userDiscordId": "184920391029",
+  "userCityCorpId": "184920391029",
   "amountCents": 1500,
   "description": "Premium VIP Rank Purchase"
 {'}'}'</span>
@@ -241,7 +241,7 @@ export function PublicDocs() {
                      <h1 className="text-3xl font-bold font-mono tracking-tight text-white/90">/v1/accounts</h1>
                   </div>
                   <p className="text-lg text-white/60 mb-8 leading-relaxed">
-                     Programmatically open a new account for a Discord user within your bank. Returns the generated account UUID.
+                     Programmatically open a new account for a CityCorp user within your bank. Returns the generated account UUID.
                   </p>
 
                   <div className="relative mb-12">

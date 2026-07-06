@@ -125,7 +125,7 @@ export function GlobalSettings() {
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-white/60">Discord Bot</span>
+                <span className="text-sm text-white/60">CityCorp Bot</span>
                 <span className="text-sm text-emerald-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online
                 </span>

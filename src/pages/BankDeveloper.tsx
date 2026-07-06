@@ -209,7 +209,7 @@ export function BankDeveloper() {
                   </div>
                 </summary>
                 <div className="px-4 pb-4 text-sm text-white/70">
-                  <p className="mb-3 border-t border-white/5 pt-3">Open a new account for a Discord user.</p>
+                  <p className="mb-3 border-t border-white/5 pt-3">Open a new account for a CityCorp user.</p>
                   <div className="bg-black/50 p-3 rounded-lg font-mono text-xs overflow-x-auto text-white/50">
                     <span className="text-emerald-400">curl</span> -X POST https://api.slate.saas/api/v1/accounts \<br/>
                     &nbsp;&nbsp;-H <span className="text-amber-400">"Content-Type: application/json"</span> \<br/>

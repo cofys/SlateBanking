@@ -83,12 +83,12 @@ export function BankCustomerDetail() {
                 <h2 className="text-3xl font-bold tracking-tight text-white">{isUnassigned ? "Unassigned Customer" : discordId}</h2>
                 <button 
                   onClick={async () => {
-                    const newId = prompt("Enter new Discord ID for this customer (this will reassign ALL accounts listed under this customer ID):", discordId);
+                    const newId = prompt("Enter new Citizen ID for this customer (this will reassign ALL accounts listed under this customer ID):", discordId);
                     if (!newId || newId === discordId) return;
                     const res = await fetch(`/api/banks/${bank.id}/customers/${discordId}/update-id`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ newDiscordId: newId })
+                      body: JSON.stringify({ newCityCorpId: newId })
                     });
                     if (res.ok) {
                       navigate(`/bank/${bank.id}/customers/${newId}`, { replace: true });
@@ -98,7 +98,7 @@ export function BankCustomerDetail() {
                     }
                   }}
                   className="text-white/40 hover:text-white transition-colors"
-                  title="Rename/Update Discord ID"
+                  title="Rename/Update Citizen ID"
                 >
                   <Pencil size={18} />
                 </button>
@@ -147,7 +147,7 @@ export function BankCustomerDetail() {
           <div>
             <h4 className="text-amber-400 font-medium text-sm">Auto-Imported Unassigned Account</h4>
             <p className="text-white/60 text-xs mt-1">
-              This account was imported from CityCorp and has not yet been linked to a specific user's Discord ID. You can reassign individual accounts under this customer profile below by clicking their edit/reassign option to assign them to real members.
+              This account was imported from CityCorp and has not yet been linked to a specific user's Citizen ID. You can reassign individual accounts under this customer profile below by clicking their edit/reassign option to assign them to real members.
             </p>
           </div>
         </div>
@@ -230,12 +230,12 @@ export function BankCustomerDetail() {
                       <button
                         onClick={async (e) => {
                           e.preventDefault();
-                          const newId = prompt(`Enter new Discord ID for account "${acc.accountName}":`, acc.ownerDiscordId);
-                          if (!newId || newId === acc.ownerDiscordId) return;
+                          const newId = prompt(`Enter new Citizen ID for account "${acc.accountName}":`, acc.ownerCityCorpId);
+                          if (!newId || newId === acc.ownerCityCorpId) return;
                           const res = await fetch(`/api/banks/${bank.id}/accounts/${acc.id}/update-owner`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ newDiscordId: newId })
+                            body: JSON.stringify({ newCityCorpId: newId })
                           });
                           if (res.ok) {
                             fetchCustomer();

@@ -163,7 +163,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       if (res.ok) {
         setUserData(await res.json());
       } else {
-        setUserData({ error: "No accounts found for this Discord ID at this bank." });
+        setUserData({ error: "No accounts found for this Citizen ID at this bank." });
       }
     } catch (e) {
       console.error(e);
@@ -280,15 +280,15 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             <div>
               <h2 className="text-xl font-bold text-white tracking-tight">Identity Authentication</h2>
               <p className="text-zinc-400 text-xs mt-2 leading-relaxed px-2">
-                This secure financial terminal requires OAuth validation. Log in with Discord to retrieve your verified {bank.name} checking, savings, cards, and invoices.
+                This secure financial terminal requires OAuth validation. Log in securely to retrieve your verified {bank.name} checking, savings, cards, and invoices.
               </p>
             </div>
 
             <button 
-              onClick={login}
-              className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white text-sm font-semibold py-3.5 rounded-xl transition-all shadow-lg shadow-[#5865F2]/10 hover:shadow-[#5865F2]/20 flex items-center justify-center gap-2"
+              onClick={() => login(bankId)}
+              className={`w-full ${theme.bgAccent} hover:brightness-110 text-white text-sm font-semibold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2`}
             >
-              <LogIn size={16} /> Authenticate via Discord
+              <LogIn size={16} /> Authenticate with CityCorp
             </button>
           </motion.div>
         </div>
@@ -348,8 +348,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   </div>
 
                   <div className="w-full sm:w-auto text-right">
-                    {!userData.customer?.mcUsername ? (
-                      bank.cityCorpAppId ? (
+                    {!userData.customer?.mcUsername && bank.cityCorpAppId && user.discordId && !user.discordId.startsWith("mc_") ? (
                         <button
                           onClick={async () => {
                             try {
@@ -369,27 +368,45 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         >
                           <UserCheck size={14} /> Link Minecraft ID
                         </button>
-                      ) : (
-                        <span className="text-[10px] text-zinc-500 italic block">
-                          Staff verification required.
-                        </span>
-                      )
-                    ) : (
+                    ) : user.discordId && user.discordId.startsWith("mc_") && !userData.customer?.linkedDiscordId ? (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/auth/discord/link`);
+                              if (res.ok) {
+                                const data = await res.json();
+                                const authWindow = window.open(data.url, 'oauth_popup', 'width=600,height=700');
+                                if (!authWindow) alert('Please allow popups to connect your Profile.');
+                              } else {
+                                alert("Failed to initiate linking flow.");
+                              }
+                            } catch (err) {
+                              alert("Error connecting to validation service.");
+                            }
+                          }}
+                          className={`w-full sm:w-auto bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition-all shadow-md shadow-[#5865F2]/20 flex items-center justify-center gap-1.5`}
+                        >
+                          <UserCheck size={14} /> Link Discord Account
+                        </button>
+                    ) : userData.customer?.mcUsername ? (
                       <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-full border border-emerald-500/20 font-medium">
                         <CheckCircle2 size={12} /> Sync Online
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-zinc-500 italic block">
+                        Staff verification required.
                       </span>
                     )}
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {/* Balances Accounts Section */}
+                  {/* Balances Accounts Section */}
             <div className="space-y-4">
               <h2 className="text-sm font-bold text-zinc-400 tracking-wider uppercase flex items-center gap-2">
                 <Wallet size={16} className={`text-${theme.primary}`} /> Connected Accounts
               </h2>
-
+              
               {loading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[1, 2].map(i => (
@@ -418,10 +435,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           <div>
                             <h3 className="font-bold text-white text-base tracking-tight truncate max-w-[170px]">{acc.accountName}</h3>
                             <span className={`inline-block mt-1 text-[9px] uppercase font-bold px-2 py-0.5 rounded-full 
-                              ${isSavings ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
-                                isBusiness ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" :
-                                isPayroll ? "bg-teal-500/10 text-teal-400 border border-teal-500/20" :
-                                "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+                              ${isSavings ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : 
+                               isBusiness ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" : 
+                               isPayroll ? "bg-teal-500/10 text-teal-400 border border-teal-500/20" : 
+                               "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
                               }`}
                             >
                               {acc.type} Account
@@ -628,7 +645,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               'x-api-key': fd.get("apiKey") as string
                             },
                             body: JSON.stringify({
-                              userDiscordId: user?.discordId,
+                              userCityCorpId: user?.discordId,
                               amountCents: Math.round(parseFloat(fd.get("amount") as string) * 100),
                               description: fd.get("description") || "Onyx Quick Pay from Portal"
                             })
@@ -875,7 +892,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   <AnimatePresence>
                     {filteredTx.length > 0 ? (
                       filteredTx.map((tx: any, i: number) => {
-                        const isIncoming = tx.toDiscordId === user?.discordId;
+                        const isIncoming = tx.toCityCorpId === user?.discordId;
                         return (
                           <motion.div 
                             initial={{ opacity: 0 }}

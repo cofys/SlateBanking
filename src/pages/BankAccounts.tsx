@@ -46,7 +46,7 @@ export function BankAccounts() {
     const formData = new FormData(e.target as HTMLFormElement);
     const data = {
       accountName: formData.get("accountName"),
-      ownerDiscordId: formData.get("ownerDiscordId"),
+      ownerCityCorpId: formData.get("ownerCityCorpId"),
       minecraftUsername: formData.get("minecraftUsername"),
       initialBalanceCents: Math.round(parseFloat(formData.get("initialBalance") as string) * 100) || 0
     };
@@ -110,8 +110,8 @@ export function BankAccounts() {
               <input name="accountName" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="e.g. Checking" />
             </div>
             <div className="flex-1 w-full">
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Owner Discord ID</label>
-              <input name="ownerDiscordId" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="123456789" />
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Owner Citizen ID</label>
+              <input name="ownerCityCorpId" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="123456789" />
             </div>
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">MC Username</label>
@@ -143,7 +143,7 @@ export function BankAccounts() {
             <thead className="text-xs text-white/40 uppercase tracking-widest bg-white/[0.02] border-b border-white/10">
               <tr>
                 <th className="px-6 py-4 font-semibold">Account Name</th>
-                <th className="px-6 py-4 font-semibold">Owner Discord ID</th>
+                <th className="px-6 py-4 font-semibold">Owner Citizen ID</th>
                 <th className="px-6 py-4 font-semibold text-right">Balance</th>
                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
@@ -151,7 +151,7 @@ export function BankAccounts() {
             <tbody className="divide-y divide-white/5 bg-[#09090d]">
               {accounts.filter(acc => 
                 acc.accountName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                acc.ownerDiscordId.includes(searchTerm) ||
+                acc.ownerCityCorpId.includes(searchTerm) ||
                 acc.id.includes(searchTerm)
               ).map(acc => (
                 <tr key={acc.id} onClick={() => navigate(`/bank/${bank.id}/accounts/${acc.id}`)} className="hover:bg-white/[0.02] transition-colors cursor-pointer group">
@@ -172,7 +172,7 @@ export function BankAccounts() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">
                       <User size={13} className="text-white/30" />
-                      <span className="font-mono text-white/70 text-xs">{acc.ownerDiscordId}</span>
+                      <span className="font-mono text-white/70 text-xs">{acc.ownerCityCorpId}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-emerald-400 font-mono text-base">

@@ -140,12 +140,12 @@ export function BankEscrow() {
                 <tr key={escrow.id} className="hover:bg-white/5 transition-colors">
                   <td className="p-4 text-sm font-medium text-white/90 flex flex-col">
                     <span>{escrow.buyerAccountName}</span>
-                    <span className="text-xs text-white/50 font-normal mt-0.5">{escrow.buyerDiscordId}</span>
+                    <span className="text-xs text-white/50 font-normal mt-0.5">{escrow.buyerCityCorpId}</span>
                   </td>
                   <td className="p-4 text-sm font-medium text-white/90">
                     <div className="flex flex-col">
                       <span>{escrow.sellerAccountName}</span>
-                      <span className="text-xs text-white/50 font-normal mt-0.5">{escrow.sellerDiscordId}</span>
+                      <span className="text-xs text-white/50 font-normal mt-0.5">{escrow.sellerCityCorpId}</span>
                     </div>
                   </td>
                   <td className="p-4 text-sm text-white/70">
@@ -210,7 +210,7 @@ export function BankEscrow() {
                   >
                     <option value="">Select funding account...</option>
                     {accounts.map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId}) - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerCityCorpId}) - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</option>
                     ))}
                   </select>
                 </div>
@@ -231,7 +231,7 @@ export function BankEscrow() {
                   >
                     <option value="">Select receiving account...</option>
                     {accounts.filter(a => a.id !== buyerAccountId).map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId})</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerCityCorpId})</option>
                     ))}
                   </select>
                 </div>

@@ -318,3 +318,7 @@ To route a custom domain for a whitelabel client to this application via Coolify
 
 ### UI Improvements - Continued
 - **Modal Editing Support**: Fixed a missing replacement operation where the "Discord Client ID" and "Discord Client Secret" fields were accidentally omitted from the interactive "Edit Config" view within the Global SaaS Admin interface. They are now fully supported for bidirectional updates.
+Updates to WIKI.md
+- Shifted primary user identity architecture from Discord IDs to CityCorp Profiles (Citizen IDs).
+- Discord integration is now treated as an optional linked account (linkedDiscordId) rather than the primary session driver.
+- UI refactored globally to label user profiles as Citizen IDs.

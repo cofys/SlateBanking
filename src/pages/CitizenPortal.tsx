@@ -43,7 +43,7 @@ export function CitizenPortal() {
       if (res.ok) {
         setUserData(await res.json());
       } else {
-        setUserData({ error: "No accounts found for this Discord ID." });
+        setUserData({ error: "No accounts found for this Citizen ID." });
       }
     } catch (e) {
       console.error(e);
@@ -80,13 +80,13 @@ export function CitizenPortal() {
         <div className="bg-white/5 border border-white/10 rounded-2xl p-6 md:p-10 shadow-2xl backdrop-blur-sm max-w-xl mx-auto text-center space-y-6">
           <div>
             <h2 className="text-xl font-medium text-white mb-2">Authentication Required</h2>
-            <p className="text-white/50 text-sm">Please securely authenticate with Discord to access your financial portfolio.</p>
+            <p className="text-white/50 text-sm">Please securely authenticate with CityCorp to access your financial portfolio.</p>
           </div>
           <button 
             onClick={login}
             className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-[#5865F2]/20 flex items-center justify-center gap-2"
           >
-            <LogIn size={18} /> Login with Discord
+            <LogIn size={18} /> Login with CityCorp
           </button>
         </div>
       ) : (
@@ -343,7 +343,7 @@ export function CitizenPortal() {
                     <div className="bg-black/40 border border-white/10 rounded-2xl overflow-hidden">
                       <div className="divide-y divide-white/5">
                         {userData.recentTx.map((tx: any, i: number) => {
-                          const isIncoming = tx.toDiscordId === user.discordId;
+                          const isIncoming = tx.toCityCorpId === user.discordId;
                           return (
                             <div key={i} className="px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
                               <div className="flex gap-4 items-center">
@@ -459,7 +459,7 @@ export function CitizenPortal() {
                              'x-api-key': fd.get("apiKey") as string
                           },
                           body: JSON.stringify({
-                            userDiscordId: user.discordId,
+                            userCityCorpId: user.discordId,
                             amountCents: Math.round(parseFloat(fd.get("amount") as string) * 100),
                             description: fd.get("description") || "Onyx Quick Pay from Citizen Portal",
                             sourceAccountId: fd.get("fromAccountId")

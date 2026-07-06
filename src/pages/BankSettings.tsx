@@ -231,7 +231,7 @@ export function BankSettings() {
           </div>
         </div>
         
-        {/* Discord Integrations */}
+        {/* CityCorp Integrations */}
         <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Settings className="text-indigo-400" size={20} />
