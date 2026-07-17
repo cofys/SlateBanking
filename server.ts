@@ -37,6 +37,19 @@ async function startServer() {
   
   // -- Auth Routes --
   const JWT_SECRET = process.env.JWT_SECRET || "super_secret_jwt_key_here";
+
+  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const token = req.cookies.auth_token;
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      (req as any).user = decoded;
+      next();
+    } catch(e) {
+      res.status(401).json({ error: "Invalid token" });
+    }
+  };
+
   const getRedirectUri = (req: express.Request) => {
     // In preview mode, use the APP_URL provided by environment if available.
     // Otherwise fallback to req.headers.origin or host.
@@ -196,7 +209,8 @@ async function startServer() {
           mcUuid: minecraftUuid,
           mcUsername: mcUsername,
           cityCorpToken: token,
-          kycStatus: "approved"
+          kycStatus: "approved",
+          createdAt: new Date()
         });
       }
 
@@ -267,7 +281,7 @@ async function startServer() {
   app.get('/api/auth/discord/link/callback', requireAuth, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks, bankCustomers, bankAccounts } = await import("./src/db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, like } = await import("drizzle-orm");
     const { code } = req.query;
 
     if (!code) return res.status(400).send("No code provided");
@@ -492,18 +506,6 @@ async function startServer() {
     });
     res.json({ success: true });
   });
-
-  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const token = req.cookies.auth_token;
-    if (!token) return res.status(401).json({ error: "Unauthorized" });
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      (req as any).user = decoded;
-      next();
-    } catch(e) {
-      res.status(401).json({ error: "Invalid token" });
-    }
-  };
 
   const requireGlobalAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const token = req.cookies.auth_token;

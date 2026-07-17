@@ -322,3 +322,4 @@ Updates to WIKI.md
 - Shifted primary user identity architecture from Discord IDs to CityCorp Profiles (Citizen IDs).
 - Discord integration is now treated as an optional linked account (linkedDiscordId) rather than the primary session driver.
 - UI refactored globally to label user profiles as Citizen IDs.
+Fixed 502 issue with server crashing.

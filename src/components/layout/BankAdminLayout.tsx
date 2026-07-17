@@ -55,7 +55,7 @@ export function BankAdminLayout() {
 
           {!user ? (
             <button
-              onClick={login}
+              onClick={() => login(bankId)}
               className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors shadow-lg shadow-[#5865F2]/20"
             >
               <LogIn size={18} />

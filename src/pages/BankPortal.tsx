@@ -286,7 +286,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
             <button 
               onClick={() => login(bankId)}
-              className={`w-full ${theme.bgAccent} hover:brightness-110 text-white text-sm font-semibold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2`}
+              className={`w-full ${theme.bg} hover:brightness-110 text-white text-sm font-semibold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2`}
             >
               <LogIn size={16} /> Authenticate with CityCorp
             </button>

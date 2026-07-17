@@ -107,10 +107,10 @@ export function BanksList() {
   // Form State
   const [name, setName] = useState("");
   const [guildId, setGuildId] = useState("");
-  const [discordToken, setCityCorpToken] = useState("");
+  const [discordToken, setDiscordToken] = useState("");
   const [customDomain, setCustomDomain] = useState("");
   const [discordClientId, setDiscordClientId] = useState("");
-  const [discordClientSecret, setCityCorpClientSecret] = useState("");
+  const [discordClientSecret, setDiscordClientSecret] = useState("");
   const [corpId, setCorpId] = useState("");
   const [corpApiUuid, setCorpApiUuid] = useState("");
   const [corpApiKey, setCorpApiKey] = useState("");
@@ -122,7 +122,7 @@ export function BanksList() {
   const [isEditingConfig, setIsEditingConfig] = useState(false);
   const [editName, setEditName] = useState("");
   const [editGuildId, setEditGuildId] = useState("");
-  const [editCityCorpToken, setEditCityCorpToken] = useState("");
+  const [editDiscordToken, setEditDiscordToken] = useState("");
   const [editCorpId, setEditCorpId] = useState("");
   const [editCorpApiUuid, setEditCorpApiUuid] = useState("");
   const [editCityCorpAppId, setEditCityCorpAppId] = useState("");
@@ -137,7 +137,7 @@ export function BanksList() {
     if (activeSelectedBank) {
       setEditName(activeSelectedBank.name || "");
       setEditGuildId(activeSelectedBank.guildId || "");
-      setEditCityCorpToken("");
+      setEditDiscordToken("");
       setEditCorpId(activeSelectedBank.corpId ? activeSelectedBank.corpId.toString() : "");
       setEditCorpApiUuid(activeSelectedBank.corpApiUuid || "");
       setEditCityCorpAppId(activeSelectedBank.cityCorpAppId || "");
@@ -183,10 +183,10 @@ export function BanksList() {
       setShowAddModal(false);
       setName("");
       setGuildId("");
-      setCityCorpToken("");
+      setDiscordToken("");
       setCustomDomain("");
       setEditDiscordClientId("");
-      setCityCorpClientSecret("");
+      setDiscordClientSecret("");
       setCorpId("");
       setCorpApiUuid("");
       setCorpApiKey("");
@@ -455,7 +455,7 @@ export function BanksList() {
                   required
                   type="password"
                   value={discordToken}
-                  onChange={(e) => setCityCorpToken(e.target.value)}
+                  onChange={(e) => setDiscordToken(e.target.value)}
                   placeholder="Paste bot token here..."
                   className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
@@ -468,7 +468,7 @@ export function BanksList() {
                 </div>
                 <div>
                   <label className="block text-xs text-white/70 mb-1">Discord Client Secret</label>
-                  <input type="password" value={discordClientSecret} onChange={(e) => setCityCorpClientSecret(e.target.value)} className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                  <input type="password" value={discordClientSecret} onChange={(e) => setDiscordClientSecret(e.target.value)} className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
                 </div>
               </div>
               <div>
@@ -644,8 +644,8 @@ export function BanksList() {
                                 cityCorpAppId: editCityCorpAppId,
                               };
 
-                              if (editCityCorpToken) {
-                                body.discordToken = editCityCorpToken;
+                              if (editDiscordToken) {
+                                body.discordToken = editDiscordToken;
                               }
                               if (editCityCorpAppSecret) {
                                 body.cityCorpAppSecret = editCityCorpAppSecret;
@@ -795,8 +795,8 @@ export function BanksList() {
                             <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Discord Bot Token</label>
                             <input 
                               type="password" 
-                              value={editCityCorpToken} 
-                              onChange={(e) => setEditCityCorpToken(e.target.value)}
+                              value={editDiscordToken} 
+                              onChange={(e) => setEditDiscordToken(e.target.value)}
                               placeholder="Leave blank to keep current token"
                               className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
                             />
