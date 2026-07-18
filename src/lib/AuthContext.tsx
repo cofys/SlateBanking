@@ -32,6 +32,9 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       const res = await fetch('/api/auth/me');
       if (res.ok) {
         const data = await res.json();
+        if (data && data.avatarUrl && data.avatarUrl.includes("crafatar.com")) {
+          data.avatarUrl = data.avatarUrl.replace("https://crafatar.com/avatars/", "https://mc-heads.net/avatar/").replace("?size=64&overlay=true", "/64");
+        }
         setUser(data);
       } else {
         setUser(null);

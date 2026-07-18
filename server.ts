@@ -220,7 +220,7 @@ async function startServer() {
       });
 
       let mcUsername = "Citizen";
-      let avatarUrl = `https://crafatar.com/avatars/${minecraftUuid}?size=64&overlay=true`;
+      let avatarUrl = `https://mc-heads.net/avatar/${minecraftUuid}/64`;
 
       if (playerRes.ok) {
         const playerData = await playerRes.json();
@@ -270,18 +270,39 @@ async function startServer() {
         maxAge: 7 * 24 * 60 * 60 * 1000
       });
 
+
       res.send(`
-        <html>
-          <body>
+        <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
+          <body style="margin: 0; padding: 2rem; text-align: center;">
             <script>
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${JSON.stringify(payload)} }, '*');
-              localStorage.setItem('oauth_auth_success', Date.now().toString());
-              window.close();
+              try {
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${JSON.stringify(payload)} }, '*');
+                }
+              } catch(e) {}
+              
+              try {
+                localStorage.setItem('oauth_auth_success', Date.now().toString());
+              } catch(e) {}
+              
+              // If not opened in a popup (no opener), redirect to the portal
+              if (!window.opener) {
+                window.location.href = '/portal';
+              } else {
+                window.close();
+                setTimeout(() => {
+                  window.location.href = '/portal';
+                }, 1000);
+              }
             </script>
-            <p>Authentication successful! You can close this window.</p>
+            <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
+              <h2>Authentication Successful!</h2>
+              <p style="color: rgba(255,255,255,0.7);">Redirecting you back...</p>
+            </div>
           </body>
         </html>
       `);
+
 
     } catch (e: any) {
       console.error(e);
@@ -404,16 +425,38 @@ async function startServer() {
         });
       }
 
+
       res.send(`
-        <html><body>
-          <script>
-            window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
-            localStorage.setItem('oauth_auth_success', Date.now().toString());
-            window.close();
-          </script>
-          <p>Discord account linked successfully! You can close this window.</p>
-        </body></html>
+        <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
+          <body style="margin: 0; padding: 2rem; text-align: center;">
+            <script>
+              try {
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                }
+              } catch(e) {}
+              
+              try {
+                localStorage.setItem('oauth_auth_success', Date.now().toString());
+              } catch(e) {}
+              
+              if (!window.opener) {
+                window.location.href = '/portal';
+              } else {
+                window.close();
+                setTimeout(() => {
+                  window.location.href = '/portal';
+                }, 1000);
+              }
+            </script>
+            <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
+              <h2>Authentication Successful!</h2>
+              <p style="color: rgba(255,255,255,0.7);">Redirecting you back...</p>
+            </div>
+          </body>
+        </html>
       `);
+
 
     } catch (e: any) {
       console.error(e);
