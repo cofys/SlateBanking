@@ -10,14 +10,14 @@ export interface UserSession {
 interface AuthContextType {
   user: UserSession | null;
   isLoading: boolean;
-  login: (bankId?: string) => void;
+  login: (bankId?: string, provider?: 'discord' | 'citycorp') => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  login: (bankId?: string) => {},
+  login: (bankId?: string, provider?: 'discord' | 'citycorp') => {},
   logout: () => {},
 });
 
@@ -73,9 +73,13 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     };
   }, []);
 
-  const login = async (bankId?: string) => {
+  const login = async (bankId?: string, provider?: 'discord' | 'citycorp') => {
     try {
-      const response = await fetch(`/api/auth/url${bankId ? `?bankId=${bankId}` : ''}`);
+      const params = new URLSearchParams();
+      if (bankId) params.append('bankId', bankId);
+      if (provider) params.append('provider', provider);
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      const response = await fetch(`/api/auth/url${queryString}`);
       if (!response.ok) {
         throw new Error('Failed to get auth URL');
       }

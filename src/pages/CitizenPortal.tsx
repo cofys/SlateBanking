@@ -83,7 +83,7 @@ export function CitizenPortal() {
             <p className="text-white/50 text-sm">Please securely authenticate with CityCorp to access your financial portfolio.</p>
           </div>
           <button 
-            onClick={() => login()}
+            onClick={() => login(undefined, 'citycorp')}
             className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-[#5865F2]/20 flex items-center justify-center gap-2"
           >
             <LogIn size={18} /> Login with CityCorp

@@ -87,6 +87,7 @@ async function startServer() {
     const { like, eq } = await import("drizzle-orm");
     const hostname = req.hostname;
     const bankId = req.query.bankId as string | undefined;
+    const provider = req.query.provider as string | undefined;
     let clientId = process.env.DISCORD_CLIENT_ID || '';
     
     let bank = null;
@@ -97,21 +98,45 @@ async function startServer() {
         console.error("Bank ID lookup error for OAuth URL:", e);
       }
     } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
-       try {
-         bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
-       } catch (e) {
-         console.error("Domain lookup error for OAuth URL:", e);
-       }
+        try {
+          bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
+        } catch (e) {
+          console.error("Domain lookup error for OAuth URL:", e);
+        }
     }
 
-    if (bank && bank.cityCorpAppId) {
-       const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
-       const state = encodeURIComponent(JSON.stringify({ bankId: bank.id }));
-       const scopes = "corp.player.info.get,corp.get";
-       const authUrl = `https://dashboard.cityrp.org/oauth/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
-       return res.json({ url: authUrl });
+    if (provider === 'citycorp') {
+      if (!bank || !bank.cityCorpAppId) {
+        try {
+          const allBanks = await db.select().from(banks).all();
+          const configuredBank = allBanks.find(b => b.cityCorpAppId);
+          if (configuredBank) {
+            bank = configuredBank;
+          }
+        } catch (e) {
+          console.error("Error finding configured bank:", e);
+        }
+      }
+
+      if (bank && bank.cityCorpAppId) {
+        const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id }));
+        const scopes = "corp.player.info.get,corp.get";
+        const authUrl = `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+        return res.json({ url: authUrl });
+      } else {
+        return res.status(400).json({ error: "CityCorp OAuth is not configured. Please set up a bank with CityCorp Application credentials in the Admin panel first." });
+      }
+    }
+
+    if (bank && bank.cityCorpAppId && !provider) {
+        const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id }));
+        const scopes = "corp.player.info.get,corp.get";
+        const authUrl = `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+        return res.json({ url: authUrl });
     } else if (bank && bank.discordClientId) {
-      clientId = bank.discordClientId;
+       clientId = bank.discordClientId;
     }
 
     const redirectUri = getRedirectUri(req);
@@ -119,7 +144,7 @@ async function startServer() {
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: 'identify email', 
+      scope: 'identify email',
     });
     const authUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`;
     res.json({ url: authUrl });
@@ -155,7 +180,7 @@ async function startServer() {
         token: bank.cityCorpAppSecret
       });
 
-      const tokenResponse = await fetch("https://dashboard.cityrp.org/api/auth/token", {
+      const tokenResponse = await fetch("https://dashboard.cityrp.org/oauth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: bodyParams.toString()
@@ -1625,7 +1650,7 @@ async function startServer() {
       }));
 
       const scopes = "corp.player.info.get,corp.get";
-      const authUrl = `https://dashboard.cityrp.org/oauth/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+      const authUrl = `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
 
       res.json({ url: authUrl });
     } catch (e: any) {
@@ -1665,7 +1690,7 @@ async function startServer() {
       });
 
       console.log("Exchanging CityCorp OAuth code for token with body:", bodyParams.toString());
-      const tokenResponse = await fetch("https://dashboard.cityrp.org/api/auth/token", {
+      const tokenResponse = await fetch("https://dashboard.cityrp.org/oauth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: bodyParams.toString()

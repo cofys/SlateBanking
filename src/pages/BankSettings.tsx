@@ -318,6 +318,29 @@ export function BankSettings() {
               </p>
             </div>
           </div>
+          
+          <div className="mt-8 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4">
+            <h4 className="text-sm font-medium text-indigo-400 mb-2">Required CityCorp OAuth Redirect URI</h4>
+            <p className="text-xs text-indigo-300/70 mb-3">
+              You must copy the following URL and paste it into the <strong>Redirect URIs</strong> field of your CityCorp application in the Developer Dashboard. Without this exact URL, CityCorp logins will fail with a 404 error.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white/90 overflow-x-auto whitespace-nowrap">
+                {`https://${settings?.customDomain || window.location.hostname}/api/auth/citycorp/callback`}
+              </code>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigator.clipboard.writeText(`https://${settings?.customDomain || window.location.hostname}/api/auth/citycorp/callback`);
+                  alert("Redirect URI copied to clipboard");
+                }}
+                className="bg-[#242433] hover:bg-[#2d2d3f] border border-white/10 text-white px-4 py-2 rounded-lg text-sm transition-colors whitespace-nowrap"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
           <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-200 leading-relaxed">
             <strong>Configuration Guideline:</strong> Ensure your application's <strong>Redirect URI</strong> in the CityCorp Developer Portal is configured precisely to:<br />
             <code className="text-white bg-black/40 px-1.5 py-0.5 rounded select-all font-mono">
