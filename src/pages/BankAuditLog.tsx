@@ -39,7 +39,7 @@ export function BankAuditLog() {
             <thead className="bg-[#1a1a24] text-white/50 border-b border-white/10">
               <tr>
                 <th className="px-6 py-4 font-medium">Timestamp</th>
-                <th className="px-6 py-4 font-medium">User (Citizen ID)</th>
+                <th className="px-6 py-4 font-medium">User (Discord ID)</th>
                 <th className="px-6 py-4 font-medium">Action</th>
                 <th className="px-6 py-4 font-medium">Details</th>
               </tr>

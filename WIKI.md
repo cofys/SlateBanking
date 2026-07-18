@@ -326,3 +326,7 @@ Fixed 502 issue with server crashing.
 
 ## Custom CityCorp OAuth Configuration
 Administrators can now provide a exact, custom pre-generated **CityCorp OAuth URL** directly from the CityCorp dashboard, bypassing the platform's automatic URL generation. This handles strict redirect URI requirements by matching the callback bank using the domain host or a single-bank fallback when the OAuth state is not JSON-encoded.
+
+### Discord OAuth URI Consolidation & Flexible Identity Resolution
+- **Unified Discord OAuth Callback**: Consolidated the Discord Login and Discord Account Linking flows into a single unified callback endpoint (`/api/auth/discord/callback`). The operation intent ("login" vs "link") is now securely passed via the OAuth2 `state` parameter from `/api/auth/url`. This reduces configuration complexity, requiring only a single **Redirect URI** to be configured in the Discord Developer Portal for both operations.
+- **Flexible Identity Mapping ("Username or Discord ID")**: Evolved the account reassignment and customer creation workflows (e.g., "Update Owner", "Merge Customer"). The system now performs intelligent background resolution using `drizzle-orm` queries (`or(eq(discordId, input), ilike(mcUsername, input))`). This allows administrators and tellers to intuitively link or assign accounts using either a player's **Minecraft Username** or their direct **Discord ID**, significantly reducing friction when re-associating imported CityCorp transactions.

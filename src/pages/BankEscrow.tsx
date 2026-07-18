@@ -210,7 +210,7 @@ export function BankEscrow() {
                   >
                     <option value="">Select funding account...</option>
                     {accounts.map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerCityCorpId}) - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId}) - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</option>
                     ))}
                   </select>
                 </div>
@@ -231,7 +231,7 @@ export function BankEscrow() {
                   >
                     <option value="">Select receiving account...</option>
                     {accounts.filter(a => a.id !== buyerAccountId).map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerCityCorpId})</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId})</option>
                     ))}
                   </select>
                 </div>

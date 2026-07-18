@@ -311,42 +311,22 @@ async function startServer() {
   });
 
   
-  app.get('/api/auth/discord/link', async (req, res) => {
-    const { db } = await import("./src/db/index");
-    const { banks } = await import("./src/db/schema");
-    const { like } = await import("drizzle-orm");
-    const hostname = req.hostname;
-    let clientId = process.env.DISCORD_CLIENT_ID || '';
-    
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
-       try {
-         const bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
-         if (bank && bank.discordClientId) {
-           clientId = bank.discordClientId;
-         }
-       } catch (e) {
-         console.error("Domain lookup error for Link OAuth URL:", e);
-       }
-    }
-
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/link/callback`;
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: 'identify email', 
-    });
-    const authUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`;
-    res.json({ url: authUrl });
-  });
-
-  app.get('/api/auth/discord/link/callback', requireAuth, async (req, res) => {
+    app.get('/api/auth/discord/callback', async (req, res) => {
     const { db } = await import("./src/db/index");
     const { banks, bankCustomers, bankAccounts } = await import("./src/db/schema");
-    const { eq, and, like } = await import("drizzle-orm");
-    const { code } = req.query;
-
+    const { like, eq } = await import("drizzle-orm");
+    const { code, state } = req.query;
     if (!code) return res.status(400).send("No code provided");
+    
+    let intent = 'login';
+    let bankId = null;
+    try {
+      if (state) {
+        const decodedState = JSON.parse(decodeURIComponent(state as string));
+        intent = decodedState.intent || 'login';
+        bankId = decodedState.bankId;
+      }
+    } catch (e) {}
 
     const hostname = req.hostname;
     let clientId = process.env.DISCORD_CLIENT_ID || '';
@@ -364,7 +344,8 @@ async function startServer() {
        }
     }
 
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/link/callback`;
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/callback`;
+
     try {
       const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
         method: 'POST',
@@ -375,131 +356,6 @@ async function startServer() {
           code: code.toString(),
           redirect_uri: redirectUri,
         }).toString(),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
-
-      if (!tokenResponse.ok) {
-        return res.status(400).send('Failed to fetch Discord token: ' + await tokenResponse.text());
-      }
-
-      const tokenData = await tokenResponse.json();
-      const userResponse = await fetch('https://discord.com/api/users/@me', {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-      });
-
-      if (!userResponse.ok) {
-        return res.status(400).send('Failed to fetch Discord user');
-      }
-
-      const userData = await userResponse.json();
-      const realDiscordId = userData.id;
-      
-      const sessionDiscordId = (req as any).user.discordId;
-
-      if (sessionDiscordId.startsWith("mc_")) {
-        // Update bankCustomer to real discordId
-        await db.update(bankCustomers)
-          .set({ discordId: realDiscordId })
-          .where(eq(bankCustomers.discordId, sessionDiscordId));
-          
-        await db.update(bankAccounts)
-          .set({ ownerDiscordId: realDiscordId })
-          .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
-
-        // Generate new token
-        const isGlobalAdmin = userData.username === 'cofys' || userData.email === 'cofysmc@gmail.com';
-        const payload = {
-          discordId: realDiscordId,
-          username: (req as any).user.username,
-          avatarUrl: userData.avatar ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png` : undefined,
-          isGlobalAdmin
-        };
-
-        const jwt = require("jsonwebtoken");
-        const signedToken = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
-        res.cookie('auth_token', signedToken, {
-          secure: true,
-          sameSite: 'none',
-          httpOnly: true,
-          maxAge: 7 * 24 * 60 * 60 * 1000
-        });
-      }
-
-
-      res.send(`
-        <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
-          <body style="margin: 0; padding: 2rem; text-align: center;">
-            <script>
-              try {
-                if (window.opener) {
-                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
-                }
-              } catch(e) {}
-              
-              try {
-                localStorage.setItem('oauth_auth_success', Date.now().toString());
-              } catch(e) {}
-              
-              if (!window.opener) {
-                window.location.href = '/portal';
-              } else {
-                window.close();
-                setTimeout(() => {
-                  window.location.href = '/portal';
-                }, 1000);
-              }
-            </script>
-            <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
-              <h2>Authentication Successful!</h2>
-              <p style="color: rgba(255,255,255,0.7);">Redirecting you back...</p>
-            </div>
-          </body>
-        </html>
-      `);
-
-
-    } catch (e: any) {
-      console.error(e);
-      res.status(500).send("Internal server error during Discord linking");
-    }
-  });
-
-  app.get('/api/auth/discord/callback', async (req, res) => {
-    const { db } = await import("./src/db/index");
-    const { banks } = await import("./src/db/schema");
-    const { like } = await import("drizzle-orm");
-
-    const { code } = req.query;
-    if (!code) return res.status(400).send("No code provided");
-
-    const hostname = req.hostname;
-    let clientId = process.env.DISCORD_CLIENT_ID || '';
-    let clientSecret = process.env.DISCORD_CLIENT_SECRET || '';
-
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
-       try {
-         const bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
-         if (bank && bank.discordClientId && bank.discordClientSecret) {
-           clientId = bank.discordClientId;
-           clientSecret = bank.discordClientSecret;
-         }
-       } catch (e) {
-         console.error("Domain lookup error for OAuth Callback:", e);
-       }
-    }
-
-    const redirectUri = getRedirectUri(req);
-    try {
-      const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
-        method: 'POST',
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          grant_type: 'authorization_code',
-          code: code.toString(),
-          redirect_uri: redirectUri,
-        }).toString(),
-
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
@@ -522,24 +378,51 @@ async function startServer() {
       }
 
       const userData = await userResponse.json();
-      
+      const realDiscordId = userData.id;
       const isGlobalAdmin = userData.username === 'cofys' || userData.email === 'cofysmc@gmail.com';
-
-      const payload = {
-        discordId: userData.id,
+      let payload = {
+        discordId: realDiscordId,
         username: userData.username,
         avatarUrl: userData.avatar ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png` : undefined,
         isGlobalAdmin
       };
 
-      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      if (intent === 'link') {
+        const authToken = req.cookies.auth_token;
+        if (!authToken) return res.status(401).send("No active session to link");
+        let decodedSession: any;
+        try {
+          decodedSession = jwt.verify(authToken, JWT_SECRET);
+        } catch (e) {
+          return res.status(401).send("Invalid session token");
+        }
+        
+        const sessionDiscordId = decodedSession.discordId;
+        if (sessionDiscordId && sessionDiscordId.startsWith("mc_")) {
+          // Update bankCustomer to real discordId
+          await db.update(bankCustomers)
+            .set({ discordId: realDiscordId, linkedDiscordId: realDiscordId })
+            .where(eq(bankCustomers.discordId, sessionDiscordId));
+            
+          await db.update(bankAccounts)
+            .set({ ownerDiscordId: realDiscordId })
+            .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
+            
+          payload.username = decodedSession.username || userData.username; // keep mc username
+        } else {
+           return res.status(400).send("Account is already linked or invalid session");
+        }
+      }
 
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
       res.cookie('auth_token', token, {
         secure: true,
         sameSite: 'none',
         httpOnly: true,
         maxAge: 7 * 24 * 60 * 60 * 1000
       });
+
+      const dest = intent === 'link' ? '/portal' : '/admin';
 
       res.send(`
         <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
@@ -554,20 +437,26 @@ async function startServer() {
               try {
                 localStorage.setItem('oauth_auth_success', Date.now().toString());
               } catch(e) {}
-
-              window.close();
               
-              setTimeout(() => {
-                document.body.innerHTML = '<div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;"><h2>Authentication Successful!</h2><p style="color: rgba(255,255,255,0.7);">You can now safely close this window.</p></div>';
-              }, 1000);
+              if (!window.opener) {
+                window.location.href = '${dest}';
+              } else {
+                window.close();
+                setTimeout(() => {
+                  window.location.href = '${dest}';
+                }, 1000);
+              }
             </script>
-            <p>Authentication successful. This window should close automatically.</p>
+            <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
+              <h2>Authentication Successful!</h2>
+              <p style="color: rgba(255,255,255,0.7);">Redirecting you back...</p>
+            </div>
           </body>
         </html>
       `);
     } catch (e: any) {
       console.error(e);
-      res.status(500).send("Authentication failed: " + e.message);
+      res.status(500).send("Internal server error during Discord auth");
     }
   });
 
@@ -2588,10 +2477,36 @@ async function startServer() {
       if (!newDiscordId || typeof newDiscordId !== 'string') {
         return res.status(400).json({ error: "Missing or invalid newDiscordId" });
       }
+      
+      const { bankCustomers } = await import("./src/db/schema");
+      const { or, ilike } = await import("drizzle-orm");
+      
+      let finalDiscordId = newDiscordId;
+      const existingCustomer = await db.select().from(bankCustomers).where(
+        and(
+          eq(bankCustomers.bankId, bId),
+          or(
+            eq(bankCustomers.discordId, newDiscordId),
+            ilike(bankCustomers.mcUsername, newDiscordId)
+          )
+        )
+      ).get();
+      
+      if (existingCustomer) {
+        finalDiscordId = existingCustomer.discordId;
+      }
 
       await db.update(bankAccounts)
-        .set({ ownerDiscordId: newDiscordId })
+        .set({ ownerDiscordId: finalDiscordId })
         .where(and(eq(bankAccounts.bankId, bId), eq(bankAccounts.ownerDiscordId, oldId)));
+      
+      // Also update the customer record itself if we aren't merging into an existing one
+      if (!existingCustomer) {
+         await db.update(bankCustomers).set({ discordId: finalDiscordId }).where(and(eq(bankCustomers.bankId, bId), eq(bankCustomers.discordId, oldId)));
+      } else if (existingCustomer.discordId !== oldId) {
+         // Merge: we could delete the old record, but let's just let it be for now or delete it
+         await db.delete(bankCustomers).where(and(eq(bankCustomers.bankId, bId), eq(bankCustomers.discordId, oldId)));
+      }
 
       await db.insert(auditLogs).values({
         id: uuidv4(),
@@ -2857,9 +2772,28 @@ async function startServer() {
       if (!newDiscordId || typeof newDiscordId !== 'string') {
         return res.status(400).json({ error: "Missing or invalid newDiscordId" });
       }
+      
+      const { bankCustomers } = await import("./src/db/schema");
+      const { or, ilike } = await import("drizzle-orm");
+      
+      // Resolve username or discord ID
+      let finalDiscordId = newDiscordId;
+      const existingCustomer = await db.select().from(bankCustomers).where(
+        and(
+          eq(bankCustomers.bankId, bId),
+          or(
+            eq(bankCustomers.discordId, newDiscordId),
+            ilike(bankCustomers.mcUsername, newDiscordId)
+          )
+        )
+      ).get();
+      
+      if (existingCustomer) {
+        finalDiscordId = existingCustomer.discordId;
+      }
 
       await db.update(bankAccounts)
-        .set({ ownerDiscordId: newDiscordId })
+        .set({ ownerDiscordId: finalDiscordId })
         .where(and(eq(bankAccounts.bankId, bId), eq(bankAccounts.id, accId)));
 
       await db.insert(auditLogs).values({
@@ -3149,11 +3083,32 @@ async function startServer() {
          console.warn("CityCorp API credentials missing for bank, skipping external creation");
       }
 
-      // 4. Create in local DB
+      // 4. Resolve Discord ID if username provided
+      const { bankCustomers } = await import("./src/db/schema");
+      const { or, ilike } = await import("drizzle-orm");
+      let finalDiscordId = ownerDiscordId || 'imported';
+      
+      if (ownerDiscordId) {
+          const existingCustomer = await db.select().from(bankCustomers).where(
+            and(
+              eq(bankCustomers.bankId, req.params.bankId),
+              or(
+                eq(bankCustomers.discordId, ownerDiscordId),
+                ilike(bankCustomers.mcUsername, ownerDiscordId)
+              )
+            )
+          ).get();
+          
+          if (existingCustomer) {
+            finalDiscordId = existingCustomer.discordId;
+          }
+      }
+
+      // 5. Create in local DB
       const newAccount = {
         id: uuidv4(),
         bankId: req.params.bankId,
-        ownerDiscordId: ownerDiscordId || 'imported',
+        ownerDiscordId: finalDiscordId,
         accountName,
         balance: req.body.initialBalanceCents || initialBalanceCents || 0,
         createdAt: new Date(),

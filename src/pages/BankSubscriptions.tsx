@@ -250,7 +250,7 @@ export function BankSubscriptions() {
                   >
                     <option value="">Select customer account...</option>
                     {accounts.filter(a => a.id !== billerAccountId).map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerCityCorpId}) - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId}) - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</option>
                     ))}
                   </select>
                 </div>

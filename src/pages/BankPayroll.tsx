@@ -228,7 +228,7 @@ export function BankPayroll() {
                   >
                     <option value="">Select funding account...</option>
                     {accounts.map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} ({acc.ownerCityCorpId})</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} - ${(acc.balance / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} ({acc.ownerDiscordId})</option>
                     ))}
                   </select>
                 </div>
@@ -243,7 +243,7 @@ export function BankPayroll() {
                   >
                     <option value="">Select receiving account...</option>
                     {accounts.filter(a => a.id !== employerAccountId).map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerCityCorpId})</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId})</option>
                     ))}
                   </select>
                 </div>

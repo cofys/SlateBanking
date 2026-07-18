@@ -43,7 +43,7 @@ export function CitizenPortal() {
       if (res.ok) {
         setUserData(await res.json());
       } else {
-        setUserData({ error: "No accounts found for this Citizen ID." });
+        setUserData({ error: "No accounts found for this Discord ID." });
       }
     } catch (e) {
       console.error(e);

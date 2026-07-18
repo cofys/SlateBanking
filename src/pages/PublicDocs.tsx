@@ -169,7 +169,7 @@ export function PublicDocs() {
                            <tr>
                               <td className="px-6 py-4 font-mono text-indigo-300">userCityCorpId</td>
                               <td className="px-6 py-4 text-white/50">String</td>
-                              <td className="px-6 py-4 text-white/80">The Citizen ID of the user purchasing the item. The network will pull funds from their default account.</td>
+                              <td className="px-6 py-4 text-white/80">The Discord ID of the user purchasing the item. The network will pull funds from their default account.</td>
                            </tr>
                            <tr>
                               <td className="px-6 py-4 font-mono text-indigo-300">amountCents</td>

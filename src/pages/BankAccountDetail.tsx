@@ -126,17 +126,17 @@ export function BankAccountDetail() {
               <span className="flex items-center gap-1.5"><Clock size={14} /> Opened {format(new Date(account.createdAt), "MMM d, yyyy")}</span>
               <div className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors">
                 Owner ID: 
-                <Link to={`/bank/${bank.id}/customers/${account.ownerCityCorpId}`} className="font-mono hover:underline">
-                  {account.ownerCityCorpId}
+                <Link to={`/bank/${bank.id}/customers/${account.ownerDiscordId}`} className="font-mono hover:underline">
+                  {account.ownerDiscordId}
                 </Link>
                 <button
                   onClick={async () => {
-                    const newId = prompt("Enter new Citizen ID for this account:", account.ownerCityCorpId);
-                    if (!newId || newId === account.ownerCityCorpId) return;
+                    const newId = prompt("Enter the new account owner's Username or Discord ID:", account.ownerDiscordId);
+                    if (!newId || newId === account.ownerDiscordId) return;
                     const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/update-owner`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ newCityCorpId: newId })
+                      body: JSON.stringify({ newDiscordId: newId })
                     });
                     if (res.ok) {
                       fetchAcc();
@@ -429,7 +429,7 @@ export function BankAccountDetail() {
                   <div>
                     <h3 className="text-xs font-mono uppercase text-indigo-900 tracking-wider mb-2 font-bold">Prepared For</h3>
                     <div className="text-sm">
-                      <p className="font-bold text-slate-900">Citizen ID: {account.ownerCityCorpId}</p>
+                      <p className="font-bold text-slate-900">Discord ID: {account.ownerDiscordId}</p>
                       <p className="text-slate-600 mt-1">Account Holder Portal Status: Verified Elite Member</p>
                     </div>
                   </div>

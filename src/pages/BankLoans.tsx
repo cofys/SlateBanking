@@ -243,7 +243,7 @@ export function BankLoans() {
 
               <form onSubmit={handleCreateLoan} className="p-6 space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-white/80 mb-1.5">Borrower Citizen ID</label>
+                  <label className="block text-sm font-medium text-white/80 mb-1.5">Borrower Discord ID</label>
                   <input
                     type="text"
                     value={discordId}
@@ -263,12 +263,12 @@ export function BankLoans() {
                     required
                   >
                     <option value="">Select receiving account...</option>
-                    {accounts.filter(a => a.ownerCityCorpId === discordId).length > 0 
-                      ? accounts.filter(a => a.ownerCityCorpId === discordId).map(acc => (
+                    {accounts.filter(a => a.ownerDiscordId === discordId).length > 0 
+                      ? accounts.filter(a => a.ownerDiscordId === discordId).map(acc => (
                          <option key={acc.id} value={acc.id}>{acc.accountName}</option>
                       )) 
                       : accounts.map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerCityCorpId})</option>
+                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId})</option>
                       ))
                     }
                   </select>
@@ -420,7 +420,7 @@ export function BankLoans() {
                     <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Borrower Identity</p>
                     <div className="bg-black/20 p-3 rounded-xl border border-white/5">
                       <p className="text-white text-lg font-medium">{selectedLoan.mcUsername || "Unverified Citizen"}</p>
-                      <p className="font-mono text-white/50 text-xs mt-1">Citizen ID: {selectedLoan.discordId}</p>
+                      <p className="font-mono text-white/50 text-xs mt-1">Discord ID: {selectedLoan.discordId}</p>
                     </div>
                   </div>
                   <div>
