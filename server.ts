@@ -159,7 +159,8 @@ async function startServer() {
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     console.log("CityCorp Callback Query:", req.query, "Params:", req.params, "Body:", req.body);
-    const { code, state: stateStr } = req.query;
+    const { state: stateStr } = req.query;
+    const code = req.query.code || req.query.client_secret;
 
     if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
     if (!code || !stateStr) {
@@ -1683,7 +1684,7 @@ async function startServer() {
 
     try {
       const bankId = req.params.bankId;
-      const code = req.query.client_secret as string;
+      const code = (req.query.client_secret || req.query.code) as string;
       const stateStr = req.query.state as string;
 
       if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
