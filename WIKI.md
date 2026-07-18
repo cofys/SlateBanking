@@ -323,3 +323,6 @@ Updates to WIKI.md
 - Discord integration is now treated as an optional linked account (linkedDiscordId) rather than the primary session driver.
 - UI refactored globally to label user profiles as Citizen IDs.
 Fixed 502 issue with server crashing.
+
+## Custom CityCorp OAuth Configuration
+Administrators can now provide a exact, custom pre-generated **CityCorp OAuth URL** directly from the CityCorp dashboard, bypassing the platform's automatic URL generation. This handles strict redirect URI requirements by matching the callback bank using the domain host or a single-bank fallback when the OAuth state is not JSON-encoded.

@@ -127,6 +127,7 @@ export function BanksList() {
   const [editCorpApiUuid, setEditCorpApiUuid] = useState("");
   const [editCityCorpAppId, setEditCityCorpAppId] = useState("");
   const [editCityCorpAppSecret, setEditCityCorpAppSecret] = useState("");
+  const [editCityCorpAuthUrl, setEditCityCorpAuthUrl] = useState("");
   const [editCustomDomain, setEditCustomDomain] = useState("");
   const [editDiscordClientId, setEditDiscordClientId] = useState("");
   const [editDiscordClientSecret, setEditDiscordClientSecret] = useState("");
@@ -142,6 +143,7 @@ export function BanksList() {
       setEditCorpApiUuid(activeSelectedBank.corpApiUuid || "");
       setEditCityCorpAppId(activeSelectedBank.cityCorpAppId || "");
       setEditCityCorpAppSecret(activeSelectedBank.cityCorpAppSecret || "");
+      setEditCityCorpAuthUrl(activeSelectedBank.cityCorpAuthUrl || "");
       setEditCustomDomain(activeSelectedBank.customDomain || "");
       setEditDiscordClientId(activeSelectedBank.discordClientId || "");
       setEditDiscordClientSecret(""); // Don't pre-fill secrets
@@ -642,6 +644,7 @@ export function BanksList() {
                                 discordClientId: editDiscordClientId,
                                 discordClientSecret: editDiscordClientSecret,
                                 cityCorpAppId: editCityCorpAppId,
+                                cityCorpAuthUrl: editCityCorpAuthUrl,
                               };
 
                               if (editDiscordToken) {
@@ -721,6 +724,13 @@ export function BanksList() {
                             {selectedBank.discordClientSecret ? '••••••••' : 'Not configured'}
                           </span>
                         </div>
+                        <div>
+                          <span className="text-white/50 block text-xs">Custom CityCorp OAuth URL</span>
+                          <span className="font-mono text-white/90 text-[10px] break-all">
+                            {selectedBank.cityCorpAuthUrl || 'Not configured'}
+                          </span>
+                        </div>
+
 
                       </div>
                     ) : (

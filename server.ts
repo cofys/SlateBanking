@@ -122,7 +122,7 @@ async function startServer() {
         const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
         const state = encodeURIComponent(JSON.stringify({ bankId: bank.id }));
         const scopes = "corp.player.info.get,corp.get";
-        const authUrl = `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+        const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
         return res.json({ url: authUrl });
       } else {
         return res.status(400).json({ error: "CityCorp OAuth is not configured. Please set up a bank with CityCorp Application credentials in the Admin panel first." });
@@ -133,7 +133,7 @@ async function startServer() {
         const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
         const state = encodeURIComponent(JSON.stringify({ bankId: bank.id }));
         const scopes = "corp.player.info.get,corp.get";
-        const authUrl = `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+        const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
         return res.json({ url: authUrl });
     } else if (bank && bank.discordClientId) {
        clientId = bank.discordClientId;
@@ -158,16 +158,31 @@ async function startServer() {
     const { banks, bankCustomers } = await import("./src/db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
+    console.log("CityCorp Callback Query:", req.query, "Params:", req.params, "Body:", req.body);
     const { code, state: stateStr } = req.query;
 
+    if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
     if (!code || !stateStr) {
-      return res.status(400).send("Missing code or state in CityCorp OAuth callback");
+      return res.status(400).send(`Missing code or state. URL: ${req.originalUrl}`);
     }
 
     try {
-      const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
-      const bankId = parsedState.bankId;
-
+      let bankId;
+      try {
+        const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
+        bankId = parsedState.bankId;
+      } catch (e) {
+        const host = req.get('host');
+        let possibleBank = await db.select().from(banks).where(eq(banks.customDomain, host || "")).get();
+        if (!possibleBank) {
+            const allBanks = await db.select().from(banks).all();
+            if (allBanks.length === 1) possibleBank = allBanks[0];
+            else possibleBank = allBanks.find(b => b.cityCorpAppId);
+        }
+        if (possibleBank) bankId = possibleBank.id;
+      }
+      if (!bankId) return res.status(400).send("Could not identify bank from state or host");
+      
       const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
       if (!bank || !bank.cityCorpAppId || !bank.cityCorpAppSecret) {
         return res.status(400).send("Bank CityCorp OAuth credentials are not configured");
@@ -870,6 +885,7 @@ async function startServer() {
       if (b.customDomain !== undefined) updateData.customDomain = b.customDomain;
       if (b.discordClientId !== undefined) updateData.discordClientId = b.discordClientId;
       if (b.discordClientSecret !== undefined && b.discordClientSecret !== "") updateData.discordClientSecret = b.discordClientSecret;
+      if (b.cityCorpAuthUrl !== undefined) updateData.cityCorpAuthUrl = b.cityCorpAuthUrl;
       
       await db.update(banks).set(updateData).where(eq(banks.id, req.params.id));
       res.json({ success: true });
@@ -1650,7 +1666,7 @@ async function startServer() {
       }));
 
       const scopes = "corp.player.info.get,corp.get";
-      const authUrl = `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}`;
+        const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
 
       res.json({ url: authUrl });
     } catch (e: any) {
@@ -1670,8 +1686,9 @@ async function startServer() {
       const code = req.query.client_secret as string;
       const stateStr = req.query.state as string;
 
-      if (!code || !stateStr) {
-        return res.status(400).send("Missing code or state in CityCorp OAuth callback");
+      if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
+    if (!code || !stateStr) {
+        return res.status(400).send(`Missing code or state. URL: ${req.originalUrl}`);
       }
 
       const parsedState = JSON.parse(decodeURIComponent(stateStr));

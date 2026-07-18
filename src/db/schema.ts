@@ -20,6 +20,7 @@ export const banks = sqliteTable("banks", {
   corpApiKey: text("corp_api_key"),
   cityCorpAppId: text("city_corp_app_id"),
   cityCorpAppSecret: text("city_corp_app_secret"),
+  cityCorpAuthUrl: text("city_corp_auth_url"),
   customDomain: text("custom_domain"),
   brandingColor: text("branding_color").default("#4f46e5"), // indigo-600
   logoUrl: text("logo_url"),

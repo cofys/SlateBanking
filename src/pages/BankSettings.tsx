@@ -50,7 +50,8 @@ export function BankSettings() {
       discordClientId: formData.get("discordClientId"),
       discordClientSecret: formData.get("discordClientSecret"),
       cityCorpAppId: formData.get("cityCorpAppId"),
-      cityCorpAppSecret: formData.get("cityCorpAppSecret")
+      cityCorpAppSecret: formData.get("cityCorpAppSecret"),
+      cityCorpAuthUrl: formData.get("cityCorpAuthUrl")
     };
 
     fetch(`/api/banks/${bank.id}/settings`, {
@@ -264,6 +265,22 @@ export function BankSettings() {
               />
               <p className="text-xs text-white/40 mt-1.5">Assigned when a user successfully opens an account.</p>
             </div>
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide flex items-center gap-2">
+                Custom CityCorp OAuth URL (Optional)
+              </label>
+              <input 
+                name="cityCorpAuthUrl" 
+                type="text" 
+                placeholder="https://dashboard.cityrp.org/authorize?app_id=..."
+                defaultValue={settings?.cityCorpAuthUrl || ""} 
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+              />
+              <p className="text-xs text-white/40 mt-1.5">
+                If provided, this exact URL will be used for logging in users via CityCorp.
+              </p>
+            </div>
+
           </div>
         </div>
 
@@ -317,6 +334,22 @@ export function BankSettings() {
                 CityCorp issues a single unified <strong>App Token</strong> (starting with <code className="text-indigo-300">crp_</code>) which functions as both your Bot API Key and your Whitelabel OAuth Secret.
               </p>
             </div>
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide flex items-center gap-2">
+                Custom CityCorp OAuth URL (Optional)
+              </label>
+              <input 
+                name="cityCorpAuthUrl" 
+                type="text" 
+                placeholder="https://dashboard.cityrp.org/authorize?app_id=..."
+                defaultValue={settings?.cityCorpAuthUrl || ""} 
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+              />
+              <p className="text-xs text-white/40 mt-1.5">
+                If provided, this exact URL will be used for logging in users via CityCorp.
+              </p>
+            </div>
+
           </div>
           
           <div className="mt-8 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4">
