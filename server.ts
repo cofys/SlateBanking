@@ -52,9 +52,13 @@ async function startServer() {
   };
 
   const getRedirectUri = (req: express.Request) => {
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const host = req.headers['x-forwarded-host'] || req.get('host');
-    let origin = `${protocol}://${host}`;
+    const protocol = (req.headers['x-forwarded-proto'] || req.protocol || 'http') as string;
+    const host = (req.headers['x-forwarded-host'] || req.get('host')) as string;
+    let actualProtocol = protocol;
+    if (host.includes('run.app') || host.includes('onyx-network.com')) {
+      actualProtocol = 'https';
+    }
+    let origin = `${actualProtocol}://${host}`;
     
     // In preview mode, fallback to APP_URL if host is localhost/internal and APP_URL exists
     if ((host?.includes('localhost') || host?.includes('127.0.0.1')) && process.env.APP_URL) {

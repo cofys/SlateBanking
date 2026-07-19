@@ -3,7 +3,7 @@ import { cityCorpLogs } from "../db/schema";
 import { v4 as uuidv4 } from "uuid";
 
 export class CityCorpClient {
-  private baseUrl = "https://api.cityrp.org";
+  private baseUrl = "https://api.cityrp.org/citycorp";
   private corpId: number;
   private apiUuid: string;
   private apiKey: string;
@@ -87,7 +87,7 @@ export class CityCorpClient {
       } catch (e) {}
 
       // Consider it a success if the user is already added to the account
-      if (endpoint === "/corp/accounts/subusers" && method === "POST" && errorMessage.includes("already added to this account")) {
+      if (endpoint === "/accounts/subusers" && method === "POST" && errorMessage.includes("already added to this account")) {
         await this.logApiResult(endpoint, payload, latencyMs, response.status, true);
         return { success: true, message: "Success" };
       }
@@ -104,7 +104,7 @@ export class CityCorpClient {
   }
 
   async getAccountDetails(accountName: string) {
-    const url = new URL(`${this.baseUrl}/corp/accounts`);
+    const url = new URL(`${this.baseUrl}/accounts`);
     url.searchParams.append("corp_id", this.corpId.toString());
     url.searchParams.append("account_name", accountName);
     
@@ -115,23 +115,23 @@ export class CityCorpClient {
       
       if (res.ok) {
          const data = await res.json();
-         await this.logApiResult("/corp/accounts", { account_name: accountName }, latencyMs, res.status, true);
+         await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, res.status, true);
          return data;
       }
       
       let errMsg = await res.text();
-      await this.logApiResult("/corp/accounts", { account_name: accountName }, latencyMs, res.status, false, errMsg);
+      await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, res.status, false, errMsg);
       return null;
     } catch (e: any) {
       const latencyMs = Date.now() - startTime;
-      await this.logApiResult("/corp/accounts", { account_name: accountName }, latencyMs, 0, false, e.message);
+      await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, 0, false, e.message);
       return null;
     }
   }
 
   
   async getAccountTransactions(accountName: string, page: number = 1) {
-    const url = new URL(`${this.baseUrl}/corp/accounts/transactions`);
+    const url = new URL(`${this.baseUrl}/accounts/transactions`);
     url.searchParams.append("corp_id", this.corpId.toString());
     url.searchParams.append("account_name", accountName);
     url.searchParams.append("page", page.toString());
@@ -143,22 +143,22 @@ export class CityCorpClient {
       
       if (res.ok) {
          const data = await res.json();
-         await this.logApiResult("/corp/accounts/transactions", { account_name: accountName, page }, latencyMs, res.status, true);
+         await this.logApiResult("/accounts/transactions", { account_name: accountName, page }, latencyMs, res.status, true);
          return data;
       }
       
       let errMsg = await res.text();
-      await this.logApiResult("/corp/accounts/transactions", { account_name: accountName, page }, latencyMs, res.status, false, errMsg);
+      await this.logApiResult("/accounts/transactions", { account_name: accountName, page }, latencyMs, res.status, false, errMsg);
       return null;
     } catch (e: any) {
       const latencyMs = Date.now() - startTime;
-      await this.logApiResult("/corp/accounts/transactions", { account_name: accountName, page }, latencyMs, 0, false, e.message);
+      await this.logApiResult("/accounts/transactions", { account_name: accountName, page }, latencyMs, 0, false, e.message);
       return null;
     }
   }
 
   async listAccounts(page: number = 1) {
-    const url = new URL(`${this.baseUrl}/corp/accounts/list`);
+    const url = new URL(`${this.baseUrl}/accounts/list`);
     url.searchParams.append("corp_id", this.corpId.toString());
     url.searchParams.append("page", page.toString());
     
@@ -169,48 +169,48 @@ export class CityCorpClient {
       
       if (res.ok) {
          const data = await res.json();
-         await this.logApiResult("/corp/accounts/list", { page }, latencyMs, res.status, true);
+         await this.logApiResult("/accounts/list", { page }, latencyMs, res.status, true);
          return data;
       }
       
       let errMsg = await res.text();
-      await this.logApiResult("/corp/accounts/list", { page }, latencyMs, res.status, false, errMsg);
+      await this.logApiResult("/accounts/list", { page }, latencyMs, res.status, false, errMsg);
       return { accounts: [], currentPage: 1, totalPages: 1, totalAccounts: 0 };
     } catch (e: any) {
       const latencyMs = Date.now() - startTime;
-      await this.logApiResult("/corp/accounts/list", { page }, latencyMs, 0, false, e.message);
+      await this.logApiResult("/accounts/list", { page }, latencyMs, 0, false, e.message);
       return { accounts: [], currentPage: 1, totalPages: 1, totalAccounts: 0 };
     }
   }
 
   async createAccount(accountName: string) {
     console.log("createAccount called with:", accountName);
-    return await this.request("POST", "/corp/accounts", { account_name: accountName });
+    return await this.request("POST", "/accounts", { account_name: accountName });
   }
 
   async withdraw(accountName: string, amount: number) {
-    return await this.request("PATCH", "/corp/accounts/withdraw", {
+    return await this.request("PATCH", "/accounts/withdraw", {
       account_name: accountName,
       amount: Number(amount.toFixed(2))
     });
   }
 
   async deposit(accountName: string, amount: number) {
-    return await this.request("PATCH", "/corp/accounts/deposit", {
+    return await this.request("PATCH", "/accounts/deposit", {
       account_name: accountName,
       amount: Number(amount.toFixed(2))
     });
   }
 
   async addSubuser(accountName: string, subuserUuid: string) {
-    return await this.request("POST", "/corp/accounts/subusers", {
+    return await this.request("POST", "/accounts/subusers", {
       account_name: accountName,
       subuser_uuid: subuserUuid
     });
   }
 
   async payCorporation(amount: number) {
-    return await this.request("PATCH", "/corp/pay", {
+    return await this.request("PATCH", "/pay", {
       amount: Number(amount.toFixed(2))
     });
   }

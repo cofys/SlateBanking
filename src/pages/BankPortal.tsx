@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { 
   Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, 
@@ -220,9 +220,18 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             <p className="text-zinc-400 text-xs mt-0.5">Secure Customer Financial Interface</p>
           </div>
         </div>
+        
+        <div className="flex items-center gap-4">
+          <Link 
+            to={`/bank/${bankId}`} 
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-[#0a0a0f] hover:bg-white/10 text-xs font-medium text-zinc-400 hover:text-white transition-all shadow-xl"
+          >
+            <ShieldCheck size={14} />
+            Staff Portal
+          </Link>
 
-        {user && (
-          <div className="flex items-center gap-4 bg-[#0a0a0f] border border-white/5 rounded-2xl p-2 px-4 shadow-xl">
+          {user && (
+            <div className="flex items-center gap-4 bg-[#0a0a0f] border border-white/5 rounded-2xl p-2 px-4 shadow-xl">
             <div className="flex items-center gap-3">
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt="Avatar" className="w-8 h-8 rounded-full border border-white/10" />
@@ -245,7 +254,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               <LogOut size={16} />
             </button>
           </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Notifications Area */}
