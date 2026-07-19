@@ -12,6 +12,15 @@ import { startCronJobs } from "./src/lib/cron";
 
 async function startServer() {
   const app = express();
+  app.get('/api/debug-host', (req, res) => {
+    res.json({
+      host: req.get('host'),
+      hostname: req.hostname,
+      headers: req.headers,
+      protocol: req.protocol,
+    });
+  });
+
   app.set("trust proxy", 1);
   const PORT = process.env.SERVER_PORT ? parseInt(process.env.SERVER_PORT) : 3000;
 
@@ -52,16 +61,32 @@ async function startServer() {
   };
 
   const getRedirectUri = (req: express.Request) => {
-    const protocol = (req.headers['x-forwarded-proto'] || req.protocol || 'http') as string;
-    const host = (req.headers['x-forwarded-host'] || req.get('host')) as string;
-    let actualProtocol = protocol;
-    if (host.includes('run.app') || host.includes('onyx-network.com')) {
-      actualProtocol = 'https';
-    }
-    let origin = `${actualProtocol}://${host}`;
+    let origin = '';
     
-    // In preview mode, fallback to APP_URL if host is localhost/internal and APP_URL exists
-    if ((host?.includes('localhost') || host?.includes('127.0.0.1')) && process.env.APP_URL) {
+    // 1. Try to get origin from Referer header (most reliable for proxied frontends)
+    const referer = req.headers.referer;
+    if (referer) {
+      try {
+        const url = new URL(referer);
+        origin = url.origin;
+      } catch (e) {
+        // ignore invalid URL
+      }
+    }
+    
+    // 2. Fallback to Host headers
+    if (!origin) {
+      const protocol = (req.headers['x-forwarded-proto'] || req.protocol || 'http') as string;
+      const host = (req.headers['x-forwarded-host'] || req.get('host')) as string;
+      let actualProtocol = protocol;
+      if (host !== 'localhost' && host !== '127.0.0.1' && !host.includes('localhost:')) {
+        actualProtocol = 'https';
+      }
+      origin = `${actualProtocol}://${host}`;
+    }
+    
+    // 3. Fallback for internal localhost
+    if ((origin.includes('localhost') || origin.includes('127.0.0.1')) && process.env.APP_URL) {
        origin = process.env.APP_URL;
     }
     
@@ -360,16 +385,20 @@ async function startServer() {
     let clientId = process.env.DISCORD_CLIENT_ID || '';
     let clientSecret = process.env.DISCORD_CLIENT_SECRET || '';
 
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
+    let bankToUse = null;
+    if (bankId) {
+       bankToUse = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+    } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
        try {
-         const bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
-         if (bank && bank.discordClientId && bank.discordClientSecret) {
-           clientId = bank.discordClientId;
-           clientSecret = bank.discordClientSecret;
-         }
+         bankToUse = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
        } catch (e) {
          console.error("Domain lookup error for OAuth Callback:", e);
        }
+    }
+    
+    if (bankToUse && bankToUse.discordClientId && bankToUse.discordClientSecret) {
+       clientId = bankToUse.discordClientId;
+       clientSecret = bankToUse.discordClientSecret;
     }
 
     const redirectUri = getRedirectUri(req);
@@ -1831,6 +1860,11 @@ async function startServer() {
       ).limit(1);
       const customer = customerResult[0] || null;
 
+      const { bankStaff } = await import("./src/db/schema");
+      let isStaff = false;
+      const staff = await db.select().from(bankStaff).where(and(eq(bankStaff.bankId, bankId), eq(bankStaff.discordId, discordId))).get();
+      if (staff) isStaff = true;
+
       const userAccounts = await db.select({
         id: bankAccounts.id,
         bankId: bankAccounts.bankId,
@@ -1912,6 +1946,7 @@ async function startServer() {
         .where(and(eq(loans.discordId, discordId), eq(loans.bankId, bankId)));
 
       res.json({
+        isStaff,
         accounts: userAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
@@ -2564,7 +2599,7 @@ async function startServer() {
       }
       
       const { bankCustomers } = await import("./src/db/schema");
-      const { or, ilike } = await import("drizzle-orm");
+      const { or, like } = await import("drizzle-orm");
       
       let finalDiscordId = newDiscordId;
       const existingCustomer = await db.select().from(bankCustomers).where(
@@ -2572,7 +2607,7 @@ async function startServer() {
           eq(bankCustomers.bankId, bId),
           or(
             eq(bankCustomers.discordId, newDiscordId),
-            ilike(bankCustomers.mcUsername, newDiscordId)
+            like(bankCustomers.mcUsername, newDiscordId)
           )
         )
       ).get();
@@ -2859,7 +2894,7 @@ async function startServer() {
       }
       
       const { bankCustomers } = await import("./src/db/schema");
-      const { or, ilike } = await import("drizzle-orm");
+      const { or, like } = await import("drizzle-orm");
       
       // Resolve username or discord ID
       let finalDiscordId = newDiscordId;
@@ -2868,7 +2903,7 @@ async function startServer() {
           eq(bankCustomers.bankId, bId),
           or(
             eq(bankCustomers.discordId, newDiscordId),
-            ilike(bankCustomers.mcUsername, newDiscordId)
+            like(bankCustomers.mcUsername, newDiscordId)
           )
         )
       ).get();
@@ -3170,7 +3205,7 @@ async function startServer() {
 
       // 4. Resolve Discord ID if username provided
       const { bankCustomers } = await import("./src/db/schema");
-      const { or, ilike } = await import("drizzle-orm");
+      const { or, like } = await import("drizzle-orm");
       let finalDiscordId = ownerDiscordId || 'imported';
       
       if (ownerDiscordId) {
@@ -3179,7 +3214,7 @@ async function startServer() {
               eq(bankCustomers.bankId, req.params.bankId),
               or(
                 eq(bankCustomers.discordId, ownerDiscordId),
-                ilike(bankCustomers.mcUsername, ownerDiscordId)
+                like(bankCustomers.mcUsername, ownerDiscordId)
               )
             )
           ).get();

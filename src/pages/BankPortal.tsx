@@ -222,13 +222,15 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         </div>
         
         <div className="flex items-center gap-4">
-          <Link 
-            to={`/bank/${bankId}`} 
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-[#0a0a0f] hover:bg-white/10 text-xs font-medium text-zinc-400 hover:text-white transition-all shadow-xl"
-          >
-            <ShieldCheck size={14} />
-            Staff Portal
-          </Link>
+          {userData?.isStaff && (
+            <Link 
+              to={`/bank/${bankId}`} 
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-[#0a0a0f] hover:bg-white/10 text-xs font-medium text-zinc-400 hover:text-white transition-all shadow-xl"
+            >
+              <ShieldCheck size={14} />
+              Staff Portal
+            </Link>
+          )}
 
           {user && (
             <div className="flex items-center gap-4 bg-[#0a0a0f] border border-white/5 rounded-2xl p-2 px-4 shadow-xl">
@@ -382,7 +384,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         <button
                           onClick={async () => {
                             try {
-                              const res = await fetch(`/api/auth/url?provider=discord&intent=link&returnTo=${encodeURIComponent(window.location.pathname)}`);
+                              const res = await fetch(`/api/auth/url?provider=discord&intent=link&bankId=${bankId}&returnTo=${encodeURIComponent(window.location.pathname)}`);
                               if (res.ok) {
                                 const data = await res.json();
                                 const authWindow = window.open(data.url, 'oauth_popup', 'width=600,height=700');

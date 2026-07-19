@@ -330,3 +330,16 @@ Administrators can now provide a exact, custom pre-generated **CityCorp OAuth UR
 ### Discord OAuth URI Consolidation & Flexible Identity Resolution
 - **Unified Discord OAuth Callback**: Consolidated the Discord Login and Discord Account Linking flows into a single unified callback endpoint (`/api/auth/discord/callback`). The operation intent ("login" vs "link") is now securely passed via the OAuth2 `state` parameter from `/api/auth/url`. This reduces configuration complexity, requiring only a single **Redirect URI** to be configured in the Discord Developer Portal for both operations.
 - **Flexible Identity Mapping ("Username or Discord ID")**: Evolved the account reassignment and customer creation workflows (e.g., "Update Owner", "Merge Customer"). The system now performs intelligent background resolution using `drizzle-orm` queries (`or(eq(discordId, input), ilike(mcUsername, input))`). This allows administrators and tellers to intuitively link or assign accounts using either a player's **Minecraft Username** or their direct **Discord ID**, significantly reducing friction when re-associating imported CityCorp transactions.
+
+## Custom Domain Routing & Staff Portal Access
+When a user accesses the platform via a custom domain, the router leverages \`customBankId\` to determine the context. The \`App.tsx\` explicitly registers both the \`BankPortal\` and \`BankAdminLayout\` routes inside the custom domain block so that Staff can navigate directly to the staff portal at \`/bank/:bankId\` on their own domain. 
+Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely evaluates the \`isStaff\` flag, guaranteeing the Staff Portal button is only visible to authorized personnel (Global Admins and Bank Staff).
+
+## Recent Bug Fixes & OAuth Architecture
+- **SQLite LIKE**: Drizzle SQLite does not natively support `ilike`. Replaced all occurrences of `ilike` with `like` for case-insensitive matching in SQLite.
+- **Discord OAuth Callback on Custom Domains**: When a user links their Discord on a custom domain, the callback URL dynamically determines the `bankId` by inspecting the decoded OAuth `state` payload rather than relying on domain name parsing. This guarantees the correct `discordClientSecret` is selected for token exchange.
+- **Staff Portal Routing**: The citizen dashboard routing on custom domains was updated to mount strictly on `/` instead of the greedy `/*` pattern, which was previously masking the `/bank/:bankId` nested router.
+- **Staff Portal Visibility**: The visibility of the "Staff Portal" button in the citizen gateway evaluates access via `bankStaff` lookup strictly, disregarding `isGlobalAdmin` to prevent visual clutter for platform operators testing client portals.
+
+## Custom Domain OAuth Redirect URI (Update)
+- Replaced the proxy header domain extraction for \`getRedirectUri()\` with a more robust check that prioritizes the \`Referer\` header to correctly derive the true custom domain origin when users initiate the Discord OAuth linking flow. This avoids Cloud Run proxy overriding the \`Host\` header with the internal `.run.app` address and ensures Discord correctly matches the registered Redirect URI for custom bank bots.
