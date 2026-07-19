@@ -28,8 +28,9 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   const [isLoading, setIsLoading] = useState(true);
 
   const checkSession = async () => {
+    console.log("checkSession called!");
     try {
-      const res = await fetch('/api/auth/me');
+      const res = await fetch('/api/auth/me', { headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } });
       if (res.ok) {
         const data = await res.json();
         if (data && data.avatarUrl && data.avatarUrl.includes("crafatar.com")) {
@@ -52,10 +53,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      const origin = event.origin;
-      if (origin !== window.location.origin) {
-        return;
-      }
+      console.log("Received postMessage:", event.data);
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         checkSession();
       }
@@ -81,6 +79,8 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       const params = new URLSearchParams();
       if (bankId) params.append('bankId', bankId);
       if (provider) params.append('provider', provider);
+      params.append('returnTo', window.location.pathname);
+      
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const response = await fetch(`/api/auth/url${queryString}`);
       if (!response.ok) {

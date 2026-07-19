@@ -372,7 +372,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         <button
                           onClick={async () => {
                             try {
-                              const res = await fetch(`/api/auth/url?provider=discord&intent=link`);
+                              const res = await fetch(`/api/auth/url?provider=discord&intent=link&returnTo=${encodeURIComponent(window.location.pathname)}`);
                               if (res.ok) {
                                 const data = await res.json();
                                 const authWindow = window.open(data.url, 'oauth_popup', 'width=600,height=700');

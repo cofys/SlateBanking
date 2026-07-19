@@ -19,7 +19,8 @@ async function startServer() {
 
   app.use(helmet({
     contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false
   }));
   app.use(express.json({ limit: "50mb" }));
   app.use(cookieParser());
@@ -51,11 +52,15 @@ async function startServer() {
   };
 
   const getRedirectUri = (req: express.Request) => {
-    // In preview mode, use the APP_URL provided by environment if available.
-    // Otherwise fallback to req.headers.origin or host.
     const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    let origin = process.env.APP_URL || (req.headers.origin ? req.headers.origin : `${protocol}://${req.headers.host}`);
-    // Trim trailing slash if present
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    let origin = `${protocol}://${host}`;
+    
+    // In preview mode, fallback to APP_URL if host is localhost/internal and APP_URL exists
+    if ((host?.includes('localhost') || host?.includes('127.0.0.1')) && process.env.APP_URL) {
+       origin = process.env.APP_URL;
+    }
+    
     if (origin.endsWith('/')) origin = origin.slice(0, -1);
     return `${origin}/api/auth/discord/callback`;
   };
@@ -120,7 +125,7 @@ async function startServer() {
 
       if (bank && bank.cityCorpAppId) {
         const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id }));
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo }));
         const scopes = "corp.player.info.get,corp.get";
         const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
         return res.json({ url: authUrl });
@@ -131,7 +136,7 @@ async function startServer() {
 
     if (bank && bank.cityCorpAppId && !provider) {
         const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id }));
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo }));
         const scopes = "corp.player.info.get,corp.get";
         const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
         return res.json({ url: authUrl });
@@ -140,11 +145,18 @@ async function startServer() {
     }
 
     const redirectUri = getRedirectUri(req);
+    const intent = req.query.intent || 'login';
+    const returnTo = req.query.returnTo;
+    const stateObj: any = { intent };
+    if (bank) stateObj.bankId = bank.id;
+    if (returnTo) stateObj.returnTo = returnTo;
+    const state = encodeURIComponent(JSON.stringify(stateObj));
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: 'identify email',
+      state: state
     });
     const authUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`;
     res.json({ url: authUrl });
@@ -285,15 +297,20 @@ async function startServer() {
                 localStorage.setItem('oauth_auth_success', Date.now().toString());
               } catch(e) {}
               
-              // If not opened in a popup (no opener), redirect to the portal
-              if (!window.opener) {
-                window.location.href = '/portal';
-              } else {
-                window.close();
-                setTimeout(() => {
-                  window.location.href = '/portal';
-                }, 1000);
-              }
+              try { window.close(); } catch(e) {}
+              setTimeout(() => {
+                const params = new URLSearchParams(window.location.search);
+                let stateObj = {};
+                try {
+                  if (params.get('state')) stateObj = JSON.parse(decodeURIComponent(params.get('state')));
+                } catch(e) {}
+                const dest = stateObj.returnTo || '/portal';
+                if (!window.opener) {
+                  window.location.href = dest;
+                } else {
+                  document.body.innerHTML = "<h2>Authentication Successful!</h2><p>You can close this window now.</p>";
+                }
+              }, 500);
             </script>
             <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
               <h2>Authentication Successful!</h2>
@@ -316,6 +333,9 @@ async function startServer() {
     const { banks, bankCustomers, bankAccounts } = await import("./src/db/schema");
     const { like, eq } = await import("drizzle-orm");
     const { code, state } = req.query;
+    const fs = require('fs');
+    fs.appendFileSync('auth_debug.log', JSON.stringify({ query: req.query, time: new Date().toISOString() }) + '\n');
+    console.log("Discord Callback - Query:", req.query);
     if (!code) return res.status(400).send("No code provided");
     
     let intent = 'login';
@@ -323,10 +343,14 @@ async function startServer() {
     try {
       if (state) {
         const decodedState = JSON.parse(decodeURIComponent(state as string));
+        console.log("Discord Callback - Decoded State:", decodedState);
         intent = decodedState.intent || 'login';
         bankId = decodedState.bankId;
       }
-    } catch (e) {}
+    } catch (e) {
+        console.error("Discord Callback - State Parse Error:", e, "State was:", state);
+    }
+    console.log("Discord Callback - Final Intent:", intent);
 
     const hostname = req.hostname;
     let clientId = process.env.DISCORD_CLIENT_ID || '';
@@ -344,7 +368,7 @@ async function startServer() {
        }
     }
 
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/callback`;
+    const redirectUri = getRedirectUri(req);
 
     try {
       const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
@@ -379,7 +403,11 @@ async function startServer() {
 
       const userData = await userResponse.json();
       const realDiscordId = userData.id;
-      const isGlobalAdmin = userData.username === 'cofys' || userData.email === 'cofysmc@gmail.com';
+      const { globalAdmins } = await import("./src/db/schema");
+      const { eq } = await import("drizzle-orm");
+      const { db } = await import("./src/db/index");
+      const dbAdmin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, userData.id)).get();
+      const isGlobalAdmin = userData.username === 'cofys' || userData.email === 'cofysmc@gmail.com' || !!dbAdmin;
       let payload = {
         discordId: realDiscordId,
         username: userData.username,
@@ -407,6 +435,12 @@ async function startServer() {
           await db.update(bankAccounts)
             .set({ ownerDiscordId: realDiscordId })
             .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
+          const { cards, loans, invoices, transactions } = await import('./src/db/schema');
+          try { await db.update(cards).set({ ownerDiscordId: realDiscordId }).where(eq(cards.ownerDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(loans).set({ ownerDiscordId: realDiscordId }).where(eq(loans.ownerDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(invoices).set({ recipientDiscordId: realDiscordId }).where(eq(invoices.recipientDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(invoices).set({ creatorDiscordId: realDiscordId }).where(eq(invoices.creatorDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(transactions).set({ toCityCorpId: realDiscordId }).where(eq(transactions.toCityCorpId, sessionDiscordId)); } catch(e) {}
             
           payload.username = decodedSession.username || userData.username; // keep mc username
         } else {
@@ -422,7 +456,13 @@ async function startServer() {
         maxAge: 7 * 24 * 60 * 60 * 1000
       });
 
-      const dest = intent === 'link' ? '/portal' : '/admin';
+      let dest = (intent === 'link' || bankId) ? '/portal' : '/admin';
+      try {
+        if (state) {
+            const decodedState = JSON.parse(decodeURIComponent(state as string));
+            if (decodedState.returnTo) dest = decodedState.returnTo;
+        }
+      } catch (e) {}
 
       res.send(`
         <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
@@ -438,14 +478,13 @@ async function startServer() {
                 localStorage.setItem('oauth_auth_success', Date.now().toString());
               } catch(e) {}
               
-              if (!window.opener) {
+              // Always try to close
+              try { window.close(); } catch(e) {}
+              
+              // If not closed, redirect after delay
+              setTimeout(() => {
                 window.location.href = '${dest}';
-              } else {
-                window.close();
-                setTimeout(() => {
-                  window.location.href = '${dest}';
-                }, 1000);
-              }
+              }, 1500);
             </script>
             <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
               <h2>Authentication Successful!</h2>
@@ -1076,6 +1115,48 @@ async function startServer() {
     } catch(e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.get("/api/global-admins", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { globalAdmins } = await import("./src/db/schema");
+    try {
+      const admins = await db.select().from(globalAdmins);
+      res.json(admins);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/global-admins", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { globalAdmins } = await import("./src/db/schema");
+    const { v4: uuidv4 } = await import("uuid");
+    try {
+      const { discordId } = req.body;
+      if (!discordId) return res.status(400).json({ error: "Missing discordId" });
+      await db.insert(globalAdmins).values({
+        id: uuidv4(),
+        discordId,
+        addedBy: (req as any).user.discordId,
+        createdAt: new Date()
+      });
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/global-admins/:id", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("./src/db/index");
+    const { globalAdmins } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      await db.delete(globalAdmins).where(eq(globalAdmins.id, req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

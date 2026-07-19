@@ -308,3 +308,9 @@ export const creditProducts = sqliteTable("credit_products", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const globalAdmins = sqliteTable("global_admins", {
+  id: text("id").primaryKey(),
+  discordId: text("discord_id").notNull().unique(),
+  addedBy: text("added_by"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
