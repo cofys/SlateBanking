@@ -469,11 +469,11 @@ async function startServer() {
             .set({ ownerDiscordId: realDiscordId })
             .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
           const { cards, loans, invoices, transactions } = await import('./src/db/schema');
-          try { await db.update(cards).set({ ownerDiscordId: realDiscordId }).where(eq(cards.ownerDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(loans).set({ ownerDiscordId: realDiscordId }).where(eq(loans.ownerDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(invoices).set({ recipientDiscordId: realDiscordId }).where(eq(invoices.recipientDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(invoices).set({ creatorDiscordId: realDiscordId }).where(eq(invoices.creatorDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(transactions).set({ toCityCorpId: realDiscordId }).where(eq(transactions.toCityCorpId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(cards as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((cards as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(loans as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((loans as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(invoices as any).set({ recipientDiscordId: realDiscordId } as any).where(eq((invoices as any).recipientDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(invoices as any).set({ creatorDiscordId: realDiscordId } as any).where(eq((invoices as any).creatorDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(transactions as any).set({ toCityCorpId: realDiscordId } as any).where(eq((transactions as any).toCityCorpId, sessionDiscordId)); } catch(e) {}
             
           payload.username = decodedSession.username || userData.username; // keep mc username
         } else {
@@ -1258,10 +1258,35 @@ async function startServer() {
       const allBanks = await db.select().from(banks);
       const statuses = botManager.getBankStatuses();
       
-      const enrichedBanks = allBanks.map(b => ({
-        ...b,
-        status: statuses[b.id] || "offline"
-      }));
+      const decodedUser = (req as any).user;
+      const isGlobalAdmin = decodedUser && decodedUser.isGlobalAdmin;
+
+      const enrichedBanks = allBanks.map(b => {
+        if (isGlobalAdmin) {
+          return {
+            ...b,
+            status: statuses[b.id] || "offline"
+          };
+        } else {
+          return {
+            id: b.id,
+            name: b.name,
+            guildId: b.guildId,
+            discordClientId: b.discordClientId,
+            cityCorpAppId: b.cityCorpAppId,
+            cityCorpAuthUrl: b.cityCorpAuthUrl,
+            customDomain: b.customDomain,
+            brandingColor: b.brandingColor,
+            logoUrl: b.logoUrl,
+            plan: b.plan,
+            billingStatus: b.billingStatus,
+            platformFeePercent: b.platformFeePercent,
+            createdAt: b.createdAt,
+            maintenanceMode: (b as any).maintenanceMode,
+            status: statuses[b.id] || "offline"
+          };
+        }
+      });
       res.json(enrichedBanks);
     } catch (e) {
       console.error(e);
@@ -1372,7 +1397,7 @@ async function startServer() {
     try {
       let settings = await db.select().from(onyxSettings).get();
       if (!settings) {
-        settings = { id: "global", b2bApiFeePercent: 200, clearinghouseEnabled: true };
+        settings = { id: "global", b2bApiFeePercent: 200, clearinghouseEnabled: true, globalBotMaintenance: false };
         await db.insert(onyxSettings).values(settings);
       }
       res.json(settings);
@@ -1386,11 +1411,32 @@ async function startServer() {
     const { db } = await import("./src/db/index");
     const { onyxSettings } = await import("./src/db/schema");
     try {
-      const { b2bApiFeePercent, clearinghouseEnabled } = req.body;
-      const data = { id: "global", b2bApiFeePercent, clearinghouseEnabled };
+      const { b2bApiFeePercent, clearinghouseEnabled, globalBotMaintenance } = req.body;
+      const data = { id: "global", b2bApiFeePercent, clearinghouseEnabled, globalBotMaintenance };
       const exists = await db.select().from(onyxSettings).get();
-      if (exists) await db.update(onyxSettings).set(data).where({ id: "global" } as any);
-      else await db.insert(onyxSettings).values(data);
+      const { eq } = await import("drizzle-orm");
+      if (exists) await db.update(onyxSettings).set(data).where(eq(onyxSettings.id, "global"));
+      else await db.insert(onyxSettings).values(data as any);
+      
+      const { botManager } = await import("./src/lib/bot_manager");
+      if (globalBotMaintenance) {
+         // Stop all running bots
+         const statuses = botManager.getBankStatuses();
+         for (const bId of Object.keys(statuses)) {
+             await botManager.stopBankBot(bId);
+         }
+      } else {
+         // Restart any bots that are not individually in maintenance
+         const { banks } = await import("./src/db/schema");
+         const { eq } = await import("drizzle-orm");
+         const allBanks = await db.select().from(banks).where(eq(banks.maintenanceMode, false));
+         for (const bank of allBanks) {
+             if (bank.discordToken) {
+                try { await botManager.provisionBankBot(bank.id, bank.discordToken); } catch(e) {}
+             }
+         }
+      }
+      
       res.json(data);
     } catch(e) {
       console.error(e);
@@ -1684,9 +1730,11 @@ async function startServer() {
   app.put("/api/banks/:bankId/invoices/:invoiceId/status", requireBankStaff, async (req, res) => {
     const { db } = await import("./src/db/index");
     const { invoices } = await import("./src/db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { eq, and } = await import("drizzle-orm");
     try {
-      await db.update(invoices).set({ status: req.body.status }).where(eq(invoices.id, req.params.invoiceId));
+      await db.update(invoices).set({ status: req.body.status }).where(
+        and(eq(invoices.id, req.params.invoiceId), eq(invoices.bankId, req.params.bankId))
+      );
       res.json({ success: true });
     } catch (e) {
       console.error(e);
@@ -1838,7 +1886,27 @@ async function startServer() {
       const bank = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
       if (!bank) return res.status(404).json({ error: "Bank not found" });
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bank.id)).get();
-      res.json({ ...bank, settings });
+      
+      const safeBank = {
+        id: bank.id,
+        name: bank.name,
+        guildId: bank.guildId,
+        discordClientId: bank.discordClientId,
+        corpId: bank.corpId,
+        cityCorpAppId: bank.cityCorpAppId,
+        cityCorpAuthUrl: bank.cityCorpAuthUrl,
+        customDomain: bank.customDomain,
+        brandingColor: bank.brandingColor,
+        logoUrl: bank.logoUrl,
+        status: bank.status,
+        plan: bank.plan,
+        billingStatus: bank.billingStatus,
+        platformFeePercent: bank.platformFeePercent,
+        createdAt: bank.createdAt,
+        maintenanceMode: (bank as any).maintenanceMode,
+      };
+
+      res.json({ ...safeBank, settings });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
@@ -2086,6 +2154,11 @@ async function startServer() {
       const { bankId, accountId, principalAmount, purpose } = req.body; const discordId = (req as any).user.discordId;
       if (!bankId || !discordId || !accountId || !principalAmount) return res.status(400).json({ error: "Missing fields" });
 
+      const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
+      if (!account || account.ownerDiscordId !== discordId || account.bankId !== bankId) {
+        return res.status(403).json({ error: "Unauthorized account" });
+      }
+
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
       if (!settings || !settings.enableLoans) return res.status(400).json({ error: "Loans are disabled for this bank" });
 
@@ -2146,6 +2219,11 @@ async function startServer() {
     try {
        const { bankId, accountId, requestedLimit, monthlyIncome, purpose } = req.body; const discordId = (req as any).user.discordId;
        if (!bankId || !discordId || !accountId || !requestedLimit || !monthlyIncome) return res.status(400).json({ error: "Missing fields" });
+
+       const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
+       if (!account || account.ownerDiscordId !== discordId || account.bankId !== bankId) {
+         return res.status(403).json({ error: "Unauthorized account" });
+       }
 
        const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
        if (!settings || !settings.enableCards) return res.status(400).json({ error: "Cards disabled" });
@@ -2373,8 +2451,10 @@ async function startServer() {
       const { loanId, fromAccountId, amount } = req.body;
       if (!loanId || !fromAccountId || !amount) return res.status(400).json({ error: "Missing fields" });
 
-      const fromAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, fromAccountId));
-      if (!fromAcc.length) return res.status(404).json({ error: "Account not found" });
+      const fromAcc = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.ownerDiscordId, (req as any).user.discordId))
+      );
+      if (!fromAcc.length) return res.status(404).json({ error: "Account not found or unauthorized" });
 
       if (fromAcc[0].balance < amount) return res.status(400).json({ error: "Insufficient funds" });
 
@@ -2967,7 +3047,8 @@ async function startServer() {
         ...settings,
         customDomain: bank?.customDomain || "",
         cityCorpAppId: bank?.cityCorpAppId || "",
-        cityCorpAppSecret: bank?.cityCorpAppSecret || ""
+        cityCorpAppSecret: bank?.cityCorpAppSecret || "",
+        maintenanceMode: bank?.maintenanceMode || false
       });
     } catch (e) {
       console.error(e);
@@ -2990,6 +3071,29 @@ async function startServer() {
       }
       if (req.body.customDomain !== undefined) {
          await db.update(banks).set({ customDomain: req.body.customDomain }).where(eq(banks.id, bId));
+      }
+      if (req.body.maintenanceMode !== undefined) {
+         await db.update(banks).set({ maintenanceMode: req.body.maintenanceMode }).where(eq(banks.id, bId));
+         
+         // Dynamically start or stop the bot based on this setting
+         const { botManager } = await import("./src/lib/bot_manager");
+         if (req.body.maintenanceMode) {
+            await botManager.stopBankBot(bId);
+         } else {
+            // Check if global maintenance is active
+            const { onyxSettings } = await import("./src/db/schema");
+            const gSettings = await db.select().from(onyxSettings).where(eq(onyxSettings.id, "global")).get();
+            if (!gSettings || !gSettings.globalBotMaintenance) {
+               const bank = await db.select().from(banks).where(eq(banks.id, bId)).get();
+               if (bank && bank.discordToken) {
+                  try {
+                    await botManager.provisionBankBot(bId, bank.discordToken);
+                  } catch (e) {
+                    console.error("Bot may already be running or failed to start", e);
+                  }
+               }
+            }
+         }
       }
 
       if (req.body.cityCorpAppId !== undefined || req.body.cityCorpAppSecret !== undefined) {
@@ -3205,7 +3309,7 @@ async function startServer() {
 
       // 4. Resolve Discord ID if username provided
       const { bankCustomers } = await import("./src/db/schema");
-      const { or, like } = await import("drizzle-orm");
+      const { or, like, and } = await import("drizzle-orm");
       let finalDiscordId = ownerDiscordId || 'imported';
       
       if (ownerDiscordId) {
@@ -5771,9 +5875,14 @@ async function startServer() {
   try {
     await initCityCorpEventSubscribers();
     
+    const { onyxSettings } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const gSettings = await db.select().from(onyxSettings).where(eq(onyxSettings.id, "global")).get();
+    const globalMaint = gSettings?.globalBotMaintenance || false;
+
     const allBanks = await db.select().from(banks);
     for (const bank of allBanks) {
-      if (bank.discordToken) {
+      if (bank.discordToken && !globalMaint && !bank.maintenanceMode) {
         botManager.provisionBankBot(bank.id, bank.discordToken).catch(e => {
           console.error(`Failed to start on boot for bank ${bank.name}:`, e);
         });

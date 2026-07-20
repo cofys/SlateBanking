@@ -290,6 +290,17 @@ export function BankSettings() {
             <Shield className="text-emerald-400" size={20} />
             Security & KYC
           </div>
+
+          <label className="flex items-center gap-4 cursor-pointer group mb-4">
+             <div className={`w-10 h-6 rounded-full flex items-center p-1 transition-colors ${settings?.maintenanceMode ? 'bg-amber-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.maintenanceMode ? 'translate-x-4' : 'translate-x-0'}`}></div>
+             </div>
+             <input type="checkbox" name="maintenanceMode" className="hidden" defaultChecked={settings?.maintenanceMode} onChange={(e) => setSettings({...settings, maintenanceMode: e.target.checked})} />
+             <div className="flex flex-col">
+               <span className="text-sm group-hover:text-amber-400 transition-colors">Bot Maintenance Mode</span>
+               <span className="text-xs text-white/50">Turn off the Discord bot for this bank.</span>
+             </div>
+          </label>
           <label className="flex items-center gap-4 cursor-pointer group">
              <div className={`w-10 h-6 rounded-full flex items-center p-1 transition-colors ${settings?.requireKyc ? 'bg-emerald-500' : 'bg-white/10'}`}>
                 <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.requireKyc ? 'translate-x-4' : 'translate-x-0'}`}></div>

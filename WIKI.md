@@ -343,3 +343,26 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
 
 ## Custom Domain OAuth Redirect URI (Update)
 - Replaced the proxy header domain extraction for \`getRedirectUri()\` with a more robust check that prioritizes the \`Referer\` header to correctly derive the true custom domain origin when users initiate the Discord OAuth linking flow. This avoids Cloud Run proxy overriding the \`Host\` header with the internal `.run.app` address and ensures Discord correctly matches the registered Redirect URI for custom bank bots.
+
+## Bot Maintenance Modes
+- Two levels of Discord bot maintenance controls have been implemented:
+  - **Global Bot Maintenance (`onyxSettings.globalBotMaintenance`)**: Available in the Global Admin Onyx Settings panel. Activating this forcibly stops all running bot instances across the entire platform and suspends provisioning for any new or restarting banks.
+  - **Bank-Level Bot Maintenance (`banks.maintenanceMode`)**: Available in individual Bank Settings (under Security & KYC). Activating this will selectively power down the respective bank's Discord bot without affecting others on the network.
+
+## API Secret Sanitization & Data Leakage Prevention
+- **Pristine API Security Isolation**: Remediated a critical security vulnerability where raw database records from the `banks` table (exposing highly sensitive secrets like `discordToken`, `discordClientSecret`, `corpApiKey`, and `webhookSecret`) were returned in client-facing payloads.
+- **Selective Role-Based Redaction**:
+  - **Public Endpoint (`/api/portal/:bankId/info`)**: Completely public; has been strictly modified to sanitize the `bank` object, stripping out all sensitive integration and communication secrets before transmitting JSON.
+  - **Authenticated Endpoint (`/api/banks`)**: Accessible to any logged-in user; has been rewritten to inspect the user's JWT payload. It now returns the full credential payload *only* if the authenticated requester is verified as a `isGlobalAdmin`. For regular citizens and non-admin customers, the response is dynamically redacted to contain only visual and branding metadata.
+
+
+## Security Fixes & Authorization Controls
+- **Direct Object Reference Hardening**: Fixed vulnerabilities in `pay-loan`, `loans/apply`, and `credit/apply` endpoints where the supplied `accountId` was not validated against the user's authenticated `discordId`. Endpoints now enforce `ownerDiscordId === req.user.discordId` checking, preventing unauthorized users from funding other accounts with loans or paying loans with unauthorized accounts.
+- **Client-Side Authorization**: Verified that any client-side tampering of the React User State (e.g., forcing `isGlobalAdmin = true` in DevTools) is purely cosmetic and does not escalate actual privileges, as all sensitive operations are securely protected by JWT claims and `requireBankStaff` / `requireGlobalAdmin` backend middlewares.
+
+## UX Improvements
+- **Custom Domain URLs**: The "View Client Portal" button in the Bank Overview now natively links directly to the root of the custom domain (e.g. `https://bank.azisle.com/`) instead of using the parameterized path (`/portal/bankId`), delivering a cleaner white-label experience.
+
+## Cross-Tenant Escrow & Invoice Isolation (IDOR)
+- **Invoice Status Updates**: Ensured that when a bank staff member updates the status of an invoice (`/api/banks/:bankId/invoices/:invoiceId/status`), the query strictly enforces `eq(invoices.bankId, req.params.bankId)`. This prevents a malicious staff member at Bank A from updating the state of an invoice belonging to Bank B by guessing its UUID.
+- **Account Verification during Sync**: Re-verified that any endpoint fetching a user's account for processing (such as `/api/banks/:bankId/accounts/:accountId/sync`) strictly ensures the `bankId` of the account matches the `bankId` in the path, ensuring staff cannot peek at or manipulate accounts outside their tenant boundaries.

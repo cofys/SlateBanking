@@ -79,13 +79,13 @@ export function BankOverview() {
           <h1 className="text-3xl font-bold tracking-tight mb-2 text-white bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">Welcome to {bank.name}</h1>
           <p className="text-white/60 text-sm">Manage your bank's operations securely on the Slate platform.</p>
         </div>
-        <Link 
-          to={`/portal/${bank.id}`}
+        <a 
+          href={bank.customDomain ? `https://${bank.customDomain}` : `/portal/${bank.id}`}
           target="_blank"
           className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-medium transition-all duration-200 flex items-center gap-2 self-start sm:self-auto shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/30 hover:scale-[1.02]"
         >
           View Client Portal <ExternalLink size={16} />
-        </Link>
+        </a >
       </header>
       
       

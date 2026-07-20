@@ -98,7 +98,7 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
 
   // If no bank accounts, show onboarding/registration information screen instead
   if (accounts.length === 0) {
-    const portalUrl = bank.customDomain ? `https://${bank.customDomain}/portal` : `https://ais-dev-x33dat556cunbev6anuble-271675189999.us-east1.run.app/portal/${bankId}`;
+    const portalUrl = bank.customDomain ? `https://${bank.customDomain}/` : `https://ais-dev-x33dat556cunbev6anuble-271675189999.us-east1.run.app/portal/${bankId}`;
 
     const registrationEmbed = {
       title: `🏛️ ${bank.name} Onboarding`,

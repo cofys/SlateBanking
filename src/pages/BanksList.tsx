@@ -20,6 +20,8 @@ interface BankInstance {
   plan?: string;
   billingStatus?: string;
   platformFeePercent?: number;
+  cityCorpAuthUrl?: string;
+  maintenanceMode?: boolean;
 }
 
 export function BanksList() {

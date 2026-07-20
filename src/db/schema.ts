@@ -30,7 +30,8 @@ export const banks = sqliteTable("banks", {
   status: text("status").default("offline"),
   plan: text("plan").default("standard"), // starter, standard, enterprise
   billingStatus: text("billing_status").default("active"), // active, suspended, trialing
-  platformFeePercent: integer("platform_fee_percent").default(200), // e.g. 200 = 2.00%
+  platformFeePercent: integer("platform_fee_percent").default(200),
+  maintenanceMode: integer("maintenance_mode", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
@@ -246,6 +247,7 @@ export const onyxSettings = sqliteTable("onyx_settings", {
   id: text("id").primaryKey(), // Using a single row 'global'
   b2bApiFeePercent: integer("b2b_api_fee_percent").default(200), // 2.00%
   clearinghouseEnabled: integer("clearinghouse_enabled", { mode: "boolean" }).default(true),
+  globalBotMaintenance: integer("global_bot_maintenance", { mode: "boolean" }).default(false),
 });
 
 export const cityCorpLogs = sqliteTable("city_corp_logs", {
