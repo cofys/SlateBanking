@@ -25,7 +25,11 @@ class NodeAPI(commands.Cog):
     def __init__(self, bot, cfg):
         self.bot = bot
         self.cfg = cfg
-        self.node_secret = cfg.get("api", {}).get("node_secret", "secret")
+        self.node_secret = cfg.get("api", {}).get("node_secret")
+        if not self.node_secret or self.node_secret == "secret":
+            print("CRITICAL: node_secret is missing or uses default!")
+            import sys
+            sys.exit(1)
         self.port = int(cfg.get("api", {}).get("port", 9000))
         # The account where fees are deposited. Create this account in-game!
         self.onyx_account_name = "onyx_settlement" 
@@ -72,7 +76,7 @@ class NodeAPI(commands.Cog):
             if not payer: 
                 return {"success": False, "message": "No Personal Account Found"}
 
-            if not bank_cog.verify_pin(payer, tx.pin): 
+            if not await bank_cog.verify_pin(payer, tx.pin): 
                 return {"success": False, "message": "Incorrect PIN"}
             
             # Check Balance locally first to save an API call

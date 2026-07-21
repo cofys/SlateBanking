@@ -106,8 +106,51 @@ class BankCog(commands.Cog):
         self.scheduler.shutdown()
         logger.info("BankCog unloaded.")
 
-    def verify_pin(self, account: Account, pin: str) -> bool:
+        _failed_pins = {}
+
+    async def verify_pin(self, account: Account, pin: str) -> bool:
         if not account or not account.pin: return False
+        
+        import time
+        import asyncio
+        key = f"{account.discord_id}_{account.account_name}"
+        attempts, lock_until = self._failed_pins.get(key, (0, 0))
+        if time.time() < lock_until:
+            return False # Locked out
+
+        loop = asyncio.get_event_loop()
+        is_valid = False
+        
+        # 1. Try Hash
+        try:
+            is_valid = await loop.run_in_executor(None, bcrypt.checkpw, pin.encode(), account.pin.encode())
+        except ValueError:
+            pass
+        except Exception as e:
+            logger.warning(f"bcrypt error: {e}")
+
+        # 2. Fallback Plain Text & Auto-Migrate
+        if not is_valid and account.pin == pin:
+            logger.info(f"Migrating legacy PIN for {account.account_name} to hash.")
+            try:
+                salt = bcrypt.gensalt()
+                new_hash = bcrypt.hashpw(pin.encode(), salt).decode()
+                self.db.update_account_pin(account.account_name, new_hash)
+                account.pin = new_hash
+                is_valid = True
+            except Exception as e:
+                logger.error(f"Failed to auto-migrate PIN: {e}")
+                
+        if is_valid:
+            self._failed_pins[key] = (0, 0)
+            return True
+        else:
+            attempts += 1
+            if attempts >= 5:
+                self._failed_pins[key] = (attempts, time.time() + 300) # 5 minutes lockout
+            else:
+                self._failed_pins[key] = (attempts, 0)
+            return False
         
         # 1. Try Hash
         try:

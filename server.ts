@@ -48,7 +48,25 @@ async function startServer() {
     standardHeaders: true, 
     legacyHeaders: false, 
   });
+  
+  const authLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 10,
+    message: "Too many authentication attempts, please try again later."
+  });
+  
+  const transferLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 10,
+    message: "Too many transfer requests, please try again later."
+  });
+  
   app.use('/api/', globalLimiter);
+  app.use('/api/auth/', authLimiter);
+  app.use('/api/portal/:bankId/transfer', transferLimiter);
+  app.use('/api/citizen/transfer', transferLimiter);
+  app.use('/api/v1/transfers', transferLimiter);
+  app.use('/api/onyx/checkout', transferLimiter);
 
   // API Routes
   
@@ -75,7 +93,7 @@ async function startServer() {
     let origin = '';
     const referer = req.headers.referer;
     if (referer) {
-      try { origin = new URL(referer).origin; } catch (e) {}
+      try { origin = new URL(referer).origin; } catch (e) { console.error("Caught error:", e); }
     }
     if (!origin) {
       const host = (req.headers['x-forwarded-host'] || req.get('host')) as string;
@@ -227,9 +245,16 @@ async function startServer() {
 
     try {
       let bankId;
+      let returnTo;
       try {
         const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
+        const expectedNonce = req.cookies?.oauth_nonce;
+        res.clearCookie('oauth_nonce');
+        if (parsedState.nonce && parsedState.nonce !== expectedNonce) {
+           return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
+        }
         bankId = parsedState.bankId;
+        returnTo = parsedState.returnTo;
       } catch (e) {
         const host = req.get('host');
         let possibleBank = await db.select().from(banks).where(eq(banks.customDomain, host || "")).get();
@@ -337,19 +362,19 @@ async function startServer() {
                 if (window.opener) {
                   window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${JSON.stringify(payload)} }, '*');
                 }
-              } catch(e) {}
+              } catch(e) { console.error("Caught error:", e); }
               
               try {
                 localStorage.setItem('oauth_auth_success', Date.now().toString());
-              } catch(e) {}
+              } catch(e) { console.error("Caught error:", e); }
               
-              try { window.close(); } catch(e) {}
+              try { window.close(); } catch(e) { console.error("Caught error:", e); }
               setTimeout(() => {
                 const params = new URLSearchParams(window.location.search);
                 let stateObj = {};
                 try {
                   if (params.get('state')) stateObj = JSON.parse(decodeURIComponent(params.get('state')));
-                } catch(e) {}
+                } catch(e) { console.error("Caught error:", e); }
                 const dest = stateObj.returnTo || '/portal';
                 if (!window.opener) {
                   window.location.href = dest;
@@ -490,11 +515,11 @@ async function startServer() {
             .set({ ownerDiscordId: realDiscordId })
             .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
           const { cards, loans, invoices, transactions } = await import('./src/db/schema');
-          try { await db.update(cards as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((cards as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(loans as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((loans as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(invoices as any).set({ recipientDiscordId: realDiscordId } as any).where(eq((invoices as any).recipientDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(invoices as any).set({ creatorDiscordId: realDiscordId } as any).where(eq((invoices as any).creatorDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(transactions as any).set({ toCityCorpId: realDiscordId } as any).where(eq((transactions as any).toCityCorpId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(cards as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((cards as any).ownerDiscordId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
+          try { await db.update(loans as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((loans as any).ownerDiscordId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
+          try { await db.update(invoices as any).set({ recipientDiscordId: realDiscordId } as any).where(eq((invoices as any).recipientDiscordId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
+          try { await db.update(invoices as any).set({ creatorDiscordId: realDiscordId } as any).where(eq((invoices as any).creatorDiscordId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
+          try { await db.update(transactions as any).set({ toCityCorpId: realDiscordId } as any).where(eq((transactions as any).toCityCorpId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
             
           payload.username = decodedSession.username || userData.username; // keep mc username
         } else {
@@ -516,7 +541,7 @@ async function startServer() {
             const decodedState = JSON.parse(decodeURIComponent(state as string));
             if (decodedState.returnTo) dest = decodedState.returnTo;
         }
-      } catch (e) {}
+      } catch (e) { console.error("Caught error:", e); }
 
       res.send(`
         <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
@@ -526,14 +551,14 @@ async function startServer() {
                 if (window.opener) {
                   window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
                 }
-              } catch(e) {}
+              } catch(e) { console.error("Caught error:", e); }
               
               try {
                 localStorage.setItem('oauth_auth_success', Date.now().toString());
-              } catch(e) {}
+              } catch(e) { console.error("Caught error:", e); }
               
               // Always try to close
-              try { window.close(); } catch(e) {}
+              try { window.close(); } catch(e) { console.error("Caught error:", e); }
               
               // If not closed, redirect after delay
               setTimeout(() => {
@@ -759,14 +784,14 @@ async function startServer() {
       );
 
       if (!sourceAccount) return res.status(404).json({ error: "Source account not found" });
-      if (!sourceAccount.isActive) return res.status(400).json({ error: "Source account is not active" });
+      if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
       if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
 
       const [destAccount] = await db.select().from(bankAccounts).where(
         and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bank.id))
       );
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
-      if (!destAccount.isActive) return res.status(400).json({ error: "Destination account is not active" });
+      if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
       // Process transfer
       await db.update(bankAccounts).set({ balance: sourceAccount.balance - amnt }).where(eq(bankAccounts.id, sourceAccount.id));
@@ -819,7 +844,11 @@ async function startServer() {
 
        const accountIds = accounts.map(a => a.id);
        const bankCards = await db.select().from(cards).where(inArray(cards.accountId, accountIds));
-       res.json({ data: bankCards });
+       const safeCards = bankCards.map(c => {
+           const { cvv, ...safeCard } = c;
+           return safeCard;
+       });
+       res.json({ data: safeCards });
     } catch(e) {
        console.error(e);
        res.status(500).json({ error: "Internal error" });
@@ -839,8 +868,8 @@ async function startServer() {
        if (!account) return res.status(404).json({ error: "Account not found or does not belong to this bank" });
 
        let cardNumber = "";
-       for(let i=0; i<16; i++) cardNumber += Math.floor(Math.random() * 10).toString();
-       const cvv = Math.floor(100 + Math.random() * 900).toString();
+              for(let i=0; i<16; i++) cardNumber += randomInt(0, 10).toString();
+              const cvv = randomInt(100, 1000).toString();
        const expiryDate = `${new Date().getMonth() + 1}/${new Date().getFullYear() + 3 - 2000}`;
 
        const cardId = uuidv4();
@@ -1453,7 +1482,7 @@ async function startServer() {
          const allBanks = await db.select().from(banks).where(eq(banks.maintenanceMode, false));
          for (const bank of allBanks) {
              if (bank.discordToken) {
-                try { await botManager.provisionBankBot(bank.id, bank.discordToken); } catch(e) {}
+                try { await botManager.provisionBankBot(bank.id, bank.discordToken); } catch(e) { console.error("Caught error:", e); }
              }
          }
       }
@@ -1550,10 +1579,25 @@ async function startServer() {
       if (merchants.length === 0) return res.status(403).json({ error: "Invalid API key" });
       const merchant = merchants[0];
 
-      const { userDiscordId, amountCents, description, sourceAccountId } = req.body;
+      const { userDiscordId, amountCents, description, sourceAccountId, paymentToken } = req.body;
+
+      if (!paymentToken) {
+        return res.status(401).json({ error: "Missing customer paymentToken. Customer must approve this transaction first." });
+      }
 
       if (!userDiscordId || !amountCents || amountCents <= 0) {
         return res.status(400).json({ error: "Invalid payment payload" });
+      }
+
+      const jwt = require('jsonwebtoken');
+      const JWT_SECRET = process.env.JWT_SECRET;
+      try {
+          const decoded = jwt.verify(paymentToken, JWT_SECRET);
+          if (decoded.discordId !== userDiscordId || decoded.amount !== amountCents) {
+             return res.status(403).json({ error: "Payment token does not match requested amount or user." });
+          }
+      } catch (e) {
+          return res.status(403).json({ error: "Invalid or expired payment token." });
       }
 
       await db.transaction(async (tx) => {
@@ -2281,12 +2325,12 @@ async function startServer() {
           // Provision credit card
           function generateCC() {
             let cc = "";
-            for(let i=0; i<16; i++) cc += Math.floor(Math.random() * 10).toString();
+                   for(let i=0; i<16; i++) cc += randomInt(0, 10).toString();
             return cc;
           }
           const expiry = new Date();
           expiry.setFullYear(expiry.getFullYear() + 3);
-          const cvv = Math.floor(100 + Math.random() * 900).toString();
+                 const cvv = randomInt(100, 1000).toString();
           
           await db.insert(cards).values({
             id: uuidv4(),
@@ -2561,6 +2605,23 @@ async function startServer() {
       await db.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
 
       res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.post("/api/citizen/onyx-token", requireAuth, async (req, res) => {
+    try {
+      const { amount } = req.body;
+      const parsedAmount = Math.round(parseFloat(amount) * 100);
+      if (parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
+      
+      const jwt = require('jsonwebtoken');
+      const discordId = req.user.discordId;
+      const paymentToken = jwt.sign({ discordId, amount: parsedAmount }, process.env.JWT_SECRET, { expiresIn: '15m' });
+      
+      res.json({ paymentToken });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
@@ -3572,9 +3633,9 @@ async function startServer() {
             }
 
             // 4. Provision a beautiful virtual physical debit card automatically
-            const randomCardSuffix = Math.floor(100000000000 + Math.random() * 900000000000).toString();
+                        const randomCardSuffix = (randomInt(100000, 1000000).toString() + randomInt(100000, 1000000).toString());
             const cardNumber = "4000" + randomCardSuffix;
-            const cvv = Math.floor(100 + Math.random() * 900).toString();
+                   const cvv = randomInt(100, 1000).toString();
             const expMonths = ["03/29", "06/29", "09/29", "12/29", "05/30", "08/30"];
             const expiryDate = expMonths[Math.floor(Math.random() * expMonths.length)];
 
@@ -4683,12 +4744,12 @@ async function startServer() {
       if (capp.status === "pending" && status === "approved") {
           function generateCC() {
             let cc = "";
-            for(let i=0; i<16; i++) cc += Math.floor(Math.random() * 10).toString();
+                   for(let i=0; i<16; i++) cc += randomInt(0, 10).toString();
             return cc;
           }
           const expiry = new Date();
           expiry.setFullYear(expiry.getFullYear() + 3);
-          const cvv = Math.floor(100 + Math.random() * 900).toString();
+                 const cvv = randomInt(100, 1000).toString();
           
           await db.insert(cards).values({
             id: uuidv4(),
@@ -4929,8 +4990,8 @@ async function startServer() {
        const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, req.params.bankId))).get();
        if (!acc) return res.status(404).json({ error: "Account not found in bank" });
 
-       const cardNumber = Array.from({length: 16}, () => Math.floor(Math.random() * 10)).join('');
-       const cvv = Array.from({length: 3}, () => Math.floor(Math.random() * 10)).join('');
+              const cardNumber = Array.from({length: 16}, () => randomInt(0, 10)).join('');
+              const cvv = Array.from({length: 3}, () => randomInt(0, 10)).join('');
        
        const nextYear = new Date();
        nextYear.setFullYear(nextYear.getFullYear() + 4);
