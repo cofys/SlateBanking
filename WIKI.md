@@ -366,3 +366,11 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
 ## Cross-Tenant Escrow & Invoice Isolation (IDOR)
 - **Invoice Status Updates**: Ensured that when a bank staff member updates the status of an invoice (`/api/banks/:bankId/invoices/:invoiceId/status`), the query strictly enforces `eq(invoices.bankId, req.params.bankId)`. This prevents a malicious staff member at Bank A from updating the state of an invoice belonging to Bank B by guessing its UUID.
 - **Account Verification during Sync**: Re-verified that any endpoint fetching a user's account for processing (such as `/api/banks/:bankId/accounts/:accountId/sync`) strictly ensures the `bankId` of the account matches the `bankId` in the path, ensuring staff cannot peek at or manipulate accounts outside their tenant boundaries.
+
+## Security & Architectural Hardening (July 2026)
+- **CORS & CSRF:** Implemented dynamic CORS origin validation against registered bank custom domains and applied `sameSite: lax` to all authentication cookies.
+- **Authentication:** Disabled the default `JWT_SECRET` fallback (app will crash if omitted). Shortened token lifetimes and added verified nonces to all Discord and CityCorp OAuth flows to prevent replay and CSRF attacks.
+- **Rate Limiting:** Added a strict rate limiter (10 requests/minute) for all money movement (`/transfer`, `/onyx/checkout`) and authentication endpoints.
+- **Data Privacy:** CVVs are no longer returned by any API endpoint (`/cards`). Card number generation relies entirely on `crypto.randomInt` rather than `Math.random()`.
+- **Authorization:** Scoped destination-account lookups inside intra-bank transfers strictly to the originating bank ID to prevent cross-bank ID guessing. Validated that both source and destination accounts are active and unfrozen during all transfers.
+- **Bot Security:** Implemented exponential backoff and locking for failed PIN attempts in Discord. Converted the node API hub secret check to use `hmac.compare_digest()` to prevent timing attacks.

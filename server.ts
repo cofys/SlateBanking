@@ -12,15 +12,7 @@ import { startCronJobs } from "./src/lib/cron";
 
 async function startServer() {
   const app = express();
-  app.get('/api/debug-host', (req, res) => {
-    res.json({
-      host: req.get('host'),
-      hostname: req.hostname,
-      headers: req.headers,
-      protocol: req.protocol,
-    });
-  });
-
+  
   app.set("trust proxy", 1);
   const PORT = process.env.SERVER_PORT ? parseInt(process.env.SERVER_PORT) : 3000;
 
@@ -33,7 +25,22 @@ async function startServer() {
   }));
   app.use(express.json({ limit: "50mb" }));
   app.use(cookieParser());
-  app.use(cors());
+    app.use(cors({
+    origin: async (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const { db } = await import("./src/db/index.js");
+      const { banks } = await import("./src/db/schema.js");
+      const { eq } = await import("drizzle-orm");
+      
+      const customDomains = await db.select({ customDomain: banks.customDomain }).from(banks).where(eq(banks.customDomain, origin));
+      if (customDomains.length > 0 || origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("run.app")) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true
+  }));
 
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, 
@@ -46,7 +53,11 @@ async function startServer() {
   // API Routes
   
   // -- Auth Routes --
-  const JWT_SECRET = process.env.JWT_SECRET || "super_secret_jwt_key_here";
+  const JWT_SECRET = process.env.JWT_SECRET;
+  if (!JWT_SECRET || JWT_SECRET === "super_secret_jwt_key_here") {
+    console.error("CRITICAL: JWT_SECRET must be set and not be the default value");
+    process.exit(1);
+  }
 
   const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const token = req.cookies.auth_token;
@@ -60,34 +71,31 @@ async function startServer() {
     }
   };
 
-  const getRedirectUri = (req: express.Request) => {
+  const getRedirectUri = async (req: express.Request) => {
     let origin = '';
-    
-    // 1. Try to get origin from Referer header (most reliable for proxied frontends)
     const referer = req.headers.referer;
     if (referer) {
-      try {
-        const url = new URL(referer);
-        origin = url.origin;
-      } catch (e) {
-        // ignore invalid URL
-      }
+      try { origin = new URL(referer).origin; } catch (e) {}
     }
-    
-    // 2. Fallback to Host headers
     if (!origin) {
-      const protocol = (req.headers['x-forwarded-proto'] || req.protocol || 'http') as string;
       const host = (req.headers['x-forwarded-host'] || req.get('host')) as string;
-      let actualProtocol = protocol;
-      if (host !== 'localhost' && host !== '127.0.0.1' && !host.includes('localhost:')) {
-        actualProtocol = 'https';
-      }
-      origin = `${actualProtocol}://${host}`;
+      origin = `https://${host}`;
     }
     
-    // 3. Fallback for internal localhost
-    if ((origin.includes('localhost') || origin.includes('127.0.0.1')) && process.env.APP_URL) {
-       origin = process.env.APP_URL;
+    const { db } = await import("./src/db/index");
+    const { banks } = await import("./src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const validDomain = await db.select().from(banks).where(eq(banks.customDomain, origin)).get();
+    
+    if (!validDomain && process.env.APP_URL && origin !== process.env.APP_URL) {
+       origin = process.env.APP_URL; // Fallback to trusted APP_URL if not a valid custom domain
+    } else if (!validDomain && !process.env.APP_URL) {
+       // If no app url is set and it's not a known domain, fallback to localhost for safety
+       if (origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("run.app")) {
+           // Allow development origins
+       } else {
+           origin = "http://localhost:3000";
+       }
     }
     
     if (origin.endsWith('/')) origin = origin.slice(0, -1);
@@ -154,7 +162,10 @@ async function startServer() {
 
       if (bank && bank.cityCorpAppId) {
         const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo }));
+        const { v4: uuidv4 } = await import("uuid");
+        const nonce = uuidv4();
+        res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce }));
         const scopes = "corp.player.info.get,corp.get";
         const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
         return res.json({ url: authUrl });
@@ -165,7 +176,10 @@ async function startServer() {
 
     if (bank && bank.cityCorpAppId && !provider) {
         const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/citycorp/callback`;
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo }));
+        const { v4: uuidv4 } = await import("uuid");
+        const nonce = uuidv4();
+        res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce }));
         const scopes = "corp.player.info.get,corp.get";
         const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
         return res.json({ url: authUrl });
@@ -173,10 +187,13 @@ async function startServer() {
        clientId = bank.discordClientId;
     }
 
-    const redirectUri = getRedirectUri(req);
+    const redirectUri = await getRedirectUri(req);
     const intent = req.query.intent || 'login';
     const returnTo = req.query.returnTo;
-    const stateObj: any = { intent };
+        const { v4: uuidv4 } = await import("uuid");
+    const nonce = uuidv4();
+    res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
+    const stateObj: any = { intent, nonce };
     if (bank) stateObj.bankId = bank.id;
     if (returnTo) stateObj.returnTo = returnTo;
     const state = encodeURIComponent(JSON.stringify(stateObj));
@@ -303,10 +320,10 @@ async function startServer() {
         isGlobalAdmin: false
       };
 
-      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
       res.cookie('auth_token', signedToken, {
         secure: true,
-        sameSite: 'none',
+        sameSite: 'lax',
         httpOnly: true,
         maxAge: 7 * 24 * 60 * 60 * 1000
       });
@@ -361,17 +378,21 @@ async function startServer() {
     const { db } = await import("./src/db/index");
     const { banks, bankCustomers, bankAccounts } = await import("./src/db/schema");
     const { like, eq } = await import("drizzle-orm");
-    const { code, state } = req.query;
+        const { code, state } = req.query;
+    const expectedNonce = req.cookies.oauth_nonce;
+    res.clearCookie('oauth_nonce');
     const fs = require('fs');
-    fs.appendFileSync('auth_debug.log', JSON.stringify({ query: req.query, time: new Date().toISOString() }) + '\n');
-    console.log("Discord Callback - Query:", req.query);
+        console.log("Discord Callback - Query:", req.query);
     if (!code) return res.status(400).send("No code provided");
     
     let intent = 'login';
     let bankId = null;
     try {
-      if (state) {
+            if (state) {
         const decodedState = JSON.parse(decodeURIComponent(state as string));
+        if (decodedState.nonce !== expectedNonce) {
+           return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
+        }
         console.log("Discord Callback - Decoded State:", decodedState);
         intent = decodedState.intent || 'login';
         bankId = decodedState.bankId;
@@ -401,7 +422,7 @@ async function startServer() {
        clientSecret = bankToUse.discordClientSecret;
     }
 
-    const redirectUri = getRedirectUri(req);
+    const redirectUri = await getRedirectUri(req);
 
     try {
       const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
@@ -440,7 +461,7 @@ async function startServer() {
       const { eq } = await import("drizzle-orm");
       const { db } = await import("./src/db/index");
       const dbAdmin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, userData.id)).get();
-      const isGlobalAdmin = userData.username === 'cofys' || userData.email === 'cofysmc@gmail.com' || !!dbAdmin;
+      const isGlobalAdmin = !!dbAdmin;
       let payload = {
         discordId: realDiscordId,
         username: userData.username,
@@ -481,10 +502,10 @@ async function startServer() {
         }
       }
 
-      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
       res.cookie('auth_token', token, {
         secure: true,
-        sameSite: 'none',
+        sameSite: 'lax',
         httpOnly: true,
         maxAge: 7 * 24 * 60 * 60 * 1000
       });
@@ -546,7 +567,7 @@ async function startServer() {
   app.post('/api/auth/logout', (req, res) => {
     res.clearCookie('auth_token', {
       secure: true,
-      sameSite: 'none',
+      sameSite: 'lax',
       httpOnly: true,
     });
     res.json({ success: true });
@@ -742,7 +763,7 @@ async function startServer() {
       if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
 
       const [destAccount] = await db.select().from(bankAccounts).where(
-        eq(bankAccounts.id, toAccountId)
+        and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bank.id))
       );
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
       if (!destAccount.isActive) return res.status(400).json({ error: "Destination account is not active" });
@@ -1755,9 +1776,13 @@ async function startServer() {
       }
 
       const redirectUri = `${req.protocol}://${req.get('host')}/api/portal/${bankId}/oauth/callback`;
+      const { v4: uuidv4 } = await import("uuid");
+      const nonce = uuidv4();
+      res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
       const state = encodeURIComponent(JSON.stringify({
         bankId,
-        discordId: (req as any).user.discordId
+        discordId: (req as any).user.discordId,
+        nonce
       }));
 
       const scopes = "corp.player.info.get,corp.get";
@@ -1781,12 +1806,17 @@ async function startServer() {
       const code = (req.query.client_secret || req.query.code) as string;
       const stateStr = req.query.state as string;
 
+      const expectedNonce = req.cookies?.oauth_nonce;
+      res.clearCookie('oauth_nonce');
       if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
     if (!code || !stateStr) {
         return res.status(400).send(`Missing code or state. URL: ${req.originalUrl}`);
       }
 
       const parsedState = JSON.parse(decodeURIComponent(stateStr));
+      if (!parsedState || !expectedNonce || parsedState.nonce !== expectedNonce) {
+          return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
+      }
       const discordId = parsedState.discordId;
 
       const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
@@ -1998,8 +2028,7 @@ async function startServer() {
          accountId: cards.accountId,
          accountName: bankAccounts.accountName,
          cardNumber: cards.cardNumber,
-         cvv: cards.cvv,
-         expiryDate: cards.expiryDate,
+                  expiryDate: cards.expiryDate,
          isLocked: cards.isLocked,
          type: cards.type
       })
@@ -2094,10 +2123,14 @@ async function startServer() {
       );
 
       if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized" });
+      if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
       if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
 
-      const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId));
+      const [destAccount] = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bankId))
+      );
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
+      if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
       await db.update(bankAccounts).set({ balance: sourceAccount.balance - amnt }).where(eq(bankAccounts.id, sourceAccount.id));
       await db.update(bankAccounts).set({ balance: destAccount.balance + amnt }).where(eq(bankAccounts.id, destAccount.id));
@@ -2362,8 +2395,7 @@ async function startServer() {
          accountId: cards.accountId,
          accountName: bankAccounts.accountName,
          cardNumber: cards.cardNumber,
-         cvv: cards.cvv,
-         expiryDate: cards.expiryDate,
+                  expiryDate: cards.expiryDate,
          isLocked: cards.isLocked,
          type: cards.type
       })
@@ -2551,10 +2583,12 @@ async function startServer() {
       );
 
       if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized" });
+      if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
       if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
 
       const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId));
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
+      if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
       const fromBank = sourceAccount.bankId;
       const toBank = destAccount.bankId;
@@ -4863,7 +4897,6 @@ async function startServer() {
        const bankCards = await db.select({
          id: cards.id,
          cardNumber: cards.cardNumber,
-         cvv: cards.cvv,
          expiryDate: cards.expiryDate,
          isLocked: cards.isLocked,
          type: cards.type,
@@ -4960,28 +4993,6 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
-    }
-  });
-
-  
-  app.get("/api/banks/:bankId/developer", requireBankStaff, async (req, res) => {
-    const { db } = await import("./src/db/index");
-    const { banks } = await import("./src/db/schema");
-    const { eq } = await import("drizzle-orm");
-    
-    try {
-      const bankId = req.params.bankId;
-      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-      if (!bank) return res.status(404).json({ error: "Bank not found" });
-      
-      res.json({
-         apiKey: bank.apiKey,
-         webhookSecret: bank.webhookSecret,
-         apiWebhookUrl: bank.apiWebhookUrl
-      });
-    } catch(e) {
-      console.error(e);
-      res.status(500).json({ error: "Failed to fetch developer settings" });
     }
   });
 

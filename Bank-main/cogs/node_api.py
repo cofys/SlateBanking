@@ -36,7 +36,8 @@ class NodeAPI(commands.Cog):
 
     def setup_routes(self):
         def verify_hub(x_node_secret: str = Header(...)):
-            if x_node_secret != self.node_secret:
+            import hmac
+            if not hmac.compare_digest(x_node_secret, self.node_secret):
                 raise HTTPException(401, "Unauthorized Hub Access")
 
         # 1. GET ACCOUNTS
