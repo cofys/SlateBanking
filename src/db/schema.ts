@@ -207,8 +207,8 @@ export const cards = sqliteTable("cards", {
   id: text("id").primaryKey(),
   bankId: text("bank_id").references(() => banks.id).notNull(),
   accountId: text("account_id").references(() => bankAccounts.id).notNull(),
-  cardNumber: text("card_number").notNull().unique(), // securely generated
-  cvv: text("cvv").notNull(),
+  cardNumber: encryptedText("card_number").notNull().unique(), // securely generated
+  cvv: encryptedText("cvv").notNull(),
   expiryDate: text("expiry_date").notNull(),
   isLocked: integer("is_locked", { mode: "boolean" }).default(false),
   type: text("type").notNull(), // "debit" or "credit"

@@ -116,7 +116,7 @@ export function registerAuthRoutes(app: express.Express) {
     const { banks, bankCustomers } = await import("../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
-    console.log("CityCorp Callback Query:", req.query, "Params:", req.params, "Body:", req.body);
+    console.log("[Auth] CityCorp Callback received");
     const { state: stateStr } = req.query;
     const code = req.query.code || req.query.client_secret;
 
@@ -132,7 +132,7 @@ export function registerAuthRoutes(app: express.Express) {
         const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
         const expectedNonce = req.cookies?.oauth_nonce;
         res.clearCookie('oauth_nonce');
-        if (parsedState.nonce && parsedState.nonce !== expectedNonce) {
+        if (parsedState.nonce !== expectedNonce) {
            return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
         }
         bankId = parsedState.bankId;
@@ -289,7 +289,7 @@ export function registerAuthRoutes(app: express.Express) {
     const expectedNonce = req.cookies.oauth_nonce;
     res.clearCookie('oauth_nonce');
     const fs = require('fs');
-        console.log("Discord Callback - Query:", req.query);
+        console.log("[Auth] Discord Callback received");
     if (!code) return res.status(400).send("No code provided");
     
     let intent = 'login';

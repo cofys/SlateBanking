@@ -315,20 +315,25 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
       const { loanId, fromAccountId, amount } = req.body;
       if (!loanId || !fromAccountId || !amount) return res.status(400).json({ error: "Missing fields" });
 
+      const parsedAmount = typeof amount === "number" ? Math.round(amount) : Math.round(parseFloat(amount));
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        return res.status(400).json({ error: "Invalid payment amount" });
+      }
+
       const fromAcc = await db.select().from(bankAccounts).where(
         and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.ownerDiscordId, (req as any).user.discordId))
       );
       if (!fromAcc.length) return res.status(404).json({ error: "Account not found or unauthorized" });
 
-      if (fromAcc[0].balance < amount) return res.status(400).json({ error: "Insufficient funds" });
+      if (fromAcc[0].balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
 
       const theLoan = await db.select().from(loans).where(eq(loans.id, loanId));
       if (!theLoan.length || theLoan[0].status !== 'active') return res.status(400).json({ error: "Invalid loan" });
 
       // Deduct funds
-      await db.update(bankAccounts).set({ balance: fromAcc[0].balance - amount }).where(eq(bankAccounts.id, fromAccountId));
+      await db.update(bankAccounts).set({ balance: fromAcc[0].balance - parsedAmount }).where(eq(bankAccounts.id, fromAccountId));
       
-      const newRemaining = theLoan[0].remainingAmount - amount;
+      const newRemaining = Math.max(0, theLoan[0].remainingAmount - parsedAmount);
 
       await db.update(loans).set({ 
         remainingAmount: newRemaining,
@@ -340,7 +345,7 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
         bankId: theLoan[0].bankId,
         fromAccountId: fromAccountId,
         toAccountId: null,
-        amount: amount,
+        amount: parsedAmount,
         type: 'transfer',
         description: `Manual Loan Payment`,
         timestamp: new Date()
@@ -679,8 +684,12 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
 
     try {
       const { fromAccountId, toAccountId, amount } = req.body; const discordId = (req as any).user.discordId;
+      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+        return res.status(400).json({ error: "Invalid account selection" });
+      }
+
       const parsedAmount = Math.round(parseFloat(amount) * 100);
-      if (parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
 
       const [sourceAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, fromAccountId));
       if (!sourceAccount) return res.status(404).json({ error: "Source account not found" });

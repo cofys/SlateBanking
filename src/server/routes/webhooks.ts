@@ -16,7 +16,7 @@ webhooksRouter.get("/api/banks/:bankId/webhooks", requireBankStaff, async (req: 
     const hooks = await db
       .select()
       .from(discordWebhooks)
-      .where(or(eq(discordWebhooks.bankId, bankId), eq(discordWebhooks.bankId, "global")));
+      .where(eq(discordWebhooks.bankId, bankId));
 
     // Hide full webhook secrets for security, return masked URLs
     const sanitized = hooks.map(h => ({
@@ -67,8 +67,8 @@ webhooksRouter.post("/api/banks/:bankId/webhooks", requireBankStaff, async (req:
 // Delete Discord Webhook
 webhooksRouter.delete("/api/banks/:bankId/webhooks/:webhookId", requireBankStaff, async (req: express.Request, res: express.Response) => {
   try {
-    const { webhookId } = req.params;
-    await db.delete(discordWebhooks).where(eq(discordWebhooks.id, webhookId));
+    const { bankId, webhookId } = req.params;
+    await db.delete(discordWebhooks).where(and(eq(discordWebhooks.id, webhookId), eq(discordWebhooks.bankId, bankId)));
     res.json({ success: true });
   } catch (err: any) {
     console.error("[WebhooksAPI] Error deleting webhook:", err);
@@ -102,7 +102,8 @@ webhooksRouter.post("/api/banks/:bankId/webhooks/test", requireBankStaff, async 
 // Trigger Manual Yield Distribution
 webhooksRouter.post("/api/banks/:bankId/process-yields", requireBankStaff, async (req: express.Request, res: express.Response) => {
   try {
-    await processYieldsAndAutomations();
+    const bankId = req.params.bankId;
+    await processYieldsAndAutomations(bankId);
     res.json({ success: true, message: "Automated APY yield distribution & loan interest engine executed." });
   } catch (err: any) {
     console.error("[YieldsAPI] Error running yield processor:", err);

@@ -500,6 +500,25 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
     - For Business entities, includes input fields for In-Game Corp Name and Business Sector/Industry.
     - Automatic provision of Onyx Merchant Storefront and Terminal API Key upon business account creation for instant store integration and payment processing.
 
+## Strict Transfer Amount & Input Validation Security Patch (Jul 22 2026)
+- **Patched Critical Negative/NaN Transfer Vulnerability (`portal.ts` & `v1.ts`)**:
+  - **Citizen Portal Transfers (`POST /api/portal/:bankId/transfer`)**: Added strict validation `if (!Number.isFinite(amnt) || amnt <= 0) return res.status(400).json({ error: "Invalid amount" })` and blocked self-transfers (`fromAccountId === toAccountId`). Prevents malicious users from transferring negative amounts to invert transfer math and drain victim accounts.
+  - **Public v1 Transfers API (`POST /api/v1/transfers`)**: Applied identical strict finite positive number checks (`!Number.isFinite(amnt) || amnt <= 0`) and blocked self-transfers. Prevents external API key holders from submitting negative or non-numeric amounts that corrupt account balances to `NaN`.
+  - **Public v1 Account Creation (`POST /api/v1/accounts`)**: Validates initial deposit inputs (`parsedDeposit < 0` returns 400 error).
+  - **Citizen Transfer & Loan Payment Endpoints (`citizen.ts`)**: Reinforced `/api/citizen/transfer` and `/api/citizen/pay-loan` with strict `Number.isFinite` and `> 0` checks.
+- **Cross-Tenant Webhook Deletion (IDOR) Fix (`webhooks.ts`)**:
+  - Scoped `DELETE /api/banks/:bankId/webhooks/:webhookId` and `GET /api/banks/:bankId/webhooks` queries strictly with `and(eq(discordWebhooks.id, webhookId), eq(discordWebhooks.bankId, bankId))`. Prevents bank staff from deleting or inspecting Discord notification webhooks belonging to another bank tenant.
+- **Strict Hostname CORS Matching (`server.ts`)**:
+  - Replaced unsafe `origin.includes(customDomain)` substring matching with exact URL hostname parsing (`originHost === domainHost`). Prevents attackers from using lookalike domains (e.g. `mybank.com.evil.com`) to bypass CORS checks and obtain credentialed cross-origin access.
+- **CityCorp OAuth State Nonce Guard Fix (`authRoutes.ts`)**:
+  - Updated `/api/auth/citycorp/callback` to enforce `parsedState.nonce !== expectedNonce` without the optional `parsedState.nonce &&` short-circuit guard. Re-instates CSRF state nonce verification for the CityCorp account linking flow.
+- **Sanitized OAuth Callback Logging (`authRoutes.ts`)**:
+  - Removed raw `req.query` logging from Discord and CityCorp OAuth callback routes (`/api/auth/discord/callback` & `/api/auth/citycorp/callback`). Prevents sensitive single-use authorization codes and state strings from being written to stdout/server logs.
+- **Bank-Scoped Manual Yield Trigger (`webhooks.ts` & `yield_engine.ts`)**:
+  - Updated `processYieldsAndAutomations(targetBankId?: string)` to accept an optional `targetBankId` parameter, filtering yield distributions, interest compounding, and payroll jobs strictly to the specified bank.
+  - Updated `POST /api/banks/:bankId/process-yields` in `webhooks.ts` to pass `req.params.bankId` into `processYieldsAndAutomations(bankId)`. Prevents individual bank staff from triggering platform-wide financial calculations across other banks on the network.
+
+
 
 
 

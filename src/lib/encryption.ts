@@ -1,7 +1,10 @@
 import * as crypto from 'crypto';
 
 function getEncryptionKey(): Buffer {
-    let secret = process.env.JWT_SECRET || 'super_secret_fallback_key_for_encryption_only';
+    let secret = process.env.DB_ENCRYPTION_KEY || process.env.JWT_SECRET;
+    if (!secret) {
+        throw new Error("Encryption key not configured. Set DB_ENCRYPTION_KEY or JWT_SECRET.");
+    }
     if (secret.length < 32) {
         secret = secret.padEnd(32, '0');
     }

@@ -365,7 +365,13 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
     try {
       const { fromAccountId, toAccountId, amount } = req.body; const discordId = (req as any).user.discordId;
       const bankId = req.params.bankId;
+
+      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+        return res.status(400).json({ error: "Invalid account selection" });
+      }
+
       const amnt = Math.round(parseFloat(amount) * 100);
+      if (!Number.isFinite(amnt) || amnt <= 0) return res.status(400).json({ error: "Invalid amount" });
 
       const [sourceAccount] = await db.select().from(bankAccounts).where(
         and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.ownerDiscordId, discordId), eq(bankAccounts.bankId, bankId))

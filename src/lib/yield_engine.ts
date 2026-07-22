@@ -4,12 +4,15 @@ import { eq, and, lte, gt } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { dispatchDiscordWebhook } from "./webhook_dispatcher";
 
-export async function processYieldsAndAutomations() {
-  console.log("[YieldEngine] Starting automated yield distribution & background jobs...");
+export async function processYieldsAndAutomations(targetBankId?: string) {
+  console.log(`[YieldEngine] Starting automated yield distribution & background jobs${targetBankId ? ` for bank ${targetBankId}` : ""}...`);
 
   try {
     // --- 1. SAVINGS & YIELD APY PAYOUTS ---
-    const allBanks = await db.select().from(banks);
+    const allBanks = targetBankId 
+      ? await db.select().from(banks).where(eq(banks.id, targetBankId))
+      : await db.select().from(banks);
+
     for (const bank of allBanks) {
       if (bank.maintenanceMode) continue;
 
@@ -71,7 +74,9 @@ export async function processYieldsAndAutomations() {
     }
 
     // --- 2. AUTOMATED LOAN INTEREST CHARGES ---
-    const activeLoans = await db.select().from(loans).where(and(eq(loans.status, "active"), gt(loans.remainingAmount, 0)));
+    const activeLoans = targetBankId
+      ? await db.select().from(loans).where(and(eq(loans.status, "active"), gt(loans.remainingAmount, 0), eq(loans.bankId, targetBankId)))
+      : await db.select().from(loans).where(and(eq(loans.status, "active"), gt(loans.remainingAmount, 0)));
     const now = new Date();
 
     for (const loan of activeLoans) {
@@ -100,7 +105,9 @@ export async function processYieldsAndAutomations() {
     }
 
     // --- 3. AUTOMATED PAYROLL JOBS ---
-    const duePayrolls = await db.select().from(payrollJobs).where(and(eq(payrollJobs.isActive, true), lte(payrollJobs.nextRun, now)));
+    const duePayrolls = targetBankId
+      ? await db.select().from(payrollJobs).where(and(eq(payrollJobs.isActive, true), lte(payrollJobs.nextRun, now), eq(payrollJobs.bankId, targetBankId)))
+      : await db.select().from(payrollJobs).where(and(eq(payrollJobs.isActive, true), lte(payrollJobs.nextRun, now)));
     for (const job of duePayrolls) {
       const employerAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, job.employerAccountId)).get();
       const employeeAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, job.employeeAccountId)).get();

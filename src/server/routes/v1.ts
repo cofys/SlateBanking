@@ -35,6 +35,11 @@ v1Router.post("/api/v1/accounts", authenticateApiRequest, async (req: express.Re
        const { discordId, initialDeposit, type, accountName } = req.body;
        if (!discordId) return res.status(400).json({ error: "missing discordId" });
 
+       const parsedDeposit = parseInt(initialDeposit) || 0;
+       if (!Number.isFinite(parsedDeposit) || parsedDeposit < 0) {
+         return res.status(400).json({ error: "Invalid initial deposit" });
+       }
+
        const id = uuidv4();
        
        await db.insert(bankAccounts).values({
@@ -42,7 +47,7 @@ v1Router.post("/api/v1/accounts", authenticateApiRequest, async (req: express.Re
          bankId: bank.id,
          ownerDiscordId: discordId,
          accountType: type || "checking",
-         balance: parseInt(initialDeposit) || 0,
+         balance: parsedDeposit,
          accountName: accountName || `${type === 'savings' ? 'Savings' : 'Checking'} Account`,
          isActive: true,
          createdAt: new Date()
@@ -82,7 +87,12 @@ v1Router.post("/api/v1/transfers", authenticateApiRequest, async (req: express.R
 
     try {
       const { fromAccountId, toAccountId, amount, description } = req.body;
+      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+        return res.status(400).json({ error: "Invalid account selection" });
+      }
+
       const amnt = Math.round(parseFloat(amount) * 100);
+      if (!Number.isFinite(amnt) || amnt <= 0) return res.status(400).json({ error: "Invalid amount" });
 
       const [sourceAccount] = await db.select().from(bankAccounts).where(
         and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bank.id))

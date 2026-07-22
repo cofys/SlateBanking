@@ -29,22 +29,49 @@ async function startServer() {
     app.use(cors({
     origin: async (origin, callback) => {
       if (!origin) return callback(null, true);
-      const { db } = await import("./src/db/index.js");
-      const { banks } = await import("./src/db/schema.js");
-      const { isNotNull } = await import("drizzle-orm");
-      
-      const banksList = await db.select({ customDomain: banks.customDomain }).from(banks).where(isNotNull(banks.customDomain));
-      let valid = false;
-      for (const b of banksList) {
-          if (b.customDomain && origin.includes(b.customDomain)) {
-             valid = true;
-             break;
+      try {
+        const { db } = await import("./src/db/index.js");
+        const { banks } = await import("./src/db/schema.js");
+        const { isNotNull } = await import("drizzle-orm");
+        
+        const banksList = await db.select({ customDomain: banks.customDomain }).from(banks).where(isNotNull(banks.customDomain));
+        
+        const originUrl = new URL(origin);
+        const originHost = originUrl.hostname.toLowerCase();
+
+        let valid = false;
+        for (const b of banksList) {
+          if (b.customDomain) {
+            let domainHost = b.customDomain.trim().toLowerCase();
+            if (domainHost.startsWith("http://") || domainHost.startsWith("https://")) {
+              try { domainHost = new URL(domainHost).hostname; } catch (e) {}
+            } else {
+              domainHost = domainHost.split(":")[0].split("/")[0];
+            }
+            if (originHost === domainHost) {
+              valid = true;
+              break;
+            }
           }
-      }
-      
-      if (valid || origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("run.app") || (process.env.APP_URL && origin.includes(process.env.APP_URL))) {
-        callback(null, true);
-      } else {
+        }
+        
+        if (!valid) {
+          if (originHost === "localhost" || originHost === "127.0.0.1" || originHost.endsWith(".run.app") || originHost === "run.app") {
+            valid = true;
+          } else if (process.env.APP_URL) {
+            try {
+              const appHost = new URL(process.env.APP_URL).hostname.toLowerCase();
+              if (originHost === appHost) valid = true;
+            } catch (e) {}
+          }
+        }
+
+        if (valid) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
+      } catch (e) {
         callback(null, false);
       }
     },
