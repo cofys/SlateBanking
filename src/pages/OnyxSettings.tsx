@@ -1,4 +1,4 @@
-import { Layers, ShieldCheck, CreditCard, Key, Plus, Loader2, ArrowRight, Activity, Building2, Server, CheckCircle2, XCircle, Clock, DollarSign, Globe, Terminal } from "lucide-react";
+import { Layers, ShieldCheck, CreditCard, Key, Plus, Loader2, ArrowRight, Activity, Building2, Server, CheckCircle2, XCircle, Clock, DollarSign, Globe, Terminal, Search } from "lucide-react";
 import { useState, useEffect } from "react";
 import { formatMoney } from "../lib/utils";
 
@@ -38,6 +38,31 @@ export function OnyxSettings() {
   const [bankId, setBankId] = useState("");
   const [destinationAccount, setDestinationAccount] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const [corpSearchQuery, setCorpSearchQuery] = useState("");
+  const [corpSearchResult, setCorpSearchResult] = useState<number | null>(null);
+  const [corpSearchLoading, setCorpSearchLoading] = useState(false);
+  const [corpSearchError, setCorpSearchError] = useState("");
+
+  const handleCorpSearch = async () => {
+    if (!corpSearchQuery.trim()) return;
+    setCorpSearchLoading(true);
+    setCorpSearchResult(null);
+    setCorpSearchError("");
+    try {
+      const res = await fetch(`/api/banks/corp-finder?query=${encodeURIComponent(corpSearchQuery)}`);
+      const data = await res.json();
+      if (res.ok && data.results && data.results.length > 0) {
+        setCorpSearchResult(data.results[0].corpId);
+      } else {
+        setCorpSearchError("No Corporation found matching that name.");
+      }
+    } catch (e) {
+      setCorpSearchError("Failed to search.");
+    } finally {
+      setCorpSearchLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -275,6 +300,62 @@ export function OnyxSettings() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Global Corp ID Finder */}
+        <div className="bg-white/5 border border-white/10 rounded-xl p-6 md:col-span-2">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              <Search size={20} className="text-blue-400" />
+            </div>
+            <div>
+              <h2 className="font-medium text-lg">Global Corp ID Finder</h2>
+              <p className="text-sm text-white/50">Search for a registered Corporation ID by name.</p>
+            </div>
+          </div>
+          
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-white/70 mb-2 uppercase tracking-wide">
+                Corporation Name
+              </label>
+              <input 
+                type="text" 
+                value={corpSearchQuery} 
+                onChange={(e) => setCorpSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCorpSearch()}
+                placeholder="Enter exact or partial corp name..."
+                className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors" 
+              />
+            </div>
+            <button 
+              onClick={handleCorpSearch}
+              disabled={corpSearchLoading || !corpSearchQuery.trim()}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 h-[42px]"
+            >
+              {corpSearchLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              Find ID
+            </button>
+          </div>
+
+          {corpSearchResult !== null && (
+            <div className="mt-4 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
+              <div>
+                <p className="text-emerald-400 font-medium text-sm">Corporation Found</p>
+                <p className="text-white/70 text-xs mt-1">The Corporation ID for this search is:</p>
+              </div>
+              <div className="text-3xl font-mono font-bold text-white bg-black/40 px-6 py-2 rounded-lg border border-white/5">
+                {corpSearchResult}
+              </div>
+            </div>
+          )}
+
+          {corpSearchError && (
+            <div className="mt-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center gap-2 text-rose-400 text-sm">
+              <XCircle size={16} />
+              {corpSearchError}
+            </div>
+          )}
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-xl p-6">

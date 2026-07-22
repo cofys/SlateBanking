@@ -1,14 +1,12 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search } from "lucide-react";
-import { CorpIdFinderModal } from "../components/CorpIdFinderModal";
 
 export function BankSettings() {
   const { bank } = useOutletContext<{ bank: any }>();
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isFinderOpen, setIsFinderOpen] = useState(false);
   const [vaultTiers, setVaultTiers] = useState<any[]>([{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}]);
 
   useEffect(() => {
@@ -459,18 +457,9 @@ export function BankSettings() {
 
         {/* Whitelabel CityCorp Integration */}
         <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2 text-lg font-semibold">
-              <Layers className="text-amber-400" size={20} />
-              Whitelabel CityCorp OAuth Integration
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsFinderOpen(true)}
-              className="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <Search size={14} /> Corp ID Finder
-            </button>
+          <div className="flex items-center gap-2 text-lg font-semibold mb-6">
+            <Layers className="text-amber-400" size={20} />
+            Whitelabel CityCorp OAuth Integration
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
@@ -672,16 +661,6 @@ export function BankSettings() {
         </div>
       </form>
 
-      <CorpIdFinderModal 
-        isOpen={isFinderOpen}
-        onClose={() => setIsFinderOpen(false)}
-        onSelectCorpId={(selectedCorpId, details) => {
-          setSettings((prev: any) => ({
-            ...prev,
-            cityCorpAppId: details?.cityCorpAppId || prev?.cityCorpAppId
-          }));
-        }}
-      />
     </div>
   );
 }
