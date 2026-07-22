@@ -1,4 +1,5 @@
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import Database from "better-sqlite3";
 import * as schema from "./schema";
 import path from "path";
@@ -15,3 +16,13 @@ sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('synchronous = NORMAL');
 
 export const db = drizzle(sqlite, { schema });
+
+// Automatically apply migrations if missing
+try {
+  const migrationsFolder = path.resolve(process.cwd(), "drizzle");
+  if (fs.existsSync(migrationsFolder)) {
+    migrate(db, { migrationsFolder });
+  }
+} catch (err) {
+  console.error("Migration error on startup:", err);
+}

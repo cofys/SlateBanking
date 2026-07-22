@@ -13,9 +13,45 @@ export function GlobalSettings() {
     globalRateLimit: 100,
   });
 
+  const [updatingMaintenance, setUpdatingMaintenance] = useState(false);
+
   useEffect(() => {
     fetchAdmins();
+    fetchGlobalSettings();
   }, []);
+
+  const fetchGlobalSettings = async () => {
+    try {
+      const res = await fetch("/api/banks");
+      if (res.ok) {
+        const banks = await res.json();
+        const allInMaintenance = banks.length > 0 && banks.every((b: any) => b.maintenanceMode);
+        setSettings(s => ({ ...s, maintenanceMode: allInMaintenance }));
+      }
+    } catch (e) {}
+  };
+
+  const handleBulkMaintenance = async (enable: boolean) => {
+    setUpdatingMaintenance(true);
+    try {
+      const res = await fetch("/api/banks/maintenance-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maintenanceMode: enable })
+      });
+      if (res.ok) {
+        setSettings(s => ({ ...s, maintenanceMode: enable }));
+        alert(`Maintenance Mode ${enable ? "ENABLED" : "DISABLED"} for all banks on the network.`);
+      } else {
+        const d = await res.json();
+        alert(`Failed: ${d.error || "Could not update maintenance mode"}`);
+      }
+    } catch (e) {
+      alert("Error updating maintenance mode");
+    } finally {
+      setUpdatingMaintenance(false);
+    }
+  };
 
   const fetchAdmins = async () => {
     try {
@@ -85,20 +121,32 @@ export function GlobalSettings() {
                 />
               </div>
               
-              <div className="flex items-center justify-between py-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between py-3 border-y border-white/5 gap-3">
                 <div>
-                  <h4 className="text-sm font-medium text-white">Maintenance Mode</h4>
-                  <p className="text-xs text-white/50">Suspend all operations except for global admins</p>
+                  <h4 className="text-sm font-medium text-white flex items-center gap-2">
+                    Network Maintenance Mode
+                    {settings.maintenanceMode && <span className="px-2 py-0.5 text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded font-mono">ALL BANKS IN MAINTENANCE</span>}
+                  </h4>
+                  <p className="text-xs text-white/50">Enable or disable maintenance mode across all bank web portals and bots simultaneously.</p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only peer"
-                    checked={settings.maintenanceMode}
-                    onChange={(e) => setSettings({...settings, maintenanceMode: e.target.checked})}
-                  />
-                  <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500"></div>
-                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={updatingMaintenance}
+                    onClick={() => handleBulkMaintenance(true)}
+                    className="px-3 py-1.5 text-xs font-medium bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    {updatingMaintenance ? <Loader2 size={12} className="animate-spin" /> : "⚠️ Enable All"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={updatingMaintenance}
+                    onClick={() => handleBulkMaintenance(false)}
+                    className="px-3 py-1.5 text-xs font-medium bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    {updatingMaintenance ? <Loader2 size={12} className="animate-spin" /> : "🟢 Disable All"}
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-between py-2">

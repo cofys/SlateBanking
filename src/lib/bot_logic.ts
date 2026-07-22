@@ -1,9 +1,18 @@
 import { REST, Routes, Interaction, CacheType, SlashCommandBuilder, ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, ModalSubmitInteraction, ButtonInteraction, StringSelectMenuBuilder, Client } from 'discord.js';
 import { db } from '../db/index';
-import { banks, bankAccounts, transactions, users, bankCustomers, loans, bankSettings, bankStaff, auditLogs } from '../db/schema';
+import { banks, bankAccounts, transactions, users, bankCustomers, loans, bankSettings, bankStaff, auditLogs, globalAdmins } from '../db/schema';
 import { eq, and, sql, or, desc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { CityCorpClient } from './citycorp_api';
+
+export async function isBankStaffOrGlobalAdmin(bankId: string, discordId: string): Promise<boolean> {
+  if (!discordId) return false;
+  const admin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, discordId)).get();
+  if (admin) return true;
+  const staff = await db.select().from(bankStaff).where(and(eq(bankStaff.bankId, bankId), eq(bankStaff.discordId, discordId))).get();
+  if (staff) return true;
+  return false;
+}
 
 async function getBankClient(bankId: string) {
   const b = await db.select().from(banks).where(eq(banks.id, bankId));
@@ -40,6 +49,22 @@ export async function registerBankCommands(token: string, clientId: string) {
 }
 
 export async function handleBankInteraction(bankId: string, interaction: Interaction<CacheType>) {
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  if (b.length > 0 && b[0].maintenanceMode) {
+    const isStaff = await isBankStaffOrGlobalAdmin(bankId, interaction.user.id);
+    if (!isStaff) {
+      const msg = `⚠️ **Bank Maintenance Active**: **${b[0].name}** is currently undergoing maintenance and staff testing. Standard customer operations are temporarily suspended. Please check back later!`;
+      if (interaction.isRepliable()) {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.followUp({ content: msg, ephemeral: true });
+        } else {
+          await interaction.reply({ content: msg, ephemeral: true });
+        }
+      }
+      return;
+    }
+  }
+
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'bank') {
       await showMainMenu(bankId, interaction, true);
@@ -482,7 +507,7 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
 
 async function handleButton(bankId: string, interaction: ButtonInteraction) {
   const cid = interaction.customId;
-  
+
   if (cid === 'bank_main_menu' || cid === 'bank_gui_dashboard') {
     await interaction.deferUpdate();
     await showMainMenu(bankId, interaction);

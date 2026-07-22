@@ -49,7 +49,8 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
 - **White-label Branding**: Custom color schemes (`colorScheme`) and logo URLs per bank.
 - **Fees**: Configurable system-wide fees for transfers, deposits, and withdrawals (stored as percentages multiplied by 100).
 - **Discord Integration Config**: Specify verified roles, client roles, and comprehensive webhook alerting structures per-bank.
-- **Feature Flags**: CEOs can manually toggle `enableLoans`, `enableVaults`, `enableCards`, `enablePayroll`, `enableSubscriptions`, `enableEscrow`, and `enableTreasury`.
+- **Feature Flags & Maintenance Mode**: CEOs, Bank Staff, and Global Admins can toggle `maintenanceMode` per bank (or network-wide). During maintenance mode, the Discord bot stays online and production APIs remain active; however, non-staff/customer actions (transfers, invoice payments, bot commands, menu interactions) are suspended with a standard maintenance notice. Bank staff and global admins retain full override privileges to test new features, run commands, and execute portal transactions in production.
+- **Feature Toggles**: CEOs can manually toggle `enableLoans`, `enableVaults`, `enableCards`, `enablePayroll`, `enableSubscriptions`, `enableEscrow`, and `enableTreasury`.
 
 ---
 
@@ -514,9 +515,8 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
   - Updated `/api/auth/citycorp/callback` to enforce `parsedState.nonce !== expectedNonce` without the optional `parsedState.nonce &&` short-circuit guard. Re-instates CSRF state nonce verification for the CityCorp account linking flow.
 - **Sanitized OAuth Callback Logging (`authRoutes.ts`)**:
   - Removed raw `req.query` logging from Discord and CityCorp OAuth callback routes (`/api/auth/discord/callback` & `/api/auth/citycorp/callback`). Prevents sensitive single-use authorization codes and state strings from being written to stdout/server logs.
-- **Bank-Scoped Manual Yield Trigger (`webhooks.ts` & `yield_engine.ts`)**:
-  - Updated `processYieldsAndAutomations(targetBankId?: string)` to accept an optional `targetBankId` parameter, filtering yield distributions, interest compounding, and payroll jobs strictly to the specified bank.
-  - Updated `POST /api/banks/:bankId/process-yields` in `webhooks.ts` to pass `req.params.bankId` into `processYieldsAndAutomations(bankId)`. Prevents individual bank staff from triggering platform-wide financial calculations across other banks on the network.
+- **Automatic Database Migration Runner (`src/db/index.ts`)**:
+  - Added `migrate(db, { migrationsFolder })` from `drizzle-orm/better-sqlite3/migrator` to run automatically upon database initialization in `src/db/index.ts`. Ensures all tables (`payroll_jobs`, `recurring_transfers`, `banks`, etc.) exist before cron tasks and background pipelines execute, resolving `SqliteError: no such table` startup errors.
 
 
 

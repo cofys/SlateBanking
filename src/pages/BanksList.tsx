@@ -201,6 +201,47 @@ export function BanksList() {
     }
   }, [showManageModal, activeSelectedBank]);
 
+  const handleToggleBankMaintenance = async (bankId: string, currentStatus: boolean) => {
+    try {
+      const res = await fetch(`/api/banks/${bankId}/maintenance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maintenanceMode: !currentStatus })
+      });
+      if (res.ok) {
+        fetchBanks();
+      } else {
+        const d = await res.json();
+        alert(`Failed: ${d.error || "Could not update bank maintenance mode"}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error updating maintenance mode");
+    }
+  };
+
+  const handleToggleAllMaintenance = async (enable: boolean) => {
+    const actionText = enable ? "ENABLE" : "DISABLE";
+    if (!confirm(`Are you sure you want to ${actionText} maintenance mode for ALL banks on the network?`)) return;
+
+    try {
+      const res = await fetch("/api/banks/maintenance-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maintenanceMode: enable })
+      });
+      if (res.ok) {
+        fetchBanks();
+      } else {
+        const d = await res.json();
+        alert(`Failed: ${d.error || "Could not update network maintenance mode"}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error updating network maintenance mode");
+    }
+  };
+
   const fetchBanks = async () => {
     setLoading(true);
     try {
@@ -284,18 +325,34 @@ export function BanksList() {
 
   return (
     <div className="max-w-6xl space-y-8">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Bank Instances</h1>
-          <p className="text-white/50 mt-1">Manage active Discord bot instances for client banks.</p>
+          <p className="text-white/50 mt-1">Manage active Discord bot instances and network maintenance modes.</p>
         </div>
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 bg-white text-black px-4 py-2 rounded-md text-sm font-medium hover:bg-white/90 transition-colors cursor-pointer"
-        >
-          <Plus size={16} />
-          Provision New Bank
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => handleToggleAllMaintenance(true)}
+            className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer"
+            title="Enable maintenance mode on all banks"
+          >
+            ⚠️ Enable Maintenance (All)
+          </button>
+          <button 
+            onClick={() => handleToggleAllMaintenance(false)}
+            className="flex items-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer"
+            title="Disable maintenance mode on all banks"
+          >
+            🟢 Disable Maintenance (All)
+          </button>
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 bg-white text-black px-4 py-2 rounded-md text-sm font-medium hover:bg-white/90 transition-colors cursor-pointer"
+          >
+            <Plus size={16} />
+            Provision New Bank
+          </button>
+        </div>
 
         {showBillingModal && selectedBank && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -396,19 +453,20 @@ export function BanksList() {
               <th className="px-6 py-4 font-medium">Guild ID</th>
               <th className="px-6 py-4 font-medium">Provisioned On</th>
               <th className="px-6 py-4 font-medium">Bot Status</th>
+              <th className="px-6 py-4 font-medium">Maintenance</th>
               <th className="px-6 py-4 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-6 py-8 text-center text-white/50">
+                <td colSpan={8} className="px-6 py-8 text-center text-white/50">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-400" />
                 </td>
               </tr>
             ) : filteredBanks.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-8 text-center text-white/50">
+                <td colSpan={8} className="px-6 py-8 text-center text-white/50">
                   No bank instances found.
                 </td>
               </tr>
@@ -452,6 +510,19 @@ export function BanksList() {
                         <><XCircle size={14} className="text-red-500" /> <span className="text-red-500 capitalize">{bank.status}</span></>
                       )}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <button
+                      onClick={() => handleToggleBankMaintenance(bank.id, !!bank.maintenanceMode)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all cursor-pointer ${
+                        bank.maintenanceMode 
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30 shadow-sm shadow-amber-500/10' 
+                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                      }`}
+                      title={bank.maintenanceMode ? "Click to disable maintenance mode and resume operations" : "Click to enable maintenance mode"}
+                    >
+                      {bank.maintenanceMode ? '⚠️ Maintenance On' : '🟢 Active'}
+                    </button>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <button 

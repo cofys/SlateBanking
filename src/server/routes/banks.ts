@@ -40,6 +40,69 @@ banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Reques
     }
   });
 
+// Bulk Enable/Disable Maintenance Mode for ALL banks across the platform
+banksRouter.post("/api/banks/maintenance-all", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks } = await import("../../db/schema");
+    try {
+      const { maintenanceMode } = req.body;
+      if (typeof maintenanceMode !== 'boolean') {
+        return res.status(400).json({ error: "Missing boolean maintenanceMode in request body" });
+      }
+
+      await db.update(banks).set({ maintenanceMode });
+
+      const { botManager } = await import("../../lib/bot_manager");
+      const allBanks = await db.select().from(banks);
+      
+      for (const bank of allBanks) {
+        if (bank.discordToken) {
+          try {
+            await botManager.provisionBankBot(bank.id, bank.discordToken);
+          } catch (e) {
+            console.error(`[MaintenanceAll] Error ensuring bot online for bank ${bank.id}:`, e);
+          }
+        }
+      }
+
+      res.json({ success: true, maintenanceMode, totalBanks: allBanks.length });
+    } catch (e) {
+      console.error("[MaintenanceAll] Error updating maintenance mode for all banks:", e);
+      res.status(500).json({ error: "Failed to update global bank maintenance mode" });
+    }
+  });
+
+// Toggle Maintenance Mode for a Specific Bank
+banksRouter.post("/api/banks/:bankId/maintenance", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      const bId = req.params.bankId;
+      const { maintenanceMode } = req.body;
+      if (typeof maintenanceMode !== 'boolean') {
+        return res.status(400).json({ error: "Missing boolean maintenanceMode in request body" });
+      }
+
+      await db.update(banks).set({ maintenanceMode }).where(eq(banks.id, bId));
+
+      const bank = await db.select().from(banks).where(eq(banks.id, bId)).get();
+      if (bank && bank.discordToken) {
+        const { botManager } = await import("../../lib/bot_manager");
+        try {
+          await botManager.provisionBankBot(bId, bank.discordToken);
+        } catch (e) {
+          console.error(`[BankMaintenance] Error ensuring bot online for bank ${bId}:`, e);
+        }
+      }
+
+      res.json({ success: true, bankId: bId, maintenanceMode });
+    } catch (e) {
+      console.error("[BankMaintenance] Error updating bank maintenance mode:", e);
+      res.status(500).json({ error: "Failed to update bank maintenance mode" });
+    }
+  });
+
 banksRouter.put("/api/banks/:id/billing", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { banks } = await import("../../db/schema");

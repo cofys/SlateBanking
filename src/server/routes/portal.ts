@@ -9,6 +9,20 @@ const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
 export const portalRouter = express.Router();
 
+async function isUserStaffOrAdmin(bankId: string, discordId: string, isGlobalAdmin?: boolean): Promise<boolean> {
+  if (isGlobalAdmin) return true;
+  if (!discordId) return false;
+  const { db } = await import("../../db/index.js");
+  const { bankStaff, globalAdmins } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+
+  const admin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, discordId)).get();
+  if (admin) return true;
+
+  const staff = await db.select().from(bankStaff).where(and(eq(bankStaff.bankId, bankId), eq(bankStaff.discordId, discordId))).get();
+  return !!staff;
+}
+
 portalRouter.get("/api/portal/:bankId/oauth/url", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { banks } = await import("../../db/schema");
@@ -312,13 +326,21 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
 
 portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, transactions, invoices } = await import("../../db/schema");
+    const { bankAccounts, transactions, invoices, banks } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
       const { invoiceId } = req.body; const discordId = (req as any).user.discordId;
       const bankId = req.params.bankId;
+
+      const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
+      if (targetBank?.maintenanceMode) {
+        const isStaff = await isUserStaffOrAdmin(bankId, discordId, (req as any).user?.isGlobalAdmin);
+        if (!isStaff) {
+          return res.status(503).json({ error: "This bank is currently in maintenance mode for system updates & staff testing. Portal transactions are temporarily suspended." });
+        }
+      }
 
       const [inv] = await db.select().from(invoices).where(and(eq(invoices.id, invoiceId), eq(invoices.bankId, bankId)));
       if (!inv || inv.status !== 'pending') return res.status(404).json({ error: "Invoice not found or already paid" });
@@ -358,13 +380,21 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
 
 portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, transactions } = await import("../../db/schema");
+    const { bankAccounts, transactions, banks } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
       const { fromAccountId, toAccountId, amount } = req.body; const discordId = (req as any).user.discordId;
       const bankId = req.params.bankId;
+
+      const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
+      if (targetBank?.maintenanceMode) {
+        const isStaff = await isUserStaffOrAdmin(bankId, discordId, (req as any).user?.isGlobalAdmin);
+        if (!isStaff) {
+          return res.status(503).json({ error: "This bank is currently in maintenance mode for system updates & staff testing. Portal transactions are temporarily suspended." });
+        }
+      }
 
       if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
         return res.status(400).json({ error: "Invalid account selection" });

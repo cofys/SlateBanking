@@ -260,6 +260,33 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         </div>
       </div>
 
+      {/* Maintenance Mode Alert Banner */}
+      {bank?.maintenanceMode && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`border rounded-2xl p-4 text-sm flex items-center gap-3 shadow-lg ${
+            userData?.isStaff 
+              ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-200' 
+              : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+          }`}
+        >
+          <AlertTriangle className={userData?.isStaff ? "text-indigo-400 shrink-0" : "text-amber-400 shrink-0"} size={20} />
+          <div>
+            <p className="font-semibold flex items-center gap-2">
+              {userData?.isStaff ? "⚙️ Scheduled Bank Maintenance Active (Staff Testing Override)" : "⚠️ Scheduled Bank Maintenance Active"}
+            </p>
+            <p className="text-xs opacity-90 mt-0.5">
+              {userData?.isStaff ? (
+                <><strong>{bank.name}</strong> is currently in maintenance mode for updates. Standard customer operations are blocked, but as bank staff/admin, you have full override privileges to test new features across the portal and bot.</>
+              ) : (
+                <><strong>{bank.name}</strong> is currently undergoing system updates. Customer web transfers and Discord bot commands are temporarily suspended.</>
+              )}
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       {/* Notifications Area */}
       {oauthSuccess && (
         <motion.div 
