@@ -1,0 +1,640 @@
+import express from 'express';
+import { requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET, getRedirectUri } from "../middleware.js";
+import { botManager } from "../../lib/bot_manager.js";
+import * as crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { randomInt } from "crypto";
+const clientId = process.env.DISCORD_CLIENT_ID;
+const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+
+export const portalRouter = express.Router();
+
+portalRouter.get("/api/portal/:bankId/oauth/url", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      const bankId = req.params.bankId;
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank) return res.status(404).json({ error: "Bank not found" });
+      if (!bank.cityCorpAppId) {
+        return res.status(400).json({ error: "CityCorp OAuth is not configured for this bank" });
+      }
+
+      let origin = process.env.APP_URL || "http://localhost:3000";
+      if (origin.endsWith("/")) origin = origin.slice(0, -1);
+      let bankCustomDomain = bank.customDomain ? `https://${bank.customDomain}` : origin;
+      const redirectUri = `${bankCustomDomain}/api/portal/${bankId}/oauth/callback`;
+      const { v4: uuidv4 } = await import("uuid");
+      const nonce = uuidv4();
+      res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
+      const state = encodeURIComponent(JSON.stringify({
+        bankId,
+        discordId: (req as any).user.discordId,
+        nonce
+      }));
+
+      const scopes = "corp.player.info.get,corp.get";
+        const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
+
+      res.json({ url: authUrl });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Internal error" });
+    }
+  });
+
+portalRouter.get("/api/portal/:bankId/oauth/callback", async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks, bankCustomers, auditLogs } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bankId = req.params.bankId;
+      const code = (req.query.client_secret || req.query.code) as string;
+      const stateStr = req.query.state as string;
+
+      const expectedNonce = req.cookies?.oauth_nonce;
+      res.clearCookie('oauth_nonce');
+      if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
+    if (!code || !stateStr) {
+        return res.status(400).send(`Missing code or state. URL: ${req.originalUrl}`);
+      }
+
+      const parsedState = JSON.parse(decodeURIComponent(stateStr));
+      if (!parsedState || !expectedNonce || parsedState.nonce !== expectedNonce) {
+          return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
+      }
+      const discordId = parsedState.discordId;
+
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank || !bank.cityCorpAppId || !bank.cityCorpAppSecret) {
+        return res.status(400).send("Bank CityCorp OAuth credentials are not configured");
+      }
+
+      const bodyParams = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_secret: code,
+        app_id: bank.cityCorpAppId,
+        token: bank.cityCorpAppSecret
+      });
+
+      console.log("Exchanging CityCorp OAuth code for token with body:", bodyParams.toString());
+      const tokenResponse = await fetch("https://dashboard.cityrp.org/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: bodyParams.toString()
+      });
+
+      if (!tokenResponse.ok) {
+        const errText = await tokenResponse.text();
+        console.error("CityCorp Token exchange failed:", errText);
+        return res.status(400).send(`Failed to exchange token with CityCorp: ${errText}`);
+      }
+
+      const tokenData = await tokenResponse.json();
+      const token = tokenData.token;
+      const minecraftUuid = tokenData.minecraft_uuid;
+
+      if (!token || !minecraftUuid) {
+        return res.status(400).send("CityCorp returned an invalid token response");
+      }
+
+      const authHeader = 'Basic ' + Buffer.from(`${minecraftUuid}:${token}`).toString('base64');
+      console.log("Fetching player info from CityCorp...");
+      const playerRes = await fetch("https://api.cityrp.org/player", {
+        headers: { "Authorization": authHeader, "User-Agent": "SlateBankBot/1.0" }
+      });
+
+      let mcUsername = "Citizen";
+      if (playerRes.ok) {
+        const playerData = await playerRes.json();
+        mcUsername = playerData.username || playerData.name || mcUsername;
+        console.log(`Successfully fetched player name from CityCorp: ${mcUsername}`);
+      } else {
+        console.warn(`Could not fetch player name from CityCorp API, falling back to: ${mcUsername}`);
+      }
+
+      const existing = await db.select().from(bankCustomers).where(
+        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
+      ).limit(1);
+
+      if (existing.length > 0) {
+        await db.update(bankCustomers).set({
+          mcUuid: minecraftUuid,
+          mcUsername: mcUsername,
+          cityCorpToken: token,
+          kycStatus: "approved"
+        }).where(and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId)));
+      } else {
+        await db.insert(bankCustomers).values({
+          id: uuidv4(),
+          bankId: bankId,
+          discordId: discordId,
+          kycStatus: "approved",
+          mcUuid: minecraftUuid,
+          mcUsername: mcUsername,
+          cityCorpToken: token,
+          notes: "Profile verified via whitelabel CityCorp OAuth Gateway",
+          createdAt: new Date()
+        });
+      }
+
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: bankId,
+        userDiscordId: discordId,
+        action: "profile_validated",
+        details: `Validated whitelabeled CityCorp profile. Linked Minecraft UUID: ${minecraftUuid}, Username: ${mcUsername}`,
+        timestamp: new Date()
+      });
+
+      res.redirect(`/portal/${bankId}?oauth=success&username=${encodeURIComponent(mcUsername)}`);
+    } catch (e: any) {
+      console.error("CityCorp OAuth Callback Exception:", e);
+      res.status(500).send(`Internal error in CityCorp OAuth Callback: ${e.message}`);
+    }
+  });
+
+portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks, bankSettings } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      const bank = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
+      if (!bank) return res.status(404).json({ error: "Bank not found" });
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bank.id)).get();
+      
+      const safeBank = {
+        id: bank.id,
+        name: bank.name,
+        guildId: bank.guildId,
+        discordClientId: bank.discordClientId,
+        corpId: bank.corpId,
+        cityCorpAppId: bank.cityCorpAppId,
+        cityCorpAuthUrl: bank.cityCorpAuthUrl,
+        customDomain: bank.customDomain,
+        brandingColor: bank.brandingColor,
+        logoUrl: bank.logoUrl,
+        status: bank.status,
+        plan: bank.plan,
+        billingStatus: bank.billingStatus,
+        platformFeePercent: bank.platformFeePercent,
+        createdAt: bank.createdAt,
+        maintenanceMode: (bank as any).maintenanceMode,
+      };
+
+      res.json({ ...safeBank, settings });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans } = await import("../../db/schema");
+    const { eq, and, or, desc, inArray } = await import("drizzle-orm");
+
+    try {
+      const discordId = (req as any).user.discordId;
+      const bankId = req.params.bankId;
+      if (!discordId) return res.status(400).json({ error: "Missing discordId" });
+
+      const customerResult = await db.select().from(bankCustomers).where(
+        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
+      ).limit(1);
+      const customer = customerResult[0] || null;
+
+      const { bankStaff } = await import("../../db/schema");
+      let isStaff = false;
+      const staff = await db.select().from(bankStaff).where(and(eq(bankStaff.bankId, bankId), eq(bankStaff.discordId, discordId))).get();
+      if (staff) isStaff = true;
+
+      const userAccounts = await db.select({
+        id: bankAccounts.id,
+        bankId: bankAccounts.bankId,
+        bankName: banks.name,
+        accountName: bankAccounts.accountName,
+        type: bankAccounts.accountType,
+        balance: bankAccounts.balance
+      })
+      .from(bankAccounts)
+      .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
+      .where(and(eq(bankAccounts.ownerDiscordId, discordId), eq(bankAccounts.bankId, bankId)));
+
+      if (userAccounts.length === 0) {
+         return res.json({ accounts: [], recentTx: [], pendingInvoices: [], cards: [], loans: [], customer: customer ? {
+           kycStatus: customer.kycStatus,
+           mcUsername: customer.mcUsername,
+           mcUuid: customer.mcUuid
+         } : null });
+      }
+
+      const accountIds = userAccounts.map(a => a.id);
+
+      const recentTxs = await db.select()
+        .from(transactions)
+        .where(or(
+          inArray(transactions.fromAccountId, accountIds),
+          inArray(transactions.toAccountId, accountIds)
+        ))
+        .orderBy(desc(transactions.timestamp))
+        .limit(10);
+
+      const mappedTxs = recentTxs.map(tx => ({
+        ...tx,
+        toDiscordId: accountIds.includes(tx.toAccountId!) ? discordId : null
+      }));
+
+      // Map pending invoices
+      const userInvoices = await db.select({
+         id: invoices.id,
+         amount: invoices.amount,
+         description: invoices.description,
+         dueDate: invoices.dueDate,
+         billerName: banks.name, 
+         customerAccountName: bankAccounts.accountName
+      })
+      .from(invoices)
+      .leftJoin(banks, eq(invoices.bankId, banks.id))
+      .leftJoin(bankAccounts, eq(invoices.customerAccountId, bankAccounts.id))
+      .where(
+         and(
+            inArray(invoices.customerAccountId, accountIds),
+            eq(invoices.status, "pending"),
+            eq(invoices.bankId, bankId)
+         )
+      )
+      .orderBy(desc(invoices.createdAt));
+
+      // Get user cards
+      const userCards = await db.select({
+         id: cards.id,
+         bankId: cards.bankId,
+         bankName: banks.name,
+         accountId: cards.accountId,
+         accountName: bankAccounts.accountName,
+         cardNumber: cards.cardNumber,
+                  expiryDate: cards.expiryDate,
+         isLocked: cards.isLocked,
+         type: cards.type
+      })
+      .from(cards)
+      .leftJoin(banks, eq(cards.bankId, banks.id))
+      .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
+      .where(and(inArray(cards.accountId, accountIds), eq(cards.bankId, bankId)));
+
+      // Get user loans
+      const userLoans = await db.select()
+        .from(loans)
+        .where(and(eq(loans.discordId, discordId), eq(loans.bankId, bankId)));
+
+      res.json({
+        isStaff,
+        accounts: userAccounts,
+        recentTx: mappedTxs,
+        pendingInvoices: userInvoices,
+        cards: userCards,
+        loans: userLoans,
+        customer: customer ? {
+          kycStatus: customer.kycStatus,
+          mcUsername: customer.mcUsername,
+          mcUuid: customer.mcUuid
+        } : null
+      });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, transactions, invoices } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const { invoiceId } = req.body; const discordId = (req as any).user.discordId;
+      const bankId = req.params.bankId;
+
+      const [inv] = await db.select().from(invoices).where(and(eq(invoices.id, invoiceId), eq(invoices.bankId, bankId)));
+      if (!inv || inv.status !== 'pending') return res.status(404).json({ error: "Invoice not found or already paid" });
+
+      const [sourceAccount] = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.id, inv.customerAccountId), eq(bankAccounts.ownerDiscordId, discordId))
+      );
+
+      if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized to pay this invoice" });
+      if (sourceAccount.balance < inv.amount) return res.status(400).json({ error: `Insufficient funds. Balance: $${(sourceAccount.balance/100).toFixed(2)}, Due: $${(inv.amount/100).toFixed(2)}` });
+
+      const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, inv.billerAccountId));
+      if (!destAccount) return res.status(404).json({ error: "Destination biller account not found" });
+
+      await db.update(bankAccounts).set({ balance: sourceAccount.balance - inv.amount }).where(eq(bankAccounts.id, sourceAccount.id));
+      await db.update(bankAccounts).set({ balance: destAccount.balance + inv.amount }).where(eq(bankAccounts.id, destAccount.id));
+
+      await db.insert(transactions).values({
+        id: uuidv4(),
+        bankId: sourceAccount.bankId,
+        fromAccountId: sourceAccount.id,
+        toAccountId: destAccount.id,
+        type: "transfer",
+        amount: inv.amount,
+        description: `Invoice Payment: ${inv.description || inv.id}`,
+        timestamp: new Date()
+      });
+
+      await db.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
+
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, transactions } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const { fromAccountId, toAccountId, amount } = req.body; const discordId = (req as any).user.discordId;
+      const bankId = req.params.bankId;
+      const amnt = Math.round(parseFloat(amount) * 100);
+
+      const [sourceAccount] = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.ownerDiscordId, discordId), eq(bankAccounts.bankId, bankId))
+      );
+
+      if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized" });
+      if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
+      if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
+
+      const [destAccount] = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bankId))
+      );
+      if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
+      if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
+
+      await db.update(bankAccounts).set({ balance: sourceAccount.balance - amnt }).where(eq(bankAccounts.id, sourceAccount.id));
+      await db.update(bankAccounts).set({ balance: destAccount.balance + amnt }).where(eq(bankAccounts.id, destAccount.id));
+
+      await db.insert(transactions).values({
+        id: uuidv4(),
+        bankId: sourceAccount.bankId,
+        fromAccountId: sourceAccount.id,
+        toAccountId: destAccount.id,
+        type: "transfer",
+        amount: amnt,
+        description: `Citizen Portal Transfer to ${toAccountId.substring(0, 8)}`,
+        timestamp: new Date()
+      });
+
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+portalRouter.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { cards, bankAccounts } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+
+    try {
+      const { isLocked } = req.body; const discordId = (req as any).user.discordId;
+      const [card] = await db.select().from(cards).where(eq(cards.id, req.params.cardId));
+      
+      if (!card || card.bankId !== req.params.bankId) return res.status(404).json({ error: "Card not found" });
+
+      const [account] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId));
+      if (!account || account.ownerDiscordId !== discordId) {
+         return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      await db.update(cards).set({ isLocked: !!isLocked }).where(eq(cards.id, req.params.cardId));
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+// Citizen Unified Lookup API across all banks
+portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { banks, bankAccounts, transactions, invoices, cards, loans, bankSettings } = await import("../../db/schema");
+  const { eq, or, and, desc, inArray } = await import("drizzle-orm");
+
+  try {
+    const discordId = (req as any).user.discordId;
+    if (!discordId) return res.status(400).json({ error: "Missing discordId" });
+
+    // Fetch user accounts across all banks
+    const userAccounts = await db.select({
+      id: bankAccounts.id,
+      bankId: bankAccounts.bankId,
+      bankName: banks.name,
+      accountName: bankAccounts.accountName,
+      type: bankAccounts.accountType,
+      balance: bankAccounts.balance,
+      businessTaxId: bankAccounts.businessTaxId,
+      businessSector: bankAccounts.businessSector,
+      isActive: bankAccounts.isActive,
+      isFrozen: bankAccounts.isFrozen,
+      createdAt: bankAccounts.createdAt
+    })
+    .from(bankAccounts)
+    .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
+    .where(eq(bankAccounts.ownerDiscordId, discordId));
+
+    const allBanks = await db.select({
+      id: banks.id,
+      name: banks.name,
+      logoUrl: banks.logoUrl,
+    }).from(banks);
+
+    const allSettings = await db.select().from(bankSettings);
+    const accountIds = userAccounts.map(a => a.id);
+
+    let recentTxs: any[] = [];
+    let userCards: any[] = [];
+    let userInvoices: any[] = [];
+    let userLoans: any[] = [];
+
+    if (accountIds.length > 0) {
+      recentTxs = await db.select()
+        .from(transactions)
+        .where(or(
+          inArray(transactions.fromAccountId, accountIds),
+          inArray(transactions.toAccountId, accountIds)
+        ))
+        .orderBy(desc(transactions.timestamp))
+        .limit(20);
+
+      userCards = await db.select({
+        id: cards.id,
+        bankId: cards.bankId,
+        bankName: banks.name,
+        accountId: cards.accountId,
+        accountName: bankAccounts.accountName,
+        cardNumber: cards.cardNumber,
+        expiryDate: cards.expiryDate,
+        isLocked: cards.isLocked,
+        type: cards.type
+      })
+      .from(cards)
+      .leftJoin(banks, eq(cards.bankId, banks.id))
+      .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
+      .where(inArray(cards.accountId, accountIds));
+
+      userInvoices = await db.select({
+        id: invoices.id,
+        amount: invoices.amount,
+        description: invoices.description,
+        dueDate: invoices.dueDate,
+        billerName: banks.name,
+        customerAccountName: bankAccounts.accountName
+      })
+      .from(invoices)
+      .leftJoin(banks, eq(invoices.bankId, banks.id))
+      .leftJoin(bankAccounts, eq(invoices.customerAccountId, bankAccounts.id))
+      .where(and(inArray(invoices.customerAccountId, accountIds), eq(invoices.status, "pending")))
+      .orderBy(desc(invoices.createdAt));
+    }
+
+    userLoans = await db.select().from(loans).where(eq(loans.discordId, discordId));
+
+    res.json({
+      accounts: userAccounts,
+      banks: allBanks,
+      settings: allSettings,
+      recentTx: recentTxs,
+      pendingInvoices: userInvoices,
+      cards: userCards,
+      loans: userLoans
+    });
+  } catch (e: any) {
+    console.error("[CitizenLookupAPI] Error:", e);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// Self-Service Account Registration Endpoint with Personal Account Prerequisite check
+portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { bankAccounts, bankSettings, banks, onyxMerchants } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+  const { dispatchDiscordWebhook } = await import("../../lib/webhook_dispatcher");
+
+  try {
+    const discordId = (req as any).user.discordId;
+    const { bankId, accountName, accountType, businessTaxId, businessSector } = req.body;
+
+    if (!bankId || !accountName) {
+      return res.status(400).json({ error: "Bank selection and Account Name are required." });
+    }
+
+    const type = accountType === "business" ? "business" : "personal";
+
+    // 1. Check Bank
+    const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+    if (!bank) return res.status(404).json({ error: "Selected bank does not exist." });
+
+    // 2. Check Bank Settings for requirePersonalForBusiness requirement
+    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    const mustHavePersonal = settings?.requirePersonalForBusiness ?? true;
+
+    if (type === "business" && mustHavePersonal) {
+      // Check if user has an active personal account in this bank
+      const personalAccs = await db.select()
+        .from(bankAccounts)
+        .where(and(
+          eq(bankAccounts.bankId, bankId),
+          eq(bankAccounts.ownerDiscordId, discordId),
+          eq(bankAccounts.accountType, "personal"),
+          eq(bankAccounts.isActive, true)
+        ));
+
+      if (personalAccs.length === 0) {
+        return res.status(400).json({ 
+          error: `Bank Policy Violation: ${bank.name} requires you to open at least one Personal Account before registering a Business Account.` 
+        });
+      }
+    }
+
+    // 3. Create Account
+    const id = `ACC-${uuidv4().substring(0, 8).toUpperCase()}`;
+    await db.insert(bankAccounts).values({
+      id,
+      bankId,
+      ownerDiscordId: discordId,
+      accountName: accountName.trim(),
+      accountType: type,
+      businessTaxId: type === "business" ? (businessTaxId || `CORP-${uuidv4().substring(0, 6).toUpperCase()}`) : null,
+      businessSector: type === "business" ? (businessSector || "General Commerce") : null,
+      balance: 0,
+      isActive: true,
+      createdAt: new Date()
+    });
+
+    // 4. Business Account Special Integration: Auto-provision Onyx Merchant Storefront
+    let merchantInfo: any = null;
+    if (type === "business") {
+      const merchantId = `mch_${uuidv4().substring(0, 8)}`;
+      const apiKey = `onyx_live_${crypto.randomBytes(16).toString("hex")}`;
+      
+      await db.insert(onyxMerchants).values({
+        id: merchantId,
+        name: accountName.trim(),
+        apiKey,
+        bankId,
+        destinationAccount: id,
+        createdAt: new Date()
+      });
+
+      merchantInfo = { merchantId, apiKey };
+    }
+
+    // Dispatch Webhook Notification
+    await dispatchDiscordWebhook(bankId, "account_created", {
+      title: type === "business" ? "🏢 New Business Account Registered!" : "👤 New Personal Account Opened!",
+      description: `A new ${type} account **${accountName}** (\`${id}\`) was opened in ${bank.name}.`,
+      color: type === "business" ? 0x8b5cf6 : 0x10b981,
+      fields: [
+        { name: "Account ID", value: `\`${id}\``, inline: true },
+        { name: "Account Type", value: type.toUpperCase(), inline: true },
+        { name: "Owner Discord ID", value: `<@${discordId}>`, inline: true },
+        ...(type === "business" ? [
+          { name: "In-Game Corp Name", value: `\`${businessTaxId || accountName.trim()}\``, inline: true },
+          { name: "Merchant Terminal ID", value: `\`${merchantInfo?.merchantId}\``, inline: true }
+        ] : [])
+      ]
+    });
+
+    res.json({
+      success: true,
+      message: type === "business" ? "Business Account registered with Onyx Merchant Terminal integration!" : "Personal Account opened successfully.",
+      account: {
+        id,
+        bankId,
+        accountName,
+        accountType: type,
+        businessTaxId,
+        businessSector,
+        merchantInfo
+      }
+    });
+
+  } catch (e: any) {
+    console.error("[AccountRegisterAPI] Error:", e);
+    res.status(500).json({ error: e.message || "Failed to register account." });
+  }
+});

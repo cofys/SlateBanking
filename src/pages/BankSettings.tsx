@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers } from "lucide-react";
+import { AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot } from "lucide-react";
 
 export function BankSettings() {
   const { bank } = useOutletContext<{ bank: any }>();
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [vaultTiers, setVaultTiers] = useState<any[]>([{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}]);
 
   useEffect(() => {
     if (bank?.id) {
@@ -15,6 +16,7 @@ export function BankSettings() {
         .then(r => r.json())
         .then(data => {
           setSettings(data);
+          if (data.vaultTiers) setVaultTiers(data.vaultTiers);
           setLoading(false);
         });
     }
@@ -28,14 +30,17 @@ export function BankSettings() {
       withdrawFeePercent: parseFloat(formData.get("withdrawFeePercent") as string) || 0,
       depositFeePercent: parseFloat(formData.get("depositFeePercent") as string) || 0,
       transferFeePercent: parseFloat(formData.get("transferFeePercent") as string) || 0,
+      savingsApyPercent: Math.round(parseFloat(formData.get("savingsApyPercent") as string) * 100) || 300,
       interBankWireThreshold: Math.floor(parseFloat(formData.get("interBankWireThreshold") as string) * 100) || 5000000,
       colorScheme: formData.get("colorScheme"),
       logoUrl: formData.get("logoUrl"),
+      loginBgUrl: formData.get("loginBgUrl"),
       supportEmail: formData.get("supportEmail"),
       discordWebhookUrl: formData.get("discordWebhookUrl"),
       discordVerifiedRoleId: formData.get("discordVerifiedRoleId"),
       discordClientRoleId: formData.get("discordClientRoleId"),
       requireKyc: formData.get("requireKyc") === "on",
+      requirePersonalForBusiness: formData.get("requirePersonalForBusiness") === "on",
       enableLoans: formData.get("enableLoans") === "on",
       enableVaults: formData.get("enableVaults") === "on",
       enableCards: formData.get("enableCards") === "on",
@@ -43,6 +48,7 @@ export function BankSettings() {
       enableSubscriptions: formData.get("enableSubscriptions") === "on",
       enableEscrow: formData.get("enableEscrow") === "on",
       enableTreasury: formData.get("enableTreasury") === "on",
+      vaultTiers: vaultTiers,
       autoApproveLoans: formData.get("autoApproveLoans") === "on",
       autoApproveCreditCards: formData.get("autoApproveCreditCards") === "on",
       maxAutoApproveLoanAmount: parseFloat(formData.get("maxAutoApproveLoanAmount") as string) || 1000000,
@@ -116,6 +122,16 @@ export function BankSettings() {
               />
             </div>
             <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Savings APY Yield (%)</label>
+              <input 
+                name="savingsApyPercent" 
+                type="number" 
+                step="0.01"
+                defaultValue={settings?.savingsApyPercent ? (settings.savingsApyPercent / 100) : 3.0} 
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+              />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide" title="If an incoming Onyx Clearinghouse transfer is greater than this amount, it requires your Bank Staff to manually accept a wire transfer instead of automatically updating balances.">Inbound Wire Threshold ($)</label>
               <input 
                 name="interBankWireThreshold" 
@@ -157,8 +173,18 @@ export function BankSettings() {
               <input 
                 name="logoUrl" 
                 type="text" 
-                placeholder="https://test.com/logo.png"
+                placeholder="https://example.com/logo.png"
                 defaultValue={settings?.logoUrl || ""} 
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Login Background Image URL</label>
+              <input 
+                name="loginBgUrl" 
+                type="text" 
+                placeholder="https://images.unsplash.com/photo-1550751827-4bd374c3f58b"
+                defaultValue={settings?.loginBgUrl || ""} 
                 className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
@@ -231,6 +257,112 @@ export function BankSettings() {
             </div>
           </div>
         </div>
+
+        {/* Discord Bot GUI Channels */}
+        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold mb-2">
+            <Bot className="text-indigo-400" size={20} />
+            Interactive Discord Bot Channel GUIs
+          </div>
+          <p className="text-xs text-white/60 mb-6">
+            Spawn fancy button-based interactive interfaces directly in your Discord channels that auto-update live!
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-[#15151e] p-4 rounded-lg border border-white/5">
+              <h4 className="text-sm font-semibold text-white mb-2">Public Citizen GUI Channel</h4>
+              <p className="text-xs text-white/50 mb-4">
+                The main channel where customers check balance, request loans, and transfer money using buttons.
+              </p>
+              <div className="flex gap-2">
+                <input 
+                  id="guiChannelInput"
+                  type="text" 
+                  placeholder="Discord Channel ID"
+                  defaultValue={settings?.guiChannelId || ""} 
+                  className="flex-1 bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const chId = (document.getElementById("guiChannelInput") as HTMLInputElement)?.value;
+                    if (!chId) return alert("Please enter a Discord Channel ID");
+                    try {
+                      const res = await fetch(`/api/banks/${bank.id}/spawn-discord-gui`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ channelId: chId, type: "public" })
+                      });
+                      const data = await res.json();
+                      if (res.ok) alert("Public GUI spawned successfully!");
+                      else alert(data.error || "Failed to spawn GUI");
+                    } catch (e: any) {
+                      alert(e.message || "Failed to spawn GUI");
+                    }
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+                >
+                  Spawn GUI
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-[#15151e] p-4 rounded-lg border border-white/5">
+              <h4 className="text-sm font-semibold text-white mb-2">Staff Only Panel Channel</h4>
+              <p className="text-xs text-white/50 mb-4">
+                A staff-only channel with buttons for bank tellers to approve loans, inspect users, and manage liquidity.
+              </p>
+              <div className="flex gap-2">
+                <input 
+                  id="staffChannelInput"
+                  type="text" 
+                  placeholder="Discord Channel ID"
+                  defaultValue={settings?.staffChannelId || ""} 
+                  className="flex-1 bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const chId = (document.getElementById("staffChannelInput") as HTMLInputElement)?.value;
+                    if (!chId) return alert("Please enter a Discord Channel ID");
+                    try {
+                      const res = await fetch(`/api/banks/${bank.id}/spawn-discord-gui`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ channelId: chId, type: "staff" })
+                      });
+                      const data = await res.json();
+                      if (res.ok) alert("Staff Panel spawned successfully!");
+                      else alert(data.error || "Failed to spawn Staff Panel");
+                    } catch (e: any) {
+                      alert(e.message || "Failed to spawn Staff Panel");
+                    }
+                  }}
+                  className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+                >
+                  Spawn Staff Panel
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const res = await fetch(`/api/banks/${bank.id}/refresh-discord-gui`, { method: "POST" });
+                  if (res.ok) alert("Discord channel embeds refreshed successfully!");
+                } catch (e: any) {
+                  alert("Failed to refresh: " + e.message);
+                }
+              }}
+              className="bg-white/10 hover:bg-white/20 text-white text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              🔄 Refresh Channel Embeds Live
+            </button>
+          </div>
+        </div>
         
         {/* CityCorp Integrations */}
         <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
@@ -301,12 +433,25 @@ export function BankSettings() {
                <span className="text-xs text-white/50">Turn off the Discord bot for this bank.</span>
              </div>
           </label>
-          <label className="flex items-center gap-4 cursor-pointer group">
+          <label className="flex items-center gap-4 cursor-pointer group mb-4">
              <div className={`w-10 h-6 rounded-full flex items-center p-1 transition-colors ${settings?.requireKyc ? 'bg-emerald-500' : 'bg-white/10'}`}>
                 <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.requireKyc ? 'translate-x-4' : 'translate-x-0'}`}></div>
              </div>
              <input type="checkbox" name="requireKyc" className="hidden" defaultChecked={settings?.requireKyc} onChange={(e) => setSettings({...settings, requireKyc: e.target.checked})} />
-             <span className="text-sm group-hover:text-emerald-400 transition-colors">Require KYC for new accounts (Simulated)</span>
+             <div className="flex flex-col">
+               <span className="text-sm group-hover:text-emerald-400 transition-colors">Require KYC Verification</span>
+               <span className="text-xs text-white/50">Requires customer verification before account creation or transactions.</span>
+             </div>
+          </label>
+          <label className="flex items-center gap-4 cursor-pointer group">
+             <div className={`w-10 h-6 rounded-full flex items-center p-1 transition-colors ${settings?.requirePersonalForBusiness ?? true ? 'bg-indigo-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.requirePersonalForBusiness ?? true ? 'translate-x-4' : 'translate-x-0'}`}></div>
+             </div>
+             <input type="checkbox" name="requirePersonalForBusiness" className="hidden" defaultChecked={settings?.requirePersonalForBusiness ?? true} onChange={(e) => setSettings({...settings, requirePersonalForBusiness: e.target.checked})} />
+             <div className="flex flex-col">
+               <span className="text-sm group-hover:text-indigo-400 transition-colors">Require Personal Account Before Business Account</span>
+               <span className="text-xs text-white/50">Mandates that citizens must own at least one Personal Checking/Savings account in this bank before registering a Business Account.</span>
+             </div>
           </label>
          </div>
 

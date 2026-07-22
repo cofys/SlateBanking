@@ -19,9 +19,21 @@ interface BankInstance {
   discordToken?: string;
   plan?: string;
   billingStatus?: string;
+  billingModel?: string;
+  flatMonthlyRate?: number;
+  volumeFeePercent?: number;
+  profitSharePercent?: number;
+  perAccountRate?: number;
+  perTxRate?: number;
+  billingNotes?: string;
   platformFeePercent?: number;
   cityCorpAuthUrl?: string;
   maintenanceMode?: boolean;
+  hasDiscordToken?: boolean;
+  hasDiscordClientSecret?: boolean;
+  hasCityCorpAppSecret?: boolean;
+  hasApiKey?: boolean;
+  hasWebhookSecret?: boolean;
 }
 
 export function BanksList() {
@@ -33,33 +45,69 @@ export function BanksList() {
 
   // Database Migration & Billing States
   const [isUploadingDb, setIsUploadingDb] = useState(false);
+  const [selectedBankForBilling, setSelectedBankForBilling] = useState<BankInstance | null>(null);
   const [showBillingModal, setShowBillingModal] = useState(false);
   const [billingPlan, setBillingPlan] = useState("standard");
   const [billingStatus, setBillingStatus] = useState("active");
   const [billingFee, setBillingFee] = useState("2.00");
+  const [billingModel, setBillingModel] = useState("flat_monthly");
+  const [flatRate, setFlatRate] = useState("150.00");
+  const [volumePercent, setVolumePercent] = useState("0.50");
+  const [profitPercent, setProfitPercent] = useState("5.00");
+  const [perAccountFee, setPerAccountFee] = useState("1.50");
+  const [perTxFee, setPerTxFee] = useState("0.25");
+  const [billingNotes, setBillingNotes] = useState("");
+  const [calcBilling, setCalcBilling] = useState<any>(null);
+  const [loadingCalc, setLoadingCalc] = useState(false);
   const [savingBilling, setSavingBilling] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const openBilling = (bank: BankInstance) => {
+  const openBilling = async (bank: BankInstance) => {
+    setSelectedBankForBilling(bank);
     setBillingPlan(bank.plan || "standard");
     setBillingStatus(bank.billingStatus || "active");
-    const percent = bank.platformFeePercent !== undefined ? (bank.platformFeePercent / 100).toFixed(2) : "2.00";
-    setBillingFee(percent);
+    setBillingFee(bank.platformFeePercent !== undefined ? (bank.platformFeePercent / 100).toFixed(2) : "2.00");
+    setBillingModel(bank.billingModel || "flat_monthly");
+    setFlatRate(bank.flatMonthlyRate !== undefined ? (bank.flatMonthlyRate / 100).toFixed(2) : "150.00");
+    setVolumePercent(bank.volumeFeePercent !== undefined ? (bank.volumeFeePercent / 100).toFixed(2) : "0.50");
+    setProfitPercent(bank.profitSharePercent !== undefined ? (bank.profitSharePercent / 100).toFixed(2) : "5.00");
+    setPerAccountFee(bank.perAccountRate !== undefined ? (bank.perAccountRate / 100).toFixed(2) : "1.50");
+    setPerTxFee(bank.perTxRate !== undefined ? (bank.perTxRate / 100).toFixed(2) : "0.25");
+    setBillingNotes(bank.billingNotes || "");
     setShowBillingModal(true);
+
+    setLoadingCalc(true);
+    try {
+      const res = await fetch(`/api/admin/banks/${bank.id}/calculate-billing`);
+      if (res.ok) {
+        setCalcBilling(await res.json());
+      }
+    } catch(e) {
+      console.error(e);
+    } finally {
+      setLoadingCalc(false);
+    }
   };
 
   const handleSaveBilling = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBank) return;
+    if (!selectedBankForBilling) return;
     setSavingBilling(true);
     try {
-      const res = await fetch(`/api/banks/${selectedBank.id}/billing`, {
+      const res = await fetch(`/api/banks/${selectedBankForBilling.id}/billing`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plan: billingPlan,
           billingStatus: billingStatus,
-          platformFeePercent: parseFloat(billingFee) || 2.0
+          platformFeePercent: parseFloat(billingFee) || 2.0,
+          billingModel: billingModel,
+          flatMonthlyRate: parseFloat(flatRate) || 0,
+          volumeFeePercent: parseFloat(volumePercent) || 0,
+          profitSharePercent: parseFloat(profitPercent) || 0,
+          perAccountRate: parseFloat(perAccountFee) || 0,
+          perTxRate: parseFloat(perTxFee) || 0,
+          billingNotes: billingNotes,
         })
       });
       if (res.ok) {
@@ -706,13 +754,13 @@ export function BanksList() {
                         <div>
                           <span className="text-white/50 block text-xs">App Token / Bot API Key</span>
                           <span className="font-mono text-white/90">
-                            {selectedBank.cityCorpAppSecret || selectedBank.corpApiKey ? '••••••••' : 'Not configured'}
+                            {selectedBank.hasCityCorpAppSecret || selectedBank.corpApiKey ? '••••••••' : 'Not configured'}
                           </span>
                         </div>
                         <div>
                           <span className="text-white/50 block text-xs">Discord Bot Token</span>
                           <span className="font-mono text-white/90">
-                            {selectedBank.discordToken ? '••••••••' : 'Not configured'}
+                            {selectedBank.hasDiscordToken ? '••••••••' : 'Not configured'}
                           </span>
                         </div>
 
@@ -723,7 +771,7 @@ export function BanksList() {
                         <div>
                           <span className="text-white/50 block text-xs">Discord Client Secret</span>
                           <span className="font-mono text-white/90">
-                            {selectedBank.discordClientSecret ? '••••••••' : 'Not configured'}
+                            {selectedBank.hasDiscordClientSecret ? '••••••••' : 'Not configured'}
                           </span>
                         </div>
                         <div>
@@ -896,6 +944,224 @@ export function BanksList() {
                  </div>
                </div>
             </div>
+          </div>
+        </div>
+      )}
+
+     {showBillingModal && selectedBankForBilling && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#0f0f15] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-6">
+            <div className="flex justify-between items-start border-b border-white/10 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-white">{selectedBankForBilling.name}</h2>
+                  <span className="bg-indigo-500/20 text-indigo-300 text-xs font-mono font-bold px-2 py-0.5 rounded border border-indigo-500/30">
+                    SaaS Pricing & Billing Config
+                  </span>
+                </div>
+                <p className="text-xs text-white/50 mt-1">Configure custom billing models, fee tiers, and price rates for this specific tenant bank.</p>
+              </div>
+              <button 
+                onClick={() => setShowBillingModal(false)}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBilling} className="space-y-6">
+              {/* Plan & Status Tiers */}
+              <div className="grid grid-cols-3 gap-4 bg-white/5 p-4 rounded-xl border border-white/5">
+                <div>
+                  <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wider">Subscription Tier</label>
+                  <select
+                    value={billingPlan}
+                    onChange={(e) => setBillingPlan(e.target.value)}
+                    className="w-full bg-[#12121a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="starter">Starter Plan</option>
+                    <option value="standard">Standard Plan</option>
+                    <option value="enterprise">Enterprise Tier</option>
+                    <option value="custom">Custom Contract</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wider">Account Billing Status</label>
+                  <select
+                    value={billingStatus}
+                    onChange={(e) => setBillingStatus(e.target.value)}
+                    className="w-full bg-[#12121a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="active">Active (Good Standing)</option>
+                    <option value="trialing">Trialing (Free Trial)</option>
+                    <option value="overdue">Overdue Payment</option>
+                    <option value="suspended">Suspended Access</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wider">Transfer Fee (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={billingFee}
+                    onChange={(e) => setBillingFee(e.target.value)}
+                    className="w-full bg-[#12121a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="2.00"
+                  />
+                </div>
+              </div>
+
+              {/* Billing Models Picker */}
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-white/70 uppercase tracking-wider">
+                  Select SaaS Billing Model
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: 'flat_monthly', label: 'Flat Monthly Fee', desc: 'Fixed monthly subscription rate' },
+                    { id: 'volume_tier', label: 'Volume Fee %', desc: '% of total transaction volume' },
+                    { id: 'revenue_share', label: 'Profit Share %', desc: '% share of bank earnings' },
+                    { id: 'per_account', label: 'Per-Account Rate', desc: 'Price per active bank user' },
+                    { id: 'per_tx', label: 'Per-Transaction Fee', desc: 'Price per settled transfer' },
+                    { id: 'hybrid', label: 'Hybrid Custom', desc: 'Combination of flat + % + user rates' },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setBillingModel(m.id)}
+                      className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                        billingModel === m.id
+                          ? 'bg-indigo-500/20 border-indigo-500/50 text-white shadow-lg'
+                          : 'bg-white/5 border-white/5 text-white/60 hover:bg-white/10'
+                      }`}
+                    >
+                      <div className="font-bold text-xs">{m.label}</div>
+                      <div className="text-[10px] text-white/40 mt-1">{m.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Specific Pricing Controls */}
+              <div className="bg-[#12121a] p-4 rounded-xl border border-white/10 space-y-4">
+                <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <SettingsIcon size={14} /> Pricing & Rate Parameters
+                </h3>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] text-white/60 mb-1">Flat Monthly Rate ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={flatRate}
+                      onChange={(e) => setFlatRate(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-white/60 mb-1">Volume Fee Rate (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={volumePercent}
+                      onChange={(e) => setVolumePercent(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-white/60 mb-1">Profit Share Rate (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={profitPercent}
+                      onChange={(e) => setProfitPercent(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-white/60 mb-1">Per Active Account ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={perAccountFee}
+                      onChange={(e) => setPerAccountFee(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-white/60 mb-1">Per Transaction Fee ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={perTxFee}
+                      onChange={(e) => setPerTxFee(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-white/60 mb-1">Contract / Billing Notes</label>
+                  <input
+                    type="text"
+                    value={billingNotes}
+                    onChange={(e) => setBillingNotes(e.target.value)}
+                    placeholder="e.g. Special 20% partner discount applied or custom terms"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20"
+                  />
+                </div>
+              </div>
+
+              {/* Live Billing Projection Box */}
+              <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    {loadingCalc ? <Loader2 size={12} className="animate-spin" /> : "⚡"} Live Projected Monthly Invoice
+                  </span>
+                  <span className="text-xl font-mono font-black text-white">
+                    ${calcBilling?.allModelProjections?.[billingModel] ? (calcBilling.allModelProjections[billingModel].totalCents / 100).toFixed(2) : "0.00"}
+                  </span>
+                </div>
+                {calcBilling?.allModelProjections?.[billingModel] && (
+                  <p className="text-xs text-emerald-300/80 font-mono bg-black/30 p-2 rounded border border-emerald-500/10">
+                    {calcBilling.allModelProjections[billingModel].breakdown}
+                  </p>
+                )}
+                {calcBilling?.metrics && (
+                  <div className="text-[10px] text-white/50 flex gap-3 pt-1">
+                    <span>Active Accounts: {calcBilling.metrics.activeAccountCount}</span>
+                    <span>30D Volume: ${(calcBilling.metrics.totalVolumeCents / 100).toFixed(2)}</span>
+                    <span>30D Transactions: {calcBilling.metrics.totalTxCount}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBillingModal(false)}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/80 rounded-xl text-xs font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingBilling}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-colors flex items-center gap-2"
+                >
+                  {savingBilling && <Loader2 size={12} className="animate-spin" />}
+                  Save SaaS Billing Config
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

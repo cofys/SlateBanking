@@ -1,4 +1,17 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, customType } from "drizzle-orm/sqlite-core";
+import { encryptSecret, decryptSecret } from "../lib/encryption";
+
+const encryptedText = customType<{ data: string, driverData: string }>({
+  dataType() {
+    return "text";
+  },
+  toDriver(value: string): string {
+    return encryptSecret(value) || value;
+  },
+  fromDriver(value: string): string {
+    return decryptSecret(value) || value;
+  }
+});
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -12,24 +25,31 @@ export const banks = sqliteTable("banks", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   guildId: text("guild_id").notNull(),
-  discordToken: text("discord_token").notNull(),
+  discordToken: encryptedText("discord_token").notNull(),
   discordClientId: text("discord_client_id"),
-  discordClientSecret: text("discord_client_secret"),
+  discordClientSecret: encryptedText("discord_client_secret"),
   corpId: integer("corp_id"),
   corpApiUuid: text("corp_api_uuid"),
-  corpApiKey: text("corp_api_key"),
+  corpApiKey: encryptedText("corp_api_key"),
   cityCorpAppId: text("city_corp_app_id"),
-  cityCorpAppSecret: text("city_corp_app_secret"),
+  cityCorpAppSecret: encryptedText("city_corp_app_secret"),
   cityCorpAuthUrl: text("city_corp_auth_url"),
   customDomain: text("custom_domain"),
   brandingColor: text("branding_color").default("#4f46e5"), // indigo-600
   logoUrl: text("logo_url"),
-  apiKey: text("api_key"),
-  webhookSecret: text("webhook_secret"),
+  apiKey: encryptedText("api_key"),
+  webhookSecret: encryptedText("webhook_secret"),
   apiWebhookUrl: text("api_webhook_url"),
   status: text("status").default("offline"),
   plan: text("plan").default("standard"), // starter, standard, enterprise
   billingStatus: text("billing_status").default("active"), // active, suspended, trialing
+  billingModel: text("billing_model").default("flat_monthly"), // "flat_monthly", "volume_tier", "revenue_share", "per_account", "per_tx", "hybrid"
+  flatMonthlyRate: integer("flat_monthly_rate").default(15000), // stored in cents ($150.00)
+  volumeFeePercent: integer("volume_fee_percent").default(50), // basis points (0.50%)
+  profitSharePercent: integer("profit_share_percent").default(500), // basis points (5.00%)
+  perAccountRate: integer("per_account_rate").default(150), // stored in cents ($1.50)
+  perTxRate: integer("per_tx_rate").default(25), // stored in cents ($0.25)
+  billingNotes: text("billing_notes"),
   platformFeePercent: integer("platform_fee_percent").default(200),
   maintenanceMode: integer("maintenance_mode", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
@@ -43,6 +63,8 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   accountType: text("account_type").default("personal"), // "personal", "business", "payroll", "system_asset", "system_revenue", "system_expense", "system_liability"
   balance: integer("balance").notNull().default(0), // stored in cents or lowest denominaton to avoid floats
   creditLimit: integer("credit_limit").notNull().default(0), // For credit accounts
+  businessTaxId: text("business_tax_id"),
+  businessSector: text("business_sector"),
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   isFrozen: integer("is_frozen", { mode: "boolean" }).default(false),
   isSystem: integer("is_system", { mode: "boolean" }).default(false),
@@ -60,12 +82,13 @@ export const transactions = sqliteTable("transactions", {
   description: text("description"),
   isFlagged: integer("is_flagged", { mode: "boolean" }).default(false),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
+  category: text("category"), // e.g. "Food", "Rent", "Entertainment"
 });
 
 export const onyxMerchants = sqliteTable("onyx_merchants", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  apiKey: text("api_key").notNull().unique(),
+  apiKey: encryptedText("api_key").notNull().unique(),
   bankId: text("bank_id").references(() => banks.id).notNull(), // The routing bank
   destinationAccount: text("destination_account").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
@@ -91,10 +114,19 @@ export const bankSettings = sqliteTable("bank_settings", {
   enableSubscriptions: integer("enable_subscriptions", { mode: "boolean" }).default(true),
   enableEscrow: integer("enable_escrow", { mode: "boolean" }).default(true),
   enableTreasury: integer("enable_treasury", { mode: "boolean" }).default(true),
+  guiChannelId: text("gui_channel_id"),
+  guiMessageId: text("gui_message_id"),
+  staffChannelId: text("staff_channel_id"),
+  staffMessageId: text("staff_message_id"),
   // Auto-approval options
   autoApproveLoans: integer("auto_approve_loans", { mode: "boolean" }).default(false),
   autoApproveCreditCards: integer("auto_approve_credit_cards", { mode: "boolean" }).default(false),
   maxAutoApproveLoanAmount: integer("max_auto_approve_loan_amount").default(1000000), // 10,000.00
+  vaultTiers: text("vault_tiers", { mode: "json" }).$type<{ lockDays: number; interestRate: number; penaltyPercent: number }[]>(),
+  loginBgUrl: text("login_bg_url"),
+  savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
+  requirePersonalForBusiness: integer("require_personal_for_business", { mode: "boolean" }).default(true),
+  lastInterestAccrualAt: integer("last_interest_accrual_at", { mode: "timestamp" }),
 });
 
 export const escrows = sqliteTable("escrows", {
@@ -248,6 +280,9 @@ export const onyxSettings = sqliteTable("onyx_settings", {
   b2bApiFeePercent: integer("b2b_api_fee_percent").default(200), // 2.00%
   clearinghouseEnabled: integer("clearinghouse_enabled", { mode: "boolean" }).default(true),
   globalBotMaintenance: integer("global_bot_maintenance", { mode: "boolean" }).default(false),
+  botToken: text("bot_token"),
+  guiChannelId: text("gui_channel_id"),
+  guiMessageId: text("gui_message_id"),
 });
 
 export const cityCorpLogs = sqliteTable("city_corp_logs", {
@@ -314,5 +349,101 @@ export const globalAdmins = sqliteTable("global_admins", {
   id: text("id").primaryKey(),
   discordId: text("discord_id").notNull().unique(),
   addedBy: text("added_by"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const addressBook = sqliteTable("address_book", {
+  id: text("id").primaryKey(),
+  ownerDiscordId: text("owner_discord_id").notNull(),
+  contactAccountId: text("contact_account_id").notNull(),
+  nickname: text("nickname").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const recurringTransfers = sqliteTable("recurring_transfers", {
+  id: text("id").primaryKey(),
+  ownerDiscordId: text("owner_discord_id").notNull(),
+  fromAccountId: text("from_account_id").notNull(),
+  toAccountId: text("to_account_id").notNull(),
+  amount: integer("amount").notNull(),
+  frequency: text("frequency").notNull(), // "daily", "weekly", "biweekly", "monthly"
+  nextRunAt: integer("next_run_at", { mode: "timestamp" }).notNull(),
+  description: text("description"),
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const savingsGoals = sqliteTable("savings_goals", {
+  id: text("id").primaryKey(),
+  ownerDiscordId: text("owner_discord_id").notNull(),
+  accountId: text("account_id").notNull(),
+  name: text("name").notNull(),
+  targetAmount: integer("target_amount").notNull(),
+  currentAmount: integer("current_amount").default(0),
+  deadline: integer("deadline", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const paymentLinks = sqliteTable("payment_links", {
+  id: text("id").primaryKey(),
+  ownerDiscordId: text("owner_discord_id").notNull(),
+  billerAccountId: text("biller_account_id").notNull(),
+  amount: integer("amount").notNull(), // if 0, open amount
+  description: text("description"),
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const accountMembers = sqliteTable("account_members", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").references(() => bankAccounts.id).notNull(),
+  discordId: text("discord_id").notNull(),
+  role: text("role").notNull().default("viewer"), // owner, manager, viewer
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const saasInvoices = sqliteTable("saas_invoices", {
+  id: text("id").primaryKey(),
+  bankId: text("bank_id").references(() => banks.id).notNull(),
+  amount: integer("amount").notNull(),
+  period: text("period").notNull(), // e.g. "July 2026"
+  billingModelUsed: text("billing_model_used"),
+  breakdownDetails: text("breakdown_details"), // JSON string
+  dueDate: integer("due_date", { mode: "timestamp" }).notNull(),
+  status: text("status").default("pending"), // pending, paid, overdue
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const onyxMerchantProducts = sqliteTable("onyx_merchant_products", {
+  id: text("id").primaryKey(),
+  merchantId: text("merchant_id").references(() => onyxMerchants.id).notNull(),
+  name: text("name").notNull(),
+  priceType: text("price_type").notNull().default("fixed"), // "fixed", "custom_customer", "tiered"
+  price: integer("price").notNull().default(0), // stored in cents (0 if custom_customer)
+  description: text("description"),
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const onyxQuotes = sqliteTable("onyx_quotes", {
+  id: text("id").primaryKey(),
+  merchantId: text("merchant_id").references(() => onyxMerchants.id).notNull(),
+  createdByDiscordId: text("created_by_discord_id").notNull(),
+  clientDiscordId: text("client_discord_id"),
+  amount: integer("amount").notNull(), // in cents
+  title: text("title").notNull(),
+  description: text("description"),
+  expiresAt: integer("expires_at", { mode: "timestamp" }),
+  status: text("status").default("pending"), // pending, paid, expired, cancelled
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const discordWebhooks = sqliteTable("discord_webhooks", {
+  id: text("id").primaryKey(),
+  bankId: text("bank_id").notNull(), // Bank ID or 'global' for Onyx
+  name: text("name").notNull(),
+  url: encryptedText("url").notNull(),
+  events: text("events").notNull(), // JSON string array of event names e.g. ["transfer_large", "merchant_sale", "interest_yield", "loan_action"]
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });

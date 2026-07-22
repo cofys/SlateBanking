@@ -1,5 +1,6 @@
 import { Client, GatewayIntentBits } from 'discord.js';
-import { handleBankInteraction, registerBankCommands } from './bot_logic';
+import { handleBankInteraction, registerBankCommands, refreshBankChannelGUIs } from './bot_logic';
+import { handleOnyxInteraction, registerOnyxCommands, refreshOnyxChannelGUI } from './onyx_bot_logic';
 
 interface BotInstance {
   id: string; // The bank ID
@@ -12,6 +13,47 @@ export class BotManager {
 
   // The Onyx PSP Bot
   private onyxBot: Client | null = null;
+  private onyxBotStatus: 'offline' | 'online' | 'error' = 'offline';
+  private autoUpdateTimer: NodeJS.Timeout | null = null;
+
+  constructor() {
+    // Start background auto-updater for active bank GUIs (runs every 45s)
+    this.autoUpdateTimer = setInterval(() => {
+      this.refreshAllBankGUIs();
+    }, 45000);
+  }
+
+  getInstance(bankId: string) {
+    return this.instances.get(bankId);
+  }
+
+  getOnyxClient() {
+    return this.onyxBot;
+  }
+
+  getOnyxBotStatus() {
+    return this.onyxBotStatus;
+  }
+
+  async refreshAllBankGUIs() {
+    for (const [bankId, instance] of this.instances.entries()) {
+      if (instance.status === 'online') {
+        try {
+          await refreshBankChannelGUIs(bankId, instance.client);
+        } catch (e) {
+          console.error(`[BotManager] Error refreshing GUI for bank ${bankId}:`, e);
+        }
+      }
+    }
+
+    if (this.onyxBot && this.onyxBotStatus === 'online') {
+      try {
+        await refreshOnyxChannelGUI(this.onyxBot);
+      } catch (e) {
+        console.error(`[BotManager] Error refreshing Onyx GUI:`, e);
+      }
+    }
+  }
 
   async provisionBankBot(bankId: string, token: string) {
     if (this.instances.has(bankId)) {
@@ -36,6 +78,13 @@ export class BotManager {
         await registerBankCommands(token, client.user!.id);
       } catch (e) {
         console.error(`[BankBot ${bankId}] Failed to register commands:`, e);
+      }
+
+      // Initial refresh of channel GUIs
+      try {
+        await refreshBankChannelGUIs(bankId, client);
+      } catch (e) {
+        console.error(`[BankBot ${bankId}] Initial GUI refresh error:`, e);
       }
     });
 
@@ -80,21 +129,56 @@ export class BotManager {
       throw new Error("Onyx Bot is already running.");
     }
 
-    this.onyxBot = new Client({
+    const client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
       ],
     });
 
-    this.onyxBot.once('ready', () => {
-      console.log(`[Onyx PSP Bot] Logged in as ${this.onyxBot?.user?.tag}`);
+    this.onyxBot = client;
+    this.onyxBotStatus = 'offline';
+
+    client.once('ready', async () => {
+      console.log(`[Onyx PSP Bot] Logged in as ${client.user?.tag}`);
+      this.onyxBotStatus = 'online';
+
+      try {
+        await registerOnyxCommands(token, client.user!.id);
+      } catch (e) {
+        console.error('[Onyx PSP Bot] Failed to register slash commands:', e);
+      }
+
+      try {
+        await refreshOnyxChannelGUI(client);
+      } catch (e) {
+        console.error('[Onyx PSP Bot] Initial GUI refresh error:', e);
+      }
+    });
+
+    client.on('error', (err) => {
+      console.error(`[Onyx PSP Bot] Error:`, err);
+      this.onyxBotStatus = 'error';
+    });
+
+    client.on('interactionCreate', async (interaction) => {
+      await handleOnyxInteraction(interaction);
     });
 
     try {
-      await this.onyxBot.login(token);
+      await client.login(token);
     } catch (error) {
       console.error(`[Onyx PSP Bot] Failed to login:`, error);
+      this.onyxBotStatus = 'error';
+      this.onyxBot = null;
+    }
+  }
+
+  async stopOnyxBot() {
+    if (this.onyxBot) {
+      this.onyxBot.destroy();
+      this.onyxBot = null;
+      this.onyxBotStatus = 'offline';
     }
   }
 

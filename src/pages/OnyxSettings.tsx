@@ -1,4 +1,4 @@
-import { Layers, ShieldCheck, CreditCard, Key, Plus, Loader2, ArrowRight } from "lucide-react";
+import { Layers, ShieldCheck, CreditCard, Key, Plus, Loader2, ArrowRight, Activity, Building2, Server, CheckCircle2, XCircle, Clock, DollarSign, Globe, Terminal } from "lucide-react";
 import { useState, useEffect } from "react";
 import { formatMoney } from "../lib/utils";
 
@@ -30,6 +30,7 @@ export function OnyxSettings() {
   const [banks, setBanks] = useState<BankInfo[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [settings, setSettings] = useState<any>(null);
+  const [networkAnalytics, setNetworkAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   
@@ -45,16 +46,18 @@ export function OnyxSettings() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [merchantsRes, banksRes, settlementsRes, settingsRes] = await Promise.all([
+      const [merchantsRes, banksRes, settlementsRes, settingsRes, analyticsRes] = await Promise.all([
         fetch("/api/onyx/merchants"),
         fetch("/api/banks"),
         fetch("/api/onyx/settlements"),
-        fetch("/api/onyx/settings")
+        fetch("/api/onyx/settings"),
+        fetch("/api/onyx/network-analytics")
       ]);
       if (merchantsRes.ok && merchantsRes.headers.get('content-type')?.includes('application/json')) setMerchants(await merchantsRes.json());
       if (banksRes.ok && banksRes.headers.get('content-type')?.includes('application/json')) setBanks(await banksRes.json());
       if (settlementsRes.ok && settlementsRes.headers.get('content-type')?.includes('application/json')) setSettlements(await settlementsRes.json());
       if (settingsRes.ok && settingsRes.headers.get('content-type')?.includes('application/json')) setSettings(await settingsRes.json());
+      if (analyticsRes.ok && analyticsRes.headers.get('content-type')?.includes('application/json')) setNetworkAnalytics(await analyticsRes.json());
     } catch (e) {
       console.error("OnyxSettings fetch error:", e);
     }
@@ -96,10 +99,143 @@ export function OnyxSettings() {
   };
 
   return (
-    <div className="max-w-4xl space-y-8">
+    <div className="max-w-5xl space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Onyx PSP Settings</h1>
-        <p className="text-white/50 mt-1">Configure the standalone Payment Service Provider gateway.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+          <Globe className="text-emerald-400" size={26} /> Onyx Network & PSP Ecosystem
+        </h1>
+        <p className="text-white/50 mt-1">Macro-level network analytics, API usage monitoring, clearinghouse switch, and merchant management.</p>
+      </div>
+
+      {/* Network Macro Analytics Dashboard */}
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider flex items-center gap-2">
+          <Activity size={16} className="text-emerald-400" /> Onyx Network KPI Dashboard
+        </h2>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-emerald-500/30 transition-colors">
+            <div className="flex justify-between items-start mb-3">
+              <div className="w-9 h-9 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <DollarSign size={20} />
+              </div>
+              <span className="text-[10px] uppercase font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                Global Network
+              </span>
+            </div>
+            <div className="text-2xl font-black text-white font-mono">
+              {formatMoney(networkAnalytics?.totalTransactionVolumeCents || 0)}
+            </div>
+            <p className="text-xs text-white/50 mt-1 font-medium">Total Network Volume</p>
+            <p className="text-[11px] text-emerald-400/80 mt-2">
+              {networkAnalytics?.totalTransactionsCount || 0} total settled transactions
+            </p>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-indigo-500/30 transition-colors">
+            <div className="flex justify-between items-start mb-3">
+              <div className="w-9 h-9 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <Building2 size={20} />
+              </div>
+              <span className="text-[10px] uppercase font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                Tenant Banks
+              </span>
+            </div>
+            <div className="text-2xl font-black text-white font-mono">
+              {networkAnalytics?.activeBankCount || 0} / {networkAnalytics?.totalBanksCount || 0}
+            </div>
+            <p className="text-xs text-white/50 mt-1 font-medium">Active Network Banks</p>
+            <p className="text-[11px] text-indigo-400/80 mt-2">
+              {networkAnalytics?.totalMerchantsCount || 0} registered Onyx merchants
+            </p>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-amber-500/30 transition-colors">
+            <div className="flex justify-between items-start mb-3">
+              <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
+                <Server size={20} />
+              </div>
+              <span className="text-[10px] uppercase font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                CityCorp Gateway
+              </span>
+            </div>
+            <div className="text-2xl font-black text-white font-mono">
+              {networkAnalytics?.apiUsageStats?.totalCalls || 0}
+            </div>
+            <p className="text-xs text-white/50 mt-1 font-medium">Total API Invocations</p>
+            <p className="text-[11px] text-amber-400/80 mt-2 flex items-center gap-1">
+              <Clock size={12} /> {networkAnalytics?.apiUsageStats?.avgLatencyMs || 0}ms avg latency
+            </p>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-purple-500/30 transition-colors">
+            <div className="flex justify-between items-start mb-3">
+              <div className="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400">
+                <ShieldCheck size={20} />
+              </div>
+              <span className="text-[10px] uppercase font-bold text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                Platform SaaS
+              </span>
+            </div>
+            <div className="text-2xl font-black text-white font-mono">
+              {formatMoney(networkAnalytics?.billingSummary?.totalInvoicedCents || 0)}
+            </div>
+            <p className="text-xs text-white/50 mt-1 font-medium">Total Invoiced License Fees</p>
+            <p className="text-[11px] text-purple-400/80 mt-2">
+              {formatMoney(networkAnalytics?.billingSummary?.paidInvoicedCents || 0)} collected
+            </p>
+          </div>
+        </div>
+
+        {/* API Usage & Health Details */}
+        {networkAnalytics?.apiUsageStats?.endpointBreakdown?.length > 0 && (
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Terminal size={16} className="text-emerald-400" /> CityCorp Integration API Usage & Performance
+              </h3>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 size={13} /> {networkAnalytics?.apiUsageStats?.successfulCalls || 0} Success
+                </span>
+                <span className="text-rose-400 flex items-center gap-1">
+                  <XCircle size={13} /> {networkAnalytics?.apiUsageStats?.failedCalls || 0} Errors
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-black/30 text-white/50 border-b border-white/10">
+                  <tr>
+                    <th className="px-3 py-2">Endpoint</th>
+                    <th className="px-3 py-2">Call Volume</th>
+                    <th className="px-3 py-2">Avg Latency</th>
+                    <th className="px-3 py-2 text-right">Success Rate</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {networkAnalytics.apiUsageStats.endpointBreakdown.map((ep: any) => (
+                    <tr key={ep.endpoint} className="hover:bg-white/5">
+                      <td className="px-3 py-2 font-mono text-indigo-300">{ep.endpoint}</td>
+                      <td className="px-3 py-2 text-white/80 font-medium">{ep.count} requests</td>
+                      <td className="px-3 py-2 text-white/60 font-mono">{ep.avgLatencyMs} ms</td>
+                      <td className="px-3 py-2 text-right">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          ep.successRate >= 90 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                          ep.successRate >= 70 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                          'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}>
+                          {ep.successRate}% Success
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -183,6 +319,133 @@ export function OnyxSettings() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Onyx Global PSP Discord Bot Control Card */}
+      <div className="bg-[#0f0f18] border border-indigo-500/20 rounded-xl p-6 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-600/20 flex items-center justify-center text-indigo-400 border border-indigo-500/30">
+              💎
+            </div>
+            <div>
+              <h2 className="font-bold text-lg text-white">Onyx PSP Global Discord Bot</h2>
+              <p className="text-xs text-white/50">Central clearinghouse bot for cross-bank Discord payments and merchant terminal setup</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-white/60">Bot Status:</span>
+            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Onyx PSP Bot Operational
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+          <div className="bg-[#151522] p-4 rounded-lg border border-white/10 space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-300">Onyx Discord Bot Configuration</h4>
+            <p className="text-xs text-white/60">Provide the Discord Bot Token for the dedicated Onyx PSP Bot.</p>
+            
+            <div className="space-y-2">
+              <input 
+                id="onyxBotTokenInput"
+                type="password"
+                placeholder="Discord Bot Secret Token"
+                defaultValue={settings?.botToken || ""}
+                className="w-full bg-[#1a1a2a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const token = (document.getElementById("onyxBotTokenInput") as HTMLInputElement)?.value;
+                    if (!token) return alert("Please enter a Discord Bot Token");
+                    await handleUpdateSettings({ botToken: token });
+                    alert("Onyx Bot Token saved!");
+                  }}
+                  className="flex-1 bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded-lg transition-colors font-medium"
+                >
+                  Save Token
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/onyx/toggle-bot", { method: "POST" });
+                      const data = await res.json();
+                      if (res.ok) alert(data.message);
+                      else alert(data.error || "Failed to toggle bot");
+                    } catch (e: any) {
+                      alert(e.message || "Failed to toggle bot");
+                    }
+                  }}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-2 rounded-lg transition-colors font-medium"
+                >
+                  Start / Toggle Onyx Bot
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#151522] p-4 rounded-lg border border-white/10 space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-300">Interactive Onyx PSP Channel Spawner</h4>
+            <p className="text-xs text-white/60">Spawn the global interactive Onyx PSP button embed directly in your community Discord server!</p>
+            
+            <div className="flex gap-2">
+              <input 
+                id="onyxGuiChannelInput"
+                type="text" 
+                placeholder="Discord Channel ID"
+                defaultValue={settings?.guiChannelId || ""} 
+                className="flex-1 bg-[#1a1a2a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  const chId = (document.getElementById("onyxGuiChannelInput") as HTMLInputElement)?.value;
+                  if (!chId) return alert("Please enter a Discord Channel ID");
+                  try {
+                    const res = await fetch("/api/onyx/spawn-bot-gui", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ channelId: chId })
+                    });
+                    const data = await res.json();
+                    if (res.ok) alert("Onyx PSP Embed spawned successfully!");
+                    else alert(data.error || "Failed to spawn embed");
+                  } catch (e: any) {
+                    alert(e.message || "Failed to spawn embed");
+                  }
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+              >
+                Spawn Onyx PSP Embed
+              </button>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/onyx/refresh-bot-gui", { method: "POST" });
+                    if (res.ok) alert("Onyx PSP Channel GUI refreshed!");
+                    else alert("Failed to refresh embed");
+                  } catch (e: any) {
+                    alert("Error: " + e.message);
+                  }
+                }}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1"
+              >
+                🔄 Refresh Onyx Embeds Live
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -99,8 +99,8 @@ export function Overview() {
                 <XAxis 
                   dataKey="date" 
                   stroke="rgba(255,255,255,0.3)" 
-                  tickFormatter={(val) => {
-                    try { return format(new Date(val), 'MMM d'); } catch { return val; }
+                  tickFormatter={(val: any) => {
+                    try { return format(new Date(val), 'MMM d'); } catch { return String(val); }
                   }}
                   tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
                   tickLine={false}
@@ -116,8 +116,13 @@ export function Overview() {
                 />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#0f0f15', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
-                  labelFormatter={(val) => {
-                    try { return format(new Date(val), 'MMM d, yyyy'); } catch { return val; }
+                  labelFormatter={(val: any) => {
+                    try {
+                      if (val) {
+                        return format(new Date(val), 'MMM d, yyyy');
+                      }
+                      return '';
+                    } catch { return String(val); }
                   }}
                   formatter={(value: any) => [`$${value}`, 'Volume']}
                 />

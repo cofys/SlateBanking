@@ -8,6 +8,7 @@ import { OnyxSettings } from "./pages/OnyxSettings";
 import { CityCorpLogs } from "./pages/CityCorpLogs";
 import { TransactionsList } from "./pages/TransactionsList";
 import { CitizenPortal } from "./pages/CitizenPortal";
+import { PayLink } from "./pages/PayLink";
 import { GlobalSettings } from "./pages/GlobalSettings";
 import { BankPortal } from "./pages/BankPortal";
 import { BankOverview } from "./pages/BankOverview";
@@ -112,6 +113,7 @@ function App() {
         <Route path="/docs" element={<PublicDocs />} />
         <Route path="/portal" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><CitizenPortal /></div>} />
         <Route path="/portal/:bankId" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal /></div>} />
+        <Route path="/pay/:linkId" element={<PayLink />} />
         
         {/* Bank Context / Whitelabeled Admin */}
         <Route path="/bank/:bankId" element={<BankAdminLayout />}>

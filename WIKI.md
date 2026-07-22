@@ -374,3 +374,134 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
 - **Data Privacy:** CVVs are no longer returned by any API endpoint (`/cards`). Card number generation relies entirely on `crypto.randomInt` rather than `Math.random()`.
 - **Authorization:** Scoped destination-account lookups inside intra-bank transfers strictly to the originating bank ID to prevent cross-bank ID guessing. Validated that both source and destination accounts are active and unfrozen during all transfers.
 - **Bot Security:** Implemented exponential backoff and locking for failed PIN attempts in Discord. Converted the node API hub secret check to use `hmac.compare_digest()` to prevent timing attacks.
+
+## Architecture Updates - Security & OAuth (Jul 21 2026)
+- **Token Revocation Fix**: Global admin status is now actively verified against the database during every request via the `requireAuth` middleware. If a user is demoted from Global Admin mid-token, their privileges are immediately revoked without needing to wait for the 1h token expiration.
+- **Redirect URIs**: OAuth redirect URIs for Discord and CityCorp now exclusively derive from the configured Application URL (`APP_URL`) or the bank's explicitly verified `customDomain`. The fallback to HTTP request headers (`req.get('host')`) has been fully removed for security.
+- **Encrypted Columns**: All sensitive database columns (including `discordToken`, `discordClientSecret`, `cityCorpAppSecret`, `apiKey`, and `webhookSecret`) in the `banks` and `thirdPartyApps` tables are now fully encrypted at rest using AES-256-GCM. Decryption happens automatically within the `drizzle-orm` custom types (`encryptedText`).
+
+## Architecture Updates - Refactoring & Modularity (Jul 21 2026)
+- **`server.ts` Refactoring**: The massive entrypoint was split into logical modules:
+  - **`src/server/authRoutes.ts`**: Handles all OAuth flows (Discord & CityCorp), login, and session endpoints.
+  - **`src/server/middleware.ts`**: Contains all authentication checks (`requireAuth`, `requireGlobalAdmin`, `requireBankStaff`, `requireRole`), API request authenticators, and helper utilities.
+  - **`src/lib/cron.ts`**: Absorbed all recurring automated operations including loan interest accrual, recurring bank transfers, payroll, and CityCorp keep-alive pings.
+  - **Result**: `server.ts` was reduced from ~900 lines to ~140 lines, focused purely on Express bootstrapping, rate limiting, Vite proxying, and initializing the Discord bot cluster.
+- **Domain-Driven Routing (Jul 21 2026)**: The 5400-line `src/server/routes.ts` file was modularized using the "Separation of Concerns" principle. It is now split into multiple specialized Express Routers inside `src/server/routes/`:
+  - `banks.ts`
+  - `bot.ts`
+  - `citizen.ts`
+  - `global.ts`
+  - `onyx.ts`
+  - `portal.ts`
+  - `v1.ts`
+  These route handlers are combined in `src/server/routes.ts` and mounted onto the Express `app`.
+
+## Client & Staff Features Update (Jul 21 2026)
+- **Savings Vaults (Citizen Portal)**: Added a "Vaults" module where clients can lock funds for fixed periods (7, 30, 90, 180, 365 days) to earn high-yield interest (up to 12%). Includes strict backend logic for early withdrawal penalties (20% haircut).
+- **KYC & Approval Queues (Staff Portal)**: The Bank Customers Directory now features inline KYC tracking (`pending`, `approved`, `rejected`). Staff can filter by KYC status and rapidly approve or deny applications.
+- **Dynamic Brand Theming**: The `BankSettings` allow admins to select a `colorScheme` (Indigo, Emerald, Rose, Amber, Zinc). This is dynamically injected into the `BankPortal.tsx` to instantly re-theme the white-labeled custom domain for that specific bank's clients.
+- **Citizen Lookup Data**: Implemented the robust `/api/citizen/lookup` endpoint that aggregates all relationships (Vaults, Cards, Invoices, Loans) across the entire platform for the global citizen gateway.
+
+## Settings & Vaults Update (Jul 21 2026)
+- **Dynamic Savings Vault Tiers**: Bank staff can now fully configure custom vault tiers (Lock Days, Interest Rate %, and Early Withdrawal Penalty %) in their Bank Settings. The Citizen Portal automatically fetches and respects these tier parameters dynamically when calculating deposits and maturity distributions, deprecating all hardcoded intervals and rates.
+- **KYC Feature Toggles**: Enforced the `requireKyc` boolean from Bank Settings throughout the Bank Staff Portal. KYC status columns, filters, and approval/rejection actions are now conditionally rendered and cleanly hidden when KYC is disabled.
+
+## Joint Accounts, Deep White-Labeling & Platform Billing (Jul 21 2026)
+- **Joint & Corporate Accounts (`account_members`)**:
+  - Implemented multi-user account membership schema allowing bank account owners to share management or view access with secondary citizens by Discord ID.
+  - Role Permissions: `manager` (can initiate outgoing transfers on behalf of the account) and `viewer` (read-only access to account details and transactions).
+  - API Endpoints: `POST /api/citizen/accounts/:accountId/members` to grant joint access with permission validation, `DELETE /api/citizen/accounts/:accountId/members/:memberId` to revoke joint access.
+  - Citizen Portal UI: Features an interactive "Joint Access" modal on account cards showing active members, role badges, and invitation controls.
+- **Deep White-Labeling (`loginBgUrl`)**:
+  - Enhanced `bank_settings` schema with `loginBgUrl`.
+  - Individual bank tenants can now specify a custom login background image URL in Bank Settings.
+  - Custom tenant domains dynamically apply the configured login background to white-labeled client portals.
+- **Rich Audit Trail Search & Filtering**:
+  - Upgraded `BankAuditLog.tsx` with instant search capabilities (by Discord User ID, Action, or Details) and action type dropdown filters for bank staff and tellers.
+- **Global Network Macro Analytics (`/api/onyx/network-analytics`)**:
+  - Implemented macro-level analytics endpoint aggregating global platform transaction volumes, active tenant bank counts, merchant counts, and CityCorp API performance metrics.
+  - Added an Onyx KPI Dashboard displaying real-time total transaction volume, active bank ratio, CityCorp call latency/volume, and total SaaS license fees collected.
+  - Added a detailed CityCorp Integration API Usage & Performance breakdown displaying request volume, average response latency (ms), and success rates per endpoint (`/withdraw`, `/deposit`, `/balances`, `/lookup`).
+- **Flexible Per-Bank SaaS Billing Models & Pricing Engine**:
+  - Extended `banks` schema with bank-specific pricing fields (`billingModel`, `flatMonthlyRate`, `volumeFeePercent`, `profitSharePercent`, `perAccountRate`, `perTxRate`, `billingNotes`).
+  - Supported SaaS Billing Models:
+    1. **Flat Monthly Fee**: Fixed subscription rate ($/mo).
+    2. **Volume Fee Percentage**: Tiered or flat percentage of processed transaction volume (e.g. 0.50%).
+    3. **Profit / Revenue Share**: Percentage share of bank fees/earnings generated (e.g. 5.00%).
+    4. **Per-Account Rate**: Base rate plus fee per active citizen account (e.g. $1.50 / user).
+    5. **Per-Transaction Fee**: Base rate plus micro-fee per settled transfer (e.g. $0.25 / tx).
+    6. **Hybrid Custom Model**: Multi-component formula combining flat base + volume % + profit share + per-account rates.
+  - Endpoint `PUT /api/banks/:id/billing`: Allows Global Admins to set custom pricing parameters on a bank-by-bank basis.
+  - Endpoint `GET /api/admin/banks/:id/calculate-billing`: Dynamically evaluates bank usage metrics (active accounts, 30-day transaction volume, estimated earnings, transaction count) and returns recommended invoice totals with itemized text breakdown.
+  - Interactive Pricing Modal (`BanksList.tsx`): Includes a live billing model picker, customizable rate controls ($ / % / rates), and real-time monthly invoice projection.
+  - SaaS Invoice Auto-Population (`GlobalSettings.tsx`): Selecting a bank when generating an invoice automatically populates the exact calculated amount and itemized breakdown description.
+
+## Interactive Discord Channel GUIs & Staff Panels (Jul 21 2026)
+- **Persistent Channel GUI Architecture**:
+  - Replaced legacy slash-command workflow with persistent, button-driven channel embeds that mimic each bank's whitelabeled color scheme and brand identity.
+  - Channels are bound via `bank_settings` (`guiChannelId`, `guiMessageId`, `staffChannelId`, `staffMessageId`).
+- **Public Citizen GUI Embed (`buildPublicGUIEmbedAndComponents`)**:
+  - Displays bank operational status, total customer accounts, and primary features.
+  - Interactive Action Row Buttons:
+    - 💰 **My Accounts / Balance**: View linked accounts, balances, and CityCorp sync status.
+    - 💸 **Quick Transfer**: Interactive Modal prompt (`gui_transfer_modal`) to send funds instantly to any account name in the bank.
+    - 📝 **Apply & Repay Loans**: Apply for loans via modal and interactively repay active loans with **💸 Repay Loan** buttons that deduct from personal balance and mark loans as settled.
+    - 🎮 **In-Game Info & Sync Protocol**: Interactive Minecraft linking status card with 3D skin head avatar thumbnails (`https://mc-heads.net`), on-demand 6-digit sync codes (`/slate link <code>`), and in-game CityCorp ATM commands.
+    - 📜 **Recent History**: View the user's 15 most recent incoming and outgoing transactions.
+    - ⚙️ **Identity & Settings**: Check Discord link and associated Minecraft character (`mcUsername`).
+- **Staff Panel Embed (`buildStaffPanelEmbedAndComponents`)**:
+  - Staff-only channel embed providing bank tellers and managers with one-click administrative controls.
+  - Interactive Staff Action Row Buttons:
+    - 📊 **Vault Overview**: System vault balance, total customer deposits, liquidity ratio, and CityCorp ID.
+    - 📋 **Pending Loans**: Review active loan applications with one-click **Approve $X** and **Deny** buttons (`staff_approve_loan_*`, `staff_deny_loan_*`). Approving credit/loan automatically credits funds to the user's personal account and logs an audit trail.
+    - 🔍 **Customer Search**: Interactive Modal prompt (`staff_search_modal`) to lookup any citizen by Minecraft username or Discord ID.
+    - 💵 **Teller Transaction**: Interactive Modal prompt (`staff_teller_modal`) to deposit/withdraw funds to/from customer accounts with reason logging.
+    - ⚙️ **Toggle Bank Status**: One-click toggle between Online and Maintenance mode.
+- **Auto-Updating Background Sync**:
+  - `BotManager` runs an automated background timer every 45 seconds that invokes `refreshBankChannelGUIs(bankId)` to edit existing Discord messages in real time.
+  - Transactions, loan submissions, teller edits, and status changes trigger immediate embed updates to ensure data parity across Discord channels.
+- **REST Spawner Endpoints**:
+  - `POST /api/banks/:bankId/spawn-discord-gui`: Spawns or updates public or staff GUIs in a target Discord channel ID directly from the Bank Settings web portal (`BankSettings.tsx`).
+  - `POST /api/banks/:bankId/refresh-discord-gui`: Triggers immediate background re-rendering of all active channel embeds for a bank.
+
+## Dedicated Onyx PSP Discord Bot & Cross-Bank Clearinghouse (Jul 21 2026)
+- **Separation of Concerns**:
+  - Tenant Bank Bots are branded specifically to each bank (Bank A, Bank B, etc.) and handle internal account transfers, loan applications, and staff teller controls within that single tenant bank.
+  - The **Onyx PSP Bot** is a global, dedicated clearinghouse bot operated directly by the Onyx Payment Service Provider network. It can route instant payments across any two tenant banks (**Bank A to Bank A**, or **Bank A to Bank B**).
+- **Onyx PSP Global Embed (`buildOnyxGlobalEmbedAndComponents`)**:
+  - Displays network-wide metrics: Total Connected Member Banks, Registered Merchant Terminals, Cleared Onyx Volume, B2B Clearing Fee (e.g. 2.00%), and Clearinghouse Operational Status.
+  - Interactive Action Row Buttons:
+    - 💳 **Pay Any Account**: Opens Modal (`onyx_modal_pay`) accepting Sender Account, Target Bank, Recipient Account Name/ID, Amount, and Memo. Instantly clears cross-bank ledger transfers and records `clearinghouse_settlements`.
+    - 🏪 **Merchant Registration**: Opens Modal (`onyx_modal_merchant`) allowing Discord server owners/merchants to register their store on Onyx, generating a live API Key and linking a payout bank account.
+    - 🔗 **Payment Link Generator**: Opens Modal (`onyx_modal_paylink`) to create an interactive cross-bank payment request button that any user from ANY bank can click to pay.
+    - 🏦 **Member Banks Directory**: Lists all connected tenant banks, liquidity reserves, and online/maintenance status.
+    - 🛒 **Merchant Directory**: Lists active registered Onyx storefronts with settlement bank IDs and payout account destinations.
+    - 📜 **Inter-Bank Settlement Feed**: Live feed of the 10 most recent cross-bank clearinghouse settlements processed by Onyx.
+- **Onyx Slash Commands (`registerOnyxCommands`)**:
+  - `/onyx-pay <to_account> <amount> [to_bank] [memo]`: Execute a cross-bank payment.
+  - `/onyx-banks`: View directory of member banks.
+  - `/onyx-merchant-setup <store_name> <bank_id> <account_name>`: Express merchant terminal setup.
+- **Global Web Portal Management (`OnyxSettings.tsx`)**:
+  - Controls for saving the Onyx Bot Token, starting/stopping the bot, and spawning the Onyx PSP Channel Embed via `POST /api/onyx/spawn-bot-gui` or triggering live updates via `POST /api/onyx/refresh-bot-gui`.
+
+## Personal vs. Business Account Identity & Prerequisites (Jul 21 2026)
+- **Account Type Differentiation (`bank_accounts`)**:
+  - `accountType`: Supports `personal` and `business` entities.
+  - Business account metadata: `businessTaxId` (used to store the **In-Game Corp Name**, e.g. `CORP-X7F2D`) and `businessSector` (e.g. `General Commerce`, `Technology`, `Manufacturing`).
+- **Personal Account Prerequisite Enforcement (`requirePersonalForBusiness`)**:
+  - `bank_settings.requirePersonalForBusiness`: Configurable boolean setting per bank. When enabled (default `true`), citizens MUST open and own at least one active Personal Account in that bank before registering a Business Account.
+  - Enforced server-side during self-service account registration (`POST /api/citizen/accounts/register`). If a user attempts to register a business account without an existing personal account in that bank, the server returns a 400 error: *"Bank Policy Violation: [Bank Name] requires you to open at least one Personal Account before registering a Business Account."*
+  - Managed in Bank Staff Settings (`BankSettings.tsx`) under Security & KYC controls.
+- **Citizen Account Switcher & Self-Service Registration (`CitizenPortal.tsx`)**:
+  - Interactive Account Switcher filter pills: **All Accounts**, **👤 Personal Accounts**, and **🏢 Business Accounts**.
+  - **Register Account Modal**:
+    - Self-service account opening for any bank in the Slate network.
+    - Choice between Personal Checking and Business Entity.
+    - For Business entities, includes input fields for In-Game Corp Name and Business Sector/Industry.
+    - Automatic provision of Onyx Merchant Storefront and Terminal API Key upon business account creation for instant store integration and payment processing.
+
+
+
+
+
+

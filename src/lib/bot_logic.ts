@@ -1,7 +1,7 @@
-import { REST, Routes, Interaction, CacheType, SlashCommandBuilder, ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, ModalSubmitInteraction, ButtonInteraction, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
+import { REST, Routes, Interaction, CacheType, SlashCommandBuilder, ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, ModalSubmitInteraction, ButtonInteraction, StringSelectMenuBuilder, Client } from 'discord.js';
 import { db } from '../db/index';
-import { banks, bankAccounts, transactions, users, bankCustomers, loans } from '../db/schema';
-import { eq, and } from 'drizzle-orm';
+import { banks, bankAccounts, transactions, users, bankCustomers, loans, bankSettings, bankStaff, auditLogs } from '../db/schema';
+import { eq, and, sql, or, desc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { CityCorpClient } from './citycorp_api';
 
@@ -16,11 +16,19 @@ async function getBankClient(bankId: string) {
 const commands = [
   new SlashCommandBuilder()
     .setName('bank')
-    .setDescription('Open the Bank Dashboard (Personal).'),
+    .setDescription('Open the Bank Dashboard (Personal Overlay).'),
   new SlashCommandBuilder()
     .setName('spawn_atm')
     .setDescription('Admin only: Spawn a permanent ATM menu in this channel.')
-    .setDefaultMemberPermissions(8) // Administrator only
+    .setDefaultMemberPermissions(8),
+  new SlashCommandBuilder()
+    .setName('setup_gui')
+    .setDescription('Admin only: Spawn/Bind the auto-updating Public Banking Portal GUI in this channel.')
+    .setDefaultMemberPermissions(8),
+  new SlashCommandBuilder()
+    .setName('setup_staff_panel')
+    .setDescription('Staff only: Spawn/Bind the auto-updating Staff Command Panel in this channel.')
+    .setDefaultMemberPermissions(8),
 ].map(command => command.toJSON());
 
 export async function registerBankCommands(token: string, clientId: string) {
@@ -38,6 +46,10 @@ export async function handleBankInteraction(bankId: string, interaction: Interac
     } else if (interaction.commandName === 'spawn_atm') {
       await showMainMenu(bankId, interaction, false);
       await interaction.reply({ content: "ATM spawned below.", ephemeral: true });
+    } else if (interaction.commandName === 'setup_gui') {
+      await setupGUICommand(bankId, interaction);
+    } else if (interaction.commandName === 'setup_staff_panel') {
+      await setupStaffPanelCommand(bankId, interaction);
     }
     return;
   }
@@ -63,6 +75,256 @@ export async function handleBankInteraction(bankId: string, interaction: Interac
   }
 }
 
+
+export async function buildPublicGUIEmbedAndComponents(bankId: string) {
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  if (b.length === 0) throw new Error("Bank not found");
+  const bank = b[0];
+
+  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+
+  const accounts = await db.select({
+    totalBalance: sql<number>`COALESCE(SUM(${bankAccounts.balance}), 0)`,
+    count: sql<number>`COUNT(${bankAccounts.id})`
+  }).from(bankAccounts).where(eq(bankAccounts.bankId, bankId)).get();
+
+  const totalDepositsCents = accounts?.totalBalance || 0;
+  const accountCount = accounts?.count || 0;
+
+  const hexColor = bank.brandingColor ? parseInt(bank.brandingColor.replace('#', ''), 16) : 0x4f46e5;
+  const portalUrl = bank.customDomain 
+    ? `https://${bank.customDomain}/` 
+    : `https://ais-dev-x33dat556cunbev6anuble-271675189999.us-east1.run.app/portal/${bankId}`;
+
+  const statusText = bank.maintenanceMode ? '⚠️ Maintenance Mode' : '🟢 Online & Active';
+  const corpText = bank.corpId ? '⚡ CityCorp Gateway Sync' : '🏛️ Standalone Slate PSP Ledger';
+
+  const embed = {
+    title: `🏛️ ${bank.name} • Official Banking Terminal`,
+    description: `Welcome to **${bank.name}**! Click below to access your accounts, transfer funds, or apply for credit services.\n\n` +
+      `**Status**: ${statusText}\n` +
+      `**Total Bank Reserves**: **$${(totalDepositsCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**\n` +
+      `**Active Accounts**: **${accountCount}** registered\n` +
+      `**CityCorp Integration**: ${corpText}\n\n` +
+      `🌐 **Web Banking Portal**: [Open Citizen Web Portal](${portalUrl})\n` +
+      `──────────────────────────────────────────────`,
+    color: hexColor,
+    thumbnail: settings?.logoUrl ? { url: settings.logoUrl } : undefined,
+    fields: [
+      {
+        name: '💳 Citizen Banking Features',
+        value: '• **Open My Dashboard**: Personal account picker & balance\n• **Open Account**: Personal or business accounts\n• **Quick Transfer**: Send funds instantly',
+        inline: true
+      },
+      {
+        name: '📄 Credit & Services',
+        value: '• **Apply for Loan**: Instant credit application\n• **My History**: View recent transactions\n• **In-Game Commands**: ATM & Teller commands',
+        inline: true
+      }
+    ],
+    footer: { text: `Slate SaaS Onyx Network • Live Auto-Update • Bank ID: ${bank.id.substring(0, 8)}` },
+    timestamp: new Date().toISOString()
+  };
+
+  const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId('bank_gui_dashboard').setLabel('🏦 Open My Dashboard').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('bank_gui_open_acc').setLabel('💳 Open Account').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('bank_gui_transfer').setLabel('↔️ Quick Transfer').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('bank_gui_history').setLabel('📄 My History').setStyle(ButtonStyle.Secondary)
+  );
+
+  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId('bank_gui_apply_loan').setLabel('📝 Apply for Loan').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('bank_gui_rates').setLabel('📈 Rates & Yields').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('bank_gui_ingame').setLabel('ℹ️ In-Game Info').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setLabel('🌐 Web Portal').setStyle(ButtonStyle.Link).setURL(portalUrl)
+  );
+
+  return { embeds: [embed], components: [row1, row2] };
+}
+
+export async function buildStaffPanelEmbedAndComponents(bankId: string) {
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  if (b.length === 0) throw new Error("Bank not found");
+  const bank = b[0];
+
+  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+
+  const accounts = await db.select({
+    totalBalance: sql<number>`COALESCE(SUM(${bankAccounts.balance}), 0)`,
+    count: sql<number>`COUNT(${bankAccounts.id})`
+  }).from(bankAccounts).where(eq(bankAccounts.bankId, bankId)).get();
+
+  const pendingLoans = await db.select().from(loans).where(and(eq(loans.bankId, bankId), eq(loans.status, 'pending')));
+  const customers = await db.select({ count: sql<number>`COUNT(${bankCustomers.id})` }).from(bankCustomers).where(eq(bankCustomers.bankId, bankId)).get();
+
+  const totalDepositsCents = accounts?.totalBalance || 0;
+  const pendingCount = pendingLoans.length;
+  const customerCount = customers?.count || 0;
+
+  const hexColor = 0xf59e0b; // Gold/Amber accent
+  const staffPortalUrl = bank.customDomain 
+    ? `https://${bank.customDomain}/portal/${bankId}/staff` 
+    : `https://ais-dev-x33dat556cunbev6anuble-271675189999.us-east1.run.app/portal/${bankId}/staff`;
+
+  const embed = {
+    title: `🛡️ ${bank.name} • Staff Command & Operations Panel`,
+    description: `Operational control center for **${bank.name}** staff, tellers, and managers.\n\n` +
+      `💰 **Reserve Liquidity**: **$${(totalDepositsCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}**\n` +
+      `📋 **Pending Loans Queue**: **${pendingCount} Applications**\n` +
+      `👥 **Total Customers**: **${customerCount}**\n` +
+      `⚙️ **Bank Mode**: **${bank.maintenanceMode ? '⚠️ MAINTENANCE' : '🟢 ONLINE'}**\n` +
+      `📊 **Platform Fee**: **${((bank.platformFeePercent || 0) / 100).toFixed(2)}%**\n\n` +
+      `🌐 **Staff Web Workspace**: [Open Staff Portal](${staffPortalUrl})\n` +
+      `──────────────────────────────────────────────`,
+    color: hexColor,
+    thumbnail: settings?.logoUrl ? { url: settings.logoUrl } : undefined,
+    fields: [
+      {
+        name: '⚙️ Operations & Review',
+        value: '• **Vault Overview**: System liquidity & accounts\n• **Pending Loans**: Review & approve/deny\n• **Customer Search**: Lookup by MC/Discord\n• **Audit Logs**: View live staff actions',
+        inline: true
+      },
+      {
+        name: '💵 Cash Desk Controls',
+        value: '• **Teller Transaction**: Manual credit/debit\n• **Toggle Status**: Maintenance mode switch\n• **Staff Web Portal**: Access browser dashboard',
+        inline: true
+      }
+    ],
+    footer: { text: `Slate SaaS Onyx Network • Live Staff Operations Panel` },
+    timestamp: new Date().toISOString()
+  };
+
+  const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId('staff_gui_overview').setLabel('📊 Vault Overview').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('staff_gui_loans').setLabel(`📋 Loans (${pendingCount})`).setStyle(pendingCount > 0 ? ButtonStyle.Danger : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('staff_gui_customer_search').setLabel('👥 Customer Lookup').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('staff_gui_audit_logs').setLabel('📜 Audit Trail').setStyle(ButtonStyle.Secondary)
+  );
+
+  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId('staff_gui_teller_tx').setLabel('💵 Teller Transaction').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('staff_gui_toggle_status').setLabel('⚙️ Toggle Maintenance').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setLabel('🌐 Staff Portal').setStyle(ButtonStyle.Link).setURL(staffPortalUrl)
+  );
+
+  return { embeds: [embed], components: [row1, row2] };
+}
+
+export async function refreshBankChannelGUIs(bankId: string, client?: Client | null) {
+  try {
+    const b = await db.select().from(banks).where(eq(banks.id, bankId));
+    if (b.length === 0) return;
+
+    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    if (!settings) return;
+
+    if (!client) {
+      const { botManager } = await import('./bot_manager');
+      const instance = botManager.getInstance(bankId);
+      if (!instance || instance.status !== 'online') return;
+      client = instance.client;
+    }
+
+    if (settings.guiChannelId && settings.guiMessageId) {
+      try {
+        const channel = await client.channels.fetch(settings.guiChannelId);
+        if (channel && channel.isTextBased() && 'messages' in channel) {
+          const msg = await (channel as any).messages.fetch(settings.guiMessageId);
+          if (msg) {
+            const data = await buildPublicGUIEmbedAndComponents(bankId);
+            await msg.edit(data);
+          }
+        }
+      } catch (err) {
+        console.error(`[BankBot ${bankId}] Failed to auto-update public GUI embed:`, err);
+      }
+    }
+
+    if (settings.staffChannelId && settings.staffMessageId) {
+      try {
+        const channel = await client.channels.fetch(settings.staffChannelId);
+        if (channel && channel.isTextBased() && 'messages' in channel) {
+          const msg = await (channel as any).messages.fetch(settings.staffMessageId);
+          if (msg) {
+            const data = await buildStaffPanelEmbedAndComponents(bankId);
+            await msg.edit(data);
+          }
+        }
+      } catch (err) {
+        console.error(`[BankBot ${bankId}] Failed to auto-update staff panel embed:`, err);
+      }
+    }
+  } catch (e) {
+    console.error(`[BankBot ${bankId}] Error in refreshBankChannelGUIs:`, e);
+  }
+}
+
+async function setupGUICommand(bankId: string, interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+  try {
+    const channel = interaction.channel;
+    if (!channel || !channel.isTextBased() || !('send' in channel)) {
+      await interaction.editReply({ content: "❌ Command must be executed in a text channel." });
+      return;
+    }
+
+    const data = await buildPublicGUIEmbedAndComponents(bankId);
+    const msg = await (channel as any).send(data);
+
+    const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    if (existing) {
+      await db.update(bankSettings).set({
+        guiChannelId: channel.id,
+        guiMessageId: msg.id,
+      }).where(eq(bankSettings.bankId, bankId));
+    } else {
+      await db.insert(bankSettings).values({
+        bankId,
+        guiChannelId: channel.id,
+        guiMessageId: msg.id,
+      });
+    }
+
+    await interaction.editReply({ content: "✅ Auto-updating Public Banking Portal GUI successfully bound and spawned in this channel!" });
+  } catch (e: any) {
+    console.error(e);
+    await interaction.editReply({ content: `❌ Failed to setup Public GUI: ${e.message}` });
+  }
+}
+
+async function setupStaffPanelCommand(bankId: string, interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+  try {
+    const channel = interaction.channel;
+    if (!channel || !channel.isTextBased() || !('send' in channel)) {
+      await interaction.editReply({ content: "❌ Command must be executed in a text channel." });
+      return;
+    }
+
+    const data = await buildStaffPanelEmbedAndComponents(bankId);
+    const msg = await (channel as any).send(data);
+
+    const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    if (existing) {
+      await db.update(bankSettings).set({
+        staffChannelId: channel.id,
+        staffMessageId: msg.id,
+      }).where(eq(bankSettings.bankId, bankId));
+    } else {
+      await db.insert(bankSettings).values({
+        bankId,
+        staffChannelId: channel.id,
+        staffMessageId: msg.id,
+      });
+    }
+
+    await interaction.editReply({ content: "🛡️ Auto-updating Staff Command Panel successfully bound and spawned in this channel!" });
+  } catch (e: any) {
+    console.error(e);
+    await interaction.editReply({ content: `❌ Failed to setup Staff Panel: ${e.message}` });
+  }
+}
 
 async function safeReplyOrUpdate(interaction: any, payload: any) {
   try {
@@ -221,7 +483,7 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
 async function handleButton(bankId: string, interaction: ButtonInteraction) {
   const cid = interaction.customId;
   
-  if (cid === 'bank_main_menu') {
+  if (cid === 'bank_main_menu' || cid === 'bank_gui_dashboard') {
     await interaction.deferUpdate();
     await showMainMenu(bankId, interaction);
     return;
@@ -229,14 +491,14 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
   
   if (cid === 'bank_balances') {
     await handleBalance(bankId, interaction);
-  } else if (cid === 'bank_history') {
+  } else if (cid === 'bank_history' || cid === 'bank_gui_history') {
     await handleHistory(bankId, interaction);
-  } else if (cid === 'bank_in_game_info') {
+  } else if (cid === 'bank_in_game_info' || cid === 'bank_gui_ingame') {
     await safeReplyOrUpdate(interaction, { 
-      content: '📥 **In-Game Commands**\n\nTo manage your money in-game, find an ATM or bank teller and use the following commands:\n\n**Deposit**: `/c account deposit corpname accountname amount`\n**Withdraw**: `/c account withdraw corpname accountname amount`', 
+      content: '📥 **In-Game ATM & Teller Commands**\n\nTo deposit or withdraw money in-game via CityCorp ATMs, use:\n\n**Deposit**: `/c account deposit corpname accountname amount`\n**Withdraw**: `/c account withdraw corpname accountname amount`', 
       components: [backButtonRow] 
     });
-  } else if (cid === 'bank_open_account') {
+  } else if (cid === 'bank_open_account' || cid === 'bank_gui_open_acc') {
     const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
     const isLinked = userMap.length > 0;
 
@@ -280,7 +542,7 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput));
     
     await interaction.showModal(modal);
-  } else if (cid.startsWith('bank_transfer')) {
+  } else if (cid.startsWith('bank_transfer') || cid === 'bank_gui_transfer') {
     const parts = cid.split('_');
     const sourceAccId = parts.length > 2 ? parts[2] : null;
 
@@ -305,10 +567,126 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
       new ActionRowBuilder<TextInputBuilder>().addComponents(amtInput)
     );
     await interaction.showModal(modal);
+  } else if (cid === 'bank_gui_apply_loan') {
+    const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
+    if (userMap.length === 0) {
+      await interaction.reply({ content: '❌ You must link your Minecraft account before applying for a loan.', ephemeral: true });
+      return;
+    }
+
+    const modal = new ModalBuilder()
+      .setCustomId('modal_apply_loan')
+      .setTitle('Apply for Bank Loan');
+
+    const amtInput = new TextInputBuilder()
+      .setCustomId('loan_amount')
+      .setLabel("Requested Loan Amount ($)")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("1000.00")
+      .setRequired(true);
+
+    const purposeInput = new TextInputBuilder()
+      .setCustomId('loan_purpose')
+      .setLabel("Purpose / Notes")
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder("e.g. Business expansion or shop restocking")
+      .setRequired(true);
+
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(amtInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(purposeInput)
+    );
+    await interaction.showModal(modal);
   } else if (cid === 'bank_view_loans') {
     await handleViewLoans(bankId, interaction);
   } else if (cid === 'bank_view_settings') {
     await handleViewSettings(bankId, interaction);
+  } else if (cid === 'bank_gui_rates') {
+    await handleBankRates(bankId, interaction);
+  } else if (cid === 'bank_gui_ingame') {
+    await handleBankInGameInfo(bankId, interaction);
+  } else if (cid.startsWith('bank_repay_loan_')) {
+    const loanId = cid.replace('bank_repay_loan_', '');
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_repay_loan_${loanId}`)
+      .setTitle('Repay Bank Loan');
+
+    const amtInput = new TextInputBuilder()
+      .setCustomId('repay_amount')
+      .setLabel("Payment Amount ($)")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("e.g. 250.00")
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(amtInput));
+    await interaction.showModal(modal);
+  }
+
+  // --- STAFF PANEL BUTTON HANDLERS ---
+  else if (cid === 'staff_gui_overview') {
+    await handleStaffOverview(bankId, interaction);
+  } else if (cid === 'staff_gui_audit_logs') {
+    await handleStaffAuditLogs(bankId, interaction);
+  } else if (cid === 'staff_gui_loans') {
+    await handleStaffLoansList(bankId, interaction);
+  } else if (cid.startsWith('staff_approve_loan_')) {
+    const loanId = cid.replace('staff_approve_loan_', '');
+    await handleStaffApproveLoan(bankId, interaction, loanId);
+  } else if (cid.startsWith('staff_deny_loan_')) {
+    const loanId = cid.replace('staff_deny_loan_', '');
+    await handleStaffDenyLoan(bankId, interaction, loanId);
+  } else if (cid === 'staff_gui_customer_search') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_customer_search')
+      .setTitle('Customer Lookup');
+
+    const searchInput = new TextInputBuilder()
+      .setCustomId('search_query')
+      .setLabel("Minecraft Username or Discord ID")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(searchInput));
+    await interaction.showModal(modal);
+  } else if (cid === 'staff_gui_teller_tx') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_staff_teller_tx')
+      .setTitle('Teller Account Adjustment');
+
+    const targetInput = new TextInputBuilder()
+      .setCustomId('target_account')
+      .setLabel("Account Name (e.g. personal)")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const typeInput = new TextInputBuilder()
+      .setCustomId('tx_type')
+      .setLabel("Type: 'deposit' or 'withdraw'")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("deposit")
+      .setRequired(true);
+
+    const amtInput = new TextInputBuilder()
+      .setCustomId('tx_amount')
+      .setLabel("Amount ($)")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const reasonInput = new TextInputBuilder()
+      .setCustomId('tx_reason')
+      .setLabel("Teller Reason / Audit Memo")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(targetInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(typeInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(amtInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(reasonInput)
+    );
+    await interaction.showModal(modal);
+  } else if (cid === 'staff_gui_toggle_status') {
+    await handleStaffToggleStatus(bankId, interaction);
   }
 }
 
@@ -331,6 +709,37 @@ async function handleModal(bankId: string, interaction: ModalSubmitInteraction) 
         return;
       }
       await handleTransfer(bankId, interaction, toAccount, amount, sourceAccId);
+    } else if (interaction.customId === 'modal_apply_loan') {
+      const amountStr = interaction.fields.getTextInputValue('loan_amount');
+      const purpose = interaction.fields.getTextInputValue('loan_purpose');
+      const amount = parseFloat(amountStr);
+      if (isNaN(amount) || amount <= 0) {
+        await interaction.reply({ content: 'Invalid loan amount.', ephemeral: true });
+        return;
+      }
+      await handleApplyLoanModal(bankId, interaction, amount, purpose);
+    } else if (interaction.customId.startsWith('modal_repay_loan_')) {
+      const loanId = interaction.customId.replace('modal_repay_loan_', '');
+      const amountStr = interaction.fields.getTextInputValue('repay_amount');
+      const amount = parseFloat(amountStr);
+      if (isNaN(amount) || amount <= 0) {
+        await interaction.reply({ content: 'Invalid repayment amount.', ephemeral: true });
+        return;
+      }
+      await handleRepayLoanModal(bankId, interaction, loanId, amount);
+    } else if (interaction.customId === 'modal_customer_search') {
+      const query = interaction.fields.getTextInputValue('search_query');
+      await handleCustomerSearchModal(bankId, interaction, query);
+    } else if (interaction.customId === 'modal_staff_teller_tx') {
+      const targetAcc = interaction.fields.getTextInputValue('target_account');
+      const txType = interaction.fields.getTextInputValue('tx_type').toLowerCase();
+      const amount = parseFloat(interaction.fields.getTextInputValue('tx_amount'));
+      const reason = interaction.fields.getTextInputValue('tx_reason') || "Teller manual adjustment";
+      if (isNaN(amount) || amount <= 0) {
+        await interaction.reply({ content: 'Invalid transaction amount.', ephemeral: true });
+        return;
+      }
+      await handleStaffTellerTxModal(bankId, interaction, targetAcc, txType, amount, reason);
     }
   } catch (e) {
     console.error(e);
@@ -562,7 +971,7 @@ async function handleViewLoans(bankId: string, interaction: ButtonInteraction) {
   
   if (myLoans.length === 0) {
     await safeReplyOrUpdate(interaction, {
-      content: "📝 **Your Loans**\n\nYou have no active loans with this bank.\nTo apply for a loan, please visit the Bank Portal.",
+      content: "📝 **Your Loans**\n\nYou have no active loans with this bank.\nTo apply for a loan, please click **Apply for Loan**.",
       components: [backButtonRow]
     });
     return;
@@ -570,12 +979,28 @@ async function handleViewLoans(bankId: string, interaction: ButtonInteraction) {
 
   const list = myLoans.map(l => {
     const statusEmoji = l.status === 'active' ? '🟢' : l.status === 'pending' ? '🟡' : '🔴';
-    return `${statusEmoji} **Loan ID**: \`${l.id.split('-')[0]}\`\n**Principal**: $${(l.principalAmount / 100).toFixed(2)}\n**Remaining**: $${(l.remainingAmount / 100).toFixed(2)}\n**Interest**: ${(l.interestRate / 100).toFixed(2)}%\n**Status**: ${l.status?.toUpperCase()}`;
+    return `${statusEmoji} **Loan ID**: \`${l.id}\`\n**Principal**: $${(l.principalAmount / 100).toFixed(2)}\n**Remaining**: $${(l.remainingAmount / 100).toFixed(2)}\n**Interest**: ${(l.interestRate / 100).toFixed(2)}%\n**Status**: ${l.status?.toUpperCase()}`;
   }).join('\n\n');
+
+  const activeLoans = myLoans.filter(l => (l.status === 'active' || l.status === 'pending') && l.remainingAmount > 0);
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [backButtonRow];
+
+  if (activeLoans.length > 0) {
+    const repayRow = new ActionRowBuilder<ButtonBuilder>();
+    for (const l of activeLoans.slice(0, 4)) {
+      repayRow.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`bank_repay_loan_${l.id}`)
+          .setLabel(`💸 Repay Loan (${l.id.substring(0, 6)})`)
+          .setStyle(ButtonStyle.Success)
+      );
+    }
+    rows.unshift(repayRow);
+  }
 
   await safeReplyOrUpdate(interaction, {
     content: `📝 **Your Loans with This Bank**\n\n${list}`,
-    components: [backButtonRow]
+    components: rows
   });
 }
 
@@ -588,4 +1013,435 @@ async function handleViewSettings(bankId: string, interaction: ButtonInteraction
     components: [backButtonRow]
   });
 }
+
+async function handleApplyLoanModal(bankId: string, interaction: ModalSubmitInteraction, amount: number, purpose: string) {
+  await interaction.deferReply({ ephemeral: true });
+  const amountInCents = Math.round(amount * 100);
+
+  let userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, interaction.user.id)));
+  let accountId: string;
+  if (userAccs.length > 0) {
+    accountId = userAccs[0].id;
+  } else {
+    // Auto open a personal account if none exists
+    accountId = uuidv4();
+    await db.insert(bankAccounts).values({
+      id: accountId,
+      bankId,
+      ownerDiscordId: interaction.user.id,
+      accountName: "personal",
+      accountType: "personal",
+      balance: 0,
+      createdAt: new Date(),
+    });
+  }
+
+  const loanId = uuidv4();
+  const nextPayment = new Date();
+  nextPayment.setDate(nextPayment.getDate() + 30);
+
+  await db.insert(loans).values({
+    id: loanId,
+    bankId,
+    discordId: interaction.user.id,
+    accountId,
+    principalAmount: amountInCents,
+    remainingAmount: amountInCents,
+    interestRate: 500, // 5% default
+    nextPaymentDate: nextPayment,
+    purpose,
+    status: 'pending',
+    createdAt: new Date(),
+  });
+
+  await db.insert(auditLogs).values({
+    id: uuidv4(),
+    bankId,
+    userDiscordId: interaction.user.id,
+    action: 'LOAN_APPLICATION_SUBMITTED',
+    details: `Applied for $${amount.toFixed(2)} loan. Purpose: ${purpose}`,
+    timestamp: new Date()
+  });
+
+  refreshBankChannelGUIs(bankId);
+
+  await interaction.editReply({
+    content: `✅ **Loan Application Submitted!**\n\n` +
+      `**Amount**: $${amount.toFixed(2)}\n` +
+      `**Purpose**: ${purpose}\n` +
+      `**Status**: 🟡 PENDING REVIEW BY BANK STAFF\n\n` +
+      `You will be notified once a bank teller or manager reviews your application.`
+  });
+}
+
+async function handleStaffOverview(bankId: string, interaction: ButtonInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  if (b.length === 0) return;
+  const bank = b[0];
+
+  const sysAccounts = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.isSystem, true)));
+  const totalAccs = await db.select({ count: sql<number>`COUNT(${bankAccounts.id})`, sum: sql<number>`COALESCE(SUM(${bankAccounts.balance}), 0)` }).from(bankAccounts).where(eq(bankAccounts.bankId, bankId)).get();
+
+  let sysTxt = sysAccounts.map(a => `• **${a.accountName}**: $${(a.balance / 100).toFixed(2)}`).join('\n');
+  if (!sysTxt) sysTxt = '• No dedicated system reserve accounts configured.';
+
+  await interaction.editReply({
+    content: `📊 **${bank.name} • System Vault & Liquidity Breakdown**\n\n` +
+      `💰 **Total Customer Deposits**: **$${((totalAccs?.sum || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}**\n` +
+      `👥 **Total Accounts**: **${totalAccs?.count || 0}**\n\n` +
+      `🏦 **System Reserve Accounts**:\n${sysTxt}\n\n` +
+      `⚙️ **Bank Status**: ${bank.maintenanceMode ? '⚠️ Maintenance Mode' : '🟢 Online'}\n` +
+      `🔗 **CityCorp ID**: \`${bank.corpId || 'N/A'}\``
+  });
+}
+
+async function handleStaffLoansList(bankId: string, interaction: ButtonInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const pending = await db.select().from(loans).where(and(eq(loans.bankId, bankId), eq(loans.status, 'pending'))).limit(5);
+
+  if (pending.length === 0) {
+    await interaction.editReply({ content: "✅ **No Pending Loan Applications**\nAll loan applications have been processed." });
+    return;
+  }
+
+  let txt = `📋 **Pending Loan Applications (${pending.length})**\n\n`;
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+
+  for (const l of pending) {
+    const shortId = l.id.substring(0, 8);
+    txt += `• **ID**: \`${shortId}\` | **Applicant**: <@${l.discordId}>\n` +
+      `  **Amount**: **$${(l.principalAmount / 100).toFixed(2)}** | **Interest**: ${(l.interestRate / 100).toFixed(2)}%\n\n`;
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`staff_approve_loan_${l.id}`).setLabel(`Approve $${(l.principalAmount / 100).toFixed(0)} (${shortId})`).setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`staff_deny_loan_${l.id}`).setLabel(`Deny (${shortId})`).setStyle(ButtonStyle.Danger)
+    );
+    components.push(row);
+  }
+
+  await interaction.editReply({ content: txt, components });
+}
+
+async function handleStaffApproveLoan(bankId: string, interaction: ButtonInteraction, loanId: string) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const l = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId)));
+  if (l.length === 0) {
+    await interaction.editReply({ content: "❌ Loan application not found." });
+    return;
+  }
+
+  const loan = l[0];
+  if (loan.status !== 'pending') {
+    await interaction.editReply({ content: `❌ Loan is already ${loan.status}.` });
+    return;
+  }
+
+  await db.update(loans).set({ status: 'active' }).where(eq(loans.id, loanId));
+
+  const userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, loan.discordId)));
+  if (userAccs.length > 0) {
+    const acc = userAccs[0];
+    await db.update(bankAccounts).set({ balance: acc.balance + loan.principalAmount }).where(eq(bankAccounts.id, acc.id));
+    await db.insert(transactions).values({
+      id: uuidv4(),
+      bankId,
+      toAccountId: acc.id,
+      amount: loan.principalAmount,
+      type: 'transfer',
+      description: `Loan Disbursement (ID: ${loan.id.substring(0, 8)})`,
+      timestamp: new Date()
+    });
+  }
+
+  await db.insert(auditLogs).values({
+    id: uuidv4(),
+    bankId,
+    userDiscordId: interaction.user.id,
+    action: 'LOAN_APPROVED',
+    details: `Staff approved loan ${loanId} for user ${loan.discordId} ($${(loan.principalAmount/100).toFixed(2)})`,
+    timestamp: new Date()
+  });
+
+  refreshBankChannelGUIs(bankId);
+
+  await interaction.editReply({ content: `✅ **Loan Approved & Disbursed!**\nLoan ID \`${loanId.substring(0, 8)}\` approved for <@${loan.discordId}>. Funds credited.` });
+}
+
+async function handleStaffDenyLoan(bankId: string, interaction: ButtonInteraction, loanId: string) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const l = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId)));
+  if (l.length === 0) {
+    await interaction.editReply({ content: "❌ Loan application not found." });
+    return;
+  }
+
+  await db.update(loans).set({ status: 'rejected' }).where(eq(loans.id, loanId));
+
+  await db.insert(auditLogs).values({
+    id: uuidv4(),
+    bankId,
+    userDiscordId: interaction.user.id,
+    action: 'LOAN_REJECTED',
+    details: `Staff denied loan ${loanId} for user ${l[0].discordId}`,
+    timestamp: new Date()
+  });
+
+  refreshBankChannelGUIs(bankId);
+
+  await interaction.editReply({ content: `🔴 **Loan Application Denied.**\nLoan ID \`${loanId.substring(0, 8)}\` marked as rejected.` });
+}
+
+async function handleCustomerSearchModal(bankId: string, interaction: ModalSubmitInteraction, query: string) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const foundUsers = await db.select().from(users).where(
+    or(
+      eq(users.mcUsername, query),
+      eq(users.discordId, query)
+    )
+  );
+
+  if (foundUsers.length === 0) {
+    await interaction.editReply({ content: `❌ No citizen found matching username or ID **${query}**.` });
+    return;
+  }
+
+  const u = foundUsers[0];
+  const userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, u.discordId)));
+
+  let accsTxt = userAccs.map(a => `• **${a.accountName}** (${a.accountType}): **$${(a.balance / 100).toFixed(2)}**`).join('\n');
+  if (!accsTxt) accsTxt = '• No bank accounts open at this bank.';
+
+  await interaction.editReply({
+    content: `🔍 **Citizen Profile Lookup**\n\n` +
+      `👤 **Minecraft Username**: **${u.mcUsername}**\n` +
+      `🆔 **Discord**: <@${u.discordId}> (\`${u.discordId}\`)\n` +
+      `🔑 **UUID**: \`${u.mcUuid}\`\n\n` +
+      `🏦 **Accounts at this Bank**:\n${accsTxt}`
+  });
+}
+
+async function handleStaffTellerTxModal(bankId: string, interaction: ModalSubmitInteraction, targetAccName: string, type: string, amount: number, reason: string) {
+  await interaction.deferReply({ ephemeral: true });
+  const amountCents = Math.round(amount * 100);
+
+  const accs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.accountName, targetAccName)));
+  if (accs.length === 0) {
+    await interaction.editReply({ content: `❌ Bank account **${targetAccName}** not found.` });
+    return;
+  }
+
+  const acc = accs[0];
+
+  if (type === 'withdraw' && acc.balance < amountCents) {
+    await interaction.editReply({ content: `❌ Cannot withdraw. Account balance is $${(acc.balance / 100).toFixed(2)}.` });
+    return;
+  }
+
+  const newBalance = type === 'deposit' ? acc.balance + amountCents : acc.balance - amountCents;
+  await db.update(bankAccounts).set({ balance: newBalance }).where(eq(bankAccounts.id, acc.id));
+
+  await db.insert(transactions).values({
+    id: uuidv4(),
+    bankId,
+    toAccountId: type === 'deposit' ? acc.id : undefined,
+    fromAccountId: type === 'withdraw' ? acc.id : undefined,
+    amount: amountCents,
+    type: type === 'deposit' ? 'deposit' : 'withdraw',
+    description: `Teller Adjustment: ${reason}`,
+    timestamp: new Date()
+  });
+
+  await db.insert(auditLogs).values({
+    id: uuidv4(),
+    bankId,
+    userDiscordId: interaction.user.id,
+    action: `TELLER_${type.toUpperCase()}`,
+    details: `Teller adjusted ${targetAccName} by $${amount.toFixed(2)} (${type}). Reason: ${reason}`,
+    timestamp: new Date()
+  });
+
+  refreshBankChannelGUIs(bankId);
+
+  await interaction.editReply({ content: `✅ **Teller Transaction Complete!**\nAdjusted account **${targetAccName}** (${type.toUpperCase()}) by **$${amount.toFixed(2)}**.\nNew Balance: **$${(newBalance / 100).toFixed(2)}**.` });
+}
+
+async function handleStaffToggleStatus(bankId: string, interaction: ButtonInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  if (b.length === 0) return;
+  const currentMode = b[0].maintenanceMode;
+  const newMode = !currentMode;
+
+  await db.update(banks).set({ maintenanceMode: newMode }).where(eq(banks.id, bankId));
+
+  await db.insert(auditLogs).values({
+    id: uuidv4(),
+    bankId,
+    userDiscordId: interaction.user.id,
+    action: 'BANK_STATUS_TOGGLED',
+    details: `Toggled maintenance mode to ${newMode}`,
+    timestamp: new Date()
+  });
+
+  refreshBankChannelGUIs(bankId);
+
+  await interaction.editReply({ content: `⚙️ **Bank Operating Mode Updated!**\nMaintenance Mode is now: **${newMode ? 'ENABLED (Maintenance)' : 'DISABLED (Online)'}**.` });
+}
+
+async function handleBankRates(bankId: string, interaction: ButtonInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  if (b.length === 0) return;
+  const bank = b[0];
+
+  const hexColor = bank.brandingColor ? parseInt(bank.brandingColor.replace('#', ''), 16) : 0x4f46e5;
+
+  const embed = {
+    title: `📈 ${bank.name} • Interest Rates & Market Schedule`,
+    description: `Current interest rate tiers and fees for **${bank.name}**.\n\n` +
+      `• **Base Loan APR**: **5.00%** per annum\n` +
+      `• **Savings Account APY**: **2.25%** compound yield\n` +
+      `• **Internal Transfer Fee**: **$0.00** (Free)\n` +
+      `• **Platform Onyx Fee**: **${((bank.platformFeePercent || 0) / 100).toFixed(2)}%**\n` +
+      `• **CityCorp ATM Network Fee**: Standard CityCorp API rates\n\n` +
+      `For personalized commercial credit or custom treasury rates, please open a ticket with bank staff.`,
+    color: hexColor,
+    footer: { text: "Slate SaaS Onyx PSP Ledger • Financial Schedule" },
+    timestamp: new Date().toISOString()
+  };
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleStaffAuditLogs(bankId: string, interaction: ButtonInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const logs = await db.select().from(auditLogs)
+    .where(eq(auditLogs.bankId, bankId))
+    .orderBy(desc(auditLogs.timestamp))
+    .limit(10);
+
+  if (logs.length === 0) {
+    await interaction.editReply({ content: "📜 **No Staff Audit Logs Found**\nNo staff operations recorded yet." });
+    return;
+  }
+
+  let logTxt = `📜 **Recent Staff & Audit Activity (Last 10 Logs)**\n\n`;
+  for (const log of logs) {
+    const timeStr = `<t:${Math.floor(log.timestamp.getTime()/1000)}:R>`;
+    const userMention = log.userDiscordId ? `<@${log.userDiscordId}>` : 'System';
+    logTxt += `• **${log.action}** by ${userMention} (${timeStr})\n  \`${log.details}\`\n\n`;
+  }
+
+  await interaction.editReply({ content: logTxt });
+}
+
+async function handleRepayLoanModal(bankId: string, interaction: ModalSubmitInteraction, loanId: string, amount: number) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const amountCents = Math.round(amount * 100);
+
+  const targetLoans = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId)));
+  if (targetLoans.length === 0) {
+    await interaction.editReply({ content: '❌ Loan not found.' });
+    return;
+  }
+
+  const loan = targetLoans[0];
+  if (loan.remainingAmount <= 0 || loan.status === 'paid') {
+    await interaction.editReply({ content: '✅ This loan has already been paid off in full!' });
+    return;
+  }
+
+  const accs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, interaction.user.id)));
+  if (accs.length === 0) {
+    await interaction.editReply({ content: '❌ No bank account found to draw funds from.' });
+    return;
+  }
+
+  const account = accs[0];
+  if (account.balance < amountCents) {
+    await interaction.editReply({
+      content: `❌ **Insufficient Funds.**\nAccount **${account.accountName}** balance: **$${(account.balance / 100).toFixed(2)}**, payment: **$${amount.toFixed(2)}**.`
+    });
+    return;
+  }
+
+  const newBalance = account.balance - amountCents;
+  const newRemaining = Math.max(0, loan.remainingAmount - amountCents);
+  const newStatus = newRemaining === 0 ? 'paid' : 'active';
+
+  await db.update(bankAccounts).set({ balance: newBalance }).where(eq(bankAccounts.id, account.id));
+  await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus }).where(eq(loans.id, loan.id));
+
+  await db.insert(transactions).values({
+    id: uuidv4(),
+    bankId,
+    fromAccountId: account.id,
+    toAccountId: account.id,
+    amount: amountCents,
+    type: 'loan_repayment',
+    description: `Loan Repayment (${loanId.substring(0, 8)}). Remaining: $${(newRemaining / 100).toFixed(2)}`,
+    timestamp: new Date()
+  });
+
+  await interaction.editReply({
+    content: 
+      `🎉 **Loan Repayment Processed!**\n\n` +
+      `💸 **Payment Amount**: **$${amount.toFixed(2)}**\n` +
+      `💳 **Source Account**: **${account.accountName}**\n` +
+      `📉 **Remaining Loan Balance**: **$${(newRemaining / 100).toFixed(2)}**\n` +
+      `🏷️ **Status**: **${newStatus.toUpperCase()}**`
+  });
+}
+
+async function handleBankInGameInfo(bankId: string, interaction: ButtonInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  if (b.length === 0) return;
+  const bank = b[0];
+
+  const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
+  const isLinked = userMap.length > 0;
+  const mcUser = isLinked ? userMap[0].mcUsername : 'Not Linked';
+
+  const hexColor = bank.brandingColor ? parseInt(bank.brandingColor.replace('#', ''), 16) : 0x4f46e5;
+  const syncCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+  const embed = {
+    title: `🎮 ${bank.name} • Minecraft Server Sync & ATM Protocol`,
+    description: 
+      `Connect your Discord account with your Minecraft character for instant physical ATM deposits, banknote withdrawals, and CityCorp sync.\n\n` +
+      `👤 **Minecraft Character**: **${mcUser}**\n` +
+      `🔗 **Account Status**: ${isLinked ? '🟢 LINKED & VERIFIED' : '🔴 UNLINKED'}\n\n` +
+      (isLinked ? 
+        `✅ Your character **${mcUser}** is fully linked! Visit any CityCorp ATM block on the server to manage physical banknotes and cash deposits.` :
+        `🔑 **Linking Instructions**:\n` +
+        `1. Log into the Minecraft server\n` +
+        `2. Run command: \`/slate link ${syncCode}\`\n` +
+        `3. Your accounts and balances will sync automatically!`) +
+      `\n\n` +
+      `⌨️ **Minecraft In-Game Commands**:\n` +
+      `• \`/bank balance\` — View live account balances\n` +
+      `• \`/bank deposit <amount>\` — Deposit held cash banknotes\n` +
+      `• \`/bank withdraw <amount>\` — Dispense physical cash\n` +
+      `• \`/atm\` — Open nearest CityCorp physical ATM block`,
+    color: hexColor,
+    thumbnail: isLinked ? { url: `https://mc-heads.net/avatar/${mcUser}/100` } : undefined,
+    footer: { text: `Slate SaaS Onyx Network • MC Sync ID: ${syncCode}` },
+    timestamp: new Date().toISOString()
+  };
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
 

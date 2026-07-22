@@ -166,6 +166,8 @@ export function GlobalSettings() {
               </div>
             </div>
           </div>
+
+          <SaasBillingManager />
           
           <div className="flex justify-end">
             <button
@@ -207,6 +209,253 @@ export function GlobalSettings() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SaasBillingManager() {
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [banks, setBanks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [calcDetails, setCalcDetails] = useState<any>(null);
+  const [formData, setFormData] = useState({
+    bankId: "",
+    amount: "150.00",
+    period: "Monthly Slate SaaS License - " + new Date().toLocaleString("default", { month: "long", year: "numeric" }),
+    dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+  });
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      const [invRes, bankRes] = await Promise.all([
+        fetch("/api/admin/saas-invoices"),
+        fetch("/api/banks"),
+      ]);
+      if (invRes.ok) setInvoices(await invRes.json());
+      if (bankRes.ok) setBanks(await bankRes.json());
+      setLoading(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleBankSelect = async (bankId: string) => {
+    setFormData((prev) => ({ ...prev, bankId }));
+    if (!bankId) {
+      setCalcDetails(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/admin/banks/${bankId}/calculate-billing`);
+      if (res.ok) {
+        const data = await res.json();
+        setCalcDetails(data);
+        const amountStr = (data.calculatedAmountCents / 100).toFixed(2);
+        const monthName = new Date().toLocaleString("default", { month: "long", year: "numeric" });
+        const modelLabel = data.selectedBillingModel.replace('_', ' ').toUpperCase();
+        setFormData((prev) => ({
+          ...prev,
+          bankId,
+          amount: amountStr,
+          period: `${monthName} License (${modelLabel})`,
+        }));
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  const handleCreateInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.bankId) return alert("Please select a bank");
+    try {
+      const res = await fetch("/api/admin/saas-invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        setShowModal(false);
+        fetchData();
+      } else {
+        const d = await res.json();
+        alert(d.error || "Failed to create invoice");
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  const handleStatusChange = async (id: string, status: string) => {
+    try {
+      await fetch(`/api/admin/saas-invoices/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      fetchData();
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium text-white flex items-center gap-2">
+            <span className="text-emerald-400">$</span> SaaS Platform Billing & Invoices
+          </h3>
+          <p className="text-xs text-white/50 mt-0.5">Issue monthly recurring license invoices to white-labeled tenant banks.</p>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+        >
+          <Plus size={14} /> Generate SaaS Invoice
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-white/40 text-xs animate-pulse">Loading SaaS invoices...</div>
+      ) : invoices.length === 0 ? (
+        <div className="text-white/40 text-xs py-4 text-center border border-dashed border-white/10 rounded-lg">
+          No SaaS billing invoices generated yet.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-black/30 text-white/50 border-b border-white/10">
+              <tr>
+                <th className="px-3 py-2">Bank</th>
+                <th className="px-3 py-2">Period</th>
+                <th className="px-3 py-2">Amount</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Due Date</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {invoices.map((inv) => (
+                <tr key={inv.id} className="hover:bg-white/5">
+                  <td className="px-3 py-2 font-medium text-white">{inv.bankName || inv.bankId}</td>
+                  <td className="px-3 py-2 text-white/70">{inv.period}</td>
+                  <td className="px-3 py-2 font-mono text-emerald-400">${(inv.amount / 100).toFixed(2)}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                      inv.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                      inv.status === 'overdue' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                      'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    }`}>
+                      {inv.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-white/50">{new Date(inv.dueDate).toLocaleDateString()}</td>
+                  <td className="px-3 py-2 text-right">
+                    {inv.status !== 'paid' && (
+                      <button
+                        onClick={() => handleStatusChange(inv.id, 'paid')}
+                        className="text-emerald-400 hover:underline text-[11px] font-medium"
+                      >
+                        Mark Paid
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#12121a] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
+            <h4 className="text-base font-bold text-white">Generate SaaS Invoice</h4>
+            <form onSubmit={handleCreateInvoice} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Target Bank</label>
+                <select
+                  value={formData.bankId}
+                  onChange={(e) => handleBankSelect(e.target.value)}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  required
+                >
+                  <option value="">Select a bank...</option>
+                  {banks.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {calcDetails && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg text-xs space-y-1">
+                  <div className="flex justify-between font-bold text-emerald-400">
+                    <span>SaaS Model: {calcDetails.selectedBillingModel.toUpperCase()}</span>
+                    <span>${(calcDetails.calculatedAmountCents / 100).toFixed(2)}</span>
+                  </div>
+                  <p className="text-[11px] text-white/70 font-mono">{calcDetails.breakdownText}</p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Billing Period / Description</label>
+                <input
+                  type="text"
+                  value={formData.period}
+                  onChange={(e) => setFormData({ ...formData, period: e.target.value })}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Amount ($ USD)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Due Date</label>
+                <input
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-3 py-1.5 text-xs text-white/60 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg font-medium"
+                >
+                  Issue Invoice
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

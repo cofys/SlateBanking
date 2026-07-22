@@ -1,11 +1,22 @@
+import cron from "node-cron";
 import { db } from "../db";
 import { bankAccounts, payrollJobs, subscriptions, loans, transactions, banks } from "../db/schema";
 import { eq, and, lte, isNotNull } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { CityCorpClient } from "./citycorp_api";
+import { processYieldsAndAutomations } from "./yield_engine";
 
 export function startCronJobs() {
   console.log("[Cron] Starting background automated pipelines...");
+  
+  // Run yields processor every 15 minutes
+  setInterval(async () => {
+    try {
+      await processYieldsAndAutomations();
+    } catch (e) {
+      console.error("[Cron] Yield engine error:", e);
+    }
+  }, 15 * 60 * 1000);
   
   // Run every 60 seconds
   setInterval(async () => {
@@ -126,4 +137,111 @@ export function startCronJobs() {
       console.error("[Cron] Error pinging CityCorp:", e);
     }
   }, 5 * 60 * 1000); // 5 minutes
+
+  // Automated Operations Engine (Cron)
+  cron.schedule("0 0 * * *", async () => {
+    console.log("Running Daily Automated Operations Engine...");
+    const { db } = await import("../db/index");
+    const { banks, loans, auditLogs } = await import("../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const allBanks = await db.select().from(banks);
+      for (const bank of allBanks) {
+        let notes = [];
+        
+        // 1. Process Loans (accrue interest)
+        const openLoans = await db.select().from(loans).where(and(eq(loans.bankId, bank.id), eq(loans.status, 'active')));
+        let loansAccrued = 0;
+        for (const loan of openLoans) {
+          if (loan.interestRate && loan.principalAmount) {
+            const dailyInterest = Math.round((loan.principalAmount * (loan.interestRate / 100)) / 365);
+            if (dailyInterest > 0) {
+              await db.update(loans)
+                .set({ remainingAmount: loan.remainingAmount + dailyInterest })
+                .where(eq(loans.id, loan.id));
+              loansAccrued++;
+            }
+          }
+        }
+        if (loansAccrued > 0) notes.push(`Accrued interest on ${loansAccrued} loans.`);
+
+        if (notes.length > 0) {
+          await db.insert(auditLogs).values({
+             id: uuidv4(),
+             bankId: bank.id,
+             userDiscordId: 'SYSTEM',
+             action: `daily_processing_cron`,
+             details: `Automated Engine Executed. ${notes.join(' ')}`,
+             timestamp: new Date()
+          });
+        }
+      }
+      console.log("Daily Automated Operations Engine completed.");
+    } catch (e) {
+      console.error("Failed automated operations engine run:", e);
+    }
+  });
+
+  // Recurring Transfer Processor
+setInterval(async () => {
+  const { db } = await import("../db/index");
+  const { recurringTransfers, bankAccounts, transactions, clearinghouseBalances, bankSettings } = await import("../db/schema");
+  const { eq, and, lt } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const now = new Date();
+    const due = await db.select().from(recurringTransfers).where(and(eq(recurringTransfers.isActive, true), lt(recurringTransfers.nextRunAt, now)));
+    
+    for (const rt of due) {
+       // Process payment
+       const source = await db.select().from(bankAccounts).where(eq(bankAccounts.id, rt.fromAccountId)).get();
+       const target = await db.select().from(bankAccounts).where(eq(bankAccounts.id, rt.toAccountId)).get();
+       
+       if (source && target && source.balance >= rt.amount) {
+          // Subtract from source
+          await db.update(bankAccounts).set({ balance: source.balance - rt.amount }).where(eq(bankAccounts.id, source.id));
+          // Add to target
+          await db.update(bankAccounts).set({ balance: target.balance + rt.amount }).where(eq(bankAccounts.id, target.id));
+          
+          // Log transactions
+          await db.insert(transactions).values([
+            {
+              id: uuidv4(),
+              type: "transfer",
+              bankId: source.bankId,
+              fromAccountId: source.id,
+              toAccountId: target.id,
+              amount: rt.amount,
+              description: rt.description + " (Auto)",
+              timestamp: new Date()
+            }
+          ]);
+       }
+       
+       // Calculate next run
+       let nextRun = new Date(rt.nextRunAt);
+       if (rt.frequency === "daily") nextRun.setDate(nextRun.getDate() + 1);
+       else if (rt.frequency === "weekly") nextRun.setDate(nextRun.getDate() + 7);
+       else if (rt.frequency === "biweekly") nextRun.setDate(nextRun.getDate() + 14);
+       else if (rt.frequency === "monthly") nextRun.setMonth(nextRun.getMonth() + 1);
+       
+       // If it's still in the past (e.g. system was off), catch up to future
+       while (nextRun <= new Date()) {
+         if (rt.frequency === "daily") nextRun.setDate(nextRun.getDate() + 1);
+         else if (rt.frequency === "weekly") nextRun.setDate(nextRun.getDate() + 7);
+         else if (rt.frequency === "biweekly") nextRun.setDate(nextRun.getDate() + 14);
+         else if (rt.frequency === "monthly") nextRun.setMonth(nextRun.getMonth() + 1);
+       }
+       
+       await db.update(recurringTransfers).set({ nextRunAt: nextRun }).where(eq(recurringTransfers.id, rt.id));
+    }
+  } catch(e) {
+    console.error("Cron error:", e);
+  }
+}, 1000 * 60); // Check every minute
+
+
 }
