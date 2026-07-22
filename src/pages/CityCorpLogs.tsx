@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Activity, ServerCrash, CheckCircle2, AlertCircle, Clock, RefreshCw } from "lucide-react";
+import { Activity, ServerCrash, CheckCircle2, AlertCircle, Clock, RefreshCw, Search, Building2 } from "lucide-react";
 import { format } from "date-fns";
+import { CorpIdFinderModal } from "../components/CorpIdFinderModal";
 
 interface CityCorpLog {
   id: string;
@@ -17,6 +18,7 @@ interface CityCorpLog {
 export function CityCorpLogs() {
   const [logs, setLogs] = useState<CityCorpLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFinderOpen, setIsFinderOpen] = useState(false);
 
   useEffect(() => {
     fetchLogs();
@@ -49,14 +51,23 @@ export function CityCorpLogs() {
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2">CityCorp Network Telemetry</h1>
           <p className="text-white/60">Detailed API ping tracker and error logs for CityCorp PSP integration.</p>
         </div>
-        <button 
-          onClick={fetchLogs} 
-          disabled={loading}
-          className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg text-sm transition-colors border border-white/5"
-        >
-          <RefreshCw size={16} className={loading ? "animate-spin opacity-50" : ""} />
-          Refresh Logs
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsFinderOpen(true)} 
+            className="flex items-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-4 py-2 rounded-lg text-sm transition-colors cursor-pointer font-medium"
+          >
+            <Search size={16} />
+            Corp ID Finder & Inspector
+          </button>
+          <button 
+            onClick={fetchLogs} 
+            disabled={loading}
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg text-sm transition-colors border border-white/5 cursor-pointer"
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin opacity-50" : ""} />
+            Refresh Logs
+          </button>
+        </div>
       </div>
 
       <div className="bg-[#121216] border border-white/5 rounded-2xl overflow-hidden">
@@ -124,6 +135,11 @@ export function CityCorpLogs() {
           </table>
         </div>
       </div>
+
+      <CorpIdFinderModal 
+        isOpen={isFinderOpen}
+        onClose={() => setIsFinderOpen(false)}
+      />
     </div>
   );
 }

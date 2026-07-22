@@ -41,6 +41,117 @@ banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Reques
   });
 
 // Bulk Enable/Disable Maintenance Mode for ALL banks across the platform
+banksRouter.get("/api/banks/corp-finder", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks, bankAccounts } = await import("../../db/schema");
+    const { isNotNull, like, or, eq } = await import("drizzle-orm");
+
+    try {
+      const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
+      const testCorpId = req.query.testCorpId ? parseInt(req.query.testCorpId as string) : null;
+
+      // 1. Fetch all configured banks with Corp IDs
+      const configuredBanks = await db.select({
+        id: banks.id,
+        name: banks.name,
+        guildId: banks.guildId,
+        corpId: banks.corpId,
+        corpApiUuid: banks.corpApiUuid,
+        cityCorpAppId: banks.cityCorpAppId,
+        status: banks.status,
+        logoUrl: banks.logoUrl,
+        customDomain: banks.customDomain,
+        hasKey: isNotNull(banks.corpApiKey),
+      }).from(banks).where(isNotNull(banks.corpId));
+
+      // 2. Search local DB accounts / banks if query provided
+      let searchResults: any[] = [];
+      if (query) {
+        const qLower = `%${query.toLowerCase()}%`;
+        const numericQuery = parseInt(query);
+        
+        const matchingBanks = await db.select({
+          bankId: banks.id,
+          bankName: banks.name,
+          corpId: banks.corpId,
+          corpApiUuid: banks.corpApiUuid,
+          cityCorpAppId: banks.cityCorpAppId,
+        }).from(banks).where(
+          or(
+            like(banks.name, qLower),
+            !isNaN(numericQuery) ? eq(banks.corpId, numericQuery) : undefined
+          )
+        );
+
+        const matchingAccounts = await db.select({
+          accountId: bankAccounts.id,
+          accountName: bankAccounts.accountName,
+          bankId: bankAccounts.bankId,
+          accountType: bankAccounts.accountType,
+        }).from(bankAccounts).where(like(bankAccounts.accountName, qLower)).limit(10);
+
+        searchResults = [
+          ...matchingBanks.map(b => ({ type: 'bank', title: b.bankName, corpId: b.corpId, bankId: b.bankId, details: `Bank Instance (${b.corpId ? `Corp ID #${b.corpId}` : 'No Corp ID'})` })),
+          ...matchingAccounts.map(a => ({ type: 'account', title: a.accountName, bankId: a.bankId, details: `Bank Account (${a.accountType})` }))
+        ];
+      }
+
+      // 3. Live Test Corp ID if testCorpId requested
+      let testResult = null;
+      if (testCorpId && !isNaN(testCorpId)) {
+        const matchingBank = configuredBanks.find(b => b.corpId === testCorpId);
+        const bankToUse = matchingBank || configuredBanks.find(b => b.corpApiUuid && b.hasKey);
+
+        if (bankToUse) {
+          const fullBank = await db.select().from(banks).where(eq(banks.id, bankToUse.id)).get();
+          if (fullBank && fullBank.corpApiUuid && fullBank.corpApiKey) {
+            const { CityCorpClient } = await import("../../lib/citycorp_api");
+            const client = new CityCorpClient(testCorpId, fullBank.corpApiUuid, fullBank.corpApiKey, fullBank.id);
+            const startTime = Date.now();
+            const listRes = await client.listAccounts(1);
+            const latencyMs = Date.now() - startTime;
+
+            if (listRes && Array.isArray(listRes.accounts)) {
+              testResult = {
+                valid: true,
+                corpId: testCorpId,
+                totalAccounts: listRes.totalAccounts || listRes.accounts.length,
+                accountsSample: listRes.accounts.slice(0, 5).map((a: any) => a.account_name || a.name || a.id),
+                latencyMs,
+                message: `Corporation ID #${testCorpId} verified on CityCorp network. Found ${listRes.totalAccounts || listRes.accounts.length} registered accounts.`,
+                bankName: matchingBank?.name || null
+              };
+            } else {
+              testResult = {
+                valid: false,
+                corpId: testCorpId,
+                latencyMs,
+                message: `CityCorp API responded with no accounts or authorization error for Corp ID #${testCorpId}.`,
+                bankName: matchingBank?.name || null
+              };
+            }
+          }
+        } else {
+          testResult = {
+            valid: true,
+            corpId: testCorpId,
+            latencyMs: 0,
+            message: `Corp ID #${testCorpId} is formatted correctly as a numeric Corporation ID.`
+          };
+        }
+      }
+
+      res.json({
+        configuredBanks,
+        searchResults,
+        testResult
+      });
+    } catch (e: any) {
+      console.error("[CorpIdFinder] Error searching or testing Corp ID:", e);
+      res.status(500).json({ error: "Failed to search CityCorp Corp IDs" });
+    }
+  });
+
 banksRouter.post("/api/banks/maintenance-all", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { banks } = await import("../../db/schema");

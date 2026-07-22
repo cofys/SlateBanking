@@ -1,6 +1,7 @@
-import { Plus, Server, CheckCircle, XCircle, Loader2, Database, Settings as SettingsIcon, ArrowUpRight } from "lucide-react";
+import { Plus, Server, CheckCircle, XCircle, Loader2, Database, Settings as SettingsIcon, ArrowUpRight, Search, Building2 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { CorpIdFinderModal } from "../components/CorpIdFinderModal";
 
 interface BankInstance {
   id: string;
@@ -167,6 +168,10 @@ export function BanksList() {
   const [cityCorpAppId, setCityCorpAppId] = useState("");
   const [cityCorpAppSecret, setCityCorpAppSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Corp ID Finder Modal State
+  const [isFinderOpen, setIsFinderOpen] = useState(false);
+  const [finderTarget, setFinderTarget] = useState<'provision' | 'edit'>('provision');
 
   // Editing Existing Bank Config State
   const [isEditingConfig, setIsEditingConfig] = useState(false);
@@ -609,7 +614,19 @@ export function BanksList() {
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-white/70 mb-1">Corporation ID</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs text-white/70">Corporation ID</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFinderTarget('provision');
+                          setIsFinderOpen(true);
+                        }}
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <Search size={10} /> Find Corp ID
+                      </button>
+                    </div>
                     <input 
                       required
                       type="number"
@@ -886,7 +903,19 @@ export function BanksList() {
                             />
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-white/50 mb-1 uppercase tracking-wide">Corporation ID (CityCorp)</label>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="block text-xs font-medium text-white/50 uppercase tracking-wide">Corporation ID (CityCorp)</label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFinderTarget('edit');
+                                  setIsFinderOpen(true);
+                                }}
+                                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-0.5 cursor-pointer"
+                              >
+                                <Search size={10} /> Find Corp ID
+                              </button>
+                            </div>
                             <input 
                               type="text" 
                               value={editCorpId} 
@@ -1236,6 +1265,23 @@ export function BanksList() {
           </div>
         </div>
       )}
+
+      {/* Corp ID Finder Modal */}
+      <CorpIdFinderModal 
+        isOpen={isFinderOpen}
+        onClose={() => setIsFinderOpen(false)}
+        onSelectCorpId={(selectedCorpId, details) => {
+          if (finderTarget === 'provision') {
+            setCorpId(selectedCorpId.toString());
+            if (details?.cityCorpAppId) setCityCorpAppId(details.cityCorpAppId);
+            if (details?.corpApiUuid) setCorpApiUuid(details.corpApiUuid);
+          } else {
+            setEditCorpId(selectedCorpId.toString());
+            if (details?.cityCorpAppId) setEditCityCorpAppId(details.cityCorpAppId);
+            if (details?.corpApiUuid) setEditCorpApiUuid(details.corpApiUuid);
+          }
+        }}
+      />
 
     </div>
   );

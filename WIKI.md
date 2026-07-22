@@ -518,6 +518,15 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
 - **Automatic Database Migration Runner (`src/db/index.ts`)**:
   - Added `migrate(db, { migrationsFolder })` from `drizzle-orm/better-sqlite3/migrator` to run automatically upon database initialization in `src/db/index.ts`. Ensures all tables (`payroll_jobs`, `recurring_transfers`, `banks`, etc.) exist before cron tasks and background pipelines execute, resolving `SqliteError: no such table` startup errors.
 
+## CityCorp Corporation ID Finder & Inspector Utility
+- **Interactive Corp ID Search Endpoint (`GET /api/banks/corp-finder`)**:
+  - Engineered a dedicated search and inspection backend that scans all registered tenant banks and bank accounts across Slate SaaS to locate and cross-reference configured CityCorp Corporation IDs.
+  - Features a live **CityCorp API Ping Verifier** that pings `https://api.cityrp.org/citycorp/accounts/list?corp_id={id}` in real-time, verifying network connectivity, latency (ms), registered account counts, and sample account names for any candidate Corp ID.
+- **Universal Corp ID Finder Modal (`CorpIdFinderModal.tsx`)**:
+  - Integrated a sleek, dark-mode modal accessible across **Provision New Bank** (`BanksList.tsx`), **Manage Bank Settings** (`BankSettings.tsx`), and **CityCorp Network Telemetry** (`CityCorpLogs.tsx`).
+  - Users can search by Corporation Name, Bank Name, or App ID, inspect live candidate Corp IDs with instant network ping feedback, and click **"Apply Corp ID"** to automatically populate form fields. Includes an in-app helper guide detailing how to retrieve Corp IDs from the CityCorp Developer Portal (`dashboard.cityrp.org`), in-game `/corp info` commands, and Discord webhooks.
+
+
 
 
 
