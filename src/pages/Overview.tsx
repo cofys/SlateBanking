@@ -28,8 +28,8 @@ export function Overview() {
     try {
       const res = await fetch(`/api/banks/corp-finder?query=${encodeURIComponent(corpSearchQuery)}`);
       const data = await res.json();
-      if (res.ok && data.results && data.results.length > 0) {
-        setCorpSearchResult(data.results[0].corpId);
+      if (res.ok && data.searchResults && data.searchResults.length > 0) {
+        setCorpSearchResult(data.searchResults[0].corpId);
       } else {
         setCorpSearchError("No matching Corporation found in registry.");
       }

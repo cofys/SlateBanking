@@ -521,6 +521,7 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
 ## CityCorp Corporation ID Finder & Inspector Utility
 - **Interactive Corp ID Search Endpoint (`GET /api/banks/corp-finder`)**:
   - Engineered a dedicated search and inspection backend that scans all registered tenant banks and bank accounts across Slate SaaS to locate and cross-reference configured CityCorp Corporation IDs.
+  - Integrates directly with the `https://api.cityrp.org/citycorp/corp/list` endpoint to search the global CityCorp registry using any active tenant API credentials.
   - Features a live **CityCorp API Ping Verifier** that pings `https://api.cityrp.org/citycorp/accounts/list?corp_id={id}` in real-time, verifying network connectivity, latency (ms), registered account counts, and sample account names for any candidate Corp ID.
 - **Global Corp ID Finder (`Overview.tsx`)**:
   - A simple search utility added directly to the Onyx Network admin dashboard.
