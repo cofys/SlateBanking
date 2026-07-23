@@ -47,7 +47,8 @@ banksRouter.get("/api/banks/corp-finder", requireAuth, async (req: express.Reque
     const { isNotNull, like, or, eq } = await import("drizzle-orm");
 
     try {
-      const query = typeof req.query.query === 'string' ? req.query.query.trim().toLowerCase() : '';
+      const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
+      const testCorpId = req.query.testCorpId ? parseInt(req.query.testCorpId as string) : null;
 
       // 1. Fetch all configured banks (we need any with API credentials for the global search)
       const configuredBanks = await db.select({
@@ -63,37 +64,58 @@ banksRouter.get("/api/banks/corp-finder", requireAuth, async (req: express.Reque
         hasKey: isNotNull(banks.corpApiKey),
       }).from(banks);
 
+      // 2. Search local DB accounts / banks if query provided
       let searchResults: any[] = [];
-      
       if (query) {
+        const qLower = `%${query.toLowerCase()}%`;
+        const numericQuery = parseInt(query);
+        
+        const matchingBanks = await db.select({
+          bankId: banks.id,
+          bankName: banks.name,
+          corpId: banks.corpId,
+          corpApiUuid: banks.corpApiUuid,
+          cityCorpAppId: banks.cityCorpAppId,
+        }).from(banks).where(
+          or(
+            like(banks.name, qLower),
+            !isNaN(numericQuery) ? eq(banks.corpId, numericQuery) : undefined
+          )
+        );
+
+        const matchingAccounts = await db.select({
+          accountId: bankAccounts.id,
+          accountName: bankAccounts.accountName,
+          bankId: bankAccounts.bankId,
+          accountType: bankAccounts.accountType,
+        }).from(bankAccounts).where(like(bankAccounts.accountName, qLower)).limit(10);
+
+        searchResults = [
+          ...matchingBanks.map(b => ({ type: 'bank', title: b.bankName, corpId: b.corpId, bankId: b.bankId, details: `Bank Instance (${b.corpId ? `Corp ID #${b.corpId}` : 'No Corp ID'})` })),
+          ...matchingAccounts.map(a => ({ type: 'account', title: a.accountName, bankId: a.bankId, details: `Bank Account (${a.accountType})` }))
+        ];
+
         // Search global CityCorp API registry via /corp/list using any available tenant credentials
         const bankToUse = configuredBanks.find(b => b.corpApiUuid && b.hasKey);
-        
         if (bankToUse) {
            const fullBank = await db.select().from(banks).where(eq(banks.id, bankToUse.id)).get();
            if (fullBank && fullBank.corpApiUuid && fullBank.corpApiKey) {
-              let page = 1;
-              let maxPages = 15; // safety limit to prevent infinite loops
-
-              while (page <= maxPages) {
-                 try {
-                    const url = new URL(`https://api.cityrp.org/citycorp/corp/list`);
-                    if (bankToUse.corpId) {
-                       url.searchParams.append("corp_id", bankToUse.corpId.toString());
-                    }
-                    url.searchParams.append("page", page.toString());
-                    
-                    const authString = `${fullBank.corpApiUuid}:${fullBank.corpApiKey}`;
-                    const authEncoded = Buffer.from(authString).toString('base64');
-                    const headers = {
-                       "Authorization": `Basic ${authEncoded}`,
-                       "User-Agent": "SlateBankBot/1.0",
-                       "Content-Type": "application/json"
-                    };
-                    
-                    const resApi = await fetch(url.toString(), { headers });
-                    if (!resApi.ok) break;
-
+              try {
+                 const url = new URL(`https://api.cityrp.org/citycorp/corp/list`);
+                 if (bankToUse.corpId) {
+                    url.searchParams.append("corp_id", bankToUse.corpId.toString());
+                 }
+                 url.searchParams.append("query", query);
+                 url.searchParams.append("name", query);
+                 const authString = `${fullBank.corpApiUuid}:${fullBank.corpApiKey}`;
+                 const authEncoded = Buffer.from(authString).toString('base64');
+                 const headers = {
+                    "Authorization": `Basic ${authEncoded}`,
+                    "User-Agent": "SlateBankBot/1.0",
+                    "Content-Type": "application/json"
+                 };
+                 const resApi = await fetch(url.toString(), { headers });
+                 if (resApi.ok) {
                     const dataApi = await resApi.json();
                     let allCorps: any[] = [];
                     if (Array.isArray(dataApi)) allCorps = dataApi;
@@ -102,9 +124,8 @@ banksRouter.get("/api/banks/corp-finder", requireAuth, async (req: express.Reque
                     else if (dataApi && Array.isArray(dataApi.results)) allCorps = dataApi.results;
                     else if (dataApi && Array.isArray(dataApi.data)) allCorps = dataApi.data;
 
-                    if (allCorps.length === 0) break; // no more data
-
-                    const matched = allCorps.filter((c: any) => c.name && c.name.toLowerCase().includes(query));
+                    const qLowerApi = query.toLowerCase();
+                    const matched = allCorps.filter(c => c.name && c.name.toLowerCase().includes(qLowerApi));
                     for (const m of matched) {
                        searchResults.push({
                           type: 'citycorp_registry',
@@ -113,25 +134,63 @@ banksRouter.get("/api/banks/corp-finder", requireAuth, async (req: express.Reque
                           details: `Registered CityCorp Entity`
                        });
                     }
-
-                    if (searchResults.length > 0) break; // Found matches, stop paging
-
-                    if (dataApi && dataApi.totalPages && page >= dataApi.totalPages) break;
-                    
-                    page++;
-                 } catch (e) {
-                    console.error("[CorpFinder] Error fetching from citycorp/corp/list:", e);
-                    break;
                  }
+              } catch (e) {
+                 console.error("[CorpFinder] Error fetching from citycorp/corp/list:", e);
               }
            }
+        }
+      }
+
+      // 3. Live Test Corp ID if testCorpId requested
+      let testResult = null;
+      if (testCorpId && !isNaN(testCorpId)) {
+        const matchingBank = configuredBanks.find(b => b.corpId === testCorpId);
+        const bankToUse = matchingBank || configuredBanks.find(b => b.corpApiUuid && b.hasKey);
+
+        if (bankToUse) {
+          const fullBank = await db.select().from(banks).where(eq(banks.id, bankToUse.id)).get();
+          if (fullBank && fullBank.corpApiUuid && fullBank.corpApiKey) {
+            const { CityCorpClient } = await import("../../lib/citycorp_api");
+            const client = new CityCorpClient(testCorpId, fullBank.corpApiUuid, fullBank.corpApiKey, fullBank.id);
+            const startTime = Date.now();
+            const listRes = await client.listAccounts(1);
+            const latencyMs = Date.now() - startTime;
+
+            if (listRes && Array.isArray(listRes.accounts)) {
+              testResult = {
+                valid: true,
+                corpId: testCorpId,
+                totalAccounts: listRes.totalAccounts || listRes.accounts.length,
+                accountsSample: listRes.accounts.slice(0, 5).map((a: any) => a.account_name || a.name || a.id),
+                latencyMs,
+                message: `Corporation ID #${testCorpId} verified on CityCorp network. Found ${listRes.totalAccounts || listRes.accounts.length} registered accounts.`,
+                bankName: matchingBank?.name || null
+              };
+            } else {
+              testResult = {
+                valid: false,
+                corpId: testCorpId,
+                latencyMs,
+                message: `CityCorp API responded with no accounts or authorization error for Corp ID #${testCorpId}.`,
+                bankName: matchingBank?.name || null
+              };
+            }
+          }
+        } else {
+          testResult = {
+            valid: true,
+            corpId: testCorpId,
+            latencyMs: 0,
+            message: `Corp ID #${testCorpId} is formatted correctly as a numeric Corporation ID.`
+          };
         }
       }
 
       res.json({
         configuredBanks,
         searchResults,
-        testResult: null
+        testResult
       });
     } catch (e: any) {
       console.error("[CorpIdFinder] Error searching or testing Corp ID:", e);
