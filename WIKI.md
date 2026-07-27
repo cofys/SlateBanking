@@ -174,7 +174,7 @@ Every bank defined in the platform can attach a unique Discord Bot Token to its 
 
 ## 🗄️ Database Schema Deep Dive
 
-The platform relies on a SQLite database configured via `drizzle.config.ts`. Here are the definitive tables from `src/db/schema.ts`:
+The platform relies on a SQLite database configured via `drizzle.config.ts` and managed at runtime via `src/db/index.ts`. On server boot, `ensureDatabaseSchemaSynced()` automatically executes PRAGMA table checks to create any missing tables (`CREATE TABLE IF NOT EXISTS`) and dynamically add missing schema columns via `ALTER TABLE ... ADD COLUMN` across all core modules. Here are the definitive tables from `src/db/schema.ts`:
 
 - **`users`**: Global identity mapping table linking Discord IDs to Minecraft UUIDs and Usernames.
 - **`banks`**: The foundational tenant row. Contains `discordToken`, `status`, `brandingColor`, etc.
