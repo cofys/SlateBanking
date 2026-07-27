@@ -562,6 +562,11 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
     `corp.player.info.get,corp.account_transactions.get,corp.account_money.transfer,corp.account.deposit,corp.account.withdraw`
   - Ensured seamless OAuth state nonces and parameter propagation across all client authentication routes.
 
+## Coolify Multi-Stage Docker Build Optimization
+- **Pruned Single-Pass Module Compilation (`Dockerfile`)**:
+  - Replaced the redundant double `npm install` in the runner image with a single-pass `builder` stage that compiles native C++ modules (such as `better-sqlite3`) and runs `npm prune --omit=dev`.
+  - The runner stage directly copies pre-compiled `node_modules` from the builder stage, eliminating native module build failures, `--force` flag errors, and container timeouts during Coolify deployment.
+
 
 
 
