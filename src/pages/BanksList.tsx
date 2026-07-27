@@ -264,7 +264,7 @@ export function BanksList() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await fetch("/api/banks", {
+      const res = await fetch("/api/banks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -273,21 +273,30 @@ export function BanksList() {
           cityCorpAppId, cityCorpAppSecret
         })
       });
-      setShowAddModal(false);
-      setName("");
-      setGuildId("");
-      setDiscordToken("");
-      setCustomDomain("");
-      setEditDiscordClientId("");
-      setDiscordClientSecret("");
-      setCorpId("");
-      setCorpApiUuid("");
-      setCorpApiKey("");
-      fetchBanks();
-    } catch (e) {
+      if (res.ok) {
+        setShowAddModal(false);
+        setName("");
+        setGuildId("");
+        setDiscordToken("");
+        setCustomDomain("");
+        setDiscordClientId("");
+        setDiscordClientSecret("");
+        setCorpId("");
+        setCorpApiUuid("");
+        setCorpApiKey("");
+        setCityCorpAppId("");
+        setCityCorpAppSecret("");
+        fetchBanks();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        alert(`Failed to provision bank: ${errorData.error || res.statusText || "Server error"}`);
+      }
+    } catch (e: any) {
       console.error(e);
+      alert(`Error provisioning bank: ${e.message}`);
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   };
 
   const handleToggleBot = async (bankId: string, currentStatus: string) => {
@@ -587,7 +596,7 @@ export function BanksList() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-white/70 mb-1">Discord Client ID</label>
-                  <input value={discordClientId} onChange={(e) => setEditDiscordClientId(e.target.value)} className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                  <input value={discordClientId} onChange={(e) => setDiscordClientId(e.target.value)} placeholder="e.g. 129845729188" className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="block text-xs text-white/70 mb-1">Discord Client Secret</label>
