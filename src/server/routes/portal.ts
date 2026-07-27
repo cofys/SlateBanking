@@ -1,6 +1,7 @@
 import express from 'express';
 import { requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET, getRedirectUri } from "../middleware.js";
 import { botManager } from "../../lib/bot_manager.js";
+import { buildCityCorpAuthUrl } from "../../lib/citycorp_api.js";
 import * as crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { randomInt } from "crypto";
@@ -48,9 +49,7 @@ portalRouter.get("/api/portal/:bankId/oauth/url", requireAuth, async (req: expre
         nonce
       }));
 
-      const scopes = "corp.player.info.get,corp.get";
-        const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
-
+      const authUrl = buildCityCorpAuthUrl(bank, redirectUri, state);
       res.json({ url: authUrl });
     } catch (e: any) {
       console.error(e);

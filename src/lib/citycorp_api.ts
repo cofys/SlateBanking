@@ -2,6 +2,37 @@ import { db } from "../db/index";
 import { cityCorpLogs } from "../db/schema";
 import { v4 as uuidv4 } from "uuid";
 
+export const CITYCORP_REQUIRED_SCOPES = "corp.player.info.get,corp.account_transactions.get,corp.account_money.transfer,corp.account.deposit,corp.account.withdraw";
+
+export function buildCityCorpAuthUrl(
+  bank: { cityCorpAppId?: string | null; cityCorpAuthUrl?: string | null },
+  redirectUri: string,
+  state: string
+): string {
+  const appId = bank.cityCorpAppId || "";
+  const rawAuthUrl = bank.cityCorpAuthUrl?.trim();
+
+  if (!rawAuthUrl) {
+    return `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}&response_type=code`;
+  }
+
+  try {
+    const urlObj = new URL(rawAuthUrl);
+    urlObj.searchParams.set("redirect_uri", redirectUri);
+    if (!urlObj.searchParams.has("app_id") && appId) {
+      urlObj.searchParams.set("app_id", appId);
+    }
+    urlObj.searchParams.set("scopes", CITYCORP_REQUIRED_SCOPES);
+    urlObj.searchParams.set("state", state);
+    if (!urlObj.searchParams.has("response_type")) {
+      urlObj.searchParams.set("response_type", "code");
+    }
+    return urlObj.toString();
+  } catch (e) {
+    return `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}&response_type=code`;
+  }
+}
+
 export class CityCorpClient {
   private baseUrl = "https://api.cityrp.org/citycorp";
   private corpId: number;

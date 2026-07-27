@@ -551,6 +551,17 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
   - When Maintenance Mode is cleared, the bot automatically resets its status back to `online` with custom activity set to `/bank | [Bank Name]`.
   - Added `updateBankBotPresence(bankId, isMaintenance)` to `BotManager` and integrated it across all API endpoints, background periodic update timers, and staff panel toggle interactions.
 
+## Bank Overview UI Refactoring
+- **Removal of Demo Data Banner (`BankOverview.tsx`)**:
+  - Removed the "Showcasing Slate? Populate realistic demo data!" banner and associated local storage state from the top of the Bank Overview page for a cleaner, production-ready dashboard interface.
+
+## Whitelabel CityCorp OAuth Integration & Dynamic Domain Handling
+- **Dynamic Authorization URL Generator (`citycorp_api.ts`, `authRoutes.ts`, `portal.ts`)**:
+  - Implemented `buildCityCorpAuthUrl(bank, redirectUri, state)` to dynamically parse and inject the bank's custom domain redirect URI (`https://${bank.customDomain}/api/auth/citycorp/callback` or request host) regardless of the custom authorization URL supplied in Bank Settings.
+  - Expanded required authorization scopes to cover full player transaction capabilities:
+    `corp.player.info.get,corp.account_transactions.get,corp.account_money.transfer,corp.account.deposit,corp.account.withdraw`
+  - Ensured seamless OAuth state nonces and parameter propagation across all client authentication routes.
+
 
 
 

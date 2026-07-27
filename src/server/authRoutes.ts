@@ -1,6 +1,7 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET, getRedirectUri, requireAuth } from "./middleware.js";
+import { buildCityCorpAuthUrl } from "../lib/citycorp_api.js";
 
 export function registerAuthRoutes(app: express.Express) {
   app.get("/api/domain-lookup", async (req, res) => {
@@ -66,8 +67,7 @@ export function registerAuthRoutes(app: express.Express) {
         const nonce = uuidv4();
         res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
         const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce }));
-        const scopes = "corp.player.info.get,corp.get";
-        const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
+        const authUrl = buildCityCorpAuthUrl(bank, redirectUri, state);
         return res.json({ url: authUrl });
       } else {
         return res.status(400).json({ error: "CityCorp OAuth is not configured. Please set up a bank with CityCorp Application credentials in the Admin panel first." });
@@ -80,8 +80,7 @@ export function registerAuthRoutes(app: express.Express) {
         const nonce = uuidv4();
         res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
         const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce }));
-        const scopes = "corp.player.info.get,corp.get";
-        const authUrl = bank.cityCorpAuthUrl || `https://dashboard.cityrp.org/authorize?app_id=${bank.cityCorpAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${scopes}&state=${state}&response_type=code`;
+        const authUrl = buildCityCorpAuthUrl(bank, redirectUri, state);
         return res.json({ url: authUrl });
     } else if (bank && bank.discordClientId) {
        clientId = bank.discordClientId;
