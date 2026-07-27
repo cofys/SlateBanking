@@ -5,16 +5,19 @@ import { eq, and, lte, isNotNull } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { CityCorpClient } from "./citycorp_api";
 import { processYieldsAndAutomations } from "./yield_engine";
+import { processDueLoanRepayments, accrueLoanInterest } from "../server/loan_processor";
 
 export function startCronJobs() {
   console.log("[Cron] Starting background automated pipelines...");
   
-  // Run yields processor every 15 minutes
+  // Run loan processor & yields every 15 minutes
   setInterval(async () => {
     try {
       await processYieldsAndAutomations();
+      await processDueLoanRepayments();
+      await accrueLoanInterest();
     } catch (e) {
-      console.error("[Cron] Yield engine error:", e);
+      console.error("[Cron] Loan/Yield processing error:", e);
     }
   }, 15 * 60 * 1000);
   

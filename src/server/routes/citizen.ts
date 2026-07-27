@@ -137,7 +137,7 @@ citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.
     const { v4: uuidv4 } = await import("uuid");
     
     try {
-      const { bankId, accountId, principalAmount, purpose } = req.body; const discordId = (req as any).user.discordId;
+      const { bankId, accountId, principalAmount, purpose, collateralDescription, collateralValue } = req.body; const discordId = (req as any).user.discordId;
       if (!bankId || !discordId || !accountId || !principalAmount) return res.status(400).json({ error: "Missing fields" });
 
       const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
@@ -155,17 +155,40 @@ citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.
       
       const loanId = uuidv4();
       
+      let contractUrl: string | null = null;
+      if (settings?.enableGoogleDocsContracts) {
+        const { banks } = await import("../../db/schema");
+        const bankRec = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+        const { generateContractUrl } = await import("../../lib/google_docs_contracts");
+        contractUrl = generateContractUrl(settings.googleDocsLoanTemplateUrl, {
+          bankName: bankRec?.name || "Slate Bank",
+          clientDiscordId: discordId,
+          contractType: 'loan',
+          contractId: loanId,
+          amount: principalAmount,
+          interestRate: 500,
+          purpose
+        });
+      }
+
+      const colVal = collateralValue ? Math.round(parseFloat(collateralValue) * 100) : null;
+      const colStatus = collateralDescription ? "pledged" : "none";
+
       await db.insert(loans).values({
         id: loanId,
         bankId,
         discordId,
         accountId,
         principalAmount,
-        remainingAmount: principalAmount, // Assuming simple starting amount, interest accrues or is pre-calculated
-        interestRate: 500, // Defauting to 5% apr unless you have complex logic
+        remainingAmount: principalAmount,
+        interestRate: 500, // Defaulting to 5% APR
         nextPaymentDate,
         purpose,
+        collateralDescription: collateralDescription || null,
+        collateralValue: colVal,
+        collateralStatus: colStatus,
         status: autoApprove ? "approved" : "pending",
+        contractUrl,
         createdAt: new Date(),
       });
 
@@ -218,6 +241,21 @@ citizenRouter.post("/api/citizen/credit/apply", requireAuth, async (req: express
        
        const appId = uuidv4();
        
+       let contractUrl: string | null = null;
+       if (settings?.enableGoogleDocsContracts) {
+         const { banks } = await import("../../db/schema");
+         const bankRec = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+         const { generateContractUrl } = await import("../../lib/google_docs_contracts");
+         contractUrl = generateContractUrl(settings.googleDocsCreditTemplateUrl, {
+           bankName: bankRec?.name || "Slate Bank",
+           clientDiscordId: discordId,
+           contractType: 'credit',
+           contractId: appId,
+           amount: requestedLimit,
+           purpose
+         });
+       }
+
        await db.insert(creditApplications).values({
            id: appId,
            bankId,
@@ -227,6 +265,7 @@ citizenRouter.post("/api/citizen/credit/apply", requireAuth, async (req: express
            monthlyIncome,
            purpose,
            status: autoApprove ? "approved" : "pending",
+           contractUrl,
            createdAt: new Date(),
        });
 
@@ -711,9 +750,23 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
       const fromBank = sourceAccount.bankId;
       const toBank = destAccount.bankId;
 
+      // Determine transfer fee rate (using custom account fee override if defined, else bank default)
+      let transferFeeBps = sourceAccount.customTransferFeePercent;
+      if (transferFeeBps === null || transferFeeBps === undefined) {
+        const fromSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, fromBank)).get();
+        transferFeeBps = fromSettings?.transferFeePercent ?? 0;
+      }
+
+      const feeCents = transferFeeBps > 0 ? Math.round((parsedAmount * transferFeeBps) / 10000) : 0;
+      const totalRequired = parsedAmount + feeCents;
+
+      if (sourceAccount.balance < totalRequired) {
+        return res.status(400).json({ error: `Insufficient funds. Transfer requires $${(parsedAmount/100).toFixed(2)} plus $${(feeCents/100).toFixed(2)} transfer fee.` });
+      }
+
       if (fromBank === toBank) {
-        // Execute internal transfer
-        await db.update(bankAccounts).set({ balance: sourceAccount.balance - parsedAmount }).where(eq(bankAccounts.id, sourceAccount.id));
+        // Execute internal transfer atomically
+        await db.update(bankAccounts).set({ balance: sourceAccount.balance - totalRequired }).where(eq(bankAccounts.id, sourceAccount.id));
         await db.update(bankAccounts).set({ balance: destAccount.balance + parsedAmount }).where(eq(bankAccounts.id, destAccount.id));
 
         await db.insert(transactions).values({
@@ -723,12 +776,26 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
           toAccountId: destAccount.id,
           type: "transfer",
           amount: parsedAmount,
-          description: `Transfer to ${destAccount.accountName}`,
+          description: feeCents > 0 ? `Transfer to ${destAccount.accountName} (Fee: $${(feeCents/100).toFixed(2)})` : `Transfer to ${destAccount.accountName}`,
           timestamp: new Date()
         });
 
+        if (feeCents > 0) {
+          await db.insert(transactions).values({
+            id: uuidv4(),
+            bankId: sourceAccount.bankId,
+            fromAccountId: sourceAccount.id,
+            toAccountId: null,
+            type: "transfer",
+            amount: feeCents,
+            description: `Transfer Fee (${(transferFeeBps/100).toFixed(2)}%)`,
+            timestamp: new Date(),
+            category: "Fees"
+          });
+        }
+
         const { botManager } = await import("../../lib/bot_manager");
-        botManager.sendNotification(sourceAccount.bankId, `💸 **Citizen Transfer**: <@${discordId}> transferred $${(parsedAmount/100).toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}**.`);
+        botManager.sendNotification(sourceAccount.bankId, `💸 **Citizen Transfer**: <@${discordId}> transferred $${(parsedAmount/100).toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}**${feeCents > 0 ? ` (Fee: $${(feeCents/100).toFixed(2)})` : ''}.`);
       } else {
          // Inter-bank transfer logic
          const tSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, toBank)).get();

@@ -115,11 +115,31 @@ export class BotManager {
     }
   }
 
+  async restartBankBot(bankId: string, token: string) {
+    await this.stopBankBot(bankId);
+    if (token && token.trim().length > 0) {
+      await this.provisionBankBot(bankId, token.trim());
+    }
+  }
+
   async sendNotification(bankId: string, message: string) {
      const instance = this.instances.get(bankId);
      if (instance?.status === 'online') {
-        // Ideally send to a configured logging channel. 
-        // For now, this is a stub as the channel isn't configured in the schema yet.
+        try {
+          const { db } = await import("../db/index");
+          const { bankSettings } = await import("../db/schema");
+          const { eq } = await import("drizzle-orm");
+          const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+          if (settings?.staffChannelId) {
+             const channel = await instance.client.channels.fetch(settings.staffChannelId);
+             if (channel && channel.isTextBased() && 'send' in channel) {
+                await (channel as any).send({ content: `**[Slate Notification]** ${message}` });
+                return;
+             }
+          }
+        } catch (e) {
+          console.error(`[BankBot ${bankId}] Failed to send Discord notification:`, e);
+        }
         console.log(`[BankBot ${bankId} Notification]: ${message}`);
      }
   }

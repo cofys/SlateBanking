@@ -30,6 +30,7 @@ export function BankSettings() {
       withdrawFeePercent: parseFloat(formData.get("withdrawFeePercent") as string) || 0,
       depositFeePercent: parseFloat(formData.get("depositFeePercent") as string) || 0,
       transferFeePercent: parseFloat(formData.get("transferFeePercent") as string) || 0,
+      overwriteCustomAccountFees: formData.get("overwriteCustomAccountFees") === "on",
       savingsApyPercent: Math.round(parseFloat(formData.get("savingsApyPercent") as string) * 100) || 300,
       interBankWireThreshold: Math.floor(parseFloat(formData.get("interBankWireThreshold") as string) * 100) || 5000000,
       colorScheme: formData.get("colorScheme"),
@@ -48,6 +49,12 @@ export function BankSettings() {
       enableSubscriptions: formData.get("enableSubscriptions") === "on",
       enableEscrow: formData.get("enableEscrow") === "on",
       enableTreasury: formData.get("enableTreasury") === "on",
+      enableGoogleDocsContracts: formData.get("enableGoogleDocsContracts") === "on",
+      googleDocsLoanTemplateUrl: formData.get("googleDocsLoanTemplateUrl"),
+      googleDocsCreditTemplateUrl: formData.get("googleDocsCreditTemplateUrl"),
+      googleDocsEscrowTemplateUrl: formData.get("googleDocsEscrowTemplateUrl"),
+      googleDocsFolderUrl: formData.get("googleDocsFolderUrl"),
+      googleDocsAutoGenerate: formData.get("googleDocsAutoGenerate") === "on",
       vaultTiers: vaultTiers,
       autoApproveLoans: formData.get("autoApproveLoans") === "on",
       autoApproveCreditCards: formData.get("autoApproveCreditCards") === "on",
@@ -142,7 +149,18 @@ export function BankSettings() {
               />
             </div>
           </div>
-          <p className="text-xs text-white/40 mt-4">Fees are automatically deducted during transactions and deposited into the bank's operational account. Wire Threshold protects against unbacked inter-bank liquidity.</p>
+          <div className="mt-5 pt-4 border-t border-white/5 flex items-center gap-3">
+            <input 
+              type="checkbox" 
+              id="overwriteCustomAccountFees"
+              name="overwriteCustomAccountFees"
+              className="w-4 h-4 rounded bg-[#1a1a24] border-white/20 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+            />
+            <label htmlFor="overwriteCustomAccountFees" className="text-xs sm:text-sm text-white/80 font-medium cursor-pointer">
+              Apply these fee rates to accounts with custom fee overrides (overwrite existing custom account fees)
+            </label>
+          </div>
+          <p className="text-xs text-white/40 mt-3">Fees are automatically deducted during transactions. Leave unchecked to preserve custom fee overrides set on individual customer accounts.</p>
         </div>
 
         {/* Branding & Visuals */}
@@ -536,6 +554,103 @@ export function BankSettings() {
               {window.location.origin}/api/portal/{bank?.id}/oauth/callback
             </code>
           </div>
+        </div>
+
+        {/* Google Docs Contract Integration */}
+        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2 text-lg font-semibold">
+              <Settings className="text-emerald-400" size={20} />
+              Google Docs Contract Automation
+            </div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <span className="text-xs text-white/60">Enable Contracts</span>
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableGoogleDocsContracts ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableGoogleDocsContracts ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input 
+                type="checkbox" 
+                name="enableGoogleDocsContracts" 
+                className="hidden" 
+                defaultChecked={settings?.enableGoogleDocsContracts} 
+                onChange={(e) => setSettings({...settings, enableGoogleDocsContracts: e.target.checked})} 
+              />
+            </label>
+          </div>
+
+          <p className="text-xs text-white/60 mb-6 leading-relaxed">
+            Attach official Google Docs loan agreements, credit contracts, and escrow terms to financial origination workflows. Banks are not required to use this, but when enabled, staff and borrowers can access contract links directly.
+          </p>
+
+          {settings?.enableGoogleDocsContracts && (
+            <div className="space-y-6 pt-4 border-t border-white/10 animate-in fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Loan Contract Template URL</label>
+                  <input 
+                    name="googleDocsLoanTemplateUrl" 
+                    type="url" 
+                    placeholder="https://docs.google.com/document/d/YOUR_DOC_ID/edit"
+                    defaultValue={settings?.googleDocsLoanTemplateUrl || ""} 
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Credit Line Contract Template URL</label>
+                  <input 
+                    name="googleDocsCreditTemplateUrl" 
+                    type="url" 
+                    placeholder="https://docs.google.com/document/d/YOUR_CREDIT_DOC_ID/edit"
+                    defaultValue={settings?.googleDocsCreditTemplateUrl || ""} 
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Escrow Contract Template URL</label>
+                  <input 
+                    name="googleDocsEscrowTemplateUrl" 
+                    type="url" 
+                    placeholder="https://docs.google.com/document/d/YOUR_ESCROW_DOC_ID/edit"
+                    defaultValue={settings?.googleDocsEscrowTemplateUrl || ""} 
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Shared Contracts Drive Folder URL</label>
+                  <input 
+                    name="googleDocsFolderUrl" 
+                    type="url" 
+                    placeholder="https://drive.google.com/drive/folders/YOUR_FOLDER_ID"
+                    defaultValue={settings?.googleDocsFolderUrl || ""} 
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 bg-[#14141e] p-4 rounded-xl border border-white/5">
+                <div>
+                  <div className="text-sm font-medium text-white/90">Auto-Generate Contract Links</div>
+                  <div className="text-xs text-white/50">Automatically inject contract links into loan, credit, and escrow originations.</div>
+                </div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.googleDocsAutoGenerate ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.googleDocsAutoGenerate ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    name="googleDocsAutoGenerate" 
+                    className="hidden" 
+                    defaultChecked={settings?.googleDocsAutoGenerate} 
+                    onChange={(e) => setSettings({...settings, googleDocsAutoGenerate: e.target.checked})} 
+                  />
+                </label>
+              </div>
+
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-xs text-emerald-300">
+                <strong>Supported Dynamic Contract Tags:</strong> <code>{"{BANK_NAME}"}</code>, <code>{"{CLIENT_DISCORD}"}</code>, <code>{"{AMOUNT}"}</code>, <code>{"{INTEREST_RATE}"}</code>, <code>{"{CONTRACT_ID}"}</code>, <code>{"{DATE}"}</code>.
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Feature Toggles */}

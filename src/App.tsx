@@ -16,7 +16,7 @@ import { BankAccounts } from "./pages/BankAccounts";
 
 import { BankTransactions } from "./pages/BankTransactions";
 import { BankSettings } from "./pages/BankSettings";
-import { UnderConstruction } from "./pages/UnderConstruction";
+import { NotFound } from "./pages/NotFound";
 import { BankAuditLog } from "./pages/BankAuditLog";
 import { BankCustomers } from "./pages/BankCustomers";
 import { BankTeam } from "./pages/BankTeam";
@@ -151,6 +151,7 @@ function App() {
           <Route path="citycorp" element={<CityCorpLogs />} />
           <Route path="settings" element={<GlobalSettings />} />
         </Route>
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );

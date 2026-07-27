@@ -1039,39 +1039,130 @@ function TransferTab({ data, refresh, onyxMerchants }: any) {
 }
 
 function LoansTab({ data, refresh }: any) {
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [selectedBankId, setSelectedBankId] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [principalAmount, setPrincipalAmount] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [collateralDesc, setCollateralDesc] = useState("");
+  const [collateralVal, setCollateralVal] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // Group accounts by bank for loan selection
+  const uniqueBanks: { bankId: string; bankName: string }[] = Array.from(new Set(data.accounts?.map((a: any) => a.bankId as string) || [])).map(bId => {
+    const acc = data.accounts.find((a: any) => a.bankId === bId);
+    return { bankId: bId as string, bankName: (acc?.bankName || "Slate Bank") as string };
+  });
+
+  const handleApply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBankId || !selectedAccountId || !principalAmount) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/citizen/loans/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankId: selectedBankId,
+          accountId: selectedAccountId,
+          principalAmount: Math.round(parseFloat(principalAmount) * 100),
+          purpose,
+          collateralDescription: collateralDesc,
+          collateralValue: collateralVal
+        })
+      });
+      const resData = await res.json();
+      if (res.ok) {
+        alert(resData.autoApprove ? "Loan auto-approved and principal disbursed!" : "Loan application submitted for bank review.");
+        setShowApplyModal(false);
+        setPrincipalAmount("");
+        setPurpose("");
+        setCollateralDesc("");
+        setCollateralVal("");
+        refresh();
+      } else {
+        alert("Error applying for loan: " + resData.error);
+      }
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex justify-between items-end mb-4">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2"><TrendingDown className="text-indigo-400"/> Loan Management</h2>
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2"><TrendingDown className="text-indigo-400"/> Loan Management</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Track your active liabilities, collateral pledges, and repayment schedules</p>
+        </div>
+        <button
+          onClick={() => setShowApplyModal(true)}
+          className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-indigo-600/20"
+        >
+          <Plus size={16} /> Apply for Loan
+        </button>
       </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {data.loans?.map((loan: any) => {
-          const progress = Math.min(100, Math.round(((loan.amountPaid || 0) / loan.amount) * 100));
+          const totalRemaining = loan.remainingAmount !== undefined ? loan.remainingAmount : (loan.amount - (loan.amountPaid || 0));
+          const totalOriginal = loan.principalAmount || loan.amount;
+          const progress = Math.min(100, Math.round(((totalOriginal - totalRemaining) / totalOriginal) * 100));
+
           return (
-            <div key={loan.id} className="bg-[#12121a] p-6 rounded-2xl border border-white/5 flex flex-col justify-between">
+            <div key={loan.id} className={`bg-[#12121a] p-6 rounded-2xl border flex flex-col justify-between ${loan.isDelinquent ? 'border-rose-500/40 bg-rose-950/10' : 'border-white/5'}`}>
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md ${loan.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/20 text-slate-400 border border-slate-500/20'}`}>
-                    {loan.status}
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md ${loan.status === 'paid' || loan.status === 'paid_off' ? 'bg-slate-500/20 text-slate-400 border border-slate-500/20' : loan.status === 'defaulted' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/20' : loan.isDelinquent ? 'bg-amber-500/20 text-amber-300 border border-amber-500/20' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'}`}>
+                    {loan.isDelinquent ? 'OVERDUE' : loan.status}
                   </span>
-                  <span className="font-mono text-xs text-slate-500 bg-black/30 px-2 py-1 rounded">{loan.id.split('-')[0]}</span>
+                  <span className="font-mono text-xs text-slate-500 bg-black/30 px-2 py-1 rounded">#{loan.id.split('-')[0]}</span>
                 </div>
-                <h3 className="font-bold text-white text-lg mb-1">{formatMoney(loan.amount)}</h3>
-                <p className="text-sm text-slate-400">Interest Rate: {loan.interestRate}%</p>
-                <div className="mt-6 space-y-2">
+
+                <h3 className="font-bold text-white text-xl mb-1">{formatMoney(totalRemaining)}</h3>
+                <p className="text-xs text-slate-400">Original Principal: {formatMoney(totalOriginal)} @ {(loan.interestRate / 100).toFixed(2)}% APR</p>
+
+                {/* Collateral Badge */}
+                {loan.collateralDescription && (
+                  <div className="mt-3 bg-black/30 border border-white/5 p-2.5 rounded-xl text-xs space-y-1">
+                    <div className="flex justify-between items-center text-[11px] text-amber-400 font-medium">
+                      <span>Pledged Collateral</span>
+                      <span className="uppercase bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[10px]">{loan.collateralStatus || 'pledged'}</span>
+                    </div>
+                    <p className="text-slate-300 font-medium truncate">{loan.collateralDescription}</p>
+                    {loan.collateralValue > 0 && (
+                      <p className="text-slate-500 text-[10px]">Est. Value: {formatMoney(loan.collateralValue)}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Delinquency Warning */}
+                {loan.isDelinquent && (
+                  <div className="mt-3 bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-xs text-rose-300">
+                    <p className="font-bold flex items-center gap-1"><AlertCircle size={14}/> Repayment Overdue!</p>
+                    <p className="text-[11px] text-rose-200/80 mt-0.5">Missed payments: {loan.missedPaymentsCount || 1}. Late fee added: {formatMoney(loan.lateFeeAmount || 0)}.</p>
+                  </div>
+                )}
+
+                <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-xs">
-                     <span className="text-slate-400">Paid: {formatMoney(loan.amountPaid || 0)}</span>
-                     <span className="text-white font-medium">{progress}%</span>
+                     <span className="text-slate-400">Principal Repaid: {formatMoney(totalOriginal - totalRemaining)}</span>
+                     <span className="text-white font-medium">{Math.max(0, progress)}%</span>
                   </div>
                   <div className="h-2 w-full bg-black/50 rounded-full overflow-hidden border border-white/5">
-                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${progress}%` }}></div>
+                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.max(0, progress)}%` }}></div>
                   </div>
                 </div>
               </div>
               
               {loan.status === "active" && (
                 <div className="mt-6 pt-4 border-t border-white/5">
-                  <p className="text-xs text-slate-500 mb-3 flex items-center gap-1"><Calendar size={12}/> Next Payment Due Soon</p>
+                  <p className="text-xs text-slate-500 mb-3 flex items-center justify-between">
+                    <span className="flex items-center gap-1"><Calendar size={12}/> Next Due Date:</span>
+                    <span className="font-medium text-slate-300">{loan.nextPaymentDate ? new Date(loan.nextPaymentDate).toLocaleDateString() : 'N/A'}</span>
+                  </p>
                   <form onSubmit={async (e:any) => {
                     e.preventDefault();
                     const fd = new FormData(e.target);
@@ -1086,7 +1177,7 @@ function LoansTab({ data, refresh }: any) {
                       <option value="">Pay from...</option>
                       {data.accounts?.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.accountName}</option>)}
                     </select>
-                    <button type="submit" className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-4 py-2 rounded-lg text-xs font-bold transition-colors">Pay Installment</button>
+                    <button type="submit" className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-3 py-2 rounded-lg text-xs font-bold transition-colors">Pay Installment</button>
                   </form>
                 </div>
               )}
@@ -1094,11 +1185,117 @@ function LoansTab({ data, refresh }: any) {
           );
         })}
         {(!data.loans || data.loans.length === 0) && (
-          <div className="col-span-full p-8 text-center text-slate-500 bg-white/5 rounded-2xl border border-white/5">
-            No active loans.
+          <div className="col-span-full p-12 text-center text-slate-500 bg-white/5 rounded-2xl border border-white/5">
+            No active loans or outstanding credit lines.
           </div>
         )}
       </div>
+
+      {/* Apply Loan Modal */}
+      {showApplyModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12121a] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-bold text-white">Apply for a Loan</h3>
+              <button onClick={() => setShowApplyModal(false)} className="text-slate-500 hover:text-white"><X size={20}/></button>
+            </div>
+
+            <form onSubmit={handleApply} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Select Bank</label>
+                <select
+                  required
+                  value={selectedBankId}
+                  onChange={(e) => {
+                    setSelectedBankId(e.target.value);
+                    const firstAcc = data.accounts?.find((a: any) => a.bankId === e.target.value);
+                    if (firstAcc) setSelectedAccountId(firstAcc.id);
+                  }}
+                  className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                >
+                  <option value="">Choose bank...</option>
+                  {uniqueBanks.map(b => (
+                    <option key={b.bankId} value={b.bankId}>{b.bankName}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Receiving Account</label>
+                <select
+                  required
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                >
+                  <option value="">Choose account...</option>
+                  {data.accounts?.filter((a: any) => !selectedBankId || a.bankId === selectedBankId).map((acc: any) => (
+                    <option key={acc.id} value={acc.id}>{acc.accountName}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Requested Loan Amount ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  required
+                  value={principalAmount}
+                  onChange={(e) => setPrincipalAmount(e.target.value)}
+                  placeholder="e.g. 5000.00"
+                  className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Purpose / Note</label>
+                <input
+                  type="text"
+                  value={purpose}
+                  onChange={(e) => setPurpose(e.target.value)}
+                  placeholder="e.g. Commercial expansion, equipment purchase"
+                  className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </div>
+
+              <div className="border-t border-white/10 pt-3 space-y-3">
+                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Collateral Asset Security (Optional)</p>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Asset Description</label>
+                  <input
+                    type="text"
+                    value={collateralDesc}
+                    onChange={(e) => setCollateralDesc(e.target.value)}
+                    placeholder="e.g. Real estate, vehicle, vault items"
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Estimated Asset Value ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={collateralVal}
+                    onChange={(e) => setCollateralVal(e.target.value)}
+                    placeholder="e.g. 15000.00"
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-lg text-sm transition-colors mt-2"
+              >
+                {submitting ? "Submitting..." : "Submit Application"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

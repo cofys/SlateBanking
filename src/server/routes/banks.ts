@@ -9,6 +9,13 @@ const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
 export const banksRouter = express.Router();
 
+interface CityCorpSearchCacheEntry {
+  timestamp: number;
+  results: any[];
+}
+const corpSearchCache = new Map<string, CityCorpSearchCacheEntry>();
+const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes TTL
+
 banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { banks } = await import("../../db/schema");
@@ -18,7 +25,10 @@ banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Reques
       const updateData: any = {};
       if (b.name !== undefined) updateData.name = b.name;
       if (b.guildId !== undefined) updateData.guildId = b.guildId;
-      if (b.discordToken !== undefined && b.discordToken !== "") updateData.discordToken = b.discordToken;
+      if (b.discordToken !== undefined && b.discordToken !== "") {
+        updateData.discordToken = b.discordToken;
+        botManager.restartBankBot(req.params.id, b.discordToken).catch(err => console.error("Error recycling bot token:", err));
+      }
       if (b.corpId !== undefined) updateData.corpId = b.corpId !== null && b.corpId !== "" ? parseInt(b.corpId) : null;
       if (b.corpApiUuid !== undefined) updateData.corpApiUuid = b.corpApiUuid;
       if (b.corpApiKey !== undefined && b.corpApiKey !== "") updateData.corpApiKey = b.corpApiKey;
@@ -66,65 +76,73 @@ banksRouter.get("/api/banks/corp-finder", requireAuth, async (req: express.Reque
       let searchResults: any[] = [];
       
       if (query) {
-        // Search global CityCorp API registry via /corp/list using any available tenant credentials
-        const bankToUse = configuredBanks.find(b => b.corpApiUuid && b.hasKey);
-        
-        if (bankToUse) {
-           const fullBank = await db.select().from(banks).where(eq(banks.id, bankToUse.id)).get();
-           if (fullBank && fullBank.corpApiUuid && fullBank.corpApiKey) {
-              let page = 1;
-              let maxPages = 15; // safety limit to prevent infinite loops
+        const cached = corpSearchCache.get(query);
+        if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+           searchResults = cached.results;
+        } else {
+          // Search global CityCorp API registry via /corp/list using any available tenant credentials
+          const bankToUse = configuredBanks.find(b => b.corpApiUuid && b.hasKey);
+          
+          if (bankToUse) {
+             const fullBank = await db.select().from(banks).where(eq(banks.id, bankToUse.id)).get();
+             if (fullBank && fullBank.corpApiUuid && fullBank.corpApiKey) {
+                let page = 1;
+                let maxPages = 15; // safety limit to prevent infinite loops
 
-              while (page <= maxPages) {
-                 try {
-                    const url = new URL(`https://api.cityrp.org/citycorp/corp/list`);
-                    if (bankToUse.corpId) {
-                       url.searchParams.append("corp_id", bankToUse.corpId.toString());
-                    }
-                    url.searchParams.append("page", page.toString());
-                    
-                    const authString = `${fullBank.corpApiUuid}:${fullBank.corpApiKey}`;
-                    const authEncoded = Buffer.from(authString).toString('base64');
-                    const headers = {
-                       "Authorization": `Basic ${authEncoded}`,
-                       "User-Agent": "SlateBankBot/1.0",
-                       "Content-Type": "application/json"
-                    };
-                    
-                    const resApi = await fetch(url.toString(), { headers });
-                    if (!resApi.ok) break;
+                while (page <= maxPages) {
+                   try {
+                      const url = new URL(`https://api.cityrp.org/citycorp/corp/list`);
+                      if (bankToUse.corpId) {
+                         url.searchParams.append("corp_id", bankToUse.corpId.toString());
+                      }
+                      url.searchParams.append("page", page.toString());
+                      
+                      const authString = `${fullBank.corpApiUuid}:${fullBank.corpApiKey}`;
+                      const authEncoded = Buffer.from(authString).toString('base64');
+                      const headers = {
+                         "Authorization": `Basic ${authEncoded}`,
+                         "User-Agent": "SlateBankBot/1.0",
+                         "Content-Type": "application/json"
+                      };
+                      
+                      const resApi = await fetch(url.toString(), { headers });
+                      if (!resApi.ok) break;
 
-                    const dataApi = await resApi.json();
-                    let allCorps: any[] = [];
-                    if (Array.isArray(dataApi)) allCorps = dataApi;
-                    else if (dataApi && Array.isArray(dataApi.corps)) allCorps = dataApi.corps;
-                    else if (dataApi && Array.isArray(dataApi.corporations)) allCorps = dataApi.corporations;
-                    else if (dataApi && Array.isArray(dataApi.results)) allCorps = dataApi.results;
-                    else if (dataApi && Array.isArray(dataApi.data)) allCorps = dataApi.data;
+                      const dataApi = await resApi.json();
+                      let allCorps: any[] = [];
+                      if (Array.isArray(dataApi)) allCorps = dataApi;
+                      else if (dataApi && Array.isArray(dataApi.corps)) allCorps = dataApi.corps;
+                      else if (dataApi && Array.isArray(dataApi.corporations)) allCorps = dataApi.corporations;
+                      else if (dataApi && Array.isArray(dataApi.results)) allCorps = dataApi.results;
+                      else if (dataApi && Array.isArray(dataApi.data)) allCorps = dataApi.data;
 
-                    if (allCorps.length === 0) break; // no more data
+                      if (allCorps.length === 0) break; // no more data
 
-                    const matched = allCorps.filter((c: any) => c.name && c.name.toLowerCase().includes(query));
-                    for (const m of matched) {
-                       searchResults.push({
-                          type: 'citycorp_registry',
-                          title: m.name,
-                          corpId: m.id || m.corp_id,
-                          details: `Registered CityCorp Entity`
-                       });
-                    }
+                      const matched = allCorps.filter((c: any) => c.name && c.name.toLowerCase().includes(query));
+                      for (const m of matched) {
+                         searchResults.push({
+                            type: 'citycorp_registry',
+                            title: m.name,
+                            corpId: m.id || m.corp_id,
+                            details: `Registered CityCorp Entity`
+                         });
+                      }
 
-                    if (searchResults.length > 0) break; // Found matches, stop paging
+                      if (searchResults.length > 0) break; // Found matches, stop paging
 
-                    if (dataApi && dataApi.totalPages && page >= dataApi.totalPages) break;
-                    
-                    page++;
-                 } catch (e) {
-                    console.error("[CorpFinder] Error fetching from citycorp/corp/list:", e);
-                    break;
-                 }
-              }
-           }
+                      if (dataApi && dataApi.totalPages && page >= dataApi.totalPages) break;
+                      
+                      page++;
+                   } catch (e) {
+                      console.error("[CorpFinder] Error fetching from citycorp/corp/list:", e);
+                      break;
+                   }
+                }
+             }
+          }
+          if (searchResults.length > 0) {
+             corpSearchCache.set(query, { timestamp: Date.now(), results: searchResults });
+          }
         }
       }
 
@@ -843,7 +861,15 @@ banksRouter.get("/api/banks/:bankId/audit", requireBankStaff, async (req: expres
     const { auditLogs } = await import("../../db/schema");
     const { eq, desc } = await import("drizzle-orm");
     try {
-      const logs = await db.select().from(auditLogs).where(eq(auditLogs.bankId, req.params.bankId)).orderBy(desc(auditLogs.timestamp));
+      const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const logs = await db.select()
+        .from(auditLogs)
+        .where(eq(auditLogs.bankId, req.params.bankId))
+        .orderBy(desc(auditLogs.timestamp))
+        .limit(limit)
+        .offset(offset);
       res.json(logs);
     } catch (e) {
       console.error(e);
@@ -1093,6 +1119,53 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/update-owner", requireB
     }
   });
 
+banksRouter.put("/api/banks/:bankId/accounts/:accountId/custom-settings", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, auditLogs } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bId = req.params.bankId;
+      const accId = req.params.accountId;
+      const { customTransferFeePercent, customDepositFeePercent, customWithdrawFeePercent } = req.body;
+
+      const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accId), eq(bankAccounts.bankId, bId))).get();
+      if (!acc) return res.status(404).json({ error: "Account not found" });
+
+      const parseFee = (val: any) => {
+        if (val === null || val === undefined || val === "" || val === "default") return null;
+        const num = parseFloat(val);
+        return isNaN(num) ? null : Math.round(num * 100); // convert % to integer (multiplied by 100 / bps)
+      };
+
+      const newTransferFee = customTransferFeePercent !== undefined ? parseFee(customTransferFeePercent) : acc.customTransferFeePercent;
+      const newDepositFee = customDepositFeePercent !== undefined ? parseFee(customDepositFeePercent) : acc.customDepositFeePercent;
+      const newWithdrawFee = customWithdrawFeePercent !== undefined ? parseFee(customWithdrawFeePercent) : acc.customWithdrawFeePercent;
+
+      await db.update(bankAccounts).set({
+        customTransferFeePercent: newTransferFee,
+        customDepositFeePercent: newDepositFee,
+        customWithdrawFeePercent: newWithdrawFee,
+      }).where(and(eq(bankAccounts.id, accId), eq(bankAccounts.bankId, bId)));
+
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: bId,
+        userDiscordId: 'Operator',
+        action: 'account_custom_fees_updated',
+        details: `Updated custom fee overrides for account ${acc.accountName} (${acc.id})`,
+        timestamp: new Date()
+      });
+
+      const updated = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accId)).get();
+      res.json({ success: true, account: updated });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Failed to update custom account settings" });
+    }
+  });
+
 banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankSettings, banks } = await import("../../db/schema");
@@ -1216,7 +1289,13 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         autoApproveCreditCards: req.body.autoApproveCreditCards,
         maxAutoApproveLoanAmount: req.body.maxAutoApproveLoanAmount,
         vaultTiers: req.body.vaultTiers,
-        loginBgUrl: req.body.loginBgUrl
+        loginBgUrl: req.body.loginBgUrl,
+        enableGoogleDocsContracts: req.body.enableGoogleDocsContracts,
+        googleDocsLoanTemplateUrl: req.body.googleDocsLoanTemplateUrl,
+        googleDocsCreditTemplateUrl: req.body.googleDocsCreditTemplateUrl,
+        googleDocsEscrowTemplateUrl: req.body.googleDocsEscrowTemplateUrl,
+        googleDocsFolderUrl: req.body.googleDocsFolderUrl,
+        googleDocsAutoGenerate: req.body.googleDocsAutoGenerate
       };
 
       const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId));
@@ -1225,12 +1304,107 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
       } else {
         await db.update(bankSettings).set(data).where(eq(bankSettings.bankId, bId));
       }
+
+      if (req.body.overwriteCustomAccountFees) {
+        const { bankAccounts, auditLogs } = await import("../../db/schema");
+        const { v4: uuidv4 } = await import("uuid");
+
+        const transferFee = req.body.transferFeePercent !== undefined && req.body.transferFeePercent !== null && req.body.transferFeePercent !== "" ? Math.round(Number(req.body.transferFeePercent)) : null;
+        const depositFee = req.body.depositFeePercent !== undefined && req.body.depositFeePercent !== null && req.body.depositFeePercent !== "" ? Math.round(Number(req.body.depositFeePercent)) : null;
+        const withdrawFee = req.body.withdrawFeePercent !== undefined && req.body.withdrawFeePercent !== null && req.body.withdrawFeePercent !== "" ? Math.round(Number(req.body.withdrawFeePercent)) : null;
+
+        await db.update(bankAccounts).set({
+          customTransferFeePercent: transferFee,
+          customDepositFeePercent: depositFee,
+          customWithdrawFeePercent: withdrawFee
+        }).where(eq(bankAccounts.bankId, bId));
+
+        await db.insert(auditLogs).values({
+          id: uuidv4(),
+          bankId: bId,
+          userDiscordId: 'Operator',
+          action: 'bulk_custom_fees_overwritten',
+          details: `Applied bank-wide fee update to all accounts (Transfer: ${transferFee ?? 'default'}, Deposit: ${depositFee ?? 'default'}, Withdraw: ${withdrawFee ?? 'default'})`,
+          timestamp: new Date()
+        });
+      }
+
       res.json(data);
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
     }
   });
+
+banksRouter.post("/api/banks/:bankId/accrue-interest", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, bankSettings, transactions } = await import("../../db/schema");
+    const { eq, and, gt } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bankId = req.params.bankId;
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+      const apyBasisPoints = settings?.savingsApyPercent ?? 300; // default 3.00%
+      if (apyBasisPoints <= 0) {
+        return res.json({ success: true, processedCount: 0, totalInterestPaid: 0, message: "Interest rate set to 0%" });
+      }
+
+      // Fetch all non-frozen, active accounts with positive balance
+      const eligibleAccounts = await db.select().from(bankAccounts).where(
+        and(
+          eq(bankAccounts.bankId, bankId),
+          eq(bankAccounts.isActive, true),
+          eq(bankAccounts.isFrozen, false),
+          gt(bankAccounts.balance, 0)
+        )
+      );
+
+      let processedCount = 0;
+      let totalInterestPaid = 0;
+
+      await db.transaction(async (tx) => {
+        for (const account of eligibleAccounts) {
+          // Daily interest calculation: balance * (apyBasisPoints / 10000) / 365
+          const dailyInterest = Math.floor((account.balance * (apyBasisPoints / 10000)) / 365);
+          if (dailyInterest > 0) {
+            await tx.update(bankAccounts)
+              .set({ balance: account.balance + dailyInterest })
+              .where(eq(bankAccounts.id, account.id));
+
+            await tx.insert(transactions).values({
+              id: uuidv4(),
+              bankId,
+              toAccountId: account.id,
+              amount: dailyInterest,
+              type: "interest_payment",
+              description: `Savings Interest Accrual (${(apyBasisPoints / 100).toFixed(2)}% APY)`,
+              timestamp: new Date(),
+              category: "Interest"
+            });
+
+            processedCount++;
+            totalInterestPaid += dailyInterest;
+          }
+        }
+
+        await tx.update(bankSettings)
+          .set({ lastInterestAccrualAt: new Date() })
+          .where(eq(bankSettings.bankId, bankId));
+      });
+
+      res.json({
+        success: true,
+        processedCount,
+        totalInterestPaid,
+        apyBasisPoints,
+        accrualTimestamp: new Date()
+      });
+    } catch (e) {
+      console.error("[InterestAccrualError]:", e);
+      res.status(500).json({ error: "Failed to accrue interest" });
+    }
+});
 
 banksRouter.get("/api/banks/:bankId/products", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
@@ -1534,7 +1708,7 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
             ];
             
             const withdrawTemplates = [
-              "ATM Cash Withdrawal",
+              "Teller Cash Withdrawal",
               "Supply Vendor Invoice",
               "Onyx Quick Pay Settlement",
               "Power & Infrastructure Utility",
@@ -2427,6 +2601,7 @@ banksRouter.get("/api/banks/:bankId/escrows", requireBankStaff, async (req: expr
         amount: escrows.amount,
         status: escrows.status,
         description: escrows.description,
+        contractUrl: escrows.contractUrl,
         createdAt: escrows.createdAt,
         buyerAccountName: buyers.accountName,
         sellerAccountName: sellers.accountName,
@@ -2449,7 +2624,7 @@ banksRouter.get("/api/banks/:bankId/escrows", requireBankStaff, async (req: expr
 
 banksRouter.post("/api/banks/:bankId/escrows", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { escrows, bankAccounts } = await import("../../db/schema");
+    const { escrows, bankAccounts, bankSettings, banks } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
@@ -2463,14 +2638,34 @@ banksRouter.post("/api/banks/:bankId/escrows", requireBankStaff, async (req: exp
 
       if (!buyer || !seller) return res.status(404).json({ error: "Account(s) not found" });
 
+      const newEscrowId = uuidv4();
+      const bSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, req.params.bankId)).get();
+      const bRecord = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
+
+      let contractUrl = req.body.contractUrl || null;
+      if (!contractUrl && bSettings?.enableGoogleDocsContracts) {
+        const { generateContractUrl } = await import("../../lib/google_docs_contracts");
+        contractUrl = generateContractUrl(bSettings.googleDocsEscrowTemplateUrl, {
+          bankName: bRecord?.name || "Slate Bank",
+          clientDiscordId: buyer.ownerDiscordId,
+          contractType: 'escrow',
+          contractId: newEscrowId,
+          amount,
+          purpose: description,
+          buyerAccountId,
+          sellerAccountId
+        });
+      }
+
       const result = await db.insert(escrows).values({
-        id: uuidv4(),
+        id: newEscrowId,
         bankId: req.params.bankId,
         buyerAccountId,
         sellerAccountId,
         amount,
         description,
         status: "pending",
+        contractUrl,
         createdAt: new Date()
       }).returning().get();
 
@@ -2598,6 +2793,15 @@ banksRouter.get("/api/banks/:bankId/loans", requireBankStaff, async (req: expres
         nextPaymentDate: loans.nextPaymentDate,
         purpose: loans.purpose,
         status: loans.status,
+        contractUrl: loans.contractUrl,
+        collateralDescription: loans.collateralDescription,
+        collateralValue: loans.collateralValue,
+        collateralStatus: loans.collateralStatus,
+        lateFeeAmount: loans.lateFeeAmount,
+        isDelinquent: loans.isDelinquent,
+        missedPaymentsCount: loans.missedPaymentsCount,
+        lastInterestAccrualAt: loans.lastInterestAccrualAt,
+        lastPaymentAttemptAt: loans.lastPaymentAttemptAt,
         createdAt: loans.createdAt,
         mcUsername: bankCustomers.mcUsername,
       })
@@ -2617,7 +2821,7 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
     const { eq, and, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
-      const { discordId, principalAmount, interestRate, depositAccountId } = req.body;
+      const { discordId, principalAmount, interestRate, depositAccountId, collateralDescription, collateralValue } = req.body;
       if (!discordId || !principalAmount || interestRate === undefined || !depositAccountId) {
         return res.status(400).json({ error: "Missing fields" });
       }
@@ -2647,8 +2851,30 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
       });
 
       // Create loan
+      const newLoanId = uuidv4();
+      const { bankSettings, banks } = await import("../../db/schema");
+      const bSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, req.params.bankId)).get();
+      const bRecord = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
+
+      let contractUrl = req.body.contractUrl || null;
+      if (!contractUrl && bSettings?.enableGoogleDocsContracts) {
+        const { generateContractUrl } = await import("../../lib/google_docs_contracts");
+        contractUrl = generateContractUrl(bSettings.googleDocsLoanTemplateUrl, {
+          bankName: bRecord?.name || "Slate Bank",
+          clientDiscordId: discordId,
+          contractType: 'loan',
+          contractId: newLoanId,
+          amount: principalAmount,
+          interestRate,
+          termDays: 30
+        });
+      }
+
+      const colVal = collateralValue ? Math.round(parseFloat(collateralValue) * 100) : null;
+      const colStatus = collateralDescription ? "pledged" : "none";
+
       const result = await db.insert(loans).values({
-        id: uuidv4(),
+        id: newLoanId,
         bankId: req.params.bankId,
         discordId,
         accountId: depositAccountId,
@@ -2656,7 +2882,12 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         remainingAmount: principalAmount,
         interestRate,
         nextPaymentDate,
+        purpose: req.body.purpose || null,
+        collateralDescription: collateralDescription || null,
+        collateralValue: colVal,
+        collateralStatus: colStatus,
         status: "active",
+        contractUrl,
         createdAt: ts
       }).returning().get();
 
@@ -2664,6 +2895,65 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/loans/process-due", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    try {
+      const { processDueLoanRepayments } = await import("../loan_processor");
+      const result = await processDueLoanRepayments(req.params.bankId);
+      res.json({ success: true, result });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Failed to process due loans" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/loans/accrue-interest", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    try {
+      const { accrueLoanInterest } = await import("../loan_processor");
+      const result = await accrueLoanInterest(req.params.bankId);
+      res.json({ success: true, result });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Failed to accrue loan interest" });
+    }
+  });
+
+banksRouter.put("/api/banks/:bankId/loans/:loanId/collateral", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { loans, auditLogs } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const { collateralDescription, collateralValue, collateralStatus } = req.body;
+      const loan = await db.select().from(loans).where(and(eq(loans.id, req.params.loanId), eq(loans.bankId, req.params.bankId))).get();
+      if (!loan) return res.status(404).json({ error: "Loan not found" });
+
+      const parsedValue = collateralValue !== undefined && collateralValue !== null && collateralValue !== "" 
+        ? Math.round(parseFloat(collateralValue) * 100) 
+        : loan.collateralValue;
+
+      await db.update(loans).set({
+        collateralDescription: collateralDescription !== undefined ? collateralDescription : loan.collateralDescription,
+        collateralValue: parsedValue,
+        collateralStatus: collateralStatus || loan.collateralStatus,
+      }).where(eq(loans.id, req.params.loanId));
+
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: req.params.bankId,
+        userDiscordId: 'Operator',
+        action: 'loan_collateral_updated',
+        details: `Updated collateral for loan ${loan.id.substring(0, 8)}: Status = ${collateralStatus || loan.collateralStatus}, Desc = ${collateralDescription || loan.collateralDescription}`,
+        timestamp: new Date()
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Failed to update collateral" });
     }
   });
 
@@ -3152,9 +3442,12 @@ banksRouter.post("/api/banks/:bankId/transactions/sync", requireBankStaff, async
 
 banksRouter.get("/api/banks/:bankId/transactions", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { transactions, bankAccounts } = await import("../../db/schema");
+    const { transactions } = await import("../../db/schema");
     const { eq, desc } = await import("drizzle-orm");
     try {
+       const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+       const offset = parseInt(req.query.offset as string) || 0;
+
        const bankTxs = await db.select({
          id: transactions.id,
          amount: transactions.amount,
@@ -3162,12 +3455,15 @@ banksRouter.get("/api/banks/:bankId/transactions", requireBankStaff, async (req:
          description: transactions.description,
          timestamp: transactions.timestamp,
          fromAccountId: transactions.fromAccountId,
-         toAccountId: transactions.toAccountId
+         toAccountId: transactions.toAccountId,
+         category: transactions.category,
+         isFlagged: transactions.isFlagged
        })
        .from(transactions)
        .where(eq(transactions.bankId, req.params.bankId))
        .orderBy(desc(transactions.timestamp))
-       .limit(100);
+       .limit(limit)
+       .offset(offset);
        res.json(bankTxs);
     } catch (e) {
       console.error(e);
@@ -3253,7 +3549,7 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
       const isFlagged = parsedAmount >= 1000000;
 
       // Record in local DB
-      const tx = {
+      const txRecord = {
         id: uuidv4(),
         bankId: bank.id,
         fromAccountId: finalFromId,
@@ -3265,34 +3561,37 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
         timestamp: new Date()
       };
 
-      await db.insert(transactions).values(tx);
-
-      // Adjust balances in local DB (Double Entry)
-      if (finalFromId) {
-         const fromAccRes = await db.select().from(bankAccounts).where(eq(bankAccounts.id, finalFromId)).limit(1);
-         if (fromAccRes.length > 0) {
-            await db.update(bankAccounts).set({ balance: fromAccRes[0].balance - parsedAmount }).where(eq(bankAccounts.id, finalFromId));
-         }
-      }
-      if (finalToId) {
-         const toAccRes = await db.select().from(bankAccounts).where(eq(bankAccounts.id, finalToId)).limit(1);
-         if (toAccRes.length > 0) {
-            await db.update(bankAccounts).set({ balance: toAccRes[0].balance + parsedAmount }).where(eq(bankAccounts.id, finalToId));
-         }
-      }
-
-      // Add audit log
       const { auditLogs } = await import("../../db/schema");
-      await db.insert(auditLogs).values({
-        id: uuidv4(),
-        bankId: bank.id,
-        userDiscordId: 'Operator',
-        action: `manual_${type}`,
-        details: `Processed ${type} of $${(parsedAmount / 100).toFixed(2)} on account ${accountName}`,
-        timestamp: new Date()
+
+      await db.transaction(async (txDb) => {
+        await txDb.insert(transactions).values(txRecord);
+
+        // Adjust balances in local DB (Double Entry)
+        if (finalFromId) {
+           const fromAccRes = await txDb.select().from(bankAccounts).where(eq(bankAccounts.id, finalFromId)).limit(1);
+           if (fromAccRes.length > 0) {
+              await txDb.update(bankAccounts).set({ balance: fromAccRes[0].balance - parsedAmount }).where(eq(bankAccounts.id, finalFromId));
+           }
+        }
+        if (finalToId) {
+           const toAccRes = await txDb.select().from(bankAccounts).where(eq(bankAccounts.id, finalToId)).limit(1);
+           if (toAccRes.length > 0) {
+              await txDb.update(bankAccounts).set({ balance: toAccRes[0].balance + parsedAmount }).where(eq(bankAccounts.id, finalToId));
+           }
+        }
+
+        // Add audit log
+        await txDb.insert(auditLogs).values({
+          id: uuidv4(),
+          bankId: bank.id,
+          userDiscordId: 'Operator',
+          action: `manual_${type}`,
+          details: `Processed ${type} of $${(parsedAmount / 100).toFixed(2)} on account ${accountName}`,
+          timestamp: new Date()
+        });
       });
 
-      res.json(tx);
+      res.json(txRecord);
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Internal error" });
@@ -3671,7 +3970,7 @@ banksRouter.post("/api/banks/:bankId/tools/seed-demo", [requireBankStaff, requir
       const demoTransactions = [
         { from: "acc_vance_checking", to: "acc_clara_checking", amount: 125000, type: "transfer", desc: "Contractor design services", daysAgo: 20 },
         { from: null, to: "acc_marcus_checking", amount: 2500000, type: "deposit", desc: "Wholesale Lumber Invoice #884", daysAgo: 18 },
-        { from: "acc_sarah_checking", to: null, amount: 50000, type: "withdraw", desc: "ATM Cash Withdrawal", daysAgo: 15 },
+        { from: "acc_sarah_checking", to: null, amount: 50000, type: "withdraw", desc: "Counter Cash Withdrawal", daysAgo: 15 },
         { from: "acc_vance_checking", to: "acc_marcus_checking", amount: 1500, type: "transfer", desc: "Weekly Planters Subscription Charge", daysAgo: 12 },
         { from: null, to: "acc_marcus_checking", amount: 350000, type: "onyx_payment", desc: "B2B Payment Gateway Settlement", daysAgo: 10 },
         { from: null, to: "acc_john_savings", amount: 15000000, type: "deposit", desc: "Initial Portfolio Capital Injection", daysAgo: 9 },

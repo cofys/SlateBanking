@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { ShieldCheck, Plus, RefreshCw, CheckCircle, XCircle, ArrowRight } from "lucide-react";
+import { ShieldCheck, Plus, RefreshCw, CheckCircle, XCircle, ArrowRight, ArrowUpRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export function BankEscrow() {
@@ -161,6 +161,17 @@ export function BankEscrow() {
                     {escrow.status === 'refunded' && <span className="bg-amber-500/20 text-amber-300 px-2 py-1 rounded text-xs uppercase tracking-wider">Refunded</span>}
                   </td>
                   <td className="p-4 text-right flex items-center justify-end gap-2">
+                    {escrow.contractUrl && (
+                      <a
+                        href={escrow.contractUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 px-2.5 py-1.5 rounded transition-colors flex items-center gap-1 font-medium"
+                        title="Open Escrow Legal Document"
+                      >
+                        Doc Contract <ArrowUpRight size={12} />
+                      </a>
+                    )}
                     {escrow.status === 'pending' && (
                       <button onClick={() => handleAction(escrow.id, 'fund')} className="text-xs bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40 px-3 py-1.5 rounded transition-colors whitespace-nowrap">
                         Fund Escrow

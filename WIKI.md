@@ -22,24 +22,31 @@ Slate SaaS is a multi-tenant banking management platform designed for gaming and
 A single deployment of Slate supports an unlimited number of Banks. Each Bank represents an isolated financial institution.
 
 ### 1. Financial Core
-- **Ledgers & Transactions**: Double-entry accounting system where money moves strictly between accounts via `transactions`.
-  - Transaction types: `transfer`, `deposit`, `withdraw`, `onyx_payment`.
+- **Ledgers & Transactions**: Double-entry accounting system where money moves strictly between accounts via `transactions`. Multi-step financial operations (transfers, deposits, and fee deductions) execute inside atomic database transactions (`db.transaction`) to guarantee consistency.
+  - Transaction types: `transfer`, `deposit`, `withdraw`, `onyx_payment`, `interest_payment`.
 - **Bank Accounts**: Configurable user accounts identifiable by unique IDs. Account types include `personal`, `business`, and `payroll`.
   - Uses lowest denomination (cents) to avoid floating-point errors.
-- **Audit Logs**: Irreversible system action records tracking all internal financial manipulation or staff changes. Automatically logs `action`, `details`, and `timestamp`.
+  - **Custom Account Fee Overrides**: Individual accounts can be configured with custom fee rates (`customTransferFeePercent`, `customDepositFeePercent`, `customWithdrawFeePercent`). When defined, transaction fee processing respects the custom account rate rather than the global bank default. When updating bank-wide fee settings in `Bank Settings`, staff can check a toggle to either overwrite custom account overrides or leave them preserved.
+- **Savings Interest Accrual Engine**: Banks can configure `savingsApyPercent` (e.g. 300 basis points = 3.00% APY) in `Bank Settings`. Staff can trigger daily interest compounding via `POST /api/banks/:bankId/accrue-interest`, which atomically calculates pro-rated daily interest across active, non-frozen accounts, logs interest credit transactions, and updates `lastInterestAccrualAt`.
+- **Audit Logs**: Irreversible system action records tracking all internal financial manipulation or staff changes. Automatically logs `action`, `details`, and `timestamp`. Server-side pagination (`limit` & `offset`) keeps high-volume logs fast.
 
 ### 2. Retail Banking Features
 - **Vaults & Time-Locks**: Time-locked deposit accounts that generate interest upon release. Early withdrawal limits are natively supported. Can be toggled per-bank in settings.
-- **Loans & Credit Facility**: Active credit facilitation. Tracks principal amounts, remaining balances, interest rates, and upcoming payment dates. Supports active status tracking (`pending`, `approved`, `active`, `paid`, `rejected`).
-  - **Credit Applications**: Citizens can apply for specialized lines of credit via the Citizen Gateway. Bank staff review and approve/reject applications. 
+- **Loans & Credit Facility**: Comprehensive lending lifecycle management. Tracks principal amounts, remaining balances, interest rates (basis points APR), upcoming payment dates, and collateral bindings. Supports loan status tracking (`pending`, `approved`, `active`, `paid`, `defaulted`, `rejected`).
+  - **Automated Repayment Debits & Recurring Cron Engine**: Background cron services running every 15 minutes (`src/lib/cron.ts` -> `src/server/loan_processor.ts`) inspect active loans past their `nextPaymentDate`. The engine automatically debits the borrower's primary bank account for installment repayments (`min(remainingAmount, max($1.00, principalAmount / 12))`). Successful debits log repayment transactions and extend `nextPaymentDate` by 30 days.
+  - **Daily Interest Accrual & Compounding**: Loan APR interest is accrued and compounded daily basis points: `(remainingAmount * (interestRate / 10000) * daysElapsed) / 365`. Accrued interest atomically increases the loan's `remainingAmount` and records an interest charge in system logs.
+  - **Delinquency, Late Fees & Default Handling**: If an automated repayment debit fails due to insufficient borrower funds, the loan transitions to `isDelinquent = true`, increments `missedPaymentsCount`, assesses a flat late fee penalty ($25.00), and adds it to `remainingAmount`. Upon 3 consecutive missed payment attempts, the system automatically transitions the loan status to `defaulted` and seizes any pledged collateral asset.
+  - **Collateral Asset Tracking & Seizure**: Borrowers can pledge collateral assets during loan applications (`collateralDescription`, `collateralValue`, `collateralStatus`). Pledged collateral statuses transition from `none` -> `pledged` -> `seized` (on loan default) or `released` (upon full principal payoff). Bank staff can update asset valuations and manually adjust collateral status via the Bank Loans portal.
+  - **Credit Applications**: Citizens can apply for specialized lines of credit via the Citizen Gateway with custom collateral declarations. Bank staff review, evaluate collateral, and approve/reject applications. 
   - **Auto-Approval**: In `Bank Settings`, banks may toggle `autoApproveLoans` and `autoApproveCreditCards` along with a threshold `maxAutoApproveLoanAmount`. When toggled, requests falling under the safe limit are instantly generated (funds deposited or cards provisioned) without staff intervention.
+  - **Google Docs Contract Integration**: Configurable Google Docs legal agreement templates for loans, credit applications, and escrow agreements. When enabled, the system auto-generates or attaches dynamic Google Docs contract links populated with variable tags (`{BANK_NAME}`, `{CLIENT_DISCORD}`, `{AMOUNT}`, `{INTEREST_RATE}`, `{CONTRACT_ID}`, `{DATE}`) and provides direct document links in the staff portal and citizen gateway (`contractUrl`).
 - **Cards**: Generated debit and credit card objects (Card Number, CVV, Expiry, Locked state) tied directly to a bank account. Lock states toggle true/false.
 
 ### 3. Business & B2B
 - **Payroll**: Automated, recurring employee compensation workflows (`weekly`, `biweekly`, `monthly`). Operates cron-like checks against active jobs.
 - **Subscriptions**: Recurring billing mechanisms allowing businesses and individuals to charge customer accounts automatically.
 - **Invoices**: Pending payment requests issued by a merchant or bank staff to a customer (`pending`, `paid`, `overdue`). Contains due dates and strict relationships to biller and customer accounts.
-- **Escrow Services**: Safe transaction locking mechanism allowing funds to be held neutrally until a specific fulfillment trigger (`pending`, `funded`, `released`, `refunded`).
+- **Escrow Services**: Safe transaction locking mechanism allowing funds to be held neutrally until a specific fulfillment trigger (`pending`, `funded`, `released`, `refunded`). Auto-attaches Google Docs legal contract templates when enabled in settings.
 
 ### 4. Admin & Workforce
 - **Team Management**: Granular staff permissions controlled via Discord IDs. Role assignments (`owner`, `admin`, `teller`, `support`) govern what UI panes bank employees can access.
@@ -48,9 +55,14 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
 ### 5. Settings & Customization
 - **White-label Branding**: Custom color schemes (`colorScheme`) and logo URLs per bank.
 - **Fees**: Configurable system-wide fees for transfers, deposits, and withdrawals (stored as percentages multiplied by 100).
-- **Discord Integration Config**: Specify verified roles, client roles, and comprehensive webhook alerting structures per-bank.
+- **Discord Integration & Bot Recycling**: Specify verified roles, client roles, `staffChannelId`, and `guiChannelId` per bank. When a bank token is updated, the `BotManager` performs zero-downtime client recycling (`restartBankBot`), restarting only the target tenant bot instance without restarting the server. Real-time notifications auto-dispatch directly into `staffChannelId`.
 - **Feature Flags & Maintenance Mode**: CEOs, Bank Staff, and Global Admins can toggle `maintenanceMode` per bank (or network-wide). During maintenance mode, the Discord bot stays online and production APIs remain active; however, non-staff/customer actions (transfers, invoice payments, bot commands, menu interactions) are suspended with a standard maintenance notice. Bank staff and global admins retain full override privileges to test new features, run commands, and execute portal transactions in production.
 - **Feature Toggles**: CEOs can manually toggle `enableLoans`, `enableVaults`, `enableCards`, `enablePayroll`, `enableSubscriptions`, `enableEscrow`, and `enableTreasury`.
+
+### 6. Performance & Optimization Architecture
+- **Database Indexing**: Drizzle SQLite schema includes explicit `index()` declarations on high-cardinality foreign keys and timestamp fields across `bank_accounts` (`bankId`, `ownerDiscordId`), `transactions` (`bankId`, `fromAccountId`, `toAccountId`, `timestamp`), `bank_staff` (`bankId`, `discordId`), `loans` (`bankId`, `discordId`), `escrows` (`bankId`), and `audit_logs` (`bankId`, `userDiscordId`).
+- **In-Memory Caching**: CityCorp Network API queries (`/corp/list`) use a 3-minute TTL in-memory cache to eliminate external latency spikes and safeguard against upstream rate limits.
+- **Server-Side Pagination**: High-volume data routes (`GET /api/banks/:bankId/transactions` and `GET /api/banks/:bankId/audit`) support `limit` and `offset` parameters for fast, responsive UI rendering.
 
 ---
 
@@ -198,7 +210,7 @@ To expand Slate SaaS, always follow the tri-level approach:
 ## Changelog
 
 ### June 25th 2026 Update
-- **Bot Interactions**: Transitioned from purely slash commands to rich Button/Modal interactions. Admins can spawn a persistent interactive ATM message in a channel using `/spawn_atm`.
+- **Bot Interactions**: Transitioned from purely slash commands to rich Button/Modal interactions. Admins can spawn a persistent interactive banking portal message in a channel using `/spawn_menu`.
 - **Financial Products**: Added new database schemas for `loanProducts`, `creditProducts`, and `bankCustomers` (for KYC and notes). Introduced a new `BankProducts.tsx` page for managing these configured products.
 - **CityCorp Dev Portal (OAuth)**: Added a placeholder on the Citizen Portal dashboard preparing for the new CityCorp OAuth linking process, replacing the manual in-game deposit workflow.
 
@@ -240,7 +252,7 @@ To expand Slate SaaS, always follow the tri-level approach:
   - **Real-Time Ledger Search**: Deployed instant client-side ledger filtering with incoming/outgoing status symbols and beautiful monospace tabular formatting.
 
 - **High-Fidelity Remote Ledger Import Engine**: Re-engineered the backend bulk import service (`/api/banks/:bankId/import`) to auto-fill high-fidelity historical data:
-  - **Mathematical Reconciliation Delta**: Each imported account dynamically receives 4 to 6 randomized transactions spanning 15 days (wages, utility, ATM withdrawals, and Onyx checkout payments). The final transaction utilizes a perfect balance reconciliation delta to guarantee that the absolute ledger sum mathematically aligns with the remote CityCorp balance.
+  - **Mathematical Reconciliation Delta**: Each imported account dynamically receives 4 to 6 randomized transactions spanning 15 days (wages, utility, counter withdrawals, and Onyx checkout payments). The final transaction utilizes a perfect balance reconciliation delta to guarantee that the absolute ledger sum mathematically aligns with the remote CityCorp balance.
   - **Auto-Provisioned Debit Cards**: Every newly imported remote account is immediately provisioned with a custom virtual physical debit card (complete with security codes, card numbers, and expiration dates) to instantly populate the redesigned portal UI.
   - **Intelligent Customer Profiles**: Parses the remote account names to extract real Minecraft usernames and creates corresponding "KYC Approved" customer records if a valid Discord ID is present, creating linked profile states out-of-the-box.
 
@@ -447,7 +459,7 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
     - 💰 **My Accounts / Balance**: View linked accounts, balances, and CityCorp sync status.
     - 💸 **Quick Transfer**: Interactive Modal prompt (`gui_transfer_modal`) to send funds instantly to any account name in the bank.
     - 📝 **Apply & Repay Loans**: Apply for loans via modal and interactively repay active loans with **💸 Repay Loan** buttons that deduct from personal balance and mark loans as settled.
-    - 🎮 **In-Game Info & Sync Protocol**: Interactive Minecraft linking status card with 3D skin head avatar thumbnails (`https://mc-heads.net`), on-demand 6-digit sync codes (`/slate link <code>`), and in-game CityCorp ATM commands.
+    - 🎮 **In-Game Info & Sync Protocol**: Interactive Minecraft linking status card with 3D skin head avatar thumbnails (`https://mc-heads.net`), on-demand 6-digit sync codes (`/slate link <code>`), and in-game CityCorp commands.
     - 📜 **Recent History**: View the user's 15 most recent incoming and outgoing transactions.
     - ⚙️ **Identity & Settings**: Check Discord link and associated Minecraft character (`mcUsername`).
 - **Staff Panel Embed (`buildStaffPanelEmbedAndComponents`)**:

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, customType } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, customType, index } from "drizzle-orm/sqlite-core";
 import { encryptSecret, decryptSecret } from "../lib/encryption";
 
 const encryptedText = customType<{ data: string, driverData: string }>({
@@ -69,8 +69,14 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   isFrozen: integer("is_frozen", { mode: "boolean" }).default(false),
   isSystem: integer("is_system", { mode: "boolean" }).default(false),
   systemCategory: text("system_category"), // e.g., "vault_cash", "fee_revenue", "interest_revenue", "clearinghouse"
+  customTransferFeePercent: integer("custom_transfer_fee_percent"), // Custom transfer fee override in basis points (multiplied by 100); null uses bank settings default
+  customDepositFeePercent: integer("custom_deposit_fee_percent"),   // Custom deposit fee override in basis points; null uses bank settings default
+  customWithdrawFeePercent: integer("custom_withdraw_fee_percent"), // Custom withdraw fee override in basis points; null uses bank settings default
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_bank_accounts_bank_id").on(table.bankId),
+  ownerDiscordIdIdx: index("idx_bank_accounts_owner_discord_id").on(table.ownerDiscordId),
+}));
 
 export const transactions = sqliteTable("transactions", {
   id: text("id").primaryKey(),
@@ -83,7 +89,12 @@ export const transactions = sqliteTable("transactions", {
   isFlagged: integer("is_flagged", { mode: "boolean" }).default(false),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
   category: text("category"), // e.g. "Food", "Rent", "Entertainment"
-});
+}, (table) => ({
+  bankIdIdx: index("idx_transactions_bank_id").on(table.bankId),
+  fromAccIdx: index("idx_transactions_from_acc").on(table.fromAccountId),
+  toAccIdx: index("idx_transactions_to_acc").on(table.toAccountId),
+  timestampIdx: index("idx_transactions_ts").on(table.timestamp),
+}));
 
 export const onyxMerchants = sqliteTable("onyx_merchants", {
   id: text("id").primaryKey(),
@@ -127,6 +138,13 @@ export const bankSettings = sqliteTable("bank_settings", {
   savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
   requirePersonalForBusiness: integer("require_personal_for_business", { mode: "boolean" }).default(true),
   lastInterestAccrualAt: integer("last_interest_accrual_at", { mode: "timestamp" }),
+  // Google Docs Contract Integration Settings
+  enableGoogleDocsContracts: integer("enable_google_docs_contracts", { mode: "boolean" }).default(false),
+  googleDocsLoanTemplateUrl: text("google_docs_loan_template_url"),
+  googleDocsCreditTemplateUrl: text("google_docs_credit_template_url"),
+  googleDocsEscrowTemplateUrl: text("google_docs_escrow_template_url"),
+  googleDocsFolderUrl: text("google_docs_folder_url"),
+  googleDocsAutoGenerate: integer("google_docs_auto_generate", { mode: "boolean" }).default(false),
 });
 
 export const escrows = sqliteTable("escrows", {
@@ -137,8 +155,11 @@ export const escrows = sqliteTable("escrows", {
   amount: integer("amount").notNull(),
   description: text("description"),
   status: text("status").default("pending"), // pending, funded, released, refunded
+  contractUrl: text("contract_url"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_escrows_bank_id").on(table.bankId),
+}));
 
 export const bankStaff = sqliteTable("bank_staff", {
   id: text("id").primaryKey(),
@@ -146,7 +167,10 @@ export const bankStaff = sqliteTable("bank_staff", {
   discordId: text("discord_id").notNull(),
   role: text("role").notNull(), 
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_bank_staff_bank_id").on(table.bankId),
+  discordIdIdx: index("idx_bank_staff_discord_id").on(table.discordId),
+}));
 
 export const supportTickets = sqliteTable("support_tickets", {
   id: text("id").primaryKey(),
@@ -164,7 +188,10 @@ export const auditLogs = sqliteTable("audit_logs", {
   action: text("action").notNull(),
   details: text("details"),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_audit_logs_bank_id").on(table.bankId),
+  userDiscordIdIdx: index("idx_audit_logs_user_discord_id").on(table.userDiscordId),
+}));
 
 export const loans = sqliteTable("loans", {
   id: text("id").primaryKey(),
@@ -177,8 +204,25 @@ export const loans = sqliteTable("loans", {
   nextPaymentDate: integer("next_payment_date", { mode: "timestamp" }).notNull(),
   purpose: text("purpose"), // Why do they need it?
   status: text("status").default("pending"), // pending, active, rejected, paid_off, defaulted
+  contractUrl: text("contract_url"),
+
+  // Collateral Tracking
+  collateralDescription: text("collateral_description"), // Real estate, vehicle, vault assets, etc.
+  collateralValue: integer("collateral_value"),         // Estimated collateral value in cents
+  collateralStatus: text("collateral_status").default("none"), // none, pledged, seized, released
+
+  // Delinquency, Late Fees & Repayment Tracking
+  lateFeeAmount: integer("late_fee_amount").default(0),        // Total accumulated late fees in cents
+  isDelinquent: integer("is_delinquent", { mode: "boolean" }).default(false),
+  missedPaymentsCount: integer("missed_payments_count").default(0),
+  lastInterestAccrualAt: integer("last_interest_accrual_at", { mode: "timestamp" }),
+  lastPaymentAttemptAt: integer("last_payment_attempt_at", { mode: "timestamp" }),
+
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_loans_bank_id").on(table.bankId),
+  discordIdIdx: index("idx_loans_discord_id").on(table.discordId),
+}));
 
 export const creditApplications = sqliteTable("credit_applications", {
   id: text("id").primaryKey(),
@@ -189,6 +233,7 @@ export const creditApplications = sqliteTable("credit_applications", {
   monthlyIncome: integer("monthly_income").notNull(),
   purpose: text("purpose"),
   status: text("status").default("pending"), // pending, approved, rejected
+  contractUrl: text("contract_url"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 

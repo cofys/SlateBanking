@@ -27,8 +27,8 @@ const commands = [
     .setName('bank')
     .setDescription('Open the Bank Dashboard (Personal Overlay).'),
   new SlashCommandBuilder()
-    .setName('spawn_atm')
-    .setDescription('Admin only: Spawn a permanent ATM menu in this channel.')
+    .setName('spawn_menu')
+    .setDescription('Admin only: Spawn a permanent banking menu in this channel.')
     .setDefaultMemberPermissions(8),
   new SlashCommandBuilder()
     .setName('setup_gui')
@@ -68,9 +68,9 @@ export async function handleBankInteraction(bankId: string, interaction: Interac
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'bank') {
       await showMainMenu(bankId, interaction, true);
-    } else if (interaction.commandName === 'spawn_atm') {
+    } else if (interaction.commandName === 'spawn_menu' || interaction.commandName === 'spawn_atm') {
       await showMainMenu(bankId, interaction, false);
-      await interaction.reply({ content: "ATM spawned below.", ephemeral: true });
+      await interaction.reply({ content: "Banking menu spawned below.", ephemeral: true });
     } else if (interaction.commandName === 'setup_gui') {
       await setupGUICommand(bankId, interaction);
     } else if (interaction.commandName === 'setup_staff_panel') {
@@ -143,7 +143,7 @@ export async function buildPublicGUIEmbedAndComponents(bankId: string) {
       },
       {
         name: '📄 Credit & Services',
-        value: '• **Apply for Loan**: Instant credit application\n• **My History**: View recent transactions\n• **In-Game Commands**: ATM & Teller commands',
+        value: '• **Apply for Loan**: Instant credit application\n• **My History**: View recent transactions\n• **In-Game Commands**: CityCorp banking commands',
         inline: true
       }
     ],
@@ -520,7 +520,7 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     await handleHistory(bankId, interaction);
   } else if (cid === 'bank_in_game_info' || cid === 'bank_gui_ingame') {
     await safeReplyOrUpdate(interaction, { 
-      content: '📥 **In-Game ATM & Teller Commands**\n\nTo deposit or withdraw money in-game via CityCorp ATMs, use:\n\n**Deposit**: `/c account deposit corpname accountname amount`\n**Withdraw**: `/c account withdraw corpname accountname amount`', 
+      content: '📥 **In-Game CityCorp Banking Commands**\n\nTo manage funds in-game via CityCorp accounts, use:\n\n**Deposit**: `/c account deposit corpname accountname amount`\n**Withdraw**: `/c account withdraw corpname accountname amount`', 
       components: [backButtonRow] 
     });
   } else if (cid === 'bank_open_account' || cid === 'bank_gui_open_acc') {
@@ -1336,7 +1336,7 @@ async function handleBankRates(bankId: string, interaction: ButtonInteraction) {
       `• **Savings Account APY**: **2.25%** compound yield\n` +
       `• **Internal Transfer Fee**: **$0.00** (Free)\n` +
       `• **Platform Onyx Fee**: **${((bank.platformFeePercent || 0) / 100).toFixed(2)}%**\n` +
-      `• **CityCorp ATM Network Fee**: Standard CityCorp API rates\n\n` +
+      `• **CityCorp Network Inter-Bank Fee**: Standard CityCorp API rates\n\n` +
       `For personalized commercial credit or custom treasury rates, please open a ticket with bank staff.`,
     color: hexColor,
     footer: { text: "Slate SaaS Onyx PSP Ledger • Financial Schedule" },
@@ -1443,23 +1443,22 @@ async function handleBankInGameInfo(bankId: string, interaction: ButtonInteracti
   const syncCode = Math.floor(100000 + Math.random() * 900000).toString();
 
   const embed = {
-    title: `🎮 ${bank.name} • Minecraft Server Sync & ATM Protocol`,
+    title: `🎮 ${bank.name} • Minecraft Server Character Sync`,
     description: 
-      `Connect your Discord account with your Minecraft character for instant physical ATM deposits, banknote withdrawals, and CityCorp sync.\n\n` +
+      `Connect your Discord account with your Minecraft character for instant online balance updates and CityCorp sync.\n\n` +
       `👤 **Minecraft Character**: **${mcUser}**\n` +
       `🔗 **Account Status**: ${isLinked ? '🟢 LINKED & VERIFIED' : '🔴 UNLINKED'}\n\n` +
       (isLinked ? 
-        `✅ Your character **${mcUser}** is fully linked! Visit any CityCorp ATM block on the server to manage physical banknotes and cash deposits.` :
+        `✅ Your character **${mcUser}** is fully linked! Account actions and balances will sync across Slate and CityCorp.` :
         `🔑 **Linking Instructions**:\n` +
         `1. Log into the Minecraft server\n` +
         `2. Run command: \`/slate link ${syncCode}\`\n` +
         `3. Your accounts and balances will sync automatically!`) +
       `\n\n` +
-      `⌨️ **Minecraft In-Game Commands**:\n` +
+      `⌨️ **In-Game Commands**:\n` +
       `• \`/bank balance\` — View live account balances\n` +
-      `• \`/bank deposit <amount>\` — Deposit held cash banknotes\n` +
-      `• \`/bank withdraw <amount>\` — Dispense physical cash\n` +
-      `• \`/atm\` — Open nearest CityCorp physical ATM block`,
+      `• \`/bank deposit <amount>\` — Deposit in-game funds\n` +
+      `• \`/bank withdraw <amount>\` — Withdraw in-game funds`,
     color: hexColor,
     thumbnail: isLinked ? { url: `https://mc-heads.net/avatar/${mcUser}/100` } : undefined,
     footer: { text: `Slate SaaS Onyx Network • MC Sync ID: ${syncCode}` },

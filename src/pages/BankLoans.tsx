@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Landmark, Plus, RefreshCw, AlertCircle, Banknote, Calendar, FileText, X, Percent, CheckCircle2, ShieldAlert, ArrowUpRight, DollarSign } from "lucide-react";
+import { Landmark, Plus, RefreshCw, AlertCircle, Banknote, Calendar, FileText, X, Percent, CheckCircle2, ShieldAlert, ArrowUpRight, DollarSign, ShieldCheck, Zap, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export function BankLoans() {
@@ -8,6 +8,7 @@ export function BankLoans() {
   const [loans, setLoans] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processingCron, setProcessingCron] = useState(false);
   
   const [selectedLoan, setSelectedLoan] = useState<any | null>(null);
 
@@ -16,15 +17,30 @@ export function BankLoans() {
   const [principalAmount, setPrincipalAmount] = useState("");
   const [interestRate, setInterestRate] = useState("10.0"); 
   const [depositAccountId, setDepositAccountId] = useState("");
+  const [collateralDescription, setCollateralDescription] = useState("");
+  const [collateralValue, setCollateralValue] = useState("");
 
   const [showPayModal, setShowPayModal] = useState(false);
   const [payLoanId, setPayLoanId] = useState("");
   const [payAmount, setPayAmount] = useState("");
   const [payAccountId, setPayAccountId] = useState("");
 
+  // Collateral edit states for selected loan
+  const [editCollateralStatus, setEditCollateralStatus] = useState("");
+  const [editCollateralDesc, setEditCollateralDesc] = useState("");
+  const [editCollateralVal, setEditCollateralVal] = useState("");
+
   useEffect(() => {
     fetchData();
   }, [bankId]);
+
+  useEffect(() => {
+    if (selectedLoan) {
+      setEditCollateralStatus(selectedLoan.collateralStatus || "none");
+      setEditCollateralDesc(selectedLoan.collateralDescription || "");
+      setEditCollateralVal(selectedLoan.collateralValue ? (selectedLoan.collateralValue / 100).toString() : "");
+    }
+  }, [selectedLoan]);
 
   const fetchData = async () => {
     try {
@@ -43,6 +59,42 @@ export function BankLoans() {
     }
   };
 
+  const handleProcessDueLoans = async () => {
+    setProcessingCron(true);
+    try {
+      const res = await fetch(`/api/banks/${bankId}/loans/process-due`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Loan Repayments Run Complete!\nProcessed: ${data.result.processed}\nDebited: ${data.result.debited}\nLate Fees Added: ${data.result.lateFees}\nDefaulted: ${data.result.defaulted}`);
+        fetchData();
+      } else {
+        alert("Error processing due loans: " + data.error);
+      }
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    } finally {
+      setProcessingCron(false);
+    }
+  };
+
+  const handleAccrueInterest = async () => {
+    setProcessingCron(true);
+    try {
+      const res = await fetch(`/api/banks/${bankId}/loans/accrue-interest`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Interest Accrual Run Complete!\nAccrued Loans: ${data.result.accruedLoans}\nTotal Interest Added: $${(data.result.totalInterestAccruedCents / 100).toFixed(2)}`);
+        fetchData();
+      } else {
+        alert("Error accruing interest: " + data.error);
+      }
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    } finally {
+      setProcessingCron(false);
+    }
+  };
+
   const handleCreateLoan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!discordId || !principalAmount || !interestRate || !depositAccountId) return;
@@ -55,14 +107,40 @@ export function BankLoans() {
           discordId,
           depositAccountId,
           principalAmount: Math.round(parseFloat(principalAmount) * 100), 
-          interestRate: Math.round(parseFloat(interestRate) * 100) 
+          interestRate: Math.round(parseFloat(interestRate) * 100),
+          collateralDescription,
+          collateralValue
         })
       });
       if (res.ok) {
         setShowAddModal(false);
         setCityCorpId("");
         setPrincipalAmount("");
+        setCollateralDescription("");
+        setCollateralValue("");
         fetchData();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUpdateCollateral = async () => {
+    if (!selectedLoan) return;
+    try {
+      const res = await fetch(`/api/banks/${bankId}/loans/${selectedLoan.id}/collateral`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collateralDescription: editCollateralDesc,
+          collateralValue: editCollateralVal,
+          collateralStatus: editCollateralStatus
+        })
+      });
+      if (res.ok) {
+        alert("Collateral updated successfully.");
+        fetchData();
+        setSelectedLoan(null);
       }
     } catch (e) {
       console.error(e);
@@ -109,15 +187,35 @@ export function BankLoans() {
             <Landmark className="text-emerald-400" />
             Loan Center
           </h1>
-          <p className="text-white/60">Issue and manage loans & credit lines</p>
+          <p className="text-white/60">Issue & manage loans, collateral, interest & auto-debits</p>
         </div>
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer"
-        >
-          <Plus size={18} />
-          Issue New Loan
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button 
+            onClick={handleProcessDueLoans}
+            disabled={processingCron}
+            className="flex items-center gap-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/30 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+            title="Run automated repayment debits across all active loans"
+          >
+            <Zap size={16} className="text-indigo-400" />
+            Process Due Debits
+          </button>
+          <button 
+            onClick={handleAccrueInterest}
+            disabled={processingCron}
+            className="flex items-center gap-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+            title="Calculate and add daily interest compounding"
+          >
+            <Percent size={16} className="text-amber-400" />
+            Accrue Interest
+          </button>
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer"
+          >
+            <Plus size={18} />
+            Issue New Loan
+          </button>
+        </div>
       </div>
 
       {loans.length === 0 ? (
@@ -141,10 +239,11 @@ export function BankLoans() {
             <thead>
               <tr className="border-b border-white/10 text-xs uppercase tracking-wider text-white/50 bg-slate-800/50">
                 <th className="p-4 font-medium">Borrower</th>
-                <th className="p-4 font-medium">Original Principal</th>
+                <th className="p-4 font-medium">Principal</th>
                 <th className="p-4 font-medium">Remaining Bal</th>
+                <th className="p-4 font-medium">Collateral</th>
                 <th className="p-4 font-medium">APR</th>
-                <th className="p-4 font-medium">Next Payment</th>
+                <th className="p-4 font-medium">Next Due</th>
                 <th className="p-4 font-medium">Status</th>
                 <th className="p-4 font-medium w-32"></th>
               </tr>
@@ -153,7 +252,7 @@ export function BankLoans() {
               {loans.map(loan => (
                 <tr 
                   key={loan.id} 
-                  className="hover:bg-white/5 transition-colors cursor-pointer"
+                  className={`hover:bg-white/5 transition-colors cursor-pointer ${loan.isDelinquent ? 'bg-rose-950/20' : ''}`}
                   onClick={() => setSelectedLoan(loan)}
                 >
                   <td className="p-4 text-sm font-medium text-white/90">
@@ -171,27 +270,65 @@ export function BankLoans() {
                   </td>
                   <td className="p-4 text-sm font-mono text-emerald-400 font-medium">
                     ${(loan.remainingAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {loan.lateFeeAmount > 0 && (
+                      <span className="block text-[10px] text-rose-400 font-mono">
+                        +${(loan.lateFeeAmount / 100).toFixed(2)} late fee
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-4 text-xs">
+                    {loan.collateralDescription ? (
+                      <div>
+                        <span className={`inline-flex items-center gap-1 font-medium px-2 py-0.5 rounded text-[11px] ${loan.collateralStatus === 'seized' ? 'bg-rose-500/20 text-rose-300' : loan.collateralStatus === 'released' ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                          <ShieldCheck size={12} />
+                          {loan.collateralStatus?.toUpperCase()}
+                        </span>
+                        <p className="text-white/60 text-[11px] truncate max-w-[140px] mt-0.5">{loan.collateralDescription}</p>
+                      </div>
+                    ) : (
+                      <span className="text-white/30 text-[11px]">Unsecured</span>
+                    )}
                   </td>
                   <td className="p-4 text-sm text-white/70">
                     {(loan.interestRate / 100).toFixed(2)}%
                   </td>
                   <td className="p-4 text-sm text-white/70">
-                    {loan.status === 'paid' ? '-' : new Date(loan.nextPaymentDate).toLocaleDateString()}
+                    {loan.status === 'paid' || loan.status === 'paid_off' ? '-' : new Date(loan.nextPaymentDate).toLocaleDateString()}
                   </td>
                   <td className="p-4 text-sm">
-                    {loan.status === 'paid' ? (
-                      <span className="bg-slate-700 text-slate-300 px-2 py-1 rounded text-xs">PAID</span>
+                    {loan.status === 'paid' || loan.status === 'paid_off' ? (
+                      <span className="bg-slate-700 text-slate-300 px-2 py-1 rounded text-xs font-semibold">PAID OFF</span>
+                    ) : loan.status === 'defaulted' ? (
+                      <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded text-xs uppercase font-bold flex items-center gap-1">
+                        <AlertTriangle size={12} /> DEFAULTED
+                      </span>
+                    ) : loan.isDelinquent ? (
+                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-1 rounded text-xs uppercase font-semibold flex items-center gap-1">
+                        <AlertCircle size={12} /> OVERDUE ({loan.missedPaymentsCount})
+                      </span>
                     ) : loan.status === 'pending' ? (
                       <span className="bg-blue-500/20 text-blue-300 px-2 py-1 rounded text-xs uppercase">PENDING</span>
                     ) : (
-                      <span className="bg-amber-500/20 text-amber-300 px-2 py-1 rounded text-xs uppercase">{loan.status}</span>
+                      <span className="bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded text-xs uppercase font-semibold">{loan.status}</span>
                     )}
                   </td>
-                  <td className="p-4 text-right flex gap-2 justify-end">
+                  <td className="p-4 text-right flex gap-2 justify-end items-center">
+                    {loan.contractUrl && (
+                      <a
+                        href={loan.contractUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 px-2.5 py-1.5 rounded transition-colors flex items-center gap-1 font-medium"
+                        title="Open Legal Contract Document"
+                      >
+                        Doc Contract <ArrowUpRight size={12} />
+                      </a>
+                    )}
                     {loan.status === 'pending' && (
                        <button
                          title="Approve Loan (Funds will be sent)"
-                         onClick={async () => {
+                         onClick={async (e) => {
+                             e.stopPropagation();
                              if(!confirm("Approve this loan? Funds will instantly be disbursed.")) return;
                              try {
                                const res = await fetch(`/api/banks/${bankId}/loans/${loan.id}/status`, {
@@ -207,9 +344,10 @@ export function BankLoans() {
                          Approve
                        </button>
                     )}
-                    {loan.status !== 'paid' && loan.status !== 'pending' && (
+                    {loan.status !== 'paid' && loan.status !== 'paid_off' && loan.status !== 'pending' && (
                        <button
-                         onClick={() => {
+                         onClick={(e) => {
+                           e.stopPropagation();
                            setPayLoanId(loan.id);
                            setShowPayModal(true);
                          }}
@@ -234,14 +372,14 @@ export function BankLoans() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
+              className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
             >
               <div className="p-6 border-b border-white/5">
                 <h2 className="text-xl font-semibold text-white">Issue Loan</h2>
                 <p className="text-sm text-white/60 mt-1">Disburse funds & establish a payment plan</p>
               </div>
 
-              <form onSubmit={handleCreateLoan} className="p-6 space-y-5">
+              <form onSubmit={handleCreateLoan} className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-white/80 mb-1.5">Borrower Discord ID</label>
                   <input
@@ -272,7 +410,6 @@ export function BankLoans() {
                       ))
                     }
                   </select>
-                  <p className="text-xs text-white/40 mt-1">Principal will be funded into this account automatically.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -286,7 +423,7 @@ export function BankLoans() {
                         min="0.01"
                         value={principalAmount}
                         onChange={(e) => setPrincipalAmount(e.target.value)}
-                        className="w-full bg-slate-800 border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        className="w-full bg-slate-800 border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         required
                       />
                     </div>
@@ -301,6 +438,31 @@ export function BankLoans() {
                       onChange={(e) => setInterestRate(e.target.value)}
                       className="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       required
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-white/10 pt-4 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Collateral Binding (Optional)</p>
+                  <div>
+                    <label className="block text-xs text-white/70 mb-1">Collateral Asset Description</label>
+                    <input
+                      type="text"
+                      value={collateralDescription}
+                      onChange={(e) => setCollateralDescription(e.target.value)}
+                      placeholder="e.g. Real Estate at 104 Ocean Drive, CyberTruck #402"
+                      className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-white/70 mb-1">Estimated Collateral Value ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={collateralValue}
+                      onChange={(e) => setCollateralValue(e.target.value)}
+                      placeholder="e.g. 50000.00"
+                      className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
                 </div>
@@ -394,7 +556,7 @@ export function BankLoans() {
         )}
       </AnimatePresence>
 
-      {/* View Loan Modal */}
+      {/* View & Edit Loan Modal */}
       <AnimatePresence>
         {selectedLoan && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -406,15 +568,20 @@ export function BankLoans() {
             >
               <div className="p-6 border-b border-white/5 flex justify-between items-center bg-slate-800/50">
                 <div>
-                  <h2 className="text-xl font-semibold text-white">Loan Details</h2>
-                  <p className="text-sm text-white/60 mt-1 font-mono">{selectedLoan.id}</p>
+                  <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                    Loan Management
+                    {selectedLoan.isDelinquent && (
+                      <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs px-2 py-0.5 rounded font-bold">OVERDUE</span>
+                    )}
+                  </h2>
+                  <p className="text-sm text-white/60 mt-0.5 font-mono">{selectedLoan.id}</p>
                 </div>
                 <button onClick={() => setSelectedLoan(null)} className="text-white/40 hover:text-white transition-colors">
                   <X size={24} />
                 </button>
               </div>
 
-              <div className="p-6 grid grid-cols-2 gap-8">
+              <div className="p-6 grid grid-cols-2 gap-8 max-h-[80vh] overflow-y-auto">
                 <div className="space-y-6">
                   <div>
                     <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Borrower Identity</p>
@@ -425,19 +592,68 @@ export function BankLoans() {
                   </div>
                   <div>
                     <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Purpose / Notes</p>
-                    <div className="text-white/80 bg-black/20 p-3 rounded-xl border border-white/5 min-h-[80px]">
+                    <div className="text-white/80 bg-black/20 p-3 rounded-xl border border-white/5 min-h-[60px]">
                       {selectedLoan.purpose || <span className="text-white/30 italic">No notes provided</span>}
                     </div>
                   </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl">
                       <p className="text-xs text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-1"><DollarSign size={14} /> Remaining</p>
                       <p className="font-mono text-emerald-300 text-xl font-medium">${(selectedLoan.remainingAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
                     <div className="bg-slate-800/50 border border-white/5 p-4 rounded-xl">
-                      <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Original</p>
+                      <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Original Principal</p>
                       <p className="font-mono text-white/80 text-xl">${(selectedLoan.principalAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
+                  </div>
+
+                  {/* Collateral Binding Box */}
+                  <div className="bg-slate-800/40 border border-white/10 p-4 rounded-xl space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                      <ShieldCheck size={14} /> Collateral Asset
+                    </p>
+                    <div>
+                      <label className="block text-xs text-white/60 mb-1">Description</label>
+                      <input
+                        type="text"
+                        value={editCollateralDesc}
+                        onChange={(e) => setEditCollateralDesc(e.target.value)}
+                        className="w-full bg-slate-900 border border-white/10 rounded px-3 py-1.5 text-sm text-white"
+                        placeholder="No collateral bound"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-white/60 mb-1">Est. Value ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editCollateralVal}
+                          onChange={(e) => setEditCollateralVal(e.target.value)}
+                          className="w-full bg-slate-900 border border-white/10 rounded px-3 py-1.5 text-sm text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-white/60 mb-1">Status</label>
+                        <select
+                          value={editCollateralStatus}
+                          onChange={(e) => setEditCollateralStatus(e.target.value)}
+                          className="w-full bg-slate-900 border border-white/10 rounded px-2 py-1.5 text-sm text-white"
+                        >
+                          <option value="none">None</option>
+                          <option value="pledged">Pledged</option>
+                          <option value="seized">Seized (Default)</option>
+                          <option value="released">Released</option>
+                        </select>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleUpdateCollateral}
+                      className="w-full bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 text-xs py-1.5 rounded transition-colors"
+                    >
+                      Save Collateral Status
+                    </button>
                   </div>
                 </div>
 
@@ -445,7 +661,7 @@ export function BankLoans() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Status</p>
-                      <span className={`inline-block px-3 py-1 rounded text-sm uppercase font-semibold tracking-wider ${selectedLoan.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : selectedLoan.status === 'pending' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                      <span className={`inline-block px-3 py-1 rounded text-sm uppercase font-semibold tracking-wider ${selectedLoan.status === 'paid' || selectedLoan.status === 'paid_off' ? 'bg-emerald-500/20 text-emerald-400' : selectedLoan.status === 'defaulted' ? 'bg-rose-500/20 text-rose-400' : 'bg-blue-500/20 text-blue-400'}`}>
                         {selectedLoan.status}
                       </span>
                     </div>
@@ -454,28 +670,52 @@ export function BankLoans() {
                       <p className="text-white text-lg font-medium">{(selectedLoan.interestRate / 100).toFixed(2)}% APR</p>
                     </div>
                   </div>
-                  
+
+                  {/* Delinquency & Penalties Box */}
+                  <div className="bg-black/20 rounded-xl border border-white/5 p-4 space-y-2">
+                    <p className="text-xs text-white/50 uppercase tracking-wider mb-2">Delinquency & Late Fees</p>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-white/60">Missed Debits:</span>
+                      <span className={`font-mono font-bold ${selectedLoan.missedPaymentsCount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {selectedLoan.missedPaymentsCount || 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-white/60">Accrued Late Fees:</span>
+                      <span className="font-mono text-rose-300">
+                        ${((selectedLoan.lateFeeAmount || 0) / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
                   <div>
-                    <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Important Dates</p>
+                    <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Dates & Log</p>
                     <div className="bg-black/20 rounded-xl border border-white/5 p-4 space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-white/60 text-sm">Origination Date</span>
+                        <span className="text-white/60 text-sm">Origination</span>
                         <span className="text-white text-sm">{new Date(selectedLoan.createdAt).toLocaleDateString()}</span>
                       </div>
-                      <div className="flex justify-between items-center pt-3 border-t border-white/5">
+                      <div className="flex justify-between items-center pt-2 border-t border-white/5">
                         <span className="text-white/60 text-sm">Next Payment Due</span>
-                        <span className="text-white text-sm font-medium {selectedLoan.status !== 'paid' && 'text-rose-400'}">
-                          {selectedLoan.status === 'paid' ? 'N/A' : new Date(selectedLoan.nextPaymentDate).toLocaleDateString()}
+                        <span className={`text-sm font-medium ${selectedLoan.isDelinquent ? 'text-rose-400' : 'text-white'}`}>
+                          {selectedLoan.status === 'paid' || selectedLoan.status === 'paid_off' ? 'N/A' : new Date(selectedLoan.nextPaymentDate).toLocaleDateString()}
                         </span>
                       </div>
+                      {selectedLoan.lastPaymentAttemptAt && (
+                        <div className="flex justify-between items-center pt-2 border-t border-white/5 text-xs text-white/40">
+                          <span>Last Debit Attempt</span>
+                          <span>{new Date(selectedLoan.lastPaymentAttemptAt).toLocaleString()}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
-                  {selectedLoan.status === 'active' && (
+                  {selectedLoan.status !== 'paid' && selectedLoan.status !== 'paid_off' && (
                     <button
                       onClick={() => {
+                        const id = selectedLoan.id;
                         setSelectedLoan(null);
-                        setPayLoanId(selectedLoan.id);
+                        setPayLoanId(id);
                         setShowPayModal(true);
                       }}
                       className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition-colors shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2"
@@ -492,3 +732,4 @@ export function BankLoans() {
     </div>
   );
 }
+

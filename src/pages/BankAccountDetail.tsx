@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, useParams, Link } from "react-router-dom";
-import { ArrowLeft, Wallet, Activity, CreditCard, Clock, Lock, Trash2, ArrowUpRight, ArrowDownRight, Plus, Minus, Loader2, Pencil, FileText, XCircle } from "lucide-react";
+import { ArrowLeft, Wallet, Activity, CreditCard, Clock, Lock, Trash2, ArrowUpRight, ArrowDownRight, Plus, Minus, Loader2, Pencil, FileText, XCircle, DollarSign } from "lucide-react";
 import { format } from "date-fns";
 import { formatMoney } from "../lib/utils";
 
@@ -18,6 +18,12 @@ export function BankAccountDetail() {
 
   // For retrieving networks in wire transfer
   const [networkBanks, setNetworkBanks] = useState<any[]>([]);
+
+  // Custom fee override states
+  const [customTransferFee, setCustomTransferFee] = useState<string>("");
+  const [customDepositFee, setCustomDepositFee] = useState<string>("");
+  const [customWithdrawFee, setCustomWithdrawFee] = useState<string>("");
+  const [savingCustomFees, setSavingCustomFees] = useState<boolean>(false);
 
   
   const fetchAcc = () => {
@@ -61,6 +67,62 @@ export function BankAccountDetail() {
         }).catch(console.error);
     }
   }, [bank, accountId]);
+
+  useEffect(() => {
+    if (data?.account) {
+      setCustomTransferFee(
+        data.account.customTransferFeePercent !== null && data.account.customTransferFeePercent !== undefined
+          ? (data.account.customTransferFeePercent / 100).toString()
+          : ""
+      );
+      setCustomDepositFee(
+        data.account.customDepositFeePercent !== null && data.account.customDepositFeePercent !== undefined
+          ? (data.account.customDepositFeePercent / 100).toString()
+          : ""
+      );
+      setCustomWithdrawFee(
+        data.account.customWithdrawFeePercent !== null && data.account.customWithdrawFeePercent !== undefined
+          ? (data.account.customWithdrawFeePercent / 100).toString()
+          : ""
+      );
+    }
+  }, [data]);
+
+  const handleSaveCustomFees = async (reset: boolean = false) => {
+    setSavingCustomFees(true);
+    try {
+      const payload = reset
+        ? { customTransferFeePercent: null, customDepositFeePercent: null, customWithdrawFeePercent: null }
+        : {
+            customTransferFeePercent: customTransferFee.trim() === "" ? null : customTransferFee,
+            customDepositFeePercent: customDepositFee.trim() === "" ? null : customDepositFee,
+            customWithdrawFeePercent: customWithdrawFee.trim() === "" ? null : customWithdrawFee,
+          };
+
+      const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/custom-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        if (reset) {
+          setCustomTransferFee("");
+          setCustomDepositFee("");
+          setCustomWithdrawFee("");
+        }
+        fetchAcc();
+        alert("Custom account fee settings updated successfully!");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Failed to update custom fee settings");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingCustomFees(false);
+    }
+  };
 
   const handleTx = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,6 +329,81 @@ export function BankAccountDetail() {
               <div className="flex justify-between border-b border-white/5 pb-3">
                 <span className="text-white/50">Interest Yield</span>
                 <span className="text-white/80">0.00% APY</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold flex items-center gap-2 text-white">
+                <DollarSign className="text-amber-400" size={18} />
+                Custom Fee Overrides
+              </h3>
+              {(account.customTransferFeePercent !== null || account.customDepositFeePercent !== null || account.customWithdrawFeePercent !== null) && (
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 font-semibold px-2 py-0.5 rounded border border-amber-500/30">
+                  ACTIVE OVERRIDE
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-white/50 mb-4">
+              Set custom transaction fee rates specifically for this account. Leave blank to inherit bank-wide defaults.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-white/60 mb-1">Transfer Fee (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Bank Default"
+                  value={customTransferFee}
+                  onChange={(e) => setCustomTransferFee(e.target.value)}
+                  className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/60 mb-1">Deposit Fee (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Bank Default"
+                  value={customDepositFee}
+                  onChange={(e) => setCustomDepositFee(e.target.value)}
+                  className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/60 mb-1">Withdraw Fee (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Bank Default"
+                  value={customWithdrawFee}
+                  onChange={(e) => setCustomWithdrawFee(e.target.value)}
+                  className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  disabled={savingCustomFees}
+                  onClick={() => handleSaveCustomFees(false)}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium py-2 rounded-lg text-xs transition-colors flex items-center justify-center gap-1"
+                >
+                  {savingCustomFees ? <Loader2 size={12} className="animate-spin" /> : "Save Overrides"}
+                </button>
+                <button
+                  type="button"
+                  disabled={savingCustomFees}
+                  onClick={() => handleSaveCustomFees(true)}
+                  className="bg-white/5 hover:bg-white/10 text-white/70 hover:text-white py-2 px-3 rounded-lg text-xs transition-colors"
+                  title="Clear custom overrides and revert to bank default settings"
+                >
+                  Reset
+                </button>
               </div>
             </div>
           </div>

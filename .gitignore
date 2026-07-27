@@ -6,8 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# SQLite Database files
 *.db
 *.db-wal
 *.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
 *.corrupt
 data/
+data/*
+slate_saas.db
