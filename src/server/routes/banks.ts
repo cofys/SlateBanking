@@ -176,8 +176,9 @@ banksRouter.post("/api/banks/maintenance-all", requireGlobalAdmin, async (req: e
           try {
             await botManager.provisionBankBot(bank.id, bank.discordToken);
           } catch (e) {
-            console.error(`[MaintenanceAll] Error ensuring bot online for bank ${bank.id}:`, e);
+            // Bot already provisioned or offline
           }
+          await botManager.updateBankBotPresence(bank.id, maintenanceMode);
         }
       }
 
@@ -208,8 +209,9 @@ banksRouter.post("/api/banks/:bankId/maintenance", requireBankStaff, async (req:
         try {
           await botManager.provisionBankBot(bId, bank.discordToken);
         } catch (e) {
-          console.error(`[BankMaintenance] Error ensuring bot online for bank ${bId}:`, e);
+          // Bot already provisioned or offline
         }
+        await botManager.updateBankBotPresence(bId, maintenanceMode);
       }
 
       res.json({ success: true, bankId: bId, maintenanceMode });
@@ -539,20 +541,72 @@ banksRouter.post("/api/banks/:id/upload-db", requireGlobalAdmin, async (req: exp
   });
 
 banksRouter.delete("/api/banks/:id", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
-    const { db } = await import("../../db/index");
-    const { banks, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
-    const { botManager } = await import("../../lib/bot_manager");
+    const { db } = await import("../../db/index.js");
+    const { 
+      banks, bankAccounts, transactions, bankSettings, escrows, bankStaff,
+      supportTickets, auditLogs, loans, creditApplications, vaultDeposits,
+      cards, payrollJobs, subscriptions, clearinghouseBalances, cityCorpLogs,
+      invoices, bankCustomers, loanProducts, creditProducts, saasInvoices,
+      discordWebhooks, onyxMerchants, accountMembers, savingsGoals, paymentLinks,
+      recurringTransfers, clearinghouseSettlements, interBankTransfers
+    } = await import("../../db/schema.js");
+    const { eq, or, inArray } = await import("drizzle-orm");
+    const { botManager } = await import("../../lib/bot_manager.js");
+
     try {
       const id = req.params.id;
-      await botManager.stopBankBot(id);
-      await db.delete(transactions).where(eq(transactions.bankId, id));
-      await db.delete(bankAccounts).where(eq(bankAccounts.bankId, id));
+      
+      // Stop running bot if active
+      try {
+        await botManager.stopBankBot(id);
+      } catch (err) {
+        console.error("Error stopping bank bot on deletion:", err);
+      }
+
+      // Find all account IDs associated with this bank to delete sub-account entities
+      const accs = await db.select({ id: bankAccounts.id }).from(bankAccounts).where(eq(bankAccounts.bankId, id));
+      const accIds = accs.map(a => a.id);
+
+      if (accIds.length > 0) {
+        await db.delete(accountMembers).where(inArray(accountMembers.accountId, accIds)).catch(() => {});
+        await db.delete(savingsGoals).where(inArray(savingsGoals.accountId, accIds)).catch(() => {});
+        await db.delete(paymentLinks).where(inArray(paymentLinks.billerAccountId, accIds)).catch(() => {});
+        await db.delete(recurringTransfers).where(or(inArray(recurringTransfers.fromAccountId, accIds), inArray(recurringTransfers.toAccountId, accIds))).catch(() => {});
+      }
+
+      // Delete all bank-level dependent rows
+      await db.delete(transactions).where(eq(transactions.bankId, id)).catch(() => {});
+      await db.delete(vaultDeposits).where(eq(vaultDeposits.bankId, id)).catch(() => {});
+      await db.delete(cards).where(eq(cards.bankId, id)).catch(() => {});
+      await db.delete(payrollJobs).where(eq(payrollJobs.bankId, id)).catch(() => {});
+      await db.delete(subscriptions).where(eq(subscriptions.bankId, id)).catch(() => {});
+      await db.delete(invoices).where(eq(invoices.bankId, id)).catch(() => {});
+      await db.delete(loans).where(eq(loans.bankId, id)).catch(() => {});
+      await db.delete(creditApplications).where(eq(creditApplications.bankId, id)).catch(() => {});
+      await db.delete(loanProducts).where(eq(loanProducts.bankId, id)).catch(() => {});
+      await db.delete(creditProducts).where(eq(creditProducts.bankId, id)).catch(() => {});
+      await db.delete(escrows).where(eq(escrows.bankId, id)).catch(() => {});
+      await db.delete(supportTickets).where(eq(supportTickets.bankId, id)).catch(() => {});
+      await db.delete(auditLogs).where(eq(auditLogs.bankId, id)).catch(() => {});
+      await db.delete(discordWebhooks).where(eq(discordWebhooks.bankId, id)).catch(() => {});
+      await db.delete(saasInvoices).where(eq(saasInvoices.bankId, id)).catch(() => {});
+      await db.delete(cityCorpLogs).where(eq(cityCorpLogs.bankId, id)).catch(() => {});
+      await db.delete(onyxMerchants).where(eq(onyxMerchants.bankId, id)).catch(() => {});
+      await db.delete(bankStaff).where(eq(bankStaff.bankId, id)).catch(() => {});
+      await db.delete(bankCustomers).where(eq(bankCustomers.bankId, id)).catch(() => {});
+      await db.delete(bankSettings).where(eq(bankSettings.bankId, id)).catch(() => {});
+      await db.delete(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, id)).catch(() => {});
+      await db.delete(clearinghouseSettlements).where(or(eq(clearinghouseSettlements.fromBankId, id), eq(clearinghouseSettlements.toBankId, id))).catch(() => {});
+      await db.delete(interBankTransfers).where(or(eq(interBankTransfers.fromBankId, id), eq(interBankTransfers.toBankId, id))).catch(() => {});
+      
+      // Delete bank accounts and finally the bank record itself
+      await db.delete(bankAccounts).where(eq(bankAccounts.bankId, id)).catch(() => {});
       await db.delete(banks).where(eq(banks.id, id));
+
       res.json({ success: true });
-    } catch(e) {
-      console.error(e);
-      res.status(500).json({ error: "Internal error" });
+    } catch(e: any) {
+      console.error("Error deleting bank instance:", e);
+      res.status(500).json({ error: e.message || "Failed to delete bank instance" });
     }
   });
 
@@ -1235,24 +1289,15 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
       if (req.body.maintenanceMode !== undefined) {
          await db.update(banks).set({ maintenanceMode: req.body.maintenanceMode }).where(eq(banks.id, bId));
          
-         // Dynamically start or stop the bot based on this setting
          const { botManager } = await import("../../lib/bot_manager");
-         if (req.body.maintenanceMode) {
-            await botManager.stopBankBot(bId);
-         } else {
-            // Check if global maintenance is active
-            const { onyxSettings } = await import("../../db/schema");
-            const gSettings = await db.select().from(onyxSettings).where(eq(onyxSettings.id, "global")).get();
-            if (!gSettings || !gSettings.globalBotMaintenance) {
-               const bank = await db.select().from(banks).where(eq(banks.id, bId)).get();
-               if (bank && bank.discordToken) {
-                  try {
-                    await botManager.provisionBankBot(bId, bank.discordToken);
-                  } catch (e) {
-                    console.error("Bot may already be running or failed to start", e);
-                  }
-               }
+         const bank = await db.select().from(banks).where(eq(banks.id, bId)).get();
+         if (bank && bank.discordToken) {
+            try {
+              await botManager.provisionBankBot(bId, bank.discordToken);
+            } catch (e) {
+              // Bot already provisioned or running
             }
+            await botManager.updateBankBotPresence(bId, req.body.maintenanceMode);
          }
       }
 

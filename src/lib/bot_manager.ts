@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { handleBankInteraction, registerBankCommands, refreshBankChannelGUIs } from './bot_logic';
 import { handleOnyxInteraction, registerOnyxCommands, refreshOnyxChannelGUI } from './onyx_bot_logic';
 
@@ -35,10 +35,41 @@ export class BotManager {
     return this.onyxBotStatus;
   }
 
+  async updateBankBotPresence(bankId: string, isMaintenance?: boolean) {
+    const instance = this.instances.get(bankId);
+    if (!instance || instance.status !== 'online' || !instance.client.user) return;
+
+    try {
+      const { db } = await import("../db/index");
+      const { banks } = await import("../db/schema");
+      const { eq } = await import("drizzle-orm");
+      
+      const bank = await db.select({ name: banks.name, maintenanceMode: banks.maintenanceMode }).from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank) return;
+
+      const inMaintenance = isMaintenance !== undefined ? isMaintenance : !!bank.maintenanceMode;
+
+      if (inMaintenance) {
+        instance.client.user.setPresence({
+          activities: [{ name: '⚠️ Maintenance Mode', state: '⚠️ Maintenance Mode', type: ActivityType.Custom }],
+          status: 'dnd',
+        });
+      } else {
+        instance.client.user.setPresence({
+          activities: [{ name: `/bank | ${bank.name}`, state: `/bank | ${bank.name}`, type: ActivityType.Custom }],
+          status: 'online',
+        });
+      }
+    } catch (e) {
+      console.error(`[BankBot ${bankId}] Error updating presence:`, e);
+    }
+  }
+
   async refreshAllBankGUIs() {
     for (const [bankId, instance] of this.instances.entries()) {
       if (instance.status === 'online') {
         try {
+          await this.updateBankBotPresence(bankId);
           await refreshBankChannelGUIs(bankId, instance.client);
         } catch (e) {
           console.error(`[BotManager] Error refreshing GUI for bank ${bankId}:`, e);
@@ -73,6 +104,9 @@ export class BotManager {
       const instance = this.instances.get(bankId);
       if (instance) instance.status = 'online';
       
+      // Update Discord presence to reflect maintenance mode or active state
+      await this.updateBankBotPresence(bankId);
+
       // Attempt to register slash commands for this bot
       try {
         await registerBankCommands(token, client.user!.id);

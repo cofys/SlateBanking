@@ -539,6 +539,19 @@ Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely ev
   - A simple search utility added directly to the Onyx Network admin dashboard.
   - Allows global administrators to enter a corporation name and instantly retrieve its Corporation ID from the active database registry, avoiding unnecessary clutter in tenant-facing bank management views.
 
+## Bank Instance Cascade Deletion Fix
+- **Complete Cascade Cleanup (`DELETE /api/banks/:id`)**:
+  - Resolved foreign key constraint failures when deleting a bank instance from the Global Admin panel.
+  - The deletion endpoint now systematically stops any active Discord bot process and purges all child records across all dependent database tables (`transactions`, `vaultDeposits`, `cards`, `payrollJobs`, `subscriptions`, `invoices`, `loans`, `creditApplications`, `loanProducts`, `creditProducts`, `escrows`, `supportTickets`, `auditLogs`, `discordWebhooks`, `saasInvoices`, `cityCorpLogs`, `onyxMerchants`, `bankStaff`, `bankCustomers`, `bankSettings`, `clearinghouseBalances`, `clearinghouseSettlements`, `interBankTransfers`, `accountMembers`, `savingsGoals`, `paymentLinks`, `recurringTransfers`, and `bankAccounts`) before removing the main `banks` record.
+  - Added user confirmation feedback and clear error handling alerts to the `BanksList.tsx` frontend component.
+
+## Maintenance Mode Bot Presence Status Integration
+- **Dynamic Discord Bot Status (`bot_manager.ts`, `bot_logic.ts`, `banks.ts`, `onyx.ts`)**:
+  - When Maintenance Mode is enabled for a bank (or globally across all banks), the bank's Discord bot instance remains online to serve administrative and staff testing interactions while updating its Discord presence to `⚠️ Maintenance Mode` with a Do Not Disturb (`dnd`) status indicator.
+  - When Maintenance Mode is cleared, the bot automatically resets its status back to `online` with custom activity set to `/bank | [Bank Name]`.
+  - Added `updateBankBotPresence(bankId, isMaintenance)` to `BotManager` and integrated it across all API endpoints, background periodic update timers, and staff panel toggle interactions.
+
+
 
 
 

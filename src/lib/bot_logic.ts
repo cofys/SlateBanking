@@ -68,13 +68,28 @@ export async function handleBankInteraction(bankId: string, interaction: Interac
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'bank') {
       await showMainMenu(bankId, interaction, true);
-    } else if (interaction.commandName === 'spawn_menu' || interaction.commandName === 'spawn_atm') {
-      await showMainMenu(bankId, interaction, false);
-      await interaction.reply({ content: "Banking menu spawned below.", ephemeral: true });
-    } else if (interaction.commandName === 'setup_gui') {
-      await setupGUICommand(bankId, interaction);
-    } else if (interaction.commandName === 'setup_staff_panel') {
-      await setupStaffPanelCommand(bankId, interaction);
+    } else {
+      const isStaff = await isBankStaffOrGlobalAdmin(bankId, interaction.user.id);
+      if (!isStaff) {
+        if (interaction.isRepliable()) {
+          await interaction.reply({ 
+            content: '❌ Permission Denied: This command is restricted to bank staff and administrators.', 
+            ephemeral: true 
+          });
+        }
+        return;
+      }
+
+      if (interaction.commandName === 'spawn_menu' || interaction.commandName === 'spawn_atm') {
+        await showMainMenu(bankId, interaction, false);
+        await interaction.reply({ content: "Banking menu spawned below.", ephemeral: true });
+      } else if (interaction.commandName === 'setup_gui') {
+        await setupGUICommand(bankId, interaction);
+      } else if (interaction.commandName === 'setup_staff_panel') {
+        await setupStaffPanelCommand(bankId, interaction);
+      } else {
+        await interaction.reply({ content: '❌ Unknown command or restricted to admin only.', ephemeral: true });
+      }
     }
     return;
   }
@@ -138,12 +153,12 @@ export async function buildPublicGUIEmbedAndComponents(bankId: string) {
     fields: [
       {
         name: '💳 Citizen Banking Features',
-        value: '• **Open My Dashboard**: Personal account picker & balance\n• **Open Account**: Personal or business accounts\n• **Quick Transfer**: Send funds instantly',
+        value: '• **Open My Dashboard**: Personal account picker & balance\n• **Sync Account**: Sync web registered accounts\n• **Quick Transfer**: Send funds instantly',
         inline: true
       },
       {
         name: '📄 Credit & Services',
-        value: '• **Apply for Loan**: Instant credit application\n• **My History**: View recent transactions\n• **In-Game Commands**: CityCorp banking commands',
+        value: '• **Apply for Loan**: Instant credit application\n• **My History**: View recent transactions\n• **Rates & Yields**: Interest & loan terms',
         inline: true
       }
     ],
@@ -153,7 +168,7 @@ export async function buildPublicGUIEmbedAndComponents(bankId: string) {
 
   const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId('bank_gui_dashboard').setLabel('🏦 Open My Dashboard').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('bank_gui_open_acc').setLabel('💳 Open Account').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('bank_gui_open_acc').setLabel('🔄 Sync Account').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('bank_gui_transfer').setLabel('↔️ Quick Transfer').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('bank_gui_history').setLabel('📄 My History').setStyle(ButtonStyle.Secondary)
   );
@@ -161,7 +176,6 @@ export async function buildPublicGUIEmbedAndComponents(bankId: string) {
   const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId('bank_gui_apply_loan').setLabel('📝 Apply for Loan').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('bank_gui_rates').setLabel('📈 Rates & Yields').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('bank_gui_ingame').setLabel('ℹ️ In-Game Info').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setLabel('🌐 Web Portal').setStyle(ButtonStyle.Link).setURL(portalUrl)
   );
 
@@ -388,27 +402,32 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
     const portalUrl = bank.customDomain ? `https://${bank.customDomain}/` : `https://ais-dev-x33dat556cunbev6anuble-271675189999.us-east1.run.app/portal/${bankId}`;
 
     const registrationEmbed = {
-      title: `🏛️ ${bank.name} Onboarding`,
-      description: `Welcome! To start banking with **${bank.name}**, you need to link your Minecraft profile and open a bank account.`,
+      title: `🏛️ ${bank.name} • Account Setup & Sync`,
+      description: `You do not have a registered bank account with **${bank.name}** linked to your Discord profile yet.\n\n` +
+        `Follow these steps to get started:`,
       color: parseInt(bank.brandingColor?.replace('#', '') || '4f46e5', 16),
       fields: [
         {
-          name: "🔗 Step 1: Link Minecraft Account",
+          name: "1️⃣ Step 1: Link Minecraft Account",
           value: isLinked 
-            ? `✅ Your Discord is already linked to Minecraft account **${userMap[0].mcUsername}**.` 
-            : `❌ You need to link your Minecraft account.\n👉 Go to the **[Bank Portal](${portalUrl})** and log in with Discord to link your Minecraft account.`
+            ? `✅ Your Discord is linked to Minecraft character **${userMap[0].mcUsername}**.` 
+            : `❌ You need to link your Minecraft character.\n👉 Log in with your **[CityCorp Dashboard](https://dashboard.cityrp.org)** account to link your Minecraft character.`
         },
         {
-          name: "💳 Step 2: Open a Bank Account",
-          value: "Once linked, click the **➕ Open Account** button below to open your first bank account."
+          name: "2️⃣ Step 2: Open Account on Web Portal",
+          value: `Visit the **[${bank.name} Web Portal](${portalUrl})**, log in with Discord, and open your personal or business bank account.`
+        },
+        {
+          name: "3️⃣ Step 3: Sync to Discord",
+          value: "Once your account is created on the web portal, click **🔄 Sync Account** below to load your dashboard into Discord!"
         }
       ],
-      footer: { text: "Slate SaaS • Automated Compliance & Onboarding" }
+      footer: { text: "Slate SaaS Onyx Network • Automated Onboarding" }
     };
 
     const onboardingRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId('bank_open_account').setLabel('➕ Open Account').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('bank_in_game_info').setLabel('ℹ️ In-Game Info').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('bank_sync_account').setLabel('🔄 Sync Account').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setLabel('🌐 Web Portal').setStyle(ButtonStyle.Link).setURL(portalUrl)
     );
 
     const msg = {
@@ -474,7 +493,7 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
   const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`bank_transfer_${activeAccount.id}`).setLabel('↔️ Transfer').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('bank_history').setLabel('📄 Transactions').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('bank_in_game_info').setLabel('📥 Deposit Info').setStyle(ButtonStyle.Success)
+    new ButtonBuilder().setCustomId('bank_sync_account').setLabel('🔄 Sync Account').setStyle(ButtonStyle.Success)
   );
 
   const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -520,37 +539,62 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     await handleHistory(bankId, interaction);
   } else if (cid === 'bank_in_game_info' || cid === 'bank_gui_ingame') {
     await safeReplyOrUpdate(interaction, { 
-      content: '📥 **In-Game CityCorp Banking Commands**\n\nTo manage funds in-game via CityCorp accounts, use:\n\n**Deposit**: `/c account deposit corpname accountname amount`\n**Withdraw**: `/c account withdraw corpname accountname amount`', 
+      content: 'ℹ️ Account management, balances, and transfers are synchronized via the web portal or the **🔄 Sync Account** button on your banking menu.', 
       components: [backButtonRow] 
     });
-  } else if (cid === 'bank_open_account' || cid === 'bank_gui_open_acc') {
+  } else if (cid === 'bank_sync_account' || cid === 'bank_open_account' || cid === 'bank_gui_open_acc') {
+    const b = await db.select().from(banks).where(eq(banks.id, bankId));
+    if (b.length === 0) return;
+    const bank = b[0];
+    const portalUrl = bank.customDomain ? `https://${bank.customDomain}/` : `https://ais-dev-x33dat556cunbev6anuble-271675189999.us-east1.run.app/portal/${bankId}`;
+
     const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
     const isLinked = userMap.length > 0;
 
     if (!isLinked) {
-      await interaction.reply({ content: '❌ You must register and link your Minecraft account first before opening a bank account.', ephemeral: true });
+      await safeReplyOrUpdate(interaction, { 
+        content: `❌ **Minecraft Account Not Linked**\n\nTo start banking with **${bank.name}**, you must link your Minecraft character first:\n\n` +
+          `1️⃣ Log in with your **[CityCorp Dashboard](https://dashboard.cityrp.org)** account to link your Minecraft character.\n` +
+          `2️⃣ Open an account on the **[${bank.name} Web Portal](${portalUrl})**.\n` +
+          `3️⃣ Return here and click **🔄 Sync Account** again!`,
+        components: [backButtonRow]
+      });
       return;
     }
 
-    const modal = new ModalBuilder()
-      .setCustomId('modal_open_account')
-      .setTitle('Open New Account');
-      
-    const nameInput = new TextInputBuilder()
-      .setCustomId('account_name')
-      .setLabel("Account Name (e.g. personal, corp-biz)")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
-      
-    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput));
-    
-    await interaction.showModal(modal);
+    const accounts = await db.select().from(bankAccounts).where(
+      and(
+        eq(bankAccounts.bankId, bankId), 
+        eq(bankAccounts.ownerDiscordId, interaction.user.id),
+        eq(bankAccounts.isSystem, false)
+      )
+    );
+
+    if (accounts.length === 0) {
+      await safeReplyOrUpdate(interaction, {
+        content: `❌ **No Bank Account Found for ${bank.name}**\n\nYour Minecraft character (**${userMap[0].mcUsername}**) is linked, but you haven't opened a bank account with **${bank.name}** yet.\n\n` +
+          `👉 **How to set up your account**:\n` +
+          `1️⃣ Visit the **[${bank.name} Web Portal](${portalUrl})**\n` +
+          `2️⃣ Log in with Discord and create your personal or business bank account\n` +
+          `3️⃣ Click **🔄 Sync Account** again to load your dashboard into Discord!`,
+        components: [backButtonRow]
+      });
+      return;
+    }
+
+    // Accounts exist! Render dashboard
+    if (interaction.deferred || interaction.replied) {
+      await showMainMenu(bankId, interaction, true);
+    } else {
+      await interaction.deferUpdate();
+      await showMainMenu(bankId, interaction, true);
+    }
   } else if (cid === 'bank_open_business_modal') {
     const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
     const isLinked = userMap.length > 0;
 
     if (!isLinked) {
-      await interaction.reply({ content: '❌ You must register and link your Minecraft account first before opening a bank account.', ephemeral: true });
+      await interaction.reply({ content: '❌ You must log in with your **[CityCorp Dashboard](https://dashboard.cityrp.org)** account to link your Minecraft profile before opening a bank account.', ephemeral: true });
       return;
     }
 
@@ -595,7 +639,7 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
   } else if (cid === 'bank_gui_apply_loan') {
     const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
     if (userMap.length === 0) {
-      await interaction.reply({ content: '❌ You must link your Minecraft account before applying for a loan.', ephemeral: true });
+      await interaction.reply({ content: '❌ You must log in with your **[CityCorp Dashboard](https://dashboard.cityrp.org)** account to link your Minecraft profile before applying for a loan.', ephemeral: true });
       return;
     }
 
@@ -787,7 +831,7 @@ async function handleBalance(bankId: string, interaction: ButtonInteraction) {
   );
 
   if (accounts.length === 0) {
-    await safeReplyOrUpdate(interaction, { content: 'You do not have any bank accounts open here. Tap "Open Account" to create one.', components: [backButtonRow] });
+    await safeReplyOrUpdate(interaction, { content: 'You do not have any bank accounts registered here. Create an account on the web portal and click "Sync Account".', components: [backButtonRow] });
     return;
   }
 
@@ -1034,7 +1078,7 @@ async function handleViewSettings(bankId: string, interaction: ButtonInteraction
   const mcUsername = userMap[0]?.mcUsername || "Not Linked";
   
   await safeReplyOrUpdate(interaction, {
-    content: `⚙️ **Bank Settings & Identity**\n\n👤 **Discord User**: <@${interaction.user.id}>\n🔗 **Linked Minecraft Character**: **${mcUsername}**\n\nNeed to link or unlink an account? Please visit the Citizen Portal.`,
+    content: `⚙️ **Bank Settings & Identity**\n\n👤 **Discord User**: <@${interaction.user.id}>\n🔗 **Linked Minecraft Character**: **${mcUsername}**\n\nNeed to link or unlink an account? Please log in to your **[CityCorp Dashboard](https://dashboard.cityrp.org)** account.`,
     components: [backButtonRow]
   });
 }
@@ -1316,6 +1360,8 @@ async function handleStaffToggleStatus(bankId: string, interaction: ButtonIntera
   });
 
   refreshBankChannelGUIs(bankId);
+  const { botManager } = await import('./bot_manager');
+  await botManager.updateBankBotPresence(bankId, newMode);
 
   await interaction.editReply({ content: `⚙️ **Bank Operating Mode Updated!**\nMaintenance Mode is now: **${newMode ? 'ENABLED (Maintenance)' : 'DISABLED (Online)'}**.` });
 }

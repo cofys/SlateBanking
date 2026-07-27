@@ -117,14 +117,16 @@ export async function registerOnyxCommands(token: string, clientId: string) {
 
     new SlashCommandBuilder()
       .setName('onyx-merchant-setup')
-      .setDescription('Register a new merchant store on Onyx PSP')
+      .setDescription('Admin only: Register a new merchant store on Onyx PSP')
+      .setDefaultMemberPermissions(8)
       .addStringOption(o => o.setName('store_name').setDescription('Name of your store/business').setRequired(true))
       .addStringOption(o => o.setName('bank_id').setDescription('Target settlement bank ID').setRequired(true))
       .addStringOption(o => o.setName('account_name').setDescription('Account name to receive payments').setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('onyx-checkout-button')
-      .setDescription('Generate an interactive merchant product checkout button on Discord')
+      .setDescription('Admin only: Generate an interactive merchant product checkout button on Discord')
+      .setDefaultMemberPermissions(8)
       .addStringOption(o => o.setName('merchant_id').setDescription('Your Onyx Merchant Store ID').setRequired(true))
       .addStringOption(o => o.setName('product_name').setDescription('Product Title').setRequired(true))
       .addStringOption(o => o.setName('price_type').setDescription('fixed (flat price) or custom_customer (customer enters amount)').setRequired(true)
@@ -137,7 +139,8 @@ export async function registerOnyxCommands(token: string, clientId: string) {
 
     new SlashCommandBuilder()
       .setName('onyx-quote')
-      .setDescription('Generate an interactive instant custom checkout quote / invoice button')
+      .setDescription('Admin only: Generate an interactive instant custom checkout quote / invoice button')
+      .setDefaultMemberPermissions(8)
       .addStringOption(o => o.setName('merchant_id').setDescription('Your Onyx Merchant Store ID').setRequired(true))
       .addNumberOption(o => o.setName('amount').setDescription('Quote amount in dollars').setRequired(true))
       .addStringOption(o => o.setName('title').setDescription('Quote / Invoice Title').setRequired(true))

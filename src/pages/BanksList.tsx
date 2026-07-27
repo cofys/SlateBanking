@@ -314,13 +314,19 @@ export function BanksList() {
   };
 
   const handleDeleteBank = async (bankId: string) => {
-    if (!confirm("Are you sure you want to delete this bank? This cannot be undone.")) return;
+    if (!confirm("Are you sure you want to delete this bank instance and all associated data? This cannot be undone.")) return;
     try {
-      await fetch(`/api/banks/${bankId}`, { method: "DELETE" });
-      setShowManageModal(null);
-      fetchBanks();
-    } catch (e) {
+      const res = await fetch(`/api/banks/${bankId}`, { method: "DELETE" });
+      if (res.ok) {
+        setShowManageModal(null);
+        fetchBanks();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        alert(`Failed to delete bank: ${errorData.error || res.statusText || "Server error"}`);
+      }
+    } catch (e: any) {
       console.error(e);
+      alert(`Error deleting bank: ${e.message}`);
     }
   };
 

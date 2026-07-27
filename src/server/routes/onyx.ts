@@ -159,23 +159,17 @@ onyxRouter.put("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
       else await db.insert(onyxSettings).values(data as any);
       
       const { botManager } = await import("../../lib/bot_manager");
-      if (globalBotMaintenance) {
-         // Stop all running bots
-         const statuses = botManager.getBankStatuses();
-         for (const bId of Object.keys(statuses)) {
-             await botManager.stopBankBot(bId);
-         }
-         await botManager.stopOnyxBot();
-      } else {
-         // Restart bank bots
-         const { banks } = await import("../../db/schema");
-         const { eq } = await import("drizzle-orm");
-         const allBanks = await db.select().from(banks).where(eq(banks.maintenanceMode, false));
-         for (const bank of allBanks) {
-             if (bank.discordToken) {
-                try { await botManager.provisionBankBot(bank.id, bank.discordToken); } catch(e) { console.error("Caught error:", e); }
-             }
-         }
+      const { banks } = await import("../../db/schema");
+      const allBanks = await db.select().from(banks);
+      for (const bank of allBanks) {
+        if (bank.discordToken) {
+          try {
+            await botManager.provisionBankBot(bank.id, bank.discordToken);
+          } catch (e) {
+            // Already running
+          }
+          await botManager.updateBankBotPresence(bank.id, !!globalBotMaintenance || !!bank.maintenanceMode);
+        }
       }
       
       res.json(data);
