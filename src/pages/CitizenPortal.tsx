@@ -73,13 +73,13 @@ export function CitizenPortal() {
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
           <ShieldCheck className="w-16 h-16 text-indigo-400 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(99,102,241,0.3)]" />
           <h1 className="text-3xl font-black text-white tracking-tight mb-3">Citizen Portal</h1>
-          <p className="text-slate-400 text-sm mb-8">Secure access to your unified financial identity. Connect with Discord to view your accounts across all institutions.</p>
+          <p className="text-slate-400 text-sm mb-8">Secure access to your unified financial identity. Authenticate via CityCorp to view your accounts across all institutions.</p>
           <button 
-            onClick={() => login()}
-            className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors"
+            onClick={() => login(undefined, 'citycorp')}
+            className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors"
           >
             <LogIn size={20} />
-            Continue with Discord
+            Authenticate via CityCorp
           </button>
         </div>
       </div>

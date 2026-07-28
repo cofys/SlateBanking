@@ -25,6 +25,7 @@ export function registerAuthRoutes(app: express.Express) {
 
   
   app.get('/api/auth/url', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
     const { db } = await import("../db/index");
     const { banks } = await import("../db/schema");
     const { like, eq } = await import("drizzle-orm");
@@ -167,7 +168,9 @@ export function registerAuthRoutes(app: express.Express) {
       });
 
       if (!tokenResponse.ok) {
-        return res.status(400).send("Failed to exchange token with CityCorp");
+        const errText = await tokenResponse.text();
+        console.error("CityCorp OAuth Exchange Failed:", errText, "Status:", tokenResponse.status);
+        return res.status(400).send(`Failed to exchange token with CityCorp. Status: ${tokenResponse.status}. Error: ${errText}`);
       }
 
       const tokenData = await tokenResponse.json();
@@ -216,7 +219,7 @@ export function registerAuthRoutes(app: express.Express) {
         mcUsername = `Citizen_${minecraftUuid.substring(0, 6)}`;
       }
 
-      const avatarUrl = `https://mc-heads.net/avatar/${minecraftUuid}/64`;
+      const avatarUrl = `https://mc-heads.net/avatar/${mcUsername || minecraftUuid}/64`;
 
       // See if we have an existing customer via mcUuid
       let customer = await db.select().from(bankCustomers).where(

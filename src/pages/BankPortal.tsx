@@ -367,31 +367,18 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             </div>
 
             <div className="space-y-3">
-              {bank.cityCorpAppId && (
+              {bank.cityCorpAppId ? (
                 <button 
                   onClick={() => login(bankId, 'citycorp')}
                   className={`w-full ${theme.bg} hover:brightness-110 text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-xl flex items-center justify-center gap-2`}
                 >
                   <LogIn size={16} /> Authenticate via CityCorp
                 </button>
+              ) : (
+                <div className="text-center text-sm text-zinc-400">
+                  <p>Authentication is not currently configured for this bank.</p>
+                </div>
               )}
-
-              <button 
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`/api/auth/url?provider=discord&intent=login&bankId=${bankId}`);
-                    if (res.ok) {
-                      const data = await res.json();
-                      window.location.href = data.url;
-                    }
-                  } catch (e) {
-                    alert("Error initiating Discord login.");
-                  }
-                }}
-                className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-xl flex items-center justify-center gap-2"
-              >
-                <LogIn size={16} /> Login with Discord
-              </button>
             </div>
           </motion.div>
         </div>
@@ -409,11 +396,11 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               {userData?.customer?.mcUuid ? (
                 <div className="relative group shrink-0">
                   <img 
-                    src={`https://mc-heads.net/avatar/${userData.customer.mcUuid}/64`} 
+                    src={`https://mc-heads.net/avatar/${userData.customer.mcUsername || userData.customer.mcUuid}/64`} 
                     alt="Minecraft Head" 
                     onError={(e: any) => {
                       e.target.onerror = null;
-                      e.target.src = `https://crafatar.com/avatars/${userData.customer.mcUuid}?size=64&overlay=true`;
+                      e.target.src = `https://minotar.net/helm/${userData.customer.mcUsername || userData.customer.mcUuid}/64.png`;
                     }}
                     className="w-14 h-14 rounded-2xl border border-white/10 shadow-md bg-zinc-950 object-contain p-0.5" 
                     referrerPolicy="no-referrer"
@@ -448,34 +435,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             </div>
 
             <div className="w-full sm:w-auto text-right flex items-center justify-center sm:justify-end gap-3">
-              {user.discordId.startsWith("mc_") && !userData?.customer?.linkedDiscordId ? (
-                <button
-                  onClick={async () => {
-                    try {
-                      const res = await fetch(`/api/auth/url?provider=discord&intent=link&bankId=${bankId}&returnTo=${encodeURIComponent(window.location.pathname)}`);
-                      if (res.ok) {
-                        const data = await res.json();
-                        const authWindow = window.open(data.url, 'oauth_popup', 'width=600,height=700');
-                        if (!authWindow) alert('Please allow popups to connect your Discord account.');
-                      } else {
-                        alert("Failed to initiate Discord link flow.");
-                      }
-                    } catch (err) {
-                      alert("Error connecting to auth service.");
-                    }
-                  }}
-                  className="w-full sm:w-auto bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
-                >
-                  <UserCheck size={14} /> Link Discord Account
-                </button>
-              ) : (
-                <button
-                  onClick={() => setShowOpenAccountModal(true)}
-                  className={`w-full sm:w-auto ${theme.bg} hover:brightness-110 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2`}
-                >
-                  <Plus size={14} /> Open Account
-                </button>
-              )}
+              <button
+                onClick={() => setShowOpenAccountModal(true)}
+                className={`w-full sm:w-auto ${theme.bg} hover:brightness-110 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2`}
+              >
+                <Plus size={14} /> Open Account
+              </button>
             </div>
           </motion.div>
 

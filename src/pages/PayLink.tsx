@@ -56,11 +56,11 @@ export function PayLink() {
           <h1 className="text-3xl font-black text-white tracking-tight mb-3">Login to Pay</h1>
           <p className="text-slate-400 text-sm mb-8">You need to log in to complete this payment.</p>
           <button 
-            onClick={() => login()}
-            className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors"
+            onClick={() => login(undefined, 'citycorp')}
+            className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors"
           >
             <LogIn size={20} />
-            Continue with Discord
+            Authenticate via CityCorp
           </button>
         </div>
       </div>
