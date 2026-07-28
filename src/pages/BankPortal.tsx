@@ -409,11 +409,11 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               {userData?.customer?.mcUuid ? (
                 <div className="relative group shrink-0">
                   <img 
-                    src={`https://crafatar.com/avatars/${userData.customer.mcUuid}?size=64&overlay`} 
+                    src={`https://mc-heads.net/avatar/${userData.customer.mcUuid}/64`} 
                     alt="Minecraft Head" 
                     onError={(e: any) => {
                       e.target.onerror = null;
-                      e.target.src = `https://mc-heads.net/avatar/${userData.customer.mcUuid}/64`;
+                      e.target.src = `https://crafatar.com/avatars/${userData.customer.mcUuid}?size=64&overlay=true`;
                     }}
                     className="w-14 h-14 rounded-2xl border border-white/10 shadow-md bg-zinc-950 object-contain p-0.5" 
                     referrerPolicy="no-referrer"

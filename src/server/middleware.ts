@@ -117,19 +117,8 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
          bankId = stateObj.bankId;
      } catch(e) {}
   }
-  if (bankId) {
-      const bank = await db.select().from(banks).where(eq(banks.id, bankId as string)).get();
-      if (bank && bank.customDomain && bank.customDomain.trim()) {
-           let domain = bank.customDomain.trim();
-           if (!domain.startsWith('http://') && !domain.startsWith('https://')) {
-             domain = `https://${domain}`;
-           }
-           if (domain.endsWith('/')) domain = domain.slice(0, -1);
-           return `${domain}${callbackPath}`;
-      }
-  }
 
-  // Fall back to request host if present
+  // Always use the request's current host to ensure OAuth redirects back to the same domain the user initiated from.
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
   if (host && host !== 'localhost:3000' && !host.includes('127.0.0.1')) {

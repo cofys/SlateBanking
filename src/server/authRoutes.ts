@@ -216,7 +216,7 @@ export function registerAuthRoutes(app: express.Express) {
         mcUsername = `Citizen_${minecraftUuid.substring(0, 6)}`;
       }
 
-      const avatarUrl = `https://crafatar.com/avatars/${minecraftUuid}?size=64&overlay`;
+      const avatarUrl = `https://mc-heads.net/avatar/${minecraftUuid}/64`;
 
       // See if we have an existing customer via mcUuid
       let customer = await db.select().from(bankCustomers).where(
