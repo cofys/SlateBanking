@@ -156,9 +156,9 @@ export function registerAuthRoutes(app: express.Express) {
 
       const bodyParams = new URLSearchParams({
         grant_type: "authorization_code",
-        client_secret: code as string,
+        client_secret: bank.cityCorpAppSecret,
         app_id: bank.cityCorpAppId,
-        token: bank.cityCorpAppSecret,
+        token: code as string,
         redirect_uri: await getRedirectUri(req, "/api/auth/citycorp/callback")
       });
 
