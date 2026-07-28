@@ -105,6 +105,16 @@ export const authenticateApiRequest = async (req: express.Request, res: express.
 };
 
 export const getRedirectUri = async (req: express.Request, callbackPath: string = "/api/auth/discord/callback") => {
+  if (callbackPath === "/api/auth/citycorp/callback" && process.env.CITYRP_REDIRECT_URI) {
+      return process.env.CITYRP_REDIRECT_URI;
+  }
+  
+  if (req.query.origin) {
+    let origin = req.query.origin as string;
+    if (origin.endsWith('/')) origin = origin.slice(0, -1);
+    return `${origin}${callbackPath}`;
+  }
+
   const { db } = await import("../db/index.js");
   const { banks } = await import("../db/schema.js");
   const { eq } = await import("drizzle-orm");

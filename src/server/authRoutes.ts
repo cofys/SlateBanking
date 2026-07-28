@@ -156,13 +156,13 @@ export function registerAuthRoutes(app: express.Express) {
 
       const bodyParams = new URLSearchParams({
         grant_type: "authorization_code",
-        client_secret: bank.cityCorpAppSecret,
+        client_secret: code as string,
         app_id: bank.cityCorpAppId,
-        token: code as string,
+        token: bank.cityCorpAppSecret,
         redirect_uri: await getRedirectUri(req, "/api/auth/citycorp/callback")
       });
 
-      const tokenResponse = await fetch("https://dashboard.cityrp.org/oauth/token", {
+      const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: bodyParams.toString()
