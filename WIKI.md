@@ -167,6 +167,20 @@ Every bank defined in the platform can attach a unique Discord Bot Token to its 
   - `GET / escrows`, `POST / escrows`
 - **Developer Tools**: `GET / developer`
 
+### Bank Client Portal APIs (Authentication: Session / CityCorp / Discord)
+- `GET /api/portal/:bankId/info` - Resolves bank metadata, branding, and color scheme.
+- `GET /api/portal/:bankId/lookup` - Resolves customer portfolio, accounts, cards, loans, pending invoices, and transaction ledger.
+- `POST /api/portal/:bankId/transfer` - Authorizes and executes capital wire transfers.
+- `POST /api/portal/:bankId/pay-invoice` - Settles pending customer invoices.
+- `POST /api/portal/:bankId/request-loan` - Submits loan application and credits account instantly.
+- `POST /api/portal/:bankId/repay-loan` - Executes loan repayments from active accounts.
+- `POST /api/portal/:bankId/issue-card` - Provisions virtual credit or debit cards linked to user accounts.
+- `PATCH /api/portal/:bankId/cards/:cardId/lock` - Toggles freeze/unfreeze lock status on cards.
+
+### Dynamic Domain & Identity Resolution
+- **Dynamic OAuth Redirect URIs**: `getRedirectUri` in `middleware.ts` inspects incoming `x-forwarded-host` and `host` headers to dynamically match the deployment domain (e.g., custom domains or subdomains), ensuring OAuth callbacks match host configurations precisely.
+- **Fallback Minecraft Identity Resolution**: `authRoutes.ts` resolves usernames and avatars from CityCorp player info, falling back to Crafatar and Mojang Session APIs for seamless player identification.
+
 ### Citizen Gateway (Authentication: Discord Cookie)
 - `GET /api/citizen/lookup` - Resolves the current logged in citizen's portfolio across the entire platform.
 

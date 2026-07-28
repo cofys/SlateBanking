@@ -178,18 +178,45 @@ export function registerAuthRoutes(app: express.Express) {
         return res.status(400).send("Invalid token response");
       }
 
-      const authHeader = 'Basic ' + Buffer.from(`${minecraftUuid}:${token}`).toString('base64');
-      const playerRes = await fetch("https://api.cityrp.org/player", {
-        headers: { "Authorization": authHeader, "User-Agent": "SlateBankBot/1.0" }
-      });
+      let mcUsername = tokenData.username || tokenData.player_name || tokenData.name || tokenData.mcUsername || "";
 
-      let mcUsername = "Citizen";
-      let avatarUrl = `https://mc-heads.net/avatar/${minecraftUuid}/64`;
+      if (!mcUsername) {
+        try {
+          const authHeader = 'Basic ' + Buffer.from(`${minecraftUuid}:${token}`).toString('base64');
+          const playerRes = await fetch("https://api.cityrp.org/player", {
+            headers: { "Authorization": authHeader, "User-Agent": "SlateBankBot/1.0" }
+          });
 
-      if (playerRes.ok) {
-        const playerData = await playerRes.json();
-        mcUsername = playerData.username || playerData.name || mcUsername;
+          if (playerRes.ok) {
+            const playerData = await playerRes.json();
+            mcUsername = playerData.username || playerData.name || playerData.player?.name || playerData.player_name || "";
+          }
+        } catch (e) {
+          console.error("CityCorp player API error:", e);
+        }
       }
+
+      // Try Mojang official session API if still missing
+      if (!mcUsername || mcUsername === "Citizen") {
+        try {
+          const cleanUuid = minecraftUuid.replace(/-/g, '');
+          const mojangRes = await fetch(`https://sessionserver.mojang.com/session/minecraft/profile/${cleanUuid}`);
+          if (mojangRes.ok) {
+            const mojangData = await mojangRes.json();
+            if (mojangData.name) {
+              mcUsername = mojangData.name;
+            }
+          }
+        } catch (e) {
+          console.error("Mojang session API lookup error:", e);
+        }
+      }
+
+      if (!mcUsername) {
+        mcUsername = `Citizen_${minecraftUuid.substring(0, 6)}`;
+      }
+
+      const avatarUrl = `https://crafatar.com/avatars/${minecraftUuid}?size=64&overlay`;
 
       // See if we have an existing customer via mcUuid
       let customer = await db.select().from(bankCustomers).where(

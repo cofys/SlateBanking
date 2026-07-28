@@ -119,10 +119,23 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
   }
   if (bankId) {
       const bank = await db.select().from(banks).where(eq(banks.id, bankId as string)).get();
-      if (bank && bank.customDomain) {
-           return `https://${bank.customDomain}${callbackPath}`;
+      if (bank && bank.customDomain && bank.customDomain.trim()) {
+           let domain = bank.customDomain.trim();
+           if (!domain.startsWith('http://') && !domain.startsWith('https://')) {
+             domain = `https://${domain}`;
+           }
+           if (domain.endsWith('/')) domain = domain.slice(0, -1);
+           return `${domain}${callbackPath}`;
       }
   }
+
+  // Fall back to request host if present
+  const host = req.get('x-forwarded-host') || req.get('host');
+  const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+  if (host && host !== 'localhost:3000' && !host.includes('127.0.0.1')) {
+    return `${proto}://${host}${callbackPath}`;
+  }
+
   let origin = process.env.APP_URL || "http://localhost:3000";
   if (origin.endsWith('/')) origin = origin.slice(0, -1);
   return `${origin}${callbackPath}`;

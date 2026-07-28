@@ -243,6 +243,30 @@ export function BankSettings() {
               />
             </div>
 
+            {/* OAuth Redirect URIs Helper Box */}
+            <div className="col-span-1 md:col-span-2 bg-[#14141e] border border-indigo-500/20 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-400 uppercase tracking-wide">
+                🔑 Required OAuth Redirect URIs for External Portals
+              </div>
+              <p className="text-xs text-white/60">
+                Register these exact Callback URIs in your <strong>Discord Developer Portal</strong> and <strong>CityCorp Developer Dashboard</strong> for seamless authentication:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+                <div className="bg-[#0a0a0f] p-2.5 rounded-lg border border-white/10">
+                  <span className="text-indigo-300 font-sans block text-[10px] uppercase mb-1">Discord OAuth Redirect URI</span>
+                  <code className="text-emerald-400 select-all block break-all">
+                    {`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/discord/callback`}
+                  </code>
+                </div>
+                <div className="bg-[#0a0a0f] p-2.5 rounded-lg border border-white/10">
+                  <span className="text-indigo-300 font-sans block text-[10px] uppercase mb-1">CityCorp OAuth Redirect URI</span>
+                  <code className="text-amber-400 select-all block break-all">
+                    {`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/citycorp/callback`}
+                  </code>
+                </div>
+              </div>
+            </div>
+
         </div>
 
         {/* Support & Alerts */}

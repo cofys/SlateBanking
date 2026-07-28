@@ -193,6 +193,24 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("credit_applications", "status", "TEXT DEFAULT 'pending'");
   checkAndAddColumn("credit_applications", "contract_url", "TEXT");
 
+  
+  // Missing columns for other tables
+  checkAndAddColumn("payroll_jobs", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("subscriptions", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("subscriptions", "description", "TEXT");
+  checkAndAddColumn("invoices", "description", "TEXT");
+  checkAndAddColumn("invoices", "status", "TEXT DEFAULT 'pending'");
+  checkAndAddColumn("loan_products", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("credit_products", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("recurring_transfers", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("recurring_transfers", "description", "TEXT");
+  checkAndAddColumn("payment_links", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("payment_links", "description", "TEXT");
+  checkAndAddColumn("onyx_merchant_products", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("onyx_merchant_products", "description", "TEXT");
+  checkAndAddColumn("onyx_quotes", "description", "TEXT");
+  checkAndAddColumn("discord_webhooks", "is_active", "INTEGER DEFAULT 1");
+
   // Onyx Settings table
   checkAndAddColumn("onyx_settings", "b2b_api_fee_percent", "INTEGER DEFAULT 200");
   checkAndAddColumn("onyx_settings", "clearinghouse_enabled", "INTEGER DEFAULT 1");

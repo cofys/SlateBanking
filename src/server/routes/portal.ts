@@ -215,10 +215,22 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       const bankId = req.params.bankId;
       if (!discordId) return res.status(400).json({ error: "Missing discordId" });
 
-      const customerResult = await db.select().from(bankCustomers).where(
-        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
-      ).limit(1);
-      const customer = customerResult[0] || null;
+      let customer = await db.select().from(bankCustomers).where(
+        and(
+          eq(bankCustomers.bankId, bankId),
+          or(
+            eq(bankCustomers.discordId, discordId),
+            eq(bankCustomers.linkedDiscordId, discordId)
+          )
+        )
+      ).get();
+
+      if (!customer && discordId.startsWith("mc_")) {
+        const mcUuid = discordId.replace("mc_", "");
+        customer = await db.select().from(bankCustomers).where(
+          and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.mcUuid, mcUuid))
+        ).get();
+      }
 
       const { bankStaff } = await import("../../db/schema");
       let isStaff = false;
@@ -314,7 +326,8 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         customer: customer ? {
           kycStatus: customer.kycStatus,
           mcUsername: customer.mcUsername,
-          mcUuid: customer.mcUuid
+          mcUuid: customer.mcUuid,
+          linkedDiscordId: customer.linkedDiscordId
         } : null
       });
     } catch (e) {
@@ -671,5 +684,153 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
   } catch (e: any) {
     console.error("[AccountRegisterAPI] Error:", e);
     res.status(500).json({ error: e.message || "Failed to register account." });
+  }
+});
+
+// Portal Loan Request API
+portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { loans, bankAccounts, banks } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { accountId, amount, termMonths, purpose } = req.body;
+    const discordId = (req as any).user.discordId;
+    const bankId = req.params.bankId;
+
+    const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
+    if (!targetBank) return res.status(404).json({ error: "Bank not found" });
+
+    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.ownerDiscordId, discordId)));
+    if (!acc) return res.status(404).json({ error: "Destination deposit account not found" });
+
+    const loanAmountCents = Math.round(parseFloat(amount) * 100);
+    if (!loanAmountCents || loanAmountCents <= 0) return res.status(400).json({ error: "Invalid loan amount" });
+
+    const term = parseInt(termMonths) || 12;
+    const interestRate = 550; // 5.50% default
+    const monthlyPayment = Math.round((loanAmountCents * (1 + (interestRate / 10000))) / term);
+
+    const loanId = `loan_${uuidv4().substring(0, 8)}`;
+    const nextPaymentDate = new Date();
+    nextPaymentDate.setDate(nextPaymentDate.getDate() + 30);
+
+    await db.insert(loans).values({
+      id: loanId,
+      bankId,
+      discordId,
+      accountId,
+      principalAmount: loanAmountCents,
+      remainingAmount: loanAmountCents,
+      interestRate,
+      nextPaymentDate,
+      purpose: purpose || "Personal loan request",
+      status: "active", // Approved & active
+      createdAt: new Date()
+    });
+
+    // Credit account balance immediately upon approval
+    await db.update(bankAccounts).set({ balance: acc.balance + loanAmountCents }).where(eq(bankAccounts.id, acc.id));
+
+    res.json({
+      success: true,
+      loan: {
+        id: loanId,
+        amount: loanAmountCents,
+        status: "active"
+      }
+    });
+  } catch (e: any) {
+    console.error("[LoanRequestAPI] Error:", e);
+    res.status(500).json({ error: e.message || "Failed to submit loan request" });
+  }
+});
+
+// Portal Loan Repayment API
+portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { loans, bankAccounts, transactions } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { loanId, accountId, amount } = req.body;
+    const discordId = (req as any).user.discordId;
+    const bankId = req.params.bankId;
+
+    const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId)));
+    if (!loan) return res.status(404).json({ error: "Loan record not found" });
+
+    const [sourceAcc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.ownerDiscordId, discordId)));
+    if (!sourceAcc) return res.status(404).json({ error: "Payment account not found" });
+
+    const repayCents = Math.round(parseFloat(amount) * 100);
+    if (!repayCents || repayCents <= 0) return res.status(400).json({ error: "Invalid repayment amount" });
+    if (sourceAcc.balance < repayCents) return res.status(400).json({ error: "Insufficient account balance for repayment" });
+
+    const newRemaining = Math.max(0, loan.remainingAmount - repayCents);
+    const newStatus = newRemaining === 0 ? "paid_off" : loan.status;
+
+    await db.update(bankAccounts).set({ balance: sourceAcc.balance - repayCents }).where(eq(bankAccounts.id, sourceAcc.id));
+    await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus }).where(eq(loans.id, loan.id));
+
+    await db.insert(transactions).values({
+      id: uuidv4(),
+      bankId,
+      fromAccountId: sourceAcc.id,
+      toAccountId: null,
+      amount: repayCents,
+      type: "transfer",
+      description: `Loan Repayment (${loanId})`,
+      timestamp: new Date()
+    });
+
+    res.json({ success: true, remainingAmount: newRemaining, status: newStatus });
+  } catch (e: any) {
+    console.error("[LoanRepayAPI] Error:", e);
+    res.status(500).json({ error: e.message || "Failed to process loan repayment" });
+  }
+});
+
+// Portal Card Issue API
+portalRouter.post("/api/portal/:bankId/issue-card", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { cards, bankAccounts } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { accountId, cardType } = req.body;
+    const discordId = (req as any).user.discordId;
+    const bankId = req.params.bankId;
+
+    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.ownerDiscordId, discordId)));
+    if (!acc) return res.status(404).json({ error: "Linked account not found" });
+
+    const generateCardNum = () => "4" + Array.from({length: 15}, () => Math.floor(Math.random() * 10)).join("");
+    const cardNum = generateCardNum();
+    const cvv = Math.floor(100 + Math.random() * 900).toString();
+    const expMonth = ("0" + (Math.floor(Math.random() * 12) + 1)).slice(-2);
+    const expYear = (new Date().getFullYear() + 3).toString().slice(-2);
+    const expiryDate = `${expMonth}/${expYear}`;
+
+    const cardId = `crd_${uuidv4().substring(0, 8)}`;
+    await db.insert(cards).values({
+      id: cardId,
+      bankId,
+      accountId,
+      cardNumber: cardNum,
+      expiryDate,
+      cvv,
+      isLocked: false,
+      type: cardType || "debit",
+      createdAt: new Date()
+    });
+
+    res.json({ success: true, card: { id: cardId, cardNumber: cardNum, expiryDate, type: cardType || "debit" } });
+  } catch (e: any) {
+    console.error("[CardIssueAPI] Error:", e);
+    res.status(500).json({ error: e.message || "Failed to issue card" });
   }
 });
