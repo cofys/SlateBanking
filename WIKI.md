@@ -97,7 +97,8 @@ Instead of simple passwords, the platform supports Discord and CityCorp OAuth au
 - `/api/auth/url` generates the OAuth prompt (Discord or CityCorp, controllable via `provider=citycorp` query or fallback environment variables).
 - `/api/auth/discord/callback` handles the Discord OAuth code exchange.
 - `/api/auth/citycorp/callback` and `/api/auth/callback` handle CityCorp OAuth authorization code exchange (`POST https://api.cityrp.org/auth/token`).
-  - **Credentials Priority**: Uses Bank-specific credentials (`cityCorpAppId`, `cityCorpAppSecret`) if present, or global server environment variables (`CITYRP_APP_ID`, `CITYRP_APP_TOKEN` / `CITYRP_APP_SECRET`).
+  - **App ID & Scope Matching**: Configures standard short `app_id` (e.g. `9` or `CITYRP_APP_ID`) and filters out internal database UUIDs. Formats authorization URL with full CityCorp scope set matching `dashboard.cityrp.org`.
+  - **Deduplicated Credential Pairing & Fallback**: Evaluates environment credentials (`CITYRP_APP_ID` + `CITYRP_APP_TOKEN` / `CITYRP_APP_SECRET`) and bank-specific database credentials (`cityCorpAppId` + `cityCorpAppSecret`). If one credential pair encounters an `invalid_grant` error, the backend automatically retries the exchange across candidate pairs and redirect URIs (`state.redirectUri`, `CITYRP_REDIRECT_URI`, calculated request URI) to prevent authentication failure.
   - **Exact Redirect URI Matching**: Ensures the exact `redirect_uri` passed during authorization is preserved in state and sent back to CityCorp's token exchange endpoint.
 - The JWT payload (`discordId`, `username`, `avatarUrl`, `isGlobalAdmin`) is encrypted with `JWT_SECRET` and stored in an HTTP-only, secure, sameSite=lax cookie (`auth_token`).
 - Tokens are set to expire in 7 days.

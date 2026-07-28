@@ -2,18 +2,18 @@ import { db } from "../db/index";
 import { cityCorpLogs } from "../db/schema";
 import { v4 as uuidv4 } from "uuid";
 
-export const CITYCORP_REQUIRED_SCOPES = "corp.player.info.get,corp.account_transactions.get,corp.account_money.transfer,corp.account.deposit,corp.account.withdraw";
+export const CITYCORP_REQUIRED_SCOPES = "corp.player.info.get,corp.player.shop_notifications.write,corp.accounts.get,corp.account_transactions.get,corp.applicants.get,corp.positions.get,corp.shop_sales.get,corp.shareholders.get,corp.shops.get,corp.staff.get,corp.stocks.get,corp.tasks.get,corp.transactions.get,corp.types.get,corp.universal_prices.get,corp.info.get,corp.account_subuser.create,corp.position.create,corp.position_permission.create,corp.hire.create,corp.task.create,corp.universal_prices.create,corp.advert.create,corp.ad.create,corp.ad.write,corp.advert.write,corp.apply.create,corp.create,corp.dividend_type.write,corp.dividend_payment.write,corp.position_bonus.write,corp.position_commission.write,corp.position_permissions.write,corp.position_salary.write,corp.staff.demote,corp.staff.promote,corp.business_stocks.transfer,corp.individual_stocks.transfer,corp.task.assign,corp.task.unassign,corp.universal_buy_price.write,corp.universal_quantity.write,corp.universal_sell_price.write,corp.money.transfer,corp.description.write,corp.discord.write,corp.hq.write,corp.applicant.delete,corp.dividend.disable,corp.position_permission.delete,corp.position.delete,corp.staff.fire,corp.task.delete,corp.universal_prices.delete";
 
 export function buildCityCorpAuthUrl(
   bank: { cityCorpAppId?: string | null; cityCorpAuthUrl?: string | null },
   redirectUri: string,
   state: string
 ): string {
-  const appId = bank.cityCorpAppId || "";
+  const appId = bank.cityCorpAppId || process.env.CITYRP_APP_ID || "9";
   const rawAuthUrl = bank.cityCorpAuthUrl?.trim();
 
   if (!rawAuthUrl) {
-    return `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}&response_type=code`;
+    return `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}`;
   }
 
   try {
@@ -24,12 +24,9 @@ export function buildCityCorpAuthUrl(
     }
     urlObj.searchParams.set("scopes", CITYCORP_REQUIRED_SCOPES);
     urlObj.searchParams.set("state", state);
-    if (!urlObj.searchParams.has("response_type")) {
-      urlObj.searchParams.set("response_type", "code");
-    }
     return urlObj.toString();
   } catch (e) {
-    return `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}&response_type=code`;
+    return `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}`;
   }
 }
 

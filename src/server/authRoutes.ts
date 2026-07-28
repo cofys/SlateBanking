@@ -64,8 +64,20 @@ export function registerAuthRoutes(app: express.Express) {
         }
       }
 
-      const appId = bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
-      const appSecret = bank?.cityCorpAppSecret || process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
+      // Determine primary App ID and App Secret pair
+      const envAppId = process.env.CITYRP_APP_ID;
+      const envAppSecret = process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
+      const bankAppId = bank?.cityCorpAppId;
+      const bankAppSecret = bank?.cityCorpAppSecret;
+
+      const isUuid = (id?: string | null) => Boolean(id && id.includes("-") && id.length > 20);
+
+      // Prefer Env if set (matching standard standalone bots), otherwise non-UUID Bank ID, or "9"
+      let appId = (envAppId && envAppSecret) ? envAppId : (bankAppId || envAppId);
+      if (isUuid(appId)) {
+        appId = (envAppId && !isUuid(envAppId)) ? envAppId : "9";
+      }
+      const appSecret = (envAppId && envAppSecret) ? envAppSecret : (bankAppSecret || envAppSecret);
 
       if (appId && appSecret) {
         const callbackPath = (req.query.callbackPath as string) || "/api/auth/citycorp/callback";
@@ -74,7 +86,7 @@ export function registerAuthRoutes(app: express.Express) {
         const nonce = uuidv4();
         res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
         const state = encodeURIComponent(JSON.stringify({ bankId: bank?.id, returnTo: req.query.returnTo, nonce, redirectUri }));
-        const mockBankObj = bank || { cityCorpAppId: appId, cityCorpAuthUrl: null };
+        const mockBankObj = { cityCorpAppId: appId, cityCorpAuthUrl: bank?.cityCorpAuthUrl || null };
         const authUrl = buildCityCorpAuthUrl(mockBankObj, redirectUri, state);
         return res.json({ url: authUrl, state });
       } else {
@@ -157,38 +169,100 @@ export function registerAuthRoutes(app: express.Express) {
         if (allBanks.length > 0) bank = allBanks.find((b: any) => b.cityCorpAppId) || allBanks[0];
       }
 
-      const appId = bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
-      const appSecret = bank?.cityCorpAppSecret || process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
+      const envAppId = process.env.CITYRP_APP_ID;
+      const envAppSecret = process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
+      const bankAppId = bank?.cityCorpAppId;
+      const bankAppSecret = bank?.cityCorpAppSecret;
 
-      if (!appId || !appSecret) {
+      // Build deduplicated candidate list of (appId, appSecret)
+      const candidateCredentials: Array<{ appId: string; appSecret: string; source: string }> = [];
+      
+      if (envAppId && envAppSecret) {
+        candidateCredentials.push({ appId: envAppId, appSecret: envAppSecret, source: "env" });
+      }
+      if (bankAppId && bankAppSecret && (bankAppId !== envAppId || bankAppSecret !== envAppSecret)) {
+        candidateCredentials.push({ appId: bankAppId, appSecret: bankAppSecret, source: "bank" });
+      }
+      if (bankAppId && envAppSecret && bankAppId !== envAppId && !candidateCredentials.some(c => c.appId === bankAppId && c.appSecret === envAppSecret)) {
+        candidateCredentials.push({ appId: bankAppId, appSecret: envAppSecret, source: "bankAppId+envSecret" });
+      }
+      if (envAppId && bankAppSecret && envAppSecret !== bankAppSecret && !candidateCredentials.some(c => c.appId === envAppId && c.appSecret === bankAppSecret)) {
+        candidateCredentials.push({ appId: envAppId, appSecret: bankAppSecret, source: "envAppId+bankSecret" });
+      }
+      // Add fallback candidate for App ID "9" with available secrets
+      const availableSecrets = [envAppSecret, bankAppSecret].filter(Boolean) as string[];
+      for (const secret of availableSecrets) {
+        if (!candidateCredentials.some(c => c.appId === "9" && c.appSecret === secret)) {
+          candidateCredentials.push({ appId: "9", appSecret: secret, source: "appId9+secret" });
+        }
+      }
+
+      if (candidateCredentials.length === 0) {
         return res.status(400).send("Bank or Server CityCorp OAuth credentials are not configured");
       }
 
-      const redirectUriForToken = redirectUriFromState || process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, req.path);
-
-      const bodyParams = new URLSearchParams({
-        grant_type: "authorization_code",
-        client_secret: code,
-        app_id: appId,
-        token: appSecret,
-        redirect_uri: redirectUriForToken
-      });
-
-      console.log(`[Auth] Exchanging token with CityCorp. App ID: ${appId}, Redirect URI: ${redirectUriForToken}`);
-
-      const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: bodyParams.toString()
-      });
-
-      if (!tokenResponse.ok) {
-        const errText = await tokenResponse.text();
-        console.error("CityCorp OAuth Exchange Failed:", errText, "Status:", tokenResponse.status);
-        return res.status(400).send(`Failed to exchange token with CityCorp. Status: ${tokenResponse.status}. Error: ${errText}`);
+      // Build deduplicated candidate list of redirect URIs
+      const candidateRedirectUris: string[] = [];
+      if (redirectUriFromState) candidateRedirectUris.push(redirectUriFromState);
+      if (process.env.CITYRP_REDIRECT_URI && !candidateRedirectUris.includes(process.env.CITYRP_REDIRECT_URI)) {
+        candidateRedirectUris.push(process.env.CITYRP_REDIRECT_URI);
+      }
+      const calculatedUri = await getRedirectUri(req, req.path);
+      if (calculatedUri && !candidateRedirectUris.includes(calculatedUri)) {
+        candidateRedirectUris.push(calculatedUri);
       }
 
-      const tokenData = await tokenResponse.json();
+      let tokenData: any = null;
+      let lastErrorText = "";
+      let lastStatus = 0;
+
+      attemptLoop:
+      for (const cred of candidateCredentials) {
+        for (const uri of candidateRedirectUris) {
+          const bodyParams = new URLSearchParams({
+            grant_type: "authorization_code",
+            client_secret: code,
+            app_id: cred.appId,
+            token: cred.appSecret,
+            redirect_uri: uri
+          });
+
+          console.log(`[Auth] Attempting CityCorp token exchange (Source: ${cred.source}, App ID: ${cred.appId}, Redirect URI: ${uri})`);
+
+          try {
+            const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: bodyParams.toString()
+            });
+
+            lastStatus = tokenResponse.status;
+            const resText = await tokenResponse.text();
+
+            if (tokenResponse.ok) {
+              try {
+                const parsed = JSON.parse(resText);
+                if (parsed && parsed.token) {
+                  tokenData = parsed;
+                  console.log(`[Auth] CityCorp Token exchange SUCCESS with source '${cred.source}'!`);
+                  break attemptLoop;
+                }
+              } catch (e) {}
+            }
+            lastErrorText = resText;
+            console.warn(`[Auth] Exchange failed with source '${cred.source}' (Status: ${tokenResponse.status}): ${resText}`);
+          } catch (err: any) {
+            lastErrorText = err.message;
+            console.error(`[Auth] Network error during token exchange with source '${cred.source}':`, err);
+          }
+        }
+      }
+
+      if (!tokenData) {
+        console.error("CityCorp OAuth Exchange Failed after all candidates:", lastErrorText, "Status:", lastStatus);
+        return res.status(400).send(`Failed to exchange token with CityCorp (Status: ${lastStatus}): ${lastErrorText}`);
+      }
+
       const token = tokenData.token;
       const minecraftUuid = tokenData.minecraft_uuid;
 
