@@ -557,13 +557,17 @@ export function BankSettings() {
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white/90 overflow-x-auto whitespace-nowrap">
-                {`https://${settings?.customDomain || window.location.hostname}/api/auth/citycorp/callback`}
+                {(() => {
+                  const hostDomain = (settings?.customDomain || window.location.hostname).replace(/^https?:\/\//, '');
+                  return `https://${hostDomain}/api/auth/citycorp/callback`;
+                })()}
               </code>
               <button
                 type="button"
                 onClick={(e) => {
                   e.preventDefault();
-                  navigator.clipboard.writeText(`https://${settings?.customDomain || window.location.hostname}/api/auth/citycorp/callback`);
+                  const hostDomain = (settings?.customDomain || window.location.hostname).replace(/^https?:\/\//, '');
+                  navigator.clipboard.writeText(`https://${hostDomain}/api/auth/citycorp/callback`);
                   alert("Redirect URI copied to clipboard");
                 }}
                 className="bg-[#242433] hover:bg-[#2d2d3f] border border-white/10 text-white px-4 py-2 rounded-lg text-sm transition-colors whitespace-nowrap"

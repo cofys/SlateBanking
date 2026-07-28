@@ -105,10 +105,6 @@ export const authenticateApiRequest = async (req: express.Request, res: express.
 };
 
 export const getRedirectUri = async (req: express.Request, callbackPath: string = "/api/auth/discord/callback") => {
-  if (callbackPath === "/api/auth/citycorp/callback" && process.env.CITYRP_REDIRECT_URI) {
-      return process.env.CITYRP_REDIRECT_URI;
-  }
-  
   if (req.query.origin) {
     let origin = req.query.origin as string;
     if (origin.endsWith('/')) origin = origin.slice(0, -1);
@@ -117,22 +113,48 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
 
   const { db } = await import("../db/index.js");
   const { banks } = await import("../db/schema.js");
-  const { eq } = await import("drizzle-orm");
-  let bankId = undefined;
-  if (req.query.bankId) {
-     bankId = req.query.bankId;
-  } else if (req.query.state) {
+  const { eq, like } = await import("drizzle-orm");
+  
+  let bankId: string | undefined = req.query.bankId as string | undefined;
+  if (!bankId && req.query.state) {
      try {
          const stateObj = JSON.parse(decodeURIComponent(req.query.state as string));
          bankId = stateObj.bankId;
      } catch(e) {}
   }
 
-  // Always use the request's current host to ensure OAuth redirects back to the same domain the user initiated from.
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+
+  // Check if bank has a custom domain configured
+  let bank = null;
+  if (bankId) {
+    try {
+      bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+    } catch (e) {}
+  } else if (host && host !== 'localhost' && host !== 'localhost:3000' && !host.includes('127.0.0.1')) {
+    try {
+      const cleanHost = host.split(':')[0];
+      bank = await db.select().from(banks).where(like(banks.customDomain, `%${cleanHost}%`)).get();
+    } catch (e) {}
+  }
+
+  if (bank?.customDomain) {
+    let domain = bank.customDomain.trim();
+    if (!domain.startsWith("http://") && !domain.startsWith("https://")) {
+      domain = `${proto}://${domain}`;
+    }
+    if (domain.endsWith("/")) domain = domain.slice(0, -1);
+    return `${domain}${callbackPath}`;
+  }
+
+  // Always fallback to current request host if valid
   if (host && host !== 'localhost:3000' && !host.includes('127.0.0.1')) {
     return `${proto}://${host}${callbackPath}`;
+  }
+
+  if (callbackPath.includes("citycorp") && process.env.CITYRP_REDIRECT_URI) {
+    return process.env.CITYRP_REDIRECT_URI;
   }
 
   let origin = process.env.APP_URL || "http://localhost:3000";

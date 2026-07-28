@@ -2,7 +2,7 @@ import { db } from "../db/index";
 import { cityCorpLogs } from "../db/schema";
 import { v4 as uuidv4 } from "uuid";
 
-export const CITYCORP_REQUIRED_SCOPES = "corp.player.info.get,corp.player.shop_notifications.write,corp.accounts.get,corp.account_transactions.get,corp.applicants.get,corp.positions.get,corp.shop_sales.get,corp.shareholders.get,corp.shops.get,corp.staff.get,corp.stocks.get,corp.tasks.get,corp.transactions.get,corp.types.get,corp.universal_prices.get,corp.info.get,corp.account_subuser.create,corp.position.create,corp.position_permission.create,corp.hire.create,corp.task.create,corp.universal_prices.create,corp.advert.create,corp.ad.create,corp.ad.write,corp.advert.write,corp.apply.create,corp.create,corp.dividend_type.write,corp.dividend_payment.write,corp.position_bonus.write,corp.position_commission.write,corp.position_permissions.write,corp.position_salary.write,corp.staff.demote,corp.staff.promote,corp.business_stocks.transfer,corp.individual_stocks.transfer,corp.task.assign,corp.task.unassign,corp.universal_buy_price.write,corp.universal_quantity.write,corp.universal_sell_price.write,corp.money.transfer,corp.description.write,corp.discord.write,corp.hq.write,corp.applicant.delete,corp.dividend.disable,corp.position_permission.delete,corp.position.delete,corp.staff.fire,corp.task.delete,corp.universal_prices.delete";
+export const CITYCORP_DEFAULT_SCOPES = "corp.player.info.get,corp.accounts.get,corp.account_transactions.get,corp.money.transfer";
 
 export function buildCityCorpAuthUrl(
   bank: { cityCorpAppId?: string | null; cityCorpAuthUrl?: string | null },
@@ -16,23 +16,34 @@ export function buildCityCorpAuthUrl(
 
   let finalUrl = "";
 
-  if (!rawAuthUrl) {
-    finalUrl = `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(finalRedirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}`;
-  } else {
+  if (rawAuthUrl) {
     try {
       const urlObj = new URL(rawAuthUrl);
-      if (urlObj.searchParams.get("app_id")) {
+      
+      // Extract or preserve app_id from custom URL
+      if (urlObj.searchParams.has("app_id")) {
         appId = urlObj.searchParams.get("app_id")!;
-      } else {
+      } else if (appId) {
         urlObj.searchParams.set("app_id", appId);
       }
-      urlObj.searchParams.set("redirect_uri", finalRedirectUri);
-      urlObj.searchParams.set("scopes", CITYCORP_REQUIRED_SCOPES);
-      urlObj.searchParams.set("state", state);
+      
+      // Extract or preserve redirect_uri from custom URL
+      if (urlObj.searchParams.has("redirect_uri")) {
+        finalRedirectUri = urlObj.searchParams.get("redirect_uri")!;
+      } else if (finalRedirectUri) {
+        urlObj.searchParams.set("redirect_uri", finalRedirectUri);
+      }
+
+      // Preserve existing scopes from rawAuthUrl! Do NOT overwrite!
+      if (state) {
+        urlObj.searchParams.set("state", state);
+      }
       finalUrl = urlObj.toString();
     } catch (e) {
-      finalUrl = `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(finalRedirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}`;
+      finalUrl = rawAuthUrl;
     }
+  } else {
+    finalUrl = `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(finalRedirectUri)}&scopes=${encodeURIComponent(CITYCORP_DEFAULT_SCOPES)}&state=${state}`;
   }
 
   return {
