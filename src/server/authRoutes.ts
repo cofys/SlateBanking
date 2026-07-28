@@ -67,7 +67,7 @@ export function registerAuthRoutes(app: express.Express) {
         const { v4: uuidv4 } = await import("uuid");
         const nonce = uuidv4();
         res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce }));
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce, redirectUri }));
         const authUrl = buildCityCorpAuthUrl(bank, redirectUri, state);
         return res.json({ url: authUrl });
       } else {
@@ -80,7 +80,7 @@ export function registerAuthRoutes(app: express.Express) {
         const { v4: uuidv4 } = await import("uuid");
         const nonce = uuidv4();
         res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce }));
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce, redirectUri }));
         const authUrl = buildCityCorpAuthUrl(bank, redirectUri, state);
         return res.json({ url: authUrl });
     } else if (bank && bank.discordClientId) {
@@ -128,6 +128,7 @@ export function registerAuthRoutes(app: express.Express) {
     try {
       let bankId;
       let returnTo;
+      let redirectUriFromState;
       try {
         const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
         const expectedNonce = req.cookies?.oauth_nonce;
@@ -137,6 +138,7 @@ export function registerAuthRoutes(app: express.Express) {
         }
         bankId = parsedState.bankId;
         returnTo = parsedState.returnTo;
+        redirectUriFromState = parsedState.redirectUri;
       } catch (e) {
         const host = req.get('host');
         let possibleBank = await db.select().from(banks).where(eq(banks.customDomain, host || "")).get();
@@ -154,12 +156,14 @@ export function registerAuthRoutes(app: express.Express) {
         return res.status(400).send("Bank CityCorp OAuth credentials are not configured");
       }
 
+      const redirectUriForToken = redirectUriFromState || await getRedirectUri(req, "/api/auth/citycorp/callback");
+
       const bodyParams = new URLSearchParams({
         grant_type: "authorization_code",
         client_secret: code as string,
         app_id: bank.cityCorpAppId,
         token: bank.cityCorpAppSecret,
-        redirect_uri: await getRedirectUri(req, "/api/auth/citycorp/callback")
+        redirect_uri: redirectUriForToken
       });
 
       const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
