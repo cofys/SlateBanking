@@ -158,7 +158,8 @@ export function registerAuthRoutes(app: express.Express) {
         grant_type: "authorization_code",
         client_secret: code as string,
         app_id: bank.cityCorpAppId,
-        token: bank.cityCorpAppSecret
+        token: bank.cityCorpAppSecret,
+        redirect_uri: await getRedirectUri(req, "/api/auth/citycorp/callback")
       });
 
       const tokenResponse = await fetch("https://dashboard.cityrp.org/oauth/token", {
