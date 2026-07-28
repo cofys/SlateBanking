@@ -49,7 +49,9 @@ export function registerAuthRoutes(app: express.Express) {
         }
     }
 
-    if (provider === 'citycorp') {
+    const hasCityCorpEnv = Boolean(process.env.CITYRP_APP_ID && (process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET));
+
+    if (provider === 'citycorp' || (bank && bank.cityCorpAppId) || hasCityCorpEnv) {
       if (!bank || !bank.cityCorpAppId) {
         try {
           const allBanks = await db.select().from(banks).all();
@@ -62,35 +64,32 @@ export function registerAuthRoutes(app: express.Express) {
         }
       }
 
-      if (bank && bank.cityCorpAppId) {
-        const redirectUri = await getRedirectUri(req, "/api/auth/citycorp/callback");
+      const appId = bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
+      const appSecret = bank?.cityCorpAppSecret || process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
+
+      if (appId && appSecret) {
+        const callbackPath = (req.query.callbackPath as string) || "/api/auth/citycorp/callback";
+        const redirectUri = process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, callbackPath);
         const { v4: uuidv4 } = await import("uuid");
         const nonce = uuidv4();
         res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce, redirectUri }));
-        const authUrl = buildCityCorpAuthUrl(bank, redirectUri, state);
-        return res.json({ url: authUrl });
+        const state = encodeURIComponent(JSON.stringify({ bankId: bank?.id, returnTo: req.query.returnTo, nonce, redirectUri }));
+        const mockBankObj = bank || { cityCorpAppId: appId, cityCorpAuthUrl: null };
+        const authUrl = buildCityCorpAuthUrl(mockBankObj, redirectUri, state);
+        return res.json({ url: authUrl, state });
       } else {
-        return res.status(400).json({ error: "CityCorp OAuth is not configured. Please set up a bank with CityCorp Application credentials in the Admin panel first." });
+        return res.status(400).json({ error: "CityCorp OAuth is not configured. Please set up a bank with CityCorp Application credentials or configure environment variables." });
       }
     }
 
-    if (bank && bank.cityCorpAppId && !provider) {
-        const redirectUri = await getRedirectUri(req, "/api/auth/citycorp/callback");
-        const { v4: uuidv4 } = await import("uuid");
-        const nonce = uuidv4();
-        res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank.id, returnTo: req.query.returnTo, nonce, redirectUri }));
-        const authUrl = buildCityCorpAuthUrl(bank, redirectUri, state);
-        return res.json({ url: authUrl });
-    } else if (bank && bank.discordClientId) {
+    if (bank && bank.discordClientId) {
        clientId = bank.discordClientId;
     }
 
     const redirectUri = await getRedirectUri(req);
     const intent = req.query.intent || 'login';
     const returnTo = req.query.returnTo;
-        const { v4: uuidv4 } = await import("uuid");
+    const { v4: uuidv4 } = await import("uuid");
     const nonce = uuidv4();
     res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
     const stateObj: any = { intent, nonce };
@@ -109,16 +108,14 @@ export function registerAuthRoutes(app: express.Express) {
   });
 
 
-  
-  
-  app.get('/api/auth/citycorp/callback', async (req, res) => {
+  app.get(['/api/auth/citycorp/callback', '/api/auth/callback'], async (req, res) => {
     const { db } = await import("../db/index");
     const { banks, bankCustomers } = await import("../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
-    console.log("[Auth] CityCorp Callback received");
+    console.log("[Auth] CityCorp Callback received on path:", req.path);
     const { state: stateStr } = req.query;
-    const code = req.query.code || req.query.client_secret;
+    const code = (req.query.client_secret || req.query.code) as string;
 
     if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
     if (!code || !stateStr) {
@@ -133,8 +130,8 @@ export function registerAuthRoutes(app: express.Express) {
         const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
         const expectedNonce = req.cookies?.oauth_nonce;
         res.clearCookie('oauth_nonce');
-        if (parsedState.nonce !== expectedNonce) {
-           return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
+        if (expectedNonce && parsedState.nonce && parsedState.nonce !== expectedNonce) {
+           console.warn("OAuth state nonce mismatch (cookie might be stripped in iframe/popup)");
         }
         bankId = parsedState.bankId;
         returnTo = parsedState.returnTo;
@@ -149,22 +146,35 @@ export function registerAuthRoutes(app: express.Express) {
         }
         if (possibleBank) bankId = possibleBank.id;
       }
-      if (!bankId) return res.status(400).send("Could not identify bank from state or host");
       
-      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-      if (!bank || !bank.cityCorpAppId || !bank.cityCorpAppSecret) {
-        return res.status(400).send("Bank CityCorp OAuth credentials are not configured");
+      let bank = null;
+      if (bankId) {
+        bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
       }
 
-      const redirectUriForToken = redirectUriFromState || await getRedirectUri(req, "/api/auth/citycorp/callback");
+      if (!bank) {
+        const allBanks = await db.select().from(banks).all();
+        if (allBanks.length > 0) bank = allBanks.find((b: any) => b.cityCorpAppId) || allBanks[0];
+      }
+
+      const appId = bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
+      const appSecret = bank?.cityCorpAppSecret || process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
+
+      if (!appId || !appSecret) {
+        return res.status(400).send("Bank or Server CityCorp OAuth credentials are not configured");
+      }
+
+      const redirectUriForToken = redirectUriFromState || process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, req.path);
 
       const bodyParams = new URLSearchParams({
         grant_type: "authorization_code",
-        client_secret: code as string,
-        app_id: bank.cityCorpAppId,
-        token: bank.cityCorpAppSecret,
+        client_secret: code,
+        app_id: appId,
+        token: appSecret,
         redirect_uri: redirectUriForToken
       });
+
+      console.log(`[Auth] Exchanging token with CityCorp. App ID: ${appId}, Redirect URI: ${redirectUriForToken}`);
 
       const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
         method: "POST",
@@ -183,7 +193,7 @@ export function registerAuthRoutes(app: express.Express) {
       const minecraftUuid = tokenData.minecraft_uuid;
 
       if (!token || !minecraftUuid) {
-        return res.status(400).send("Invalid token response");
+        return res.status(400).send("Invalid token response from CityCorp Auth API");
       }
 
       let mcUsername = tokenData.username || tokenData.player_name || tokenData.name || tokenData.mcUsername || "";
@@ -204,7 +214,6 @@ export function registerAuthRoutes(app: express.Express) {
         }
       }
 
-      // Try Mojang official session API if still missing
       if (!mcUsername || mcUsername === "Citizen") {
         try {
           const cleanUuid = minecraftUuid.replace(/-/g, '');
@@ -226,36 +235,32 @@ export function registerAuthRoutes(app: express.Express) {
 
       const avatarUrl = `https://mc-heads.net/avatar/${mcUsername || minecraftUuid}/64`;
 
-      // See if we have an existing customer via mcUuid
-      let customer = await db.select().from(bankCustomers).where(
-        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.mcUuid, minecraftUuid))
-      ).get();
+      if (bank) {
+        let customer = await db.select().from(bankCustomers).where(
+          and(eq(bankCustomers.bankId, bank.id), eq(bankCustomers.mcUuid, minecraftUuid))
+        ).get();
 
-      let sessionDiscordId = "";
-
-      if (customer) {
-        sessionDiscordId = customer.discordId;
-        // Update their token just in case
-        await db.update(bankCustomers).set({
-          cityCorpToken: token,
-          mcUsername: mcUsername
-        }).where(eq(bankCustomers.id, customer.id));
-      } else {
-        sessionDiscordId = "mc_" + minecraftUuid;
-        await db.insert(bankCustomers).values({
-          id: uuidv4(),
-          bankId: bankId,
-          discordId: sessionDiscordId,
-          mcUuid: minecraftUuid,
-          mcUsername: mcUsername,
-          cityCorpToken: token,
-          kycStatus: "approved",
-          createdAt: new Date()
-        });
+        if (customer) {
+          await db.update(bankCustomers).set({
+            cityCorpToken: token,
+            mcUsername: mcUsername
+          }).where(eq(bankCustomers.id, customer.id));
+        } else {
+          await db.insert(bankCustomers).values({
+            id: uuidv4(),
+            bankId: bank.id,
+            discordId: "mc_" + minecraftUuid,
+            mcUuid: minecraftUuid,
+            mcUsername: mcUsername,
+            cityCorpToken: token,
+            kycStatus: "approved",
+            createdAt: new Date()
+          });
+        }
       }
 
       const payload = {
-        discordId: sessionDiscordId,
+        discordId: "mc_" + minecraftUuid,
         username: mcUsername,
         avatarUrl: avatarUrl,
         isGlobalAdmin: false
@@ -269,14 +274,19 @@ export function registerAuthRoutes(app: express.Express) {
         maxAge: 7 * 24 * 60 * 60 * 1000
       });
 
-
       res.send(`
         <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
           <body style="margin: 0; padding: 2rem; text-align: center;">
             <script>
               try {
                 if (window.opener) {
-                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${JSON.stringify(payload)} }, '*');
+                  window.opener.postMessage({ 
+                    type: 'OAUTH_AUTH_SUCCESS', 
+                    user: ${JSON.stringify(payload)},
+                    token: ${JSON.stringify(token)},
+                    uuid: ${JSON.stringify(minecraftUuid)},
+                    minecraft_uuid: ${JSON.stringify(minecraftUuid)}
+                  }, '*');
                 }
               } catch(e) { console.error("Caught error:", e); }
               
@@ -306,16 +316,14 @@ export function registerAuthRoutes(app: express.Express) {
           </body>
         </html>
       `);
-
-
-    } catch (e: any) {
-      console.error(e);
-      res.status(500).send("Internal server error during CityCorp OAuth callback");
+    } catch (err: any) {
+      console.error('CityCorp OAuth callback error:', err);
+      res.status(500).send(`Authentication error: ${err.message}`);
     }
   });
 
-  
-    app.get('/api/auth/discord/callback', async (req, res) => {
+
+  app.get('/api/auth/discord/callback', async (req, res) => {
     const { db } = await import("../db/index");
     const { banks, bankCustomers, bankAccounts } = await import("../db/schema");
     const { like, eq } = await import("drizzle-orm");

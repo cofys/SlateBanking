@@ -92,12 +92,16 @@ Since funds occasionally cross from Bank A to Bank B, the platform leverages int
 
 ## 🔐 Security & Identity
 
-### Discord OAuth Context & JWT
-Instead of simple passwords, the platform mandates Discord authentication. 
-- `/api/auth/url` generates the Discord OAuth2 prompt, requesting `identify email` scopes.
-- `/api/auth/discord/callback` handles the return code, exchanges it for a token via Discord's API, and subsequently builds a secure JWT.
-- The JWT payload (`discordId`, `username`, `avatarUrl`, `isGlobalAdmin`) is encrypted with `JWT_SECRET` and stored in an HTTP-only, secure, sameSite=none cookie (`auth_token`).
+### Discord & CityCorp OAuth Context & JWT
+Instead of simple passwords, the platform supports Discord and CityCorp OAuth authentication. 
+- `/api/auth/url` generates the OAuth prompt (Discord or CityCorp, controllable via `provider=citycorp` query or fallback environment variables).
+- `/api/auth/discord/callback` handles the Discord OAuth code exchange.
+- `/api/auth/citycorp/callback` and `/api/auth/callback` handle CityCorp OAuth authorization code exchange (`POST https://api.cityrp.org/auth/token`).
+  - **Credentials Priority**: Uses Bank-specific credentials (`cityCorpAppId`, `cityCorpAppSecret`) if present, or global server environment variables (`CITYRP_APP_ID`, `CITYRP_APP_TOKEN` / `CITYRP_APP_SECRET`).
+  - **Exact Redirect URI Matching**: Ensures the exact `redirect_uri` passed during authorization is preserved in state and sent back to CityCorp's token exchange endpoint.
+- The JWT payload (`discordId`, `username`, `avatarUrl`, `isGlobalAdmin`) is encrypted with `JWT_SECRET` and stored in an HTTP-only, secure, sameSite=lax cookie (`auth_token`).
 - Tokens are set to expire in 7 days.
+- In addition to standard JWT cookie setting, postMessage broadcasts `{ type: 'OAUTH_AUTH_SUCCESS', user, token, uuid, minecraft_uuid }` to support popup login windows across custom applications and clients.
 
 ### Middlewares
 1. **`authenticateApiRequest`**: Standard API key checking for external plugin connections, ensuring `x-api-key` header matches a valid `banks` or `onyxMerchants` API key.
