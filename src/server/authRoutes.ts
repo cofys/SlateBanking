@@ -64,34 +64,26 @@ export function registerAuthRoutes(app: express.Express) {
         }
       }
 
-      // Determine primary App ID and App Secret pair
-      const envAppId = process.env.CITYRP_APP_ID;
-      const envAppSecret = process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
-      const bankAppId = bank?.cityCorpAppId;
-      const bankAppSecret = bank?.cityCorpAppSecret;
+      const callbackPath = (req.query.callbackPath as string) || "/api/auth/citycorp/callback";
+      const redirectUri = process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, callbackPath);
+      const { v4: uuidv4 } = await import("uuid");
+      const nonce = uuidv4();
+      res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
 
-      const isUuid = (id?: string | null) => Boolean(id && id.includes("-") && id.length > 20);
+      const mockBankObj = { cityCorpAppId: bank?.cityCorpAppId || process.env.CITYRP_APP_ID || "9", cityCorpAuthUrl: bank?.cityCorpAuthUrl || null };
+      const authResultInitial = buildCityCorpAuthUrl(mockBankObj, redirectUri, "");
 
-      // Prefer Env if set (matching standard standalone bots), otherwise non-UUID Bank ID, or "9"
-      let appId = (envAppId && envAppSecret) ? envAppId : (bankAppId || envAppId);
-      if (isUuid(appId)) {
-        appId = (envAppId && !isUuid(envAppId)) ? envAppId : "9";
-      }
-      const appSecret = (envAppId && envAppSecret) ? envAppSecret : (bankAppSecret || envAppSecret);
+      const stateObj = {
+        bankId: bank?.id,
+        appId: authResultInitial.appIdUsed,
+        redirectUri: authResultInitial.redirectUriUsed,
+        returnTo: req.query.returnTo,
+        nonce
+      };
+      const state = encodeURIComponent(JSON.stringify(stateObj));
 
-      if (appId && appSecret) {
-        const callbackPath = (req.query.callbackPath as string) || "/api/auth/citycorp/callback";
-        const redirectUri = process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, callbackPath);
-        const { v4: uuidv4 } = await import("uuid");
-        const nonce = uuidv4();
-        res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
-        const state = encodeURIComponent(JSON.stringify({ bankId: bank?.id, returnTo: req.query.returnTo, nonce, redirectUri }));
-        const mockBankObj = { cityCorpAppId: appId, cityCorpAuthUrl: bank?.cityCorpAuthUrl || null };
-        const authUrl = buildCityCorpAuthUrl(mockBankObj, redirectUri, state);
-        return res.json({ url: authUrl, state });
-      } else {
-        return res.status(400).json({ error: "CityCorp OAuth is not configured. Please set up a bank with CityCorp Application credentials or configure environment variables." });
-      }
+      const finalAuthResult = buildCityCorpAuthUrl(mockBankObj, redirectUri, state);
+      return res.json({ url: finalAuthResult.url, state });
     }
 
     if (bank && bank.discordClientId) {
@@ -138,6 +130,7 @@ export function registerAuthRoutes(app: express.Express) {
       let bankId;
       let returnTo;
       let redirectUriFromState;
+      let appIdFromState;
       try {
         const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
         const expectedNonce = req.cookies?.oauth_nonce;
@@ -148,6 +141,7 @@ export function registerAuthRoutes(app: express.Express) {
         bankId = parsedState.bankId;
         returnTo = parsedState.returnTo;
         redirectUriFromState = parsedState.redirectUri;
+        appIdFromState = parsedState.appId;
       } catch (e) {
         const host = req.get('host');
         let possibleBank = await db.select().from(banks).where(eq(banks.customDomain, host || "")).get();
@@ -169,97 +163,64 @@ export function registerAuthRoutes(app: express.Express) {
         if (allBanks.length > 0) bank = allBanks.find((b: any) => b.cityCorpAppId) || allBanks[0];
       }
 
-      const envAppId = process.env.CITYRP_APP_ID;
-      const envAppSecret = process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
-      const bankAppId = bank?.cityCorpAppId;
-      const bankAppSecret = bank?.cityCorpAppSecret;
+      const appId = appIdFromState || bank?.cityCorpAppId || process.env.CITYRP_APP_ID || "9";
+      const redirectUri = redirectUriFromState || process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, req.path);
 
-      // Build deduplicated candidate list of (appId, appSecret)
-      const candidateCredentials: Array<{ appId: string; appSecret: string; source: string }> = [];
-      
-      if (envAppId && envAppSecret) {
-        candidateCredentials.push({ appId: envAppId, appSecret: envAppSecret, source: "env" });
-      }
-      if (bankAppId && bankAppSecret && (bankAppId !== envAppId || bankAppSecret !== envAppSecret)) {
-        candidateCredentials.push({ appId: bankAppId, appSecret: bankAppSecret, source: "bank" });
-      }
-      if (bankAppId && envAppSecret && bankAppId !== envAppId && !candidateCredentials.some(c => c.appId === bankAppId && c.appSecret === envAppSecret)) {
-        candidateCredentials.push({ appId: bankAppId, appSecret: envAppSecret, source: "bankAppId+envSecret" });
-      }
-      if (envAppId && bankAppSecret && envAppSecret !== bankAppSecret && !candidateCredentials.some(c => c.appId === envAppId && c.appSecret === bankAppSecret)) {
-        candidateCredentials.push({ appId: envAppId, appSecret: bankAppSecret, source: "envAppId+bankSecret" });
-      }
-      // Add fallback candidate for App ID "9" with available secrets
-      const availableSecrets = [envAppSecret, bankAppSecret].filter(Boolean) as string[];
-      for (const secret of availableSecrets) {
-        if (!candidateCredentials.some(c => c.appId === "9" && c.appSecret === secret)) {
-          candidateCredentials.push({ appId: "9", appSecret: secret, source: "appId9+secret" });
-        }
-      }
+      // Collect candidate app secrets (bank app secret first, then env)
+      const candidateSecrets: string[] = [];
+      if (bank?.cityCorpAppSecret) candidateSecrets.push(bank.cityCorpAppSecret);
+      const envSecret = process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET;
+      if (envSecret && !candidateSecrets.includes(envSecret)) candidateSecrets.push(envSecret);
 
-      if (candidateCredentials.length === 0) {
-        return res.status(400).send("Bank or Server CityCorp OAuth credentials are not configured");
-      }
-
-      // Build deduplicated candidate list of redirect URIs
-      const candidateRedirectUris: string[] = [];
-      if (redirectUriFromState) candidateRedirectUris.push(redirectUriFromState);
-      if (process.env.CITYRP_REDIRECT_URI && !candidateRedirectUris.includes(process.env.CITYRP_REDIRECT_URI)) {
-        candidateRedirectUris.push(process.env.CITYRP_REDIRECT_URI);
-      }
-      const calculatedUri = await getRedirectUri(req, req.path);
-      if (calculatedUri && !candidateRedirectUris.includes(calculatedUri)) {
-        candidateRedirectUris.push(calculatedUri);
+      if (candidateSecrets.length === 0) {
+        return res.status(400).send("Bank or Server CityCorp OAuth credentials (app secret) are not configured.");
       }
 
       let tokenData: any = null;
       let lastErrorText = "";
       let lastStatus = 0;
 
-      attemptLoop:
-      for (const cred of candidateCredentials) {
-        for (const uri of candidateRedirectUris) {
-          const bodyParams = new URLSearchParams({
-            grant_type: "authorization_code",
-            client_secret: code,
-            app_id: cred.appId,
-            token: cred.appSecret,
-            redirect_uri: uri
+      for (const appSecret of candidateSecrets) {
+        const bodyParams = new URLSearchParams({
+          grant_type: "authorization_code",
+          client_secret: code,
+          app_id: appId,
+          token: appSecret,
+          redirect_uri: redirectUri
+        });
+
+        console.log(`[Auth] CityCorp Token exchange attempt: App ID: ${appId}, Redirect URI: ${redirectUri}, Secret Length: ${appSecret.length}`);
+
+        try {
+          const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: bodyParams.toString()
           });
 
-          console.log(`[Auth] Attempting CityCorp token exchange (Source: ${cred.source}, App ID: ${cred.appId}, Redirect URI: ${uri})`);
+          lastStatus = tokenResponse.status;
+          const resText = await tokenResponse.text();
 
-          try {
-            const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
-              method: "POST",
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
-              body: bodyParams.toString()
-            });
-
-            lastStatus = tokenResponse.status;
-            const resText = await tokenResponse.text();
-
-            if (tokenResponse.ok) {
-              try {
-                const parsed = JSON.parse(resText);
-                if (parsed && parsed.token) {
-                  tokenData = parsed;
-                  console.log(`[Auth] CityCorp Token exchange SUCCESS with source '${cred.source}'!`);
-                  break attemptLoop;
-                }
-              } catch (e) {}
-            }
-            lastErrorText = resText;
-            console.warn(`[Auth] Exchange failed with source '${cred.source}' (Status: ${tokenResponse.status}): ${resText}`);
-          } catch (err: any) {
-            lastErrorText = err.message;
-            console.error(`[Auth] Network error during token exchange with source '${cred.source}':`, err);
+          if (tokenResponse.ok) {
+            try {
+              const parsed = JSON.parse(resText);
+              if (parsed && parsed.token) {
+                tokenData = parsed;
+                console.log(`[Auth] CityCorp Token exchange SUCCESS!`);
+                break;
+              }
+            } catch (e) {}
           }
+          lastErrorText = resText;
+          console.warn(`[Auth] Exchange failed (Status: ${tokenResponse.status}): ${resText}`);
+        } catch (err: any) {
+          lastErrorText = err.message;
+          console.error(`[Auth] Network error during token exchange:`, err);
         }
       }
 
       if (!tokenData) {
-        console.error("CityCorp OAuth Exchange Failed after all candidates:", lastErrorText, "Status:", lastStatus);
+        console.error("CityCorp OAuth Exchange Failed:", lastErrorText, "Status:", lastStatus);
         return res.status(400).send(`Failed to exchange token with CityCorp (Status: ${lastStatus}): ${lastErrorText}`);
       }
 

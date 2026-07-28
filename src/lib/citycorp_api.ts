@@ -8,26 +8,41 @@ export function buildCityCorpAuthUrl(
   bank: { cityCorpAppId?: string | null; cityCorpAuthUrl?: string | null },
   redirectUri: string,
   state: string
-): string {
-  const appId = bank.cityCorpAppId || process.env.CITYRP_APP_ID || "9";
+): { url: string; appIdUsed: string; redirectUriUsed: string; toString: () => string } {
+  const envAppId = process.env.CITYRP_APP_ID;
+  let appId = bank.cityCorpAppId || envAppId || "9";
+  let finalRedirectUri = redirectUri;
   const rawAuthUrl = bank.cityCorpAuthUrl?.trim();
 
+  let finalUrl = "";
+
   if (!rawAuthUrl) {
-    return `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}`;
+    finalUrl = `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(finalRedirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}`;
+  } else {
+    try {
+      const urlObj = new URL(rawAuthUrl);
+      if (urlObj.searchParams.get("app_id")) {
+        appId = urlObj.searchParams.get("app_id")!;
+      } else {
+        urlObj.searchParams.set("app_id", appId);
+      }
+      urlObj.searchParams.set("redirect_uri", finalRedirectUri);
+      urlObj.searchParams.set("scopes", CITYCORP_REQUIRED_SCOPES);
+      urlObj.searchParams.set("state", state);
+      finalUrl = urlObj.toString();
+    } catch (e) {
+      finalUrl = `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(finalRedirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}`;
+    }
   }
 
-  try {
-    const urlObj = new URL(rawAuthUrl);
-    urlObj.searchParams.set("redirect_uri", redirectUri);
-    if (!urlObj.searchParams.has("app_id") && appId) {
-      urlObj.searchParams.set("app_id", appId);
+  return {
+    url: finalUrl,
+    appIdUsed: appId,
+    redirectUriUsed: finalRedirectUri,
+    toString() {
+      return this.url;
     }
-    urlObj.searchParams.set("scopes", CITYCORP_REQUIRED_SCOPES);
-    urlObj.searchParams.set("state", state);
-    return urlObj.toString();
-  } catch (e) {
-    return `https://dashboard.cityrp.org/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scopes=${encodeURIComponent(CITYCORP_REQUIRED_SCOPES)}&state=${state}`;
-  }
+  };
 }
 
 export class CityCorpClient {
