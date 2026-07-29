@@ -29,7 +29,7 @@ export function registerAuthRoutes(app: express.Express) {
     const { db } = await import("../db/index");
     const { banks } = await import("../db/schema");
     const { like, eq } = await import("drizzle-orm");
-    const hostname = req.hostname;
+    const hostHeader = (req.get('x-forwarded-host') || req.get('host') || req.hostname).split(':')[0];
     const bankId = req.query.bankId as string | undefined;
     const provider = req.query.provider as string | undefined;
     let clientId = process.env.DISCORD_CLIENT_ID || '';
@@ -41,21 +41,23 @@ export function registerAuthRoutes(app: express.Express) {
       } catch (e) {
         console.error("Bank ID lookup error for OAuth URL:", e);
       }
-    } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
-        try {
-          bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
-        } catch (e) {
-          console.error("Domain lookup error for OAuth URL:", e);
-        }
+    }
+    
+    if (!bank && hostHeader && hostHeader !== 'localhost' && hostHeader !== '127.0.0.1') {
+      try {
+        bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostHeader}%`)).get();
+      } catch (e) {
+        console.error("Domain lookup error for OAuth URL:", e);
+      }
     }
 
     const hasCityCorpEnv = Boolean(process.env.CITYRP_APP_ID && (process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET));
 
-    if (provider === 'citycorp' || (bank && bank.cityCorpAppId) || hasCityCorpEnv) {
-      if (!bank || !bank.cityCorpAppId) {
+    if (provider === 'citycorp' || (bank && (bank.cityCorpAppId || bank.cityCorpAuthUrl)) || hasCityCorpEnv) {
+      if (!bank || (!bank.cityCorpAppId && !bank.cityCorpAuthUrl)) {
         try {
           const allBanks = await db.select().from(banks).all();
-          const configuredBank = allBanks.find((b: any) => b.cityCorpAppId);
+          const configuredBank = allBanks.find((b: any) => b.cityCorpAppId || b.cityCorpAuthUrl);
           if (configuredBank) {
             bank = configuredBank;
           }

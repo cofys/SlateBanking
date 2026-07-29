@@ -2,7 +2,7 @@ import { db } from "../db/index";
 import { cityCorpLogs } from "../db/schema";
 import { v4 as uuidv4 } from "uuid";
 
-export const CITYCORP_DEFAULT_SCOPES = "corp.player.info.get,corp.accounts.get,corp.account_transactions.get,corp.money.transfer";
+export const CITYCORP_DEFAULT_SCOPES = "corp.player.info.get,corp.account_money.transfer,corp.account.deposit,corp.account.withdraw";
 
 export function buildCityCorpAuthUrl(
   bank: { cityCorpAppId?: string | null; cityCorpAuthUrl?: string | null },
@@ -34,7 +34,10 @@ export function buildCityCorpAuthUrl(
         urlObj.searchParams.set("redirect_uri", finalRedirectUri);
       }
 
-      // Preserve existing scopes from rawAuthUrl! Do NOT overwrite!
+      // Preserve existing scopes from rawAuthUrl! If absent, use default scopes
+      if (!urlObj.searchParams.has("scopes")) {
+        urlObj.searchParams.set("scopes", CITYCORP_DEFAULT_SCOPES);
+      }
       if (state) {
         urlObj.searchParams.set("state", state);
       }

@@ -97,7 +97,7 @@ Instead of simple passwords, the platform supports Discord and CityCorp OAuth au
 - `/api/auth/url` generates the OAuth prompt (Discord or CityCorp, controllable via `provider=citycorp` query or fallback environment variables).
 - `/api/auth/discord/callback` handles the Discord OAuth code exchange.
 - `/api/auth/citycorp/callback` and `/api/auth/callback` handle CityCorp OAuth authorization code exchange (`POST https://api.cityrp.org/auth/token`).
-  - **Custom OAuth URL Preservation**: Directly respects custom CityCorp OAuth URLs (`cityCorpAuthUrl`) saved in Bank Settings without stripping or overwriting configured scopes. Default scopes (`corp.player.info.get,corp.accounts.get,corp.account_transactions.get,corp.money.transfer`) are used only when no custom URL is provided.
+  - **Custom OAuth URL Preservation**: Directly respects custom CityCorp OAuth URLs (`cityCorpAuthUrl`) saved in Bank Settings without stripping or overwriting configured scopes. Default scopes (`corp.player.info.get,corp.account_money.transfer,corp.account.deposit,corp.account.withdraw`) are used when no custom URL is provided.
   - **Bank Domain & State Encoding**: Prioritizes the bank's configured `customDomain` (e.g., `https://vh.azisle.com/api/auth/citycorp/callback`) and request host headers. Encodes the exact `appId` and `redirectUri` used during authorization into the OAuth `state` payload, ensuring matching `app_id` and `redirect_uri` during token exchange with `https://api.cityrp.org/auth/token`.
 - The JWT payload (`discordId`, `username`, `avatarUrl`, `isGlobalAdmin`) is encrypted with `JWT_SECRET` and stored in an HTTP-only, secure, sameSite=lax cookie (`auth_token`).
 - Tokens are set to expire in 7 days.
