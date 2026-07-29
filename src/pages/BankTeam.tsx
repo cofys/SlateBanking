@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Users2, Shield, Plus, Trash2, Loader2, Key } from "lucide-react";
+import { Users2, Shield, Plus, Trash2, Loader2, Key, Copy, Check } from "lucide-react";
 import { format } from "date-fns";
 
 export function BankTeam() {
@@ -9,6 +9,7 @@ export function BankTeam() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   const fetchStaff = () => {
     setLoading(true);
@@ -53,9 +54,11 @@ export function BankTeam() {
 
   if (loading) return <div className="text-white/50 animate-pulse p-4">Loading team...</div>;
 
+  const staffPortalUrl = `${window.location.origin}/bank/${bank.id}`;
+
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Team Management</h2>
           <p className="text-white/60 text-sm mt-1">Manage staff access and permissions for your bank.</p>
@@ -67,6 +70,37 @@ export function BankTeam() {
           <Plus size={16} />
           Add Staff Member
         </button>
+      </div>
+
+      <div className="bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-[#0f0f15] border border-indigo-500/20 rounded-xl p-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 mt-0.5 sm:mt-0 shrink-0">
+            <Shield size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-white flex items-center gap-2">
+              Staff Portal Direct Login Link
+            </p>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Share this URL with authorized bank staff. Staff can log in directly with their Discord or CityCorp account without needing Global SaaS Admin access. Access is strictly controlled by your staff list below.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+          <code className="text-xs bg-black/40 border border-white/10 px-3 py-1.5 rounded-lg font-mono text-indigo-300 truncate max-w-[240px]">
+            {staffPortalUrl}
+          </code>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(staffPortalUrl);
+              setCopiedUrl(true);
+              setTimeout(() => setCopiedUrl(false), 2000);
+            }}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors shrink-0 flex items-center gap-1.5"
+          >
+            {copiedUrl ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy Link</>}
+          </button>
+        </div>
       </div>
 
       {showAdd && (

@@ -363,8 +363,11 @@ Administrators can now provide a exact, custom pre-generated **CityCorp OAuth UR
 - **Flexible Identity Mapping ("Username or Discord ID")**: Evolved the account reassignment and customer creation workflows (e.g., "Update Owner", "Merge Customer"). The system now performs intelligent background resolution using `drizzle-orm` queries (`or(eq(discordId, input), ilike(mcUsername, input))`). This allows administrators and tellers to intuitively link or assign accounts using either a player's **Minecraft Username** or their direct **Discord ID**, significantly reducing friction when re-associating imported CityCorp transactions.
 
 ## Custom Domain Routing & Staff Portal Access
-When a user accesses the platform via a custom domain, the router leverages \`customBankId\` to determine the context. The \`App.tsx\` explicitly registers both the \`BankPortal\` and \`BankAdminLayout\` routes inside the custom domain block so that Staff can navigate directly to the staff portal at \`/bank/:bankId\` on their own domain. 
-Access is restricted via the backend: \`/api/portal/:bankId/lookup\` securely evaluates the \`isStaff\` flag, guaranteeing the Staff Portal button is only visible to authorized personnel (Global Admins and Bank Staff).
+When a user accesses the platform via a custom domain or primary domain, staff can access their bank's management portal directly at `/bank/:bankId` (e.g., `https://vh.azisle.com/bank/1`).
+- **Direct & Secure Access**: Staff members do NOT require access to the Global SaaS Admin panel. They can navigate directly to `/bank/:bankId`. The **Staff Admin Portal** button on the Client Portal is strictly hidden from regular citizens and unauthenticated visitors, only rendering when an authenticated session belongs to a verified staff member (`isStaff`) or Global Admin.
+- **Multi-Provider Authentication**: The staff portal login screen supports both **CityCorp OAuth** (when configured) and **Discord OAuth**. Staff authenticate securely with their credentials.
+- **Backend Access Control**: The `requireBankStaff` middleware validates the user's active session token against the `bankStaff` table for that specific `bankId` (or `globalAdmins`). Unauthorized users (regular citizens attempting staff access) are safely blocked with a clear access-denied screen (`403 Forbidden`).
+- **Staff Link Sharing**: Bank owners can copy their bank's dedicated **Staff Portal Direct Login Link** directly from the **Team Management** page (`/bank/:bankId/team`) to share with their authorized team members.
 
 ## Recent Bug Fixes & OAuth Architecture
 - **SQLite LIKE**: Drizzle SQLite does not natively support `ilike`. Replaced all occurrences of `ilike` with `like` for case-insensitive matching in SQLite.

@@ -260,7 +260,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         </div>
         
         <div className="flex items-center gap-3 relative z-10">
-          {userData?.isStaff && (
+          {(userData?.isStaff || user?.isGlobalAdmin) && (
             <Link 
               to={`/bank/${bankId}`} 
               className="flex items-center gap-2 px-4 py-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-xs font-bold text-indigo-300 transition-all shadow-lg"
