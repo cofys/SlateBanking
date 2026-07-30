@@ -174,6 +174,16 @@ export function BankCards() {
                          }} className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600/40 px-3 py-1.5 rounded transition-colors">Reject</button>
                        </>
                     )}
+                    {app.status !== 'pending' && (
+                      <button onClick={async () => {
+                         try {
+                            const res = await fetch(`/api/banks/${bankId}/credit-applications/${app.id}`, {
+                               method: "DELETE"
+                            });
+                            if(res.ok) fetchData(); else alert("Error");
+                         } catch(e) {}
+                      }} className="text-xs bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-slate-300 px-3 py-1.5 rounded transition-colors">Archive</button>
+                    )}
                   </td>
                 </tr>
               ))}

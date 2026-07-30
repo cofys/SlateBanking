@@ -738,24 +738,23 @@ export function BanksList() {
             </div>
             
             <div className="p-6 space-y-6">
-               <div className="flex justify-end -mt-2 mb-2">
-                  {selectedBank.customDomain ? (
+               <div className="flex justify-end -mt-2 mb-2 gap-2">
+                  {selectedBank.customDomain && (
                     <a 
-                      href={`https://${selectedBank.customDomain}/admin`}
+                      href={`https://${selectedBank.customDomain}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-4 py-2 rounded-lg font-medium transition-colors text-sm"
+                      className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white/70 px-4 py-2 rounded-lg font-medium transition-colors text-sm"
                     >
-                      Login to Whitelabeled Operator Dashboard <ArrowUpRight size={16} />
+                      Visit Public Portal <ArrowUpRight size={16} />
                     </a>
-                  ) : (
-                    <Link 
-                      to={`/bank/${selectedBank.id}`} 
-                      className="flex items-center gap-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-4 py-2 rounded-lg font-medium transition-colors text-sm"
-                    >
-                      Login to Whitelabeled Operator Dashboard <ArrowUpRight size={16} />
-                    </Link>
                   )}
+                  <Link 
+                    to={`/bank/${selectedBank.id}`} 
+                    className="flex items-center gap-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-4 py-2 rounded-lg font-medium transition-colors text-sm"
+                  >
+                    Login to Whitelabeled Operator Dashboard <ArrowUpRight size={16} />
+                  </Link>
                </div>
                
                <div className="grid grid-cols-2 gap-4">

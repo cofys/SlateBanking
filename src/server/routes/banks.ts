@@ -3271,6 +3271,21 @@ banksRouter.put("/api/banks/:bankId/credit-applications/:appId", requireBankStaf
     }
   });
 
+banksRouter.delete("/api/banks/:bankId/credit-applications/:appId", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { creditApplications } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+
+    try {
+      await db.delete(creditApplications)
+        .where(and(eq(creditApplications.id, req.params.appId), eq(creditApplications.bankId, req.params.bankId)));
+      res.json({ success: true });
+    } catch(e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
 banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { loans, bankAccounts, transactions } = await import("../../db/schema");
