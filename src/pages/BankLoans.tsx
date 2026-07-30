@@ -34,11 +34,22 @@ export function BankLoans() {
     fetchData();
   }, [bankId]);
 
+  
+  const [editInterestRate, setEditInterestRate] = useState("");
+  const [editPrincipal, setEditPrincipal] = useState("");
+  const [editContractUrl, setEditContractUrl] = useState("");
+  const [editContractText, setEditContractText] = useState("");
+  
+  
   useEffect(() => {
     if (selectedLoan) {
       setEditCollateralStatus(selectedLoan.collateralStatus || "none");
       setEditCollateralDesc(selectedLoan.collateralDescription || "");
       setEditCollateralVal(selectedLoan.collateralValue ? (selectedLoan.collateralValue / 100).toString() : "");
+      setEditInterestRate(selectedLoan.interestRate ? (selectedLoan.interestRate / 100).toString() : "5");
+      setEditPrincipal(selectedLoan.principalAmount ? (selectedLoan.principalAmount / 100).toString() : "");
+      setEditContractUrl(selectedLoan.contractUrl || "");
+      setEditContractText(selectedLoan.contractText || "");
     }
   }, [selectedLoan]);
 
@@ -58,6 +69,38 @@ export function BankLoans() {
       setLoading(false);
     }
   };
+
+  const handleUpdateLoan = async (statusOverride) => {
+    try {
+      const updates = {
+        interestRate: parseFloat(editInterestRate) * 100,
+        principalAmount: parseFloat(editPrincipal) * 100,
+        collateralStatus: editCollateralStatus,
+        collateralDescription: editCollateralDesc,
+        collateralValue: parseFloat(editCollateralVal) * 100,
+        contractUrl: editContractUrl,
+        contractText: editContractText,
+      };
+      if (statusOverride) updates.status = statusOverride;
+      
+      const res = await fetch(`/api/banks/${bankId}/loans/${selectedLoan.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        alert("Loan updated");
+        fetchData();
+        if (statusOverride === "active") setSelectedLoan(null);
+      } else {
+        const err = await res.json();
+        alert("Error: " + err.error);
+      }
+    } catch (e) {
+      alert("Error: " + e.message);
+    }
+  };
+
 
   const handleProcessDueLoans = async () => {
     setProcessingCron(true);
@@ -582,6 +625,43 @@ export function BankLoans() {
               </div>
 
               <div className="p-6 grid grid-cols-2 gap-8 max-h-[80vh] overflow-y-auto">
+
+                {selectedLoan.status === "pending" || selectedLoan.status === "awaiting_signature" ? (
+                  <div className="col-span-2 bg-black/20 p-6 rounded-xl border border-white/5 space-y-6">
+                    <h3 className="text-white font-medium mb-2">Review Application & Terms</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-white/50 mb-1">Principal Amount ($)</label>
+                        <input type="number" value={editPrincipal} onChange={e => setEditPrincipal(e.target.value)} className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-white/50 mb-1">Interest Rate (%)</label>
+                        <input type="number" value={editInterestRate} onChange={e => setEditInterestRate(e.target.value)} className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-white/50 mb-1">Contract Document URL (Optional)</label>
+                      <input type="text" value={editContractUrl} onChange={e => setEditContractUrl(e.target.value)} className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white" placeholder="https://docs.google.com/..." />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-white/50 mb-1">Contract Text (Optional)</label>
+                      <textarea value={editContractText} onChange={e => setEditContractText(e.target.value)} className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white min-h-[100px]" placeholder="By signing this, you agree to..." />
+                    </div>
+                    
+                    <div className="flex gap-4 pt-4 border-t border-white/5">
+                      <button onClick={() => handleUpdateLoan("awaiting_signature")} className="flex-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 py-2 rounded-lg font-medium">
+                        Request Client Signature
+                      </button>
+                      <button onClick={() => handleUpdateLoan("active")} className="flex-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 py-2 rounded-lg font-medium">
+                        Approve & Fund Immediately
+                      </button>
+                      <button onClick={() => handleUpdateLoan("rejected")} className="flex-1 bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 py-2 rounded-lg font-medium">
+                        Reject Application
+                      </button>
+                    </div>
+                  </div>
+                ) : (<>
+
                 <div className="space-y-6">
                   <div>
                     <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Borrower Identity</p>
@@ -724,6 +804,8 @@ export function BankLoans() {
                     </button>
                   )}
                 </div>
+              </>
+              )}
               </div>
             </motion.div>
           </div>

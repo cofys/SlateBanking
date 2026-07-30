@@ -159,6 +159,8 @@ export const escrows = sqliteTable("escrows", {
   description: text("description"),
   status: text("status").default("pending"), // pending, funded, released, refunded
   contractUrl: text("contract_url"),
+  contractText: text("contract_text"),
+  clientSignedAt: integer("client_signed_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
   bankIdIdx: index("idx_escrows_bank_id").on(table.bankId),
@@ -208,6 +210,8 @@ export const loans = sqliteTable("loans", {
   purpose: text("purpose"), // Why do they need it?
   status: text("status").default("pending"), // pending, active, rejected, paid_off, defaulted
   contractUrl: text("contract_url"),
+  contractText: text("contract_text"),
+  clientSignedAt: integer("client_signed_at", { mode: "timestamp" }),
 
   // Collateral Tracking
   collateralDescription: text("collateral_description"), // Real estate, vehicle, vault assets, etc.
@@ -237,6 +241,8 @@ export const creditApplications = sqliteTable("credit_applications", {
   purpose: text("purpose"),
   status: text("status").default("pending"), // pending, approved, rejected
   contractUrl: text("contract_url"),
+  contractText: text("contract_text"),
+  clientSignedAt: integer("client_signed_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 

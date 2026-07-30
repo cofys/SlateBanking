@@ -108,8 +108,8 @@ export function BankTeam() {
           <h3 className="font-semibold mb-4">Add Staff Member</h3>
           <form onSubmit={handleAdd} className="flex gap-4">
             <div className="flex-1">
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Discord ID</label>
-              <input name="discordId" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="123456789" />
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Discord ID or MC Username</label>
+              <input name="discordId" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="123456789 or notch" />
             </div>
             <div className="flex-1">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Role</label>
@@ -138,7 +138,7 @@ export function BankTeam() {
           <table className="w-full text-left text-sm">
             <thead className="bg-[#1a1a24] text-white/50 border-b border-white/10">
               <tr>
-                <th className="px-6 py-4 font-medium">Discord ID</th>
+                <th className="px-6 py-4 font-medium">Identifier (Discord/MC)</th>
                 <th className="px-6 py-4 font-medium">Role</th>
                 <th className="px-6 py-4 font-medium">Added</th>
                 <th className="px-6 py-4 font-medium text-right">Actions</th>

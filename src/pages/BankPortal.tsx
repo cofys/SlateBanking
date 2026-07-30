@@ -159,7 +159,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     fetch(`/api/portal/${bankId}/info`)
       .then(r => r.json())
       .then(d => {
-        if (!d.error) setBank(d);
+        if (!d.error) { setBank(d); document.title = `${d.name} | Client Portal`; }
       });
       
     fetch("/api/onyx/merchants")

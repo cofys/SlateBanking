@@ -21,6 +21,7 @@ export function BankAdminLayout() {
       .then(b => {
         if (!b.error) {
           setBank(b);
+          document.title = `${b.name} | Staff Portal`;
         }
       })
       .catch(err => console.error("Error loading bank info:", err));

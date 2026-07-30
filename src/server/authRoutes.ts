@@ -53,7 +53,7 @@ export function registerAuthRoutes(app: express.Express) {
 
     const hasCityCorpEnv = Boolean(process.env.CITYRP_APP_ID && (process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET));
 
-    if (provider === 'citycorp' || (bank && (bank.cityCorpAppId || bank.cityCorpAuthUrl)) || hasCityCorpEnv) {
+    if (provider === 'citycorp' || (!provider && ((bank && (bank.cityCorpAppId || bank.cityCorpAuthUrl)) || hasCityCorpEnv))) {
       if (!bank || (!bank.cityCorpAppId && !bank.cityCorpAuthUrl)) {
         try {
           const allBanks = await db.select().from(banks).all();
