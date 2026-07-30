@@ -677,6 +677,7 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Added a manual **"+ Provision in Game"** endpoint and action button on flagged accounts in both `BankAccounts.tsx` and `BankAccountDetail.tsx`.
   - Calls `CityCorpClient.createAccount(accountName)` to provision the corporate account in-game via CityCorp, establishing the missing remote account, setting `existsInGame = true`, and clearing sync flags automatically.
 - **Comprehensive CityCorp Bank Accounts API Coverage (`src/lib/citycorp_api.ts`)**:
+  - **Base URL Alignment (`https://api.cityrp.org/citycorp/corp`)**: Corrected base URL pathing in `CityCorpClient` to route all account operations under `/citycorp/corp/*`, resolving 404 errors on `/accounts/list`.
   - **Native Endpoints**: Fully aligned `CityCorpClient` with official CityCorp API documentation:
     - `GET /corp/accounts`: `getAccountDetails(accountName)`
     - `POST /corp/accounts`: `createAccount(accountName)`

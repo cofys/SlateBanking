@@ -60,7 +60,7 @@ export function buildCityCorpAuthUrl(
 }
 
 export class CityCorpClient {
-  private baseUrl = "https://api.cityrp.org/citycorp";
+  private baseUrl = "https://api.cityrp.org/citycorp/corp";
   private corpId: number;
   private apiUuid: string;
   private apiKey: string;
