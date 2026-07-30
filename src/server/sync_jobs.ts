@@ -36,6 +36,15 @@ export function getSyncJob(jobId: string): SyncJob | undefined {
   return syncJobs.get(jobId);
 }
 
+function cleanName(str: string): string {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .replace(/\(\d{17,20}\)/g, "")
+    .replace(/\b\d{17,20}\b/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
 export async function syncSingleAccount(
   account: any, 
   bank: any, 
@@ -54,11 +63,27 @@ export async function syncSingleAccount(
 
       let res: any = null;
 
-      // 1. If a pre-fetched map from fetchAllAccounts() was provided:
       if (preMap !== undefined) {
         if (preMap !== null) {
-          const targetKey = (account.accountName || "").toLowerCase().trim();
-          const matchedRemote = preMap.get(targetKey);
+          const targetRaw = (account.accountName || "").toString();
+          const targetKey = targetRaw.toLowerCase().trim();
+          const targetClean = cleanName(targetRaw);
+
+          let matchedRemote = preMap.get(targetKey);
+          if (!matchedRemote && targetClean) {
+            matchedRemote = preMap.get(targetClean);
+          }
+
+          if (!matchedRemote && targetClean.length >= 3) {
+            for (const [key, remoteAcc] of preMap.entries()) {
+              const cKey = cleanName(key);
+              if (cKey && (cKey.includes(targetClean) || targetClean.includes(cKey))) {
+                matchedRemote = remoteAcc;
+                break;
+              }
+            }
+          }
+
           if (matchedRemote) {
             res = {
               success: true,
@@ -67,15 +92,20 @@ export async function syncSingleAccount(
               account: matchedRemote
             };
           } else {
-            res = {
-              success: false,
-              status: 404,
-              notFound: true,
-              error: "Account does not exist on CityCorp in-game"
-            };
+            // Direct query fallback for single account
+            const directRes = await client.getAccountDetails(account.accountName);
+            if (directRes && directRes.success) {
+              res = directRes;
+            } else {
+              res = {
+                success: false,
+                status: 404,
+                notFound: true,
+                error: "Account not found on CityCorp in-game"
+              };
+            }
           }
         } else {
-          // Pre-fetch failed with an API error
           res = {
             success: false,
             status: 500,
@@ -84,7 +114,6 @@ export async function syncSingleAccount(
           };
         }
       } else {
-        // Direct query for single account
         res = await client.getAccountDetails(account.accountName);
       }
 
@@ -247,10 +276,12 @@ async function processSyncJob(jobId: string, accounts: any[], bank: any) {
       if (allRemote.success) {
         remoteAccountsMap = new Map();
         for (const remoteAcc of allRemote.accounts) {
-          const nameKey = (remoteAcc.name || remoteAcc.account_name || "").toLowerCase().trim();
-          if (nameKey) {
-            remoteAccountsMap.set(nameKey, remoteAcc);
-          }
+          const rawName = (remoteAcc.name || remoteAcc.account_name || remoteAcc.title || "").toString();
+          const nameKey = rawName.toLowerCase().trim();
+          const cKey = cleanName(rawName);
+
+          if (nameKey) remoteAccountsMap.set(nameKey, remoteAcc);
+          if (cKey && !remoteAccountsMap.has(cKey)) remoteAccountsMap.set(cKey, remoteAcc);
         }
       } else {
         remoteFetchError = allRemote.error || `CityCorp API error (${allRemote.status})`;
@@ -325,8 +356,12 @@ async function processCitizenSyncJob(jobId: string, accounts: any[]) {
             if (allRemote.success) {
               const map = new Map<string, any>();
               for (const remoteAcc of allRemote.accounts) {
-                const nameKey = (remoteAcc.name || remoteAcc.account_name || "").toLowerCase().trim();
+                const rawName = (remoteAcc.name || remoteAcc.account_name || remoteAcc.title || "").toString();
+                const nameKey = rawName.toLowerCase().trim();
+                const cKey = cleanName(rawName);
+
                 if (nameKey) map.set(nameKey, remoteAcc);
+                if (cKey && !map.has(cKey)) map.set(cKey, remoteAcc);
               }
               bankMapInfo = { map, error: null };
             } else {

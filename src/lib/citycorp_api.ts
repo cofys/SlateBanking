@@ -168,21 +168,17 @@ export class CityCorpClient {
     let success = false;
 
     while (page <= maxPages) {
-      const res = await this.listAccounts(page);
+      const res: any = await this.listAccounts(page);
       if (res.error) {
         apiStatus = res.status || 500;
         apiError = res.error;
         break;
       }
       success = true;
-      let list: any[] = [];
-      if (Array.isArray(res.accounts)) list = res.accounts;
-      else if (Array.isArray(res.data)) list = res.data;
-      else if (Array.isArray(res.results)) list = res.results;
-      else if (Array.isArray(res)) list = res;
+      let list: any[] = Array.isArray(res.accounts) ? res.accounts : [];
 
       allAccounts.push(...list);
-      const totalPages = res.totalPages || res.total_pages || 1;
+      const totalPages = res.totalPages || 1;
       if (page >= totalPages || list.length === 0) {
         break;
       }
@@ -338,16 +334,35 @@ export class CityCorpClient {
       if (res.ok) {
          const data = await res.json();
          await this.logApiResult("/accounts/list", { page }, latencyMs, res.status, true);
-         return data;
+
+         let accountsArr: any[] = [];
+         if (Array.isArray(data.accounts)) accountsArr = data.accounts;
+         else if (Array.isArray(data.data)) accountsArr = data.data;
+         else if (Array.isArray(data.results)) accountsArr = data.results;
+         else if (Array.isArray(data.result)) accountsArr = data.result;
+         else if (Array.isArray(data)) accountsArr = data;
+         else if (data.data && Array.isArray(data.data.accounts)) accountsArr = data.data.accounts;
+
+         const currentPage = data.currentPage || data.current_page || data.page || page;
+         const totalPages = data.totalPages || data.total_pages || (data.data && data.data.totalPages) || 1;
+         const totalAccounts = data.totalAccounts || data.total_accounts || accountsArr.length;
+
+         return {
+           accounts: accountsArr,
+           currentPage,
+           totalPages,
+           totalAccounts,
+           raw: data
+         };
       }
       
       let errMsg = await res.text();
       await this.logApiResult("/accounts/list", { page }, latencyMs, res.status, false, errMsg);
-      return { accounts: [], currentPage: 1, totalPages: 1, totalAccounts: 0 };
+      return { accounts: [], currentPage: 1, totalPages: 1, totalAccounts: 0, error: errMsg };
     } catch (e: any) {
       const latencyMs = Date.now() - startTime;
       await this.logApiResult("/accounts/list", { page }, latencyMs, 0, false, e.message);
-      return { accounts: [], currentPage: 1, totalPages: 1, totalAccounts: 0 };
+      return { accounts: [], currentPage: 1, totalPages: 1, totalAccounts: 0, error: e.message };
     }
   }
 

@@ -1693,7 +1693,10 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
 
       // Get existing accounts and customers in DB to avoid duplicates
       const localAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
-      const localAccountNames = new Set(localAccounts.map(a => a.accountName));
+      const localAccountNames = new Set(localAccounts.map(a => a.accountName.toLowerCase().trim()));
+      
+      const cleanName = (str: string) => str ? str.toLowerCase().replace(/\(\d{17,20}\)/g, "").replace(/\b\d{17,20}\b/g, "").replace(/[^a-z0-9]/g, "") : "";
+      const localCleanNames = new Set(localAccounts.map(a => cleanName(a.accountName)));
 
       const localCustomers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
       const localCustomerIds = new Set(localCustomers.map(c => c.discordId));
@@ -1704,18 +1707,25 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
       
       do {
         const listData = await client.listAccounts(currentPage);
-        if (!listData || !listData.accounts) break;
+        const remoteAccounts = listData.accounts || [];
+        if (!remoteAccounts || remoteAccounts.length === 0) break;
         
-        for (const remoteAccount of listData.accounts) {
-          if (!localAccountNames.has(remoteAccount.name)) {
+        for (const remoteAccount of remoteAccounts) {
+          const accName = (remoteAccount.name || remoteAccount.account_name || remoteAccount.title || "").toString().trim();
+          if (!accName) continue;
+
+          const accNameLower = accName.toLowerCase();
+          const accClean = cleanName(accName);
+
+          if (!localAccountNames.has(accNameLower) && (!accClean || !localCleanNames.has(accClean))) {
             // Check for a 17-20 digit Discord ID in the name (e.g. Player (123456789012345678))
-            const discordMatch = remoteAccount.name.match(/\b\d{17,20}\b/);
+            const discordMatch = accName.match(/\b\d{17,20}\b/);
             const inferredOwner = discordMatch 
               ? discordMatch[0] 
-              : `unassigned_${remoteAccount.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+              : `unassigned_${accName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
             const accountId = uuidv4();
-            const currentBalance = Math.round(remoteAccount.balance * 100) || 0;
+            const currentBalance = Math.round((Number(remoteAccount.balance) || 0) * 100);
             const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 
             // 1. Create the Local Bank Account
@@ -1723,8 +1733,11 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
               id: accountId,
               bankId: bank.id,
               ownerDiscordId: inferredOwner,
-              accountName: remoteAccount.name,
+              accountName: accName,
               balance: currentBalance,
+              existsInGame: true,
+              lastSyncedAt: new Date(),
+              syncError: null,
               createdAt: fifteenDaysAgo,
             });
 
@@ -1872,7 +1885,8 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
               createdAt: fifteenDaysAgo
             });
 
-            localAccountNames.add(remoteAccount.name);
+            localAccountNames.add(accNameLower);
+            if (accClean) localCleanNames.add(accClean);
             importedCount++;
           }
         }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
-import { Plus, Trash2, Search, Wallet, User, Eye, ArrowRight, RefreshCw, DollarSign, X } from "lucide-react";
+import { Plus, Trash2, Search, Wallet, User, Eye, ArrowRight, RefreshCw, DollarSign, X, DownloadCloud } from "lucide-react";
 import { formatMoney } from "../lib/utils";
 
 export function BankAccounts() {
@@ -11,6 +11,7 @@ export function BankAccounts() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ total: number; processed: number; current?: string; syncedCount: number; flaggedCount: number } | null>(null);
   const [syncResultMsg, setSyncResultMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -96,6 +97,27 @@ export function BankAccounts() {
       console.error(err);
       alert("Error triggering balance sync");
       setSyncing(false);
+    }
+  };
+
+  const handleAutoImport = async () => {
+    if (!confirm("Import all existing CityCorp corporate accounts from in-game into Slate SaaS?")) return;
+    setImporting(true);
+    setSyncResultMsg(null);
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/import`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncResultMsg(`Successfully imported ${data.importedCount || 0} remote account(s) from in-game CityCorp!`);
+        fetchAccounts();
+      } else {
+        alert(data.error || "Failed to auto-import remote accounts");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error auto-importing remote accounts");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -208,12 +230,22 @@ export function BankAccounts() {
 
           <button 
             onClick={handleSyncAll}
-            disabled={syncing}
+            disabled={syncing || importing}
             className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/15 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 hover:border-indigo-500/50 disabled:opacity-50"
             title="Check each account against CityCorp API in-game"
           >
             <RefreshCw size={15} className={syncing ? "animate-spin text-indigo-400" : "text-indigo-400"} />
             {syncing ? "Syncing Accounts..." : "Sync Balances"}
+          </button>
+
+          <button 
+            onClick={handleAutoImport}
+            disabled={importing || syncing}
+            className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 hover:border-emerald-500 disabled:opacity-50"
+            title="Auto-import all in-game corporate accounts from CityCorp"
+          >
+            <DownloadCloud size={15} className={importing ? "animate-bounce text-emerald-400" : "text-emerald-400"} />
+            {importing ? "Importing..." : "Auto-Import In-Game Accounts"}
           </button>
 
           <button 
