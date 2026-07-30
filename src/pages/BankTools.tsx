@@ -7,6 +7,8 @@ export function BankTools() {
   const [activeTool, setActiveTool] = useState<string>("mass-deposit");
   const [running, setRunning] = useState(false);
   const [complete, setComplete] = useState(false);
+  const [sqliteStats, setSqliteStats] = useState<any>(null);
+  const [sqlScriptText, setSqlScriptText] = useState<string>("");
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
@@ -26,7 +28,8 @@ export function BankTools() {
             { id: "purge-zero", name: "Purge Zero-Balance" },
             { id: "freeze-all", name: "Emergency Lock" },
             { id: "auto-import", name: "Auto-Import Accounts" },
-            { id: "data-migration", name: "Intelligent Data Migration" },
+            { id: "sqlite-migration", name: "SQLite (.db) Migration" },
+            { id: "data-migration", name: "Intelligent JSON Migration" },
             { id: "seed-demo", name: "Populate Demo Data" },
           ].map(tool => (
             <button
@@ -373,6 +376,141 @@ export function BankTools() {
               </form>
             </div>
           )}
+          {activeTool === "sqlite-migration" && (
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Upload size={20} /></div>
+                <div>
+                  <h3 className="text-xl font-bold">SQLite (.db) Direct Database Migration</h3>
+                  <p className="text-xs text-emerald-400 font-mono mt-0.5">Supports .db, .sqlite, .sqlite3 files or .sql script dumps</p>
+                </div>
+              </div>
+              <p className="text-white/60 text-sm mb-6 max-w-xl leading-relaxed">
+                Migrating from an older bot or legacy SQLite database? Upload your raw <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">.db</code> file or paste SQL queries below.
+                Our ingestion engine will parse tables including <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">accounts</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loan_products</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loans</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loan_applications</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">transactions</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">invoices</code>, and <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">payroll_entries</code>.
+              </p>
+
+              <form onSubmit={async (e) => {
+                 e.preventDefault();
+                 setRunning(true);
+                 setComplete(false);
+                 setSqliteStats(null);
+
+                 try {
+                     const fileInput = document.getElementById("sqlite-file-input") as HTMLInputElement;
+                     const file = fileInput?.files?.[0];
+
+                     let payload: any = {};
+
+                     if (file) {
+                       if (file.name.endsWith(".sql")) {
+                         const text = await file.text();
+                         payload.dbSql = text;
+                       } else {
+                         // Read binary .db file into base64
+                         const arrayBuffer = await file.arrayBuffer();
+                         const bytes = new Uint8Array(arrayBuffer);
+                         let binary = "";
+                         for (let i = 0; i < bytes.byteLength; i++) {
+                           binary += String.fromCharCode(bytes[i]);
+                         }
+                         payload.dbBase64 = btoa(binary);
+                       }
+                     } else if (sqlScriptText.trim()) {
+                       payload.dbSql = sqlScriptText.trim();
+                     } else {
+                       alert("Please select a .db/.sqlite/.sql file OR paste SQL dump script text.");
+                       setRunning(false);
+                       return;
+                     }
+
+                     const res = await fetch(`/api/banks/${bank.id}/tools/sqlite-migration`, {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify(payload)
+                     });
+
+                     const data = await res.json();
+                     if (!res.ok) {
+                       alert(data.error || "SQLite migration failed");
+                     } else {
+                       setComplete(true);
+                       setSqliteStats(data);
+                     }
+                 } catch (err: any) {
+                     alert("Error reading file or network failure: " + err.message);
+                 } finally {
+                     setRunning(false);
+                 }
+              }} className="max-w-xl space-y-6">
+                
+                <div>
+                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Option 1: Upload SQLite Database File (.db / .sqlite / .sqlite3 / .sql)</label>
+                   <input id="sqlite-file-input" type="file" accept=".db,.sqlite,.sqlite3,.sql" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-400 hover:file:bg-emerald-500/30" />
+                   <p className="text-xs text-white/40 mt-1.5">Direct binary upload of your legacy SQLite file. We parse all tables safely on the server.</p>
+                </div>
+
+                <div>
+                   <div className="flex justify-between items-center mb-2">
+                     <label className="block text-xs font-medium text-white/50 uppercase tracking-wide">Option 2: Or Paste SQL Script / Schema Dump</label>
+                     <span className="text-[10px] text-zinc-500">CREATE TABLE &amp; INSERT INTO statements</span>
+                   </div>
+                   <textarea
+                     rows={5}
+                     value={sqlScriptText}
+                     onChange={(e) => setSqlScriptText(e.target.value)}
+                     placeholder={`CREATE TABLE accounts (\n  account_name TEXT PRIMARY KEY,\n  discord_id TEXT NOT NULL,\n  mc_username TEXT,\n  ...\n);\n\nINSERT INTO accounts VALUES ('main_checking', '123456789', 'Steve', ...);`}
+                     className="w-full bg-[#1a1a24] border border-white/10 rounded-lg p-3 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500 leading-relaxed"
+                   />
+                </div>
+
+                {complete && sqliteStats && (
+                  <div className="p-5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs space-y-3">
+                    <p className="font-bold text-emerald-400 text-sm flex items-center gap-1.5">
+                      <Sparkles size={16} /> Migration Complete! Database successfully imported.
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
+                         <span className="text-white/50 block text-[10px] uppercase">Bank Accounts</span>
+                         <span className="text-lg font-bold text-white">{sqliteStats.accountsImported || 0}</span>
+                       </div>
+                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
+                         <span className="text-white/50 block text-[10px] uppercase">Customers</span>
+                         <span className="text-lg font-bold text-white">{sqliteStats.customersImported || 0}</span>
+                       </div>
+                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
+                         <span className="text-white/50 block text-[10px] uppercase">Transactions</span>
+                         <span className="text-lg font-bold text-white">{sqliteStats.transactionsImported || 0}</span>
+                       </div>
+                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
+                         <span className="text-white/50 block text-[10px] uppercase">Active Loans</span>
+                         <span className="text-lg font-bold text-white">{sqliteStats.loansImported || 0}</span>
+                       </div>
+                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
+                         <span className="text-white/50 block text-[10px] uppercase">Invoices</span>
+                         <span className="text-lg font-bold text-white">{sqliteStats.invoicesImported || 0}</span>
+                       </div>
+                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
+                         <span className="text-white/50 block text-[10px] uppercase">Payrolls</span>
+                         <span className="text-lg font-bold text-white">{sqliteStats.payrollsImported || 0}</span>
+                       </div>
+                    </div>
+                    {sqliteStats.tablesFound && sqliteStats.tablesFound.length > 0 && (
+                      <p className="text-[11px] text-white/50 pt-1">
+                        Tables detected &amp; parsed in .db file: <span className="font-mono text-emerald-400">{sqliteStats.tablesFound.join(", ")}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <button disabled={running} type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
+                  {running ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} />}
+                  {running ? "Ingesting & Migrating SQLite Data..." : "Execute SQLite Migration"}
+                </button>
+              </form>
+            </div>
+          )}
+
           {activeTool === "data-migration" && (
             <div>
               <div className="flex items-center gap-3 mb-6">

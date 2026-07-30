@@ -3923,6 +3923,304 @@ banksRouter.post("/api/banks/:bankId/tools/data-migration", [requireBankStaff, r
     }
   });
 
+banksRouter.post("/api/banks/:bankId/tools/sqlite-migration", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
+    const { db } = await import("../../db/index");
+    const { 
+      bankCustomers, 
+      bankAccounts, 
+      transactions, 
+      loanProducts, 
+      loans, 
+      creditApplications, 
+      invoices, 
+      payrollJobs, 
+      auditLogs 
+    } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+    const fs = await import("fs");
+    const path = await import("path");
+    const os = await import("os");
+    const { default: Database } = await import("better-sqlite3");
+
+    let tempPath: string | null = null;
+    let legacyDb: any = null;
+
+    try {
+      const bId = req.params.bankId;
+      const { dbBase64, dbSql } = req.body;
+
+      if (!dbBase64 && !dbSql) {
+        return res.status(400).json({ error: "Please upload a valid SQLite .db file or provide a SQL dump script." });
+      }
+
+      tempPath = path.join(os.tmpdir(), `sqlite_import_${uuidv4()}.db`);
+
+      if (dbBase64) {
+        const buffer = Buffer.from(dbBase64, "base64");
+        fs.writeFileSync(tempPath, buffer);
+        legacyDb = new Database(tempPath, { readonly: true });
+      } else if (dbSql) {
+        legacyDb = new Database(tempPath);
+        legacyDb.exec(dbSql);
+      }
+
+      const tableRows = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+      const tableNames = tableRows.map((t: any) => t.name.toLowerCase());
+
+      let accountsImported = 0;
+      let customersImported = 0;
+      let transactionsImported = 0;
+      let loanProductsImported = 0;
+      let loansImported = 0;
+      let loanAppsImported = 0;
+      let invoicesImported = 0;
+      let payrollsImported = 0;
+
+      const accountNameToIdMap = new Map<string, string>();
+
+      // 1. Process accounts table
+      if (tableNames.includes("accounts")) {
+        const legacyAccounts = legacyDb.prepare("SELECT * FROM accounts").all();
+        for (const row of legacyAccounts) {
+          const discordId = (row.discord_id || row.owner_discord_id || "unlinked_" + (row.account_name || uuidv4())).toString();
+          const accountName = (row.account_name || row.name || `Migrated (${discordId})`).toString();
+          
+          const existingCust = await db.select().from(bankCustomers).where(
+            and(eq(bankCustomers.bankId, bId), eq(bankCustomers.discordId, discordId))
+          );
+          if (existingCust.length === 0) {
+            await db.insert(bankCustomers).values({
+              id: uuidv4(),
+              bankId: bId,
+              discordId: discordId,
+              kycStatus: row.verified ? "approved" : "pending",
+              mcUsername: row.mc_username || null,
+              notes: `Migrated from SQLite .db | RP Name: ${row.rp_name || ''} | Address: ${row.registered_address || ''}`,
+              createdAt: row.created_at ? new Date(row.created_at) : new Date()
+            });
+            customersImported++;
+          }
+
+          let balanceCents = 0;
+          if (row.balance !== undefined) {
+            balanceCents = Math.round(Number(row.balance) * 100);
+          }
+
+          const existingAcc = await db.select().from(bankAccounts).where(
+            and(eq(bankAccounts.bankId, bId), eq(bankAccounts.accountName, accountName))
+          );
+
+          let accId: string;
+          if (existingAcc.length === 0) {
+            accId = uuidv4();
+            await db.insert(bankAccounts).values({
+              id: accId,
+              bankId: bId,
+              ownerDiscordId: discordId,
+              accountName: accountName,
+              accountType: row.account_type || "personal",
+              balance: balanceCents,
+              isFrozen: Boolean(row.frozen),
+              isActive: true,
+              createdAt: row.created_at ? new Date(row.created_at) : new Date()
+            });
+            accountsImported++;
+          } else {
+            accId = existingAcc[0].id;
+          }
+
+          accountNameToIdMap.set(accountName, accId);
+        }
+      }
+
+      // 2. Process loan_products table
+      if (tableNames.includes("loan_products")) {
+        const legacyLoanProducts = legacyDb.prepare("SELECT * FROM loan_products").all();
+        for (const lp of legacyLoanProducts) {
+          const prodId = uuidv4();
+          const maxCents = Math.round(Number(lp.max_amount || lp.amount || 10000) * 100);
+          const rateBps = Math.round(Number(lp.interest_rate || 5) * 100);
+          const termWeeks = Number(lp.term_weeks || 4);
+
+          await db.insert(loanProducts).values({
+            id: prodId,
+            bankId: bId,
+            name: lp.name || "Migrated Loan Product",
+            maxAmount: maxCents,
+            interestRate: rateBps,
+            termDays: termWeeks * 7,
+            isActive: lp.is_active !== undefined ? Boolean(lp.is_active) : true,
+            createdAt: new Date()
+          });
+          loanProductsImported++;
+        }
+      }
+
+      // 3. Process loans table
+      if (tableNames.includes("loans")) {
+        const legacyLoans = legacyDb.prepare("SELECT * FROM loans").all();
+        for (const loan of legacyLoans) {
+          const targetAccId = accountNameToIdMap.get(loan.account_name) || null;
+          if (targetAccId) {
+            const amtCents = Math.round(Number(loan.amount || 0) * 100);
+            const remCents = Math.round(Number(loan.remaining_amount !== undefined ? loan.remaining_amount : loan.total_due || loan.amount || 0) * 100);
+            const rateBps = Math.round(Number(loan.interest_rate || 5) * 100);
+            const borrowerDiscordId = (loan.discord_id || "unlinked_borrower").toString();
+
+            await db.insert(loans).values({
+              id: uuidv4(),
+              bankId: bId,
+              discordId: borrowerDiscordId,
+              accountId: targetAccId,
+              principalAmount: amtCents,
+              remainingAmount: remCents,
+              interestRate: rateBps,
+              nextPaymentDate: loan.next_due_date ? new Date(loan.next_due_date) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+              purpose: loan.purpose || "Migrated legacy loan",
+              status: loan.is_active ? "active" : "paid_off",
+              collateralDescription: loan.collateral || null,
+              createdAt: loan.created_at ? new Date(loan.created_at) : new Date()
+            });
+            loansImported++;
+          }
+        }
+      }
+
+      // 4. Process loan_applications table
+      if (tableNames.includes("loan_applications")) {
+        const legacyApps = legacyDb.prepare("SELECT * FROM loan_applications").all();
+        for (const app of legacyApps) {
+          const reqCents = Math.round(Number(app.amount || 0) * 100);
+          const applicantDiscordId = (app.discord_id || "unlinked_applicant").toString();
+          const backingAccId = accountNameToIdMap.get(app.account_name) || Array.from(accountNameToIdMap.values())[0];
+
+          if (backingAccId) {
+            await db.insert(creditApplications).values({
+              id: uuidv4(),
+              bankId: bId,
+              discordId: applicantDiscordId,
+              accountId: backingAccId,
+              requestedLimit: reqCents,
+              monthlyIncome: Math.round(Number(app.monthly_income || 1000) * 100),
+              purpose: app.purpose || "Migrated loan application",
+              status: app.status || "pending",
+              createdAt: app.created_at ? new Date(app.created_at) : new Date()
+            });
+            loanAppsImported++;
+          }
+        }
+      }
+
+      // 5. Process transactions table
+      if (tableNames.includes("transactions")) {
+        const legacyTxs = legacyDb.prepare("SELECT * FROM transactions").all();
+        for (const tx of legacyTxs) {
+          const accId = accountNameToIdMap.get(tx.account_name) || null;
+          const amtCents = Math.abs(Math.round(Number(tx.amount || 0) * 100));
+          const txType = tx.trans_type || tx.type || "transfer";
+          const isOut = txType === "withdraw" || txType === "fee" || txType === "tax" || Number(tx.amount) < 0;
+
+          await db.insert(transactions).values({
+            id: uuidv4(),
+            bankId: bId,
+            fromAccountId: isOut ? accId : null,
+            toAccountId: !isOut ? accId : null,
+            type: txType,
+            amount: amtCents,
+            description: tx.description || `Legacy transaction with ${tx.other_party || 'external party'}`,
+            timestamp: tx.timestamp ? new Date(tx.timestamp) : new Date()
+          });
+          transactionsImported++;
+        }
+      }
+
+      // 6. Process invoices table
+      if (tableNames.includes("invoices")) {
+        const legacyInvoices = legacyDb.prepare("SELECT * FROM invoices").all();
+        for (const inv of legacyInvoices) {
+          const senderAccId = accountNameToIdMap.get(inv.sender_account) || null;
+          const recipientAccId = accountNameToIdMap.get(inv.recipient_account) || Array.from(accountNameToIdMap.values())[0];
+          const amtCents = Math.round(Number(inv.amount || 0) * 100);
+
+          if (senderAccId && recipientAccId) {
+            await db.insert(invoices).values({
+              id: uuidv4(),
+              bankId: bId,
+              billerAccountId: senderAccId,
+              customerAccountId: recipientAccId,
+              amount: amtCents,
+              description: inv.description || `Invoice for ${inv.recipient_name || 'Customer'}`,
+              dueDate: inv.due_date ? new Date(inv.due_date) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+              status: inv.status || "pending",
+              createdAt: inv.created_at ? new Date(inv.created_at) : new Date()
+            });
+            invoicesImported++;
+          }
+        }
+      }
+
+      // 7. Process payroll_entries table
+      if (tableNames.includes("payroll_entries")) {
+        const legacyPayroll = legacyDb.prepare("SELECT * FROM payroll_entries").all();
+        for (const pay of legacyPayroll) {
+          const employerAccId = accountNameToIdMap.get(pay.employer_account) || null;
+          const recipientAccId = accountNameToIdMap.get(pay.recipient_account) || null;
+          const amtCents = Math.round(Number(pay.amount || 0) * 100);
+
+          if (employerAccId && recipientAccId) {
+            await db.insert(payrollJobs).values({
+              id: uuidv4(),
+              bankId: bId,
+              employerAccountId: employerAccId,
+              employeeAccountId: recipientAccId,
+              amount: amtCents,
+              frequency: "biweekly",
+              nextRun: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+              isActive: true,
+              createdAt: pay.timestamp ? new Date(pay.timestamp) : new Date()
+            });
+            payrollsImported++;
+          }
+        }
+      }
+
+      if (legacyDb) legacyDb.close();
+      if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: bId,
+        userDiscordId: 'Operator',
+        action: `sqlite_migration`,
+        details: `Imported SQLite database: ${accountsImported} accounts, ${customersImported} customers, ${transactionsImported} txs, ${loansImported} loans, ${invoicesImported} invoices.`,
+        timestamp: new Date()
+      });
+
+      res.json({
+        success: true,
+        accountsImported,
+        customersImported,
+        transactionsImported,
+        loanProductsImported,
+        loansImported,
+        loanAppsImported,
+        invoicesImported,
+        payrollsImported,
+        tablesFound: tableNames
+      });
+    } catch (e: any) {
+      if (legacyDb) {
+        try { legacyDb.close(); } catch (_) {}
+      }
+      if (tempPath && fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath); } catch (_) {}
+      }
+      console.error("SQLite Migration Error:", e);
+      res.status(500).json({ error: e.message || "Failed to parse and import SQLite database" });
+    }
+  });
+
 banksRouter.post("/api/banks/:bankId/tools/seed-demo", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("../../db/index");
     const { 

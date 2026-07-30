@@ -207,8 +207,16 @@ The platform relies on a SQLite database configured via `drizzle.config.ts` and 
 
 ---
 
-## 💾 Intelligent Data Migration Module
-Contained within `BankTools.tsx` and the `mass-action` APIs is a full ingestion system. Legacy roleplay server databases (JSON dumps) can be injected, parsed, and normalized, seamlessly porting thousands of ancient accounts into valid Slate SaaS ledger records with intact routing metrics.
+## 💾 Intelligent Data & SQLite Migration Engine
+Contained within `BankTools.tsx` and the `/api/banks/:bankId/tools/*` endpoints is a comprehensive data ingestion suite:
+1. **Intelligent JSON Migration**: Upload unstructured or loosely-structured JSON historical data (accounts, customers, transactions, fees, taxes). The system intelligently parses it, provisions accounts, sets historical balances, and backfills the audit log and transaction ledgers.
+2. **SQLite (.db) Direct Database Migration**: Upload raw `.db`, `.sqlite`, or `.sqlite3` binary database files from legacy bots/frameworks or paste SQL schema dumps (`CREATE TABLE` & `INSERT INTO` statements). Powered by server-side `better-sqlite3`, the ingestion engine directly queries and maps legacy schema structures including:
+   - `accounts`: Maps primary account names, balances, owner Discord IDs, MC usernames, RP names, addresses, and freeze/verification flags.
+   - `loan_products`: Extracts product names, min/max loan amounts, interest rates (bps), and term days into Slate `loanProducts`.
+   - `loans`: Converts legacy loan entries to Slate `loans`, linking backing accounts, principal amounts, remaining balances, APRs, and collateral descriptions.
+   - `loan_applications`: Ported directly to Slate `creditApplications`.
+   - `transactions`: Backfills the double-entry transaction ledgers with original timestamps, directions, and transaction types.
+   - `invoices` & `payroll_entries`: Restores active billing schedules and recurring payroll jobs (`payrollJobs`).
 
 ---
 
@@ -602,6 +610,15 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 - **Pruned Single-Pass Module Compilation (`Dockerfile`)**:
   - Replaced the redundant double `npm install` in the runner image with a single-pass `builder` stage that compiles native C++ modules (such as `better-sqlite3`) and runs `npm prune --omit=dev`.
   - The runner stage directly copies pre-compiled `node_modules` from the builder stage, eliminating native module build failures, `--force` flag errors, and container timeouts during Coolify deployment.
+
+## Direct SQLite (.db / .sqlite / .sql) Migration Engine
+- **Direct SQLite Upload & Parsing (`/api/banks/:bankId/tools/sqlite-migration`, `BankTools.tsx`)**:
+  - Implemented direct binary `.db` database file and `.sql` script dump ingestion for banks migrating from legacy bots/frameworks.
+  - Automatically handles binary base64 decoding and safe server-side query processing using `better-sqlite3`.
+  - Parses and maps legacy table structures: `accounts`, `loan_products`, `loans`, `loan_applications`, `transactions`, `invoices`, and `payroll_entries`.
+  - Restores accounts, customer KYC notes, double-entry ledger history, active loan terms, credit applications, invoices, and recurring payroll jobs atomically into Slate SaaS.
+  - Displays a detailed visual breakdown badge summary (Accounts, Customers, Ledger Transactions, Loans, Loan Products, Invoices, Payrolls, and Detected Tables) in the Bank Tools operator interface.
+
 
 
 
