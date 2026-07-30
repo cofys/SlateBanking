@@ -232,10 +232,8 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         ).get();
       }
 
-      const { bankStaff } = await import("../../db/schema");
-      let isStaff = false;
-      const staff = await db.select().from(bankStaff).where(and(eq(bankStaff.bankId, bankId), eq(bankStaff.discordId, discordId))).get();
-      if (staff) isStaff = true;
+      const decodedUser = (req as any).user;
+      const isStaff = await isUserStaffOrAdmin(bankId, discordId, decodedUser?.isGlobalAdmin);
 
       const userAccounts = await db.select({
         id: bankAccounts.id,
@@ -250,11 +248,20 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       .where(and(eq(bankAccounts.ownerDiscordId, discordId), eq(bankAccounts.bankId, bankId)));
 
       if (userAccounts.length === 0) {
-         return res.json({ accounts: [], recentTx: [], pendingInvoices: [], cards: [], loans: [], customer: customer ? {
-           kycStatus: customer.kycStatus,
-           mcUsername: customer.mcUsername,
-           mcUuid: customer.mcUuid
-         } : null });
+         return res.json({ 
+           isStaff,
+           accounts: [], 
+           recentTx: [], 
+           pendingInvoices: [], 
+           cards: [], 
+           loans: [], 
+           customer: customer ? {
+             kycStatus: customer.kycStatus,
+             mcUsername: customer.mcUsername,
+             mcUuid: customer.mcUuid,
+             linkedDiscordId: customer.linkedDiscordId
+           } : null 
+         });
       }
 
       const accountIds = userAccounts.map(a => a.id);

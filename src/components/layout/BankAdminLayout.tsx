@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Routes, Route, Link, Outlet, useLocation } from "react-router-dom";
-import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn } from "lucide-react";
+import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 
 export function BankAdminLayout() {
@@ -13,27 +13,43 @@ export function BankAdminLayout() {
   const { user, login, logout, isLoading } = useAuth();
 
   useEffect(() => {
-    fetch(`/api/banks`)
+    if (!bankId) return;
+
+    // Fetch public bank info (works for authenticated and unauthenticated visitors)
+    fetch(`/api/portal/${bankId}/info`)
       .then(r => r.json())
-      .then(banks => {
-        const b = banks.find((bx: any) => bx.id === bankId);
-        setBank(b);
-      });
-      
-    // Fetch settings for branding
-    fetch(`/api/banks/${bankId}/settings`)
-       .then(async r => {
+      .then(b => {
+        if (!b.error) {
+          setBank(b);
+        }
+      })
+      .catch(err => console.error("Error loading bank info:", err));
+
+    // Fetch settings for branding & permission check if user is logged in
+    if (user) {
+      fetch(`/api/banks/${bankId}/settings`)
+        .then(async r => {
           if (r.status === 401 || r.status === 403) {
-             setAccessDenied(true);
-             return null;
+            setAccessDenied(true);
+            return null;
           }
-          return r.json()
-       })
-       .then(s => {
-          if (s) setSettings(s);
-       })
-       .catch(() => {});
-  }, [bankId]);
+          return r.json();
+        })
+        .then(s => {
+          if (s && !s.error) {
+            setSettings(s);
+            setAccessDenied(false);
+          } else if (s && s.error) {
+            setAccessDenied(true);
+          }
+        })
+        .catch(() => {
+          setAccessDenied(true);
+        });
+    } else {
+      setAccessDenied(false);
+    }
+  }, [bankId, user]);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -158,6 +174,7 @@ export function BankAdminLayout() {
       title: "Operations",
       links: [
         { name: "Compliance", path: `/bank/${bankId}/compliance`, icon: ShieldCheck },
+        { name: "MEA Monthly Report", path: `/bank/${bankId}/mea-report`, icon: FileText },
         { name: "Clearinghouse", path: `/bank/${bankId}/clearinghouse`, icon: Building2 },
         { name: "Audit Log", path: `/bank/${bankId}/audit`, icon: ShieldCheck },
         { name: "Bulk Tools", path: `/bank/${bankId}/tools`, icon: Wrench },

@@ -1,5 +1,5 @@
 import { BankProducts } from "./pages/BankProducts";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
 import { BankAdminLayout } from "./components/layout/BankAdminLayout";
 import { Overview } from "./pages/Overview";
@@ -39,6 +39,7 @@ import { BankInvoices } from "./pages/BankInvoices";
 import { PublicDocs } from "./pages/PublicDocs";
 
 import { BankCompliance } from "./pages/BankCompliance";
+import { BankMEAReport } from "./pages/BankMEAReport";
 import { useState, useEffect } from "react";
 
 
@@ -84,6 +85,7 @@ function App() {
             <Route path="accounts/:accountId" element={<BankAccountDetail />} />
             <Route path="transactions" element={<BankTransactions />} />
             <Route path="compliance" element={<BankCompliance />} />
+            <Route path="mea-report" element={<BankMEAReport />} />
             <Route path="loans" element={<BankLoans />} />
             <Route path="vaults" element={<BankVaults />} />
             <Route path="cards" element={<BankCards />} />
@@ -100,7 +102,15 @@ function App() {
             <Route path="products" element={<BankProducts />} />
             <Route path="settings" element={<BankSettings />} />
           </Route>
+          <Route path="/bank" element={<Navigate to={`/bank/${customBankId}`} replace />} />
+          <Route path="/admin" element={<Navigate to={`/bank/${customBankId}`} replace />} />
+          <Route path="/staff" element={<Navigate to={`/bank/${customBankId}`} replace />} />
+          <Route path="/portal" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal overrideBankId={customBankId} /></div>} />
+          <Route path="/portal/:bankId" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal /></div>} />
+          <Route path="/docs" element={<PublicDocs />} />
+          <Route path="/pay/:linkId" element={<PayLink />} />
           <Route path="/" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal overrideBankId={customBankId} /></div>} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     );
@@ -125,6 +135,7 @@ function App() {
           <Route path="accounts/:accountId" element={<BankAccountDetail />} />
           <Route path="transactions" element={<BankTransactions />} />
           <Route path="compliance" element={<BankCompliance />} />
+          <Route path="mea-report" element={<BankMEAReport />} />
           <Route path="loans" element={<BankLoans />} />
           <Route path="vaults" element={<BankVaults />} />
           <Route path="cards" element={<BankCards />} />

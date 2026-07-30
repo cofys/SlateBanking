@@ -378,6 +378,17 @@ When a user accesses the platform via a custom domain or primary domain, staff c
 ## Custom Domain OAuth Redirect URI (Update)
 - Replaced the proxy header domain extraction for \`getRedirectUri()\` with a more robust check that prioritizes the \`Referer\` header to correctly derive the true custom domain origin when users initiate the Discord OAuth linking flow. This avoids Cloud Run proxy overriding the \`Host\` header with the internal `.run.app` address and ensures Discord correctly matches the registered Redirect URI for custom bank bots.
 
+## MEA Monthly Financial Institution Report Generator
+Bank staff can access the dedicated **MEA Financial Institution Report** tool directly under **Operations** in the bank management navigation (`/bank/:bankId/mea-report`) or via the **Analytics & Reports** dashboard.
+- **Official 5-Page Standard Compliance**: Formatted matching the exact MEA regulatory document layout, including Corporate Information, Executive Overview, Technical Disclosures, Consumer Financial Protections Q&A, Financial Disclosures (Income Statement, Loan Register, Collateral Register), Balance Sheet (Assets, Liabilities, Equity), and Certification Statement.
+- **Automated Ledger Sync**: Clicking **Sync Ledger** automatically fetches real-time figures from the database:
+  - Bank cash reserves & total deposits held
+  - Active business/personal loan principal balances & accrued interest
+  - Appraised collateral assets
+  - Staff management team & authorized access list
+  - Bank technical credentials & Discord links
+- **Interactive Customization & Export**: Staff can review, edit, and override text fields or tabular values. Offers one-click **Print / Download PDF** with browser print media formatting (`@media print`), **Copy Markdown** for Discord/forum disclosures, and **Sync Ledger** for instantaneous database recalculations.
+
 ## Bot Maintenance Modes
 - Two levels of Discord bot maintenance controls have been implemented:
   - **Global Bot Maintenance (`onyxSettings.globalBotMaintenance`)**: Available in the Global Admin Onyx Settings panel. Activating this forcibly stops all running bot instances across the entire platform and suspends provisioning for any new or restarting banks.
@@ -396,6 +407,10 @@ When a user accesses the platform via a custom domain or primary domain, staff c
 
 ## UX Improvements
 - **Custom Domain URLs**: The "View Client Portal" button in the Bank Overview now natively links directly to the root of the custom domain (e.g. `https://bank.azisle.com/`) instead of using the parameterized path (`/portal/bankId`), delivering a cleaner white-label experience.
+- **Bank Staff Portal Access & Custom Domain Login Flow**:
+  - **Public Info Fetching**: `BankAdminLayout` now retrieves public bank branding and OAuth configuration from `/api/portal/:bankId/info` (which does not require authentication). Unauthenticated staff members navigating directly to `/bank/:bankId` or custom domain paths like `subdomain.azisle.com/bank/1` (or `/bank`, `/staff`, `/admin`) are immediately presented with the **Staff Portal Login** view (supporting both Discord and CityCorp OAuth options) rather than getting stuck on loading or 401 screens.
+  - **Staff Status Recognition**: The portal lookup endpoint (`/api/portal/:bankId/lookup`) checks `isUserStaffOrAdmin` (validating both `bankStaff` table entries and `globalAdmins` privileges) and returns `isStaff: true` across all responses—even for staff members who do not hold customer bank accounts.
+  - **Header & Card Navigation**: Verified staff members see a **Staff Admin Portal** button in the client portal header. Unauthenticated visitors are also provided with a direct **Staff Admin Portal →** link on the client authentication card.
 
 ## Cross-Tenant Escrow & Invoice Isolation (IDOR)
 - **Invoice Status Updates**: Ensured that when a bank staff member updates the status of an invoice (`/api/banks/:bankId/invoices/:invoiceId/status`), the query strictly enforces `eq(invoices.bankId, req.params.bankId)`. This prevents a malicious staff member at Bank A from updating the state of an invoice belonging to Bank B by guessing its UUID.

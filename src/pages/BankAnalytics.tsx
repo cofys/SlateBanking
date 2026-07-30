@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area } from "recharts";
-import { TrendingUp, Users, ArrowRightLeft, DollarSign } from "lucide-react";
+import { TrendingUp, Users, ArrowRightLeft, DollarSign, FileText } from "lucide-react";
+import { Link } from "react-router-dom";
 import { formatMoney } from "../lib/utils";
 
 export function BankAnalytics() {
@@ -35,9 +36,19 @@ export function BankAnalytics() {
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold tracking-tight">Analytics & Reports</h2>
-        <p className="text-white/60 text-sm mt-1">Deep dive into your bank's performance and customer activity.</p>
+      <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Analytics & Reports</h2>
+          <p className="text-white/60 text-sm mt-1">Deep dive into your bank's performance and customer activity.</p>
+        </div>
+
+        <Link
+          to={`/bank/${bank.id}/mea-report`}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 w-fit"
+        >
+          <FileText size={16} />
+          Generate MEA Monthly Report
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

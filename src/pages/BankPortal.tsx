@@ -380,6 +380,13 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </div>
               )}
             </div>
+
+            <div className="pt-4 border-t border-white/10 flex items-center justify-between text-xs text-zinc-400">
+              <span>Bank Staff Member?</span>
+              <Link to={`/bank/${bankId}`} className="text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1.5 transition-colors">
+                <ShieldCheck size={14} /> Staff Admin Portal &rarr;
+              </Link>
+            </div>
           </motion.div>
         </div>
       ) : (
