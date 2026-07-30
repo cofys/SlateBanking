@@ -668,14 +668,29 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 - **In-Game Account Verification & Multi-Tier Fuzzy Account Matching (`bankAccounts` Schema, `src/lib/citycorp_api.ts`, `src/server/sync_jobs.ts`)**:
   - Added `existsInGame` (boolean), `lastSyncedAt` (timestamp), and `syncError` (text) columns to `bankAccounts`.
   - **Response Structure Normalization (`CityCorpClient.listAccounts()`)**: Normalized all API responses from `/accounts/list` to guarantee callers receive a standardized `{ accounts: [...] }` array regardless of whether CityCorp returned top-level arrays, wrapped `data`, or `results`.
-  - **Multi-Tier Fuzzy Matching (`cleanName`)**: Implemented a 4-layer matching engine (Exact lowercase match -> Cleaned alphanumeric match stripping Discord IDs/punctuation/spaces -> Substring/partial match -> Direct single-account API query fallback). This matches accounts regardless of formatting differences (e.g. `John Doe (123456789012345678)` vs `John Doe` vs `John_Doe_checking`).
+  - **Pure Account Name Matching (`matchAccountNames`)**: Decoupled in-game CityCorp account matching from Discord IDs (since the CityCorp in-game API only returns account names, UUIDs, balances, and transaction histories). Implemented clean name normalization that compares account names directly (Exact case-insensitive match -> Cleaned alphanumeric match stripping type suffixes like `_checking`/`_savings` -> Substring match -> Direct API fallback query), matching imported accounts accurately without relying on or parsing Discord ID strings.
   - **Safe Import & DB Synchronization**: Preserves imported SQLite database accounts as valid, active local bank accounts while updating balances for matched in-game corporate accounts.
-  - **Auto-Import In-Game Accounts Button (`POST /api/banks/:bankId/import`, `BankAccounts.tsx`)**: Added an **"Auto-Import In-Game Accounts"** button in `BankAccounts.tsx` to automatically pull and populate all corporate accounts directly from CityCorp in-game with full transaction histories and debit cards.
+  - **Auto-Import In-Game Accounts Button (`POST /api/banks/:bankId/import`, `BankAccounts.tsx`)**: Added an **"Auto-Import In-Game Accounts"** button in `BankAccounts.tsx` to automatically pull and populate all corporate accounts directly from CityCorp in-game with full transaction histories and debit cards, assigning imported accounts clean `ownerDiscordId: "imported"` placeholders until players link their Discord accounts.
   - **Network & Credential Guardrails**: Differentiates actual account missing states from API connection, authorization, or rate-limiting errors, keeping `existsInGame` intact when API errors occur and displaying descriptive `syncError` messages instead of falsely flagging accounts.
   - Accounts confirmed as missing on CityCorp render prominent `⚠️ Not Found In-Game` badges in `BankAccounts.tsx`, `BankAccountDetail.tsx`, and `CitizenPortal.tsx`.
 - **Manual Corporate Account Provisioning (`POST /api/banks/:bankId/accounts/:accountId/provision-game`)**:
   - Added a manual **"+ Provision in Game"** endpoint and action button on flagged accounts in both `BankAccounts.tsx` and `BankAccountDetail.tsx`.
   - Calls `CityCorpClient.createAccount(accountName)` to provision the corporate account in-game via CityCorp, establishing the missing remote account, setting `existsInGame = true`, and clearing sync flags automatically.
+- **Comprehensive CityCorp Bank Accounts API Coverage (`src/lib/citycorp_api.ts`)**:
+  - **Native Endpoints**: Fully aligned `CityCorpClient` with official CityCorp API documentation:
+    - `GET /corp/accounts`: `getAccountDetails(accountName)`
+    - `POST /corp/accounts`: `createAccount(accountName)`
+    - `DELETE /corp/accounts`: `deleteAccount(accountName)` (triggers remote deletion when local staff delete in-game accounts)
+    - `GET /corp/accounts/list`: `listAccounts(page)` & `fetchAllAccounts(maxPages)`
+    - `PATCH /corp/accounts/deposit`: `deposit(accountName, amount)`
+    - `PATCH /corp/accounts/withdraw`: `withdraw(accountName, amount)`
+    - `PATCH /corp/accounts/transfer/account`: `transferToAccount(accountName, amount, receiverCorpId, receiverAccountName)`
+    - `PATCH /corp/accounts/transfer/corp`: `transferToCorp(accountName, amount, receiverCorpId)`
+    - `PATCH /corp/accounts/fees`: `setAccountFee(accountName, feeType, fee)`
+    - `GET /corp/accounts/subusers/list`: `listSubusers(accountName, page, includeCorpOwner)`
+    - `POST /corp/accounts/subusers`: `addSubuser(accountName, subuserUuid)`
+    - `GET /corp/accounts/transactions`: `getTransactionById(accountName, transactionId)`
+    - `GET /corp/accounts/transactions/list`: `getAccountTransactions(accountName, page)` (paginated listing with fallback)
 
 
 

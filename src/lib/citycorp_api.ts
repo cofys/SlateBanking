@@ -278,7 +278,7 @@ export class CityCorpClient {
 
   
   async getAccountTransactions(accountName: string, page: number = 1) {
-    const url = new URL(`${this.baseUrl}/accounts/transactions`);
+    const url = new URL(`${this.baseUrl}/accounts/transactions/list`);
     url.searchParams.append("corp_id", this.corpId.toString());
     url.searchParams.append("account_name", accountName);
     url.searchParams.append("page", page.toString());
@@ -290,17 +290,57 @@ export class CityCorpClient {
       
       if (res.ok) {
          const data = await res.json();
-         await this.logApiResult("/accounts/transactions", { account_name: accountName, page }, latencyMs, res.status, true);
+         await this.logApiResult("/accounts/transactions/list", { account_name: accountName, page }, latencyMs, res.status, true);
          return data;
+      }
+
+      // Fallback: Try single/legacy endpoint if list returns error
+      const legacyUrl = new URL(`${this.baseUrl}/accounts/transactions`);
+      legacyUrl.searchParams.append("corp_id", this.corpId.toString());
+      legacyUrl.searchParams.append("account_name", accountName);
+      legacyUrl.searchParams.append("page", page.toString());
+
+      const legacyRes = await fetch(legacyUrl.toString(), { headers: this.headers });
+      if (legacyRes.ok) {
+        const legacyData = await legacyRes.json();
+        await this.logApiResult("/accounts/transactions", { account_name: accountName, page }, latencyMs, legacyRes.status, true);
+        return legacyData;
       }
       
       let errMsg = await res.text();
-      await this.logApiResult("/accounts/transactions", { account_name: accountName, page }, latencyMs, res.status, false, errMsg);
+      await this.logApiResult("/accounts/transactions/list", { account_name: accountName, page }, latencyMs, res.status, false, errMsg);
       return null;
     } catch (e: any) {
       const latencyMs = Date.now() - startTime;
-      await this.logApiResult("/accounts/transactions", { account_name: accountName, page }, latencyMs, 0, false, e.message);
+      await this.logApiResult("/accounts/transactions/list", { account_name: accountName, page }, latencyMs, 0, false, e.message);
       return null;
+    }
+  }
+
+  async getTransactionById(accountName: string, transactionId: number) {
+    const url = new URL(`${this.baseUrl}/accounts/transactions`);
+    url.searchParams.append("corp_id", this.corpId.toString());
+    url.searchParams.append("account_name", accountName);
+    url.searchParams.append("transaction_id", transactionId.toString());
+
+    const startTime = Date.now();
+    try {
+      const res = await fetch(url.toString(), { headers: this.headers });
+      const latencyMs = Date.now() - startTime;
+
+      if (res.ok) {
+        const data = await res.json();
+        await this.logApiResult("/accounts/transactions", { account_name: accountName, transaction_id: transactionId }, latencyMs, res.status, true);
+        return { success: true, transaction: data };
+      }
+
+      let errMsg = await res.text();
+      await this.logApiResult("/accounts/transactions", { account_name: accountName, transaction_id: transactionId }, latencyMs, res.status, false, errMsg);
+      return { success: false, error: errMsg };
+    } catch (e: any) {
+      const latencyMs = Date.now() - startTime;
+      await this.logApiResult("/accounts/transactions", { account_name: accountName, transaction_id: transactionId }, latencyMs, 0, false, e.message);
+      return { success: false, error: e.message };
     }
   }
 
@@ -371,6 +411,10 @@ export class CityCorpClient {
     return await this.request("POST", "/accounts", { account_name: accountName });
   }
 
+  async deleteAccount(accountName: string) {
+    return await this.request("DELETE", "/accounts", { account_name: accountName });
+  }
+
   async withdraw(accountName: string, amount: number) {
     return await this.request("PATCH", "/accounts/withdraw", {
       account_name: accountName,
@@ -385,11 +429,72 @@ export class CityCorpClient {
     });
   }
 
+  async transferToAccount(accountName: string, amount: number, receiverCorpId: number, receiverAccountName: string) {
+    return await this.request("PATCH", "/accounts/transfer/account", {
+      account_name: accountName,
+      amount: Number(amount.toFixed(2)),
+      receiver_corp_id: receiverCorpId,
+      receiver_account_name: receiverAccountName
+    });
+  }
+
+  async transferToCorp(accountName: string, amount: number, receiverCorpId: number) {
+    return await this.request("PATCH", "/accounts/transfer/corp", {
+      account_name: accountName,
+      amount: Number(amount.toFixed(2)),
+      receiver_corp_id: receiverCorpId
+    });
+  }
+
+  async setAccountFee(accountName: string, feeType: "WITHDRAW" | "DEPOSIT", fee: number) {
+    return await this.request("PATCH", "/accounts/fees", {
+      account_name: accountName,
+      fee_type: feeType,
+      fee: Number(fee)
+    });
+  }
+
   async addSubuser(accountName: string, subuserUuid: string) {
     return await this.request("POST", "/accounts/subusers", {
       account_name: accountName,
       subuser_uuid: subuserUuid
     });
+  }
+
+  async listSubusers(accountName: string, page: number = 1, includeCorpOwner: boolean = false) {
+    const url = new URL(`${this.baseUrl}/accounts/subusers/list`);
+    url.searchParams.append("corp_id", this.corpId.toString());
+    url.searchParams.append("account_name", accountName);
+    url.searchParams.append("page", page.toString());
+    if (includeCorpOwner) {
+      url.searchParams.append("include_corp_owner", "true");
+    }
+
+    const startTime = Date.now();
+    try {
+      const res = await fetch(url.toString(), { headers: this.headers });
+      const latencyMs = Date.now() - startTime;
+
+      if (res.ok) {
+        const data = await res.json();
+        await this.logApiResult("/accounts/subusers/list", { account_name: accountName, page }, latencyMs, res.status, true);
+        return {
+          success: true,
+          subusers: data.subusers || [],
+          currentPage: data.currentPage || page,
+          totalPages: data.totalPages || 1,
+          totalSubusers: data.totalSubusers || (data.subusers ? data.subusers.length : 0)
+        };
+      }
+
+      let errMsg = await res.text();
+      await this.logApiResult("/accounts/subusers/list", { account_name: accountName, page }, latencyMs, res.status, false, errMsg);
+      return { success: false, subusers: [], error: errMsg };
+    } catch (e: any) {
+      const latencyMs = Date.now() - startTime;
+      await this.logApiResult("/accounts/subusers/list", { account_name: accountName, page }, latencyMs, 0, false, e.message);
+      return { success: false, subusers: [], error: e.message };
+    }
   }
 
   async payCorporation(amount: number) {

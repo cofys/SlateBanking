@@ -36,31 +36,26 @@ export function getSyncJob(jobId: string): SyncJob | undefined {
   return syncJobs.get(jobId);
 }
 
-export function matchAccountNames(nameA: string, nameB: string, discordA?: string, discordB?: string): boolean {
+export function matchAccountNames(nameA: string, nameB: string): boolean {
   if (!nameA || !nameB) return false;
 
-  const aLower = nameA.toLowerCase().trim();
-  const bLower = nameB.toLowerCase().trim();
+  const aStr = nameA.toString().trim();
+  const bStr = nameB.toString().trim();
+  if (!aStr || !bStr) return false;
+
+  const aLower = aStr.toLowerCase();
+  const bLower = bStr.toLowerCase();
   if (aLower === bLower) return true;
 
   const clean = (s: string) => s
     .toLowerCase()
-    .replace(/\(\d{17,20}\)/g, "")
-    .replace(/\b\d{17,20}\b/g, "")
     .replace(/_(checking|savings|vault|business|payroll|personal)$/i, "")
     .replace(/ (checking|savings|vault|business|payroll|personal)$/i, "")
     .replace(/[^a-z0-9]/g, "");
 
-  const cA = clean(nameA);
-  const cB = clean(nameB);
+  const cA = clean(aStr);
+  const cB = clean(bStr);
   if (cA && cB && cA === cB) return true;
-
-  const discordMatchA = nameA.match(/\b\d{17,20}\b/)?.[0] || discordA;
-  const discordMatchB = nameB.match(/\b\d{17,20}\b/)?.[0] || discordB;
-
-  if (discordMatchA && discordMatchB && discordMatchA === discordMatchB) {
-    return true;
-  }
 
   if (cA.length >= 3 && cB.length >= 3) {
     if (cA.includes(cB) || cB.includes(cA)) return true;
@@ -73,8 +68,7 @@ function cleanName(str: string): string {
   if (!str) return "";
   return str
     .toLowerCase()
-    .replace(/\(\d{17,20}\)/g, "")
-    .replace(/\b\d{17,20}\b/g, "")
+    .trim()
     .replace(/[^a-z0-9]/g, "");
 }
 
@@ -102,8 +96,8 @@ export async function syncSingleAccount(
 
           let matchedRemote: any = null;
           for (const [key, remoteAcc] of preMap.entries()) {
-            const remoteName = (remoteAcc.name || remoteAcc.account_name || remoteAcc.title || key || "").toString();
-            if (matchAccountNames(targetRaw, remoteName, account.ownerDiscordId)) {
+            const remoteName = (remoteAcc.account_name || remoteAcc.name || remoteAcc.title || remoteAcc.accountName || key || "").toString();
+            if (matchAccountNames(targetRaw, remoteName)) {
               matchedRemote = remoteAcc;
               break;
             }

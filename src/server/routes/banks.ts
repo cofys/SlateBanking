@@ -1708,13 +1708,13 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
       let syncedCount = 0;
 
       for (const remoteAccount of remoteAccounts) {
-        const accName = (remoteAccount.name || remoteAccount.account_name || remoteAccount.title || "").toString().trim();
+        const accName = (remoteAccount.account_name || remoteAccount.name || remoteAccount.title || remoteAccount.accountName || "").toString().trim();
         if (!accName) continue;
 
         const currentBalance = Math.round((Number(remoteAccount.balance) || 0) * 100);
 
         // Try matching an existing local account
-        const matchedLocal = localAccounts.find(a => matchAccountNames(a.accountName, accName, a.ownerDiscordId));
+        const matchedLocal = localAccounts.find(a => matchAccountNames(a.accountName, accName));
 
         if (matchedLocal) {
           // UPDATE existing local account balance and in-game state
@@ -1727,21 +1727,14 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
 
           syncedCount++;
         } else {
-            // Check for a 17-20 digit Discord ID in the name (e.g. Player (123456789012345678))
-            const discordMatch = accName.match(/\b\d{17,20}\b/);
-            const inferredOwner = discordMatch 
-              ? discordMatch[0] 
-              : `unassigned_${accName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-
             const accountId = uuidv4();
-            const currentBalance = Math.round((Number(remoteAccount.balance) || 0) * 100);
             const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 
             // 1. Create the Local Bank Account
             await db.insert(bankAccounts).values({
               id: accountId,
               bankId: bank.id,
-              ownerDiscordId: inferredOwner,
+              ownerDiscordId: "imported",
               accountName: accName,
               balance: currentBalance,
               existsInGame: true,
@@ -1749,25 +1742,6 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
               syncError: null,
               createdAt: fifteenDaysAgo,
             });
-
-            // 2. Ensure customer profile exists if matched with a real Discord ID
-            if (discordMatch && !localCustomerIds.has(inferredOwner)) {
-              let mcUsernameCandidate = remoteAccount.name;
-              mcUsernameCandidate = mcUsernameCandidate.replace(/\(\d{17,20}\)/g, "").trim();
-              mcUsernameCandidate = mcUsernameCandidate.replace(/_(checking|savings|vault|business|payroll|personal)$/i, "").trim();
-              mcUsernameCandidate = mcUsernameCandidate.replace(/[\(\)\[\]]/g, "").trim();
-
-              await db.insert(bankCustomers).values({
-                id: uuidv4(),
-                bankId: bank.id,
-                discordId: inferredOwner,
-                kycStatus: "approved",
-                mcUsername: mcUsernameCandidate || null,
-                notes: "Auto-created customer profile during CityCorp remote account import.",
-                createdAt: fifteenDaysAgo
-              });
-              localCustomerIds.add(inferredOwner);
-            }
 
             // 3. Generate high-quality realistic historical transactions leading up to the current balance
             const txCount = Math.floor(Math.random() * 3) + 4; // 4 to 6 transactions
@@ -2056,12 +2030,23 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/adjust-balance", requir
 
 banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, auditLogs } = await import("../../db/schema");
+    const { bankAccounts, banks, auditLogs } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
       const accs = await db.select().from(bankAccounts).where(eq(bankAccounts.id, req.params.accountId));
-      const accName = accs.length > 0 ? accs[0].accountName : "unknown";
+      const targetAcc = accs[0];
+      const accName = targetAcc ? targetAcc.accountName : "unknown";
+
+      if (targetAcc && targetAcc.existsInGame) {
+        const banksList = await db.select().from(banks).where(eq(banks.id, req.params.bankId));
+        const bank = banksList[0];
+        if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          await client.deleteAccount(targetAcc.accountName).catch(() => {});
+        }
+      }
 
       await db.delete(bankAccounts).where(
         and(eq(bankAccounts.id, req.params.accountId), eq(bankAccounts.bankId, req.params.bankId))
