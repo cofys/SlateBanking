@@ -36,6 +36,39 @@ export function getSyncJob(jobId: string): SyncJob | undefined {
   return syncJobs.get(jobId);
 }
 
+export function matchAccountNames(nameA: string, nameB: string, discordA?: string, discordB?: string): boolean {
+  if (!nameA || !nameB) return false;
+
+  const aLower = nameA.toLowerCase().trim();
+  const bLower = nameB.toLowerCase().trim();
+  if (aLower === bLower) return true;
+
+  const clean = (s: string) => s
+    .toLowerCase()
+    .replace(/\(\d{17,20}\)/g, "")
+    .replace(/\b\d{17,20}\b/g, "")
+    .replace(/_(checking|savings|vault|business|payroll|personal)$/i, "")
+    .replace(/ (checking|savings|vault|business|payroll|personal)$/i, "")
+    .replace(/[^a-z0-9]/g, "");
+
+  const cA = clean(nameA);
+  const cB = clean(nameB);
+  if (cA && cB && cA === cB) return true;
+
+  const discordMatchA = nameA.match(/\b\d{17,20}\b/)?.[0] || discordA;
+  const discordMatchB = nameB.match(/\b\d{17,20}\b/)?.[0] || discordB;
+
+  if (discordMatchA && discordMatchB && discordMatchA === discordMatchB) {
+    return true;
+  }
+
+  if (cA.length >= 3 && cB.length >= 3) {
+    if (cA.includes(cB) || cB.includes(cA)) return true;
+  }
+
+  return false;
+}
+
 function cleanName(str: string): string {
   if (!str) return "";
   return str
@@ -66,21 +99,13 @@ export async function syncSingleAccount(
       if (preMap !== undefined) {
         if (preMap !== null) {
           const targetRaw = (account.accountName || "").toString();
-          const targetKey = targetRaw.toLowerCase().trim();
-          const targetClean = cleanName(targetRaw);
 
-          let matchedRemote = preMap.get(targetKey);
-          if (!matchedRemote && targetClean) {
-            matchedRemote = preMap.get(targetClean);
-          }
-
-          if (!matchedRemote && targetClean.length >= 3) {
-            for (const [key, remoteAcc] of preMap.entries()) {
-              const cKey = cleanName(key);
-              if (cKey && (cKey.includes(targetClean) || targetClean.includes(cKey))) {
-                matchedRemote = remoteAcc;
-                break;
-              }
+          let matchedRemote: any = null;
+          for (const [key, remoteAcc] of preMap.entries()) {
+            const remoteName = (remoteAcc.name || remoteAcc.account_name || remoteAcc.title || key || "").toString();
+            if (matchAccountNames(targetRaw, remoteName, account.ownerDiscordId)) {
+              matchedRemote = remoteAcc;
+              break;
             }
           }
 

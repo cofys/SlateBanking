@@ -101,14 +101,18 @@ export function BankAccounts() {
   };
 
   const handleAutoImport = async () => {
-    if (!confirm("Import all existing CityCorp corporate accounts from in-game into Slate SaaS?")) return;
+    if (!confirm("Import and sync all existing CityCorp corporate accounts from in-game into Slate SaaS?")) return;
     setImporting(true);
     setSyncResultMsg(null);
     try {
       const res = await fetch(`/api/banks/${bank.id}/import`, { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        setSyncResultMsg(`Successfully imported ${data.importedCount || 0} remote account(s) from in-game CityCorp!`);
+        let msg = `Auto-import complete: `;
+        if (data.syncedCount) msg += `Synced ${data.syncedCount} existing account(s). `;
+        if (data.importedCount) msg += `Imported ${data.importedCount} new account(s). `;
+        if (!data.syncedCount && !data.importedCount) msg += `Found ${data.totalRemote || 0} account(s) in-game on CityCorp (all up to date).`;
+        setSyncResultMsg(msg);
         fetchAccounts();
       } else {
         alert(data.error || "Failed to auto-import remote accounts");

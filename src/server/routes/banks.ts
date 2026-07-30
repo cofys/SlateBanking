@@ -1689,35 +1689,44 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
       }
 
       const { CityCorpClient } = await import("../../lib/citycorp_api");
-      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey);
+      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+      const { matchAccountNames } = await import("../sync_jobs");
+
+      const allRemote = await client.fetchAllAccounts();
+      if (!allRemote.success) {
+        return res.status(500).json({ error: `Failed to fetch accounts from CityCorp API: ${allRemote.error || 'Unknown error'}` });
+      }
+
+      const remoteAccounts = allRemote.accounts || [];
 
       // Get existing accounts and customers in DB to avoid duplicates
       const localAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
-      const localAccountNames = new Set(localAccounts.map(a => a.accountName.toLowerCase().trim()));
-      
-      const cleanName = (str: string) => str ? str.toLowerCase().replace(/\(\d{17,20}\)/g, "").replace(/\b\d{17,20}\b/g, "").replace(/[^a-z0-9]/g, "") : "";
-      const localCleanNames = new Set(localAccounts.map(a => cleanName(a.accountName)));
-
       const localCustomers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
       const localCustomerIds = new Set(localCustomers.map(c => c.discordId));
 
       let importedCount = 0;
-      let currentPage = 1;
-      let totalPages = 1;
-      
-      do {
-        const listData = await client.listAccounts(currentPage);
-        const remoteAccounts = listData.accounts || [];
-        if (!remoteAccounts || remoteAccounts.length === 0) break;
-        
-        for (const remoteAccount of remoteAccounts) {
-          const accName = (remoteAccount.name || remoteAccount.account_name || remoteAccount.title || "").toString().trim();
-          if (!accName) continue;
+      let syncedCount = 0;
 
-          const accNameLower = accName.toLowerCase();
-          const accClean = cleanName(accName);
+      for (const remoteAccount of remoteAccounts) {
+        const accName = (remoteAccount.name || remoteAccount.account_name || remoteAccount.title || "").toString().trim();
+        if (!accName) continue;
 
-          if (!localAccountNames.has(accNameLower) && (!accClean || !localCleanNames.has(accClean))) {
+        const currentBalance = Math.round((Number(remoteAccount.balance) || 0) * 100);
+
+        // Try matching an existing local account
+        const matchedLocal = localAccounts.find(a => matchAccountNames(a.accountName, accName, a.ownerDiscordId));
+
+        if (matchedLocal) {
+          // UPDATE existing local account balance and in-game state
+          await db.update(bankAccounts).set({
+            balance: currentBalance,
+            existsInGame: true,
+            lastSyncedAt: new Date(),
+            syncError: null
+          }).where(eq(bankAccounts.id, matchedLocal.id));
+
+          syncedCount++;
+        } else {
             // Check for a 17-20 digit Discord ID in the name (e.g. Player (123456789012345678))
             const discordMatch = accName.match(/\b\d{17,20}\b/);
             const inferredOwner = discordMatch 
@@ -1885,33 +1894,32 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
               createdAt: fifteenDaysAgo
             });
 
-            localAccountNames.add(accNameLower);
-            if (accClean) localCleanNames.add(accClean);
             importedCount++;
           }
         }
-        
-        totalPages = listData.totalPages || 1;
-        currentPage++;
-      } while (currentPage <= totalPages);
 
       // Add audit log
-      if (importedCount > 0) {
+      if (importedCount > 0 || syncedCount > 0) {
         const { auditLogs } = await import("../../db/schema");
         await db.insert(auditLogs).values({
             id: uuidv4(),
             bankId: bank.id,
             userDiscordId: 'System',
             action: `auto_import`,
-            details: `Imported ${importedCount} existing remote accounts with high-fidelity transaction histories and cards`,
+            details: `Auto-import completed: ${syncedCount} existing account(s) synced, ${importedCount} new account(s) imported from CityCorp in-game.`,
             timestamp: new Date()
         });
       }
 
-      res.json({ success: true, importedCount });
+      res.json({ 
+        success: true, 
+        importedCount, 
+        syncedCount, 
+        totalRemote: remoteAccounts.length 
+      });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message || "Internal error" });
+      res.status(500).json({ error: e.message || "Internal error during auto-import" });
     }
   });
 
@@ -4063,6 +4071,8 @@ banksRouter.post("/api/banks/:bankId/tools/sqlite-migration", [requireBankStaff,
               balance: balanceCents,
               isFrozen: Boolean(row.frozen),
               isActive: true,
+              existsInGame: true,
+              lastSyncedAt: new Date(),
               createdAt: row.created_at ? new Date(row.created_at) : new Date()
             });
             accountsImported++;
