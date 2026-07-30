@@ -11,12 +11,41 @@ import { formatMoney } from "../lib/utils";
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 
 export function CitizenPortal() {
-  const { user, login, logout, isLoading } = useAuth();
+  const { user, login, logout, isLoading, checkSession } = useAuth();
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"dashboard" | "assets" | "transfer" | "invoices" | "loans" | "analytics" | "vaults">("dashboard");
   const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
   const [onyxMerchants, setOnyxMerchants] = useState<any[]>([]);
+  const [showManualLinkModal, setShowManualLinkModal] = useState(false);
+  const [manualDiscordId, setManualDiscordId] = useState("");
+  const [submittingLink, setSubmittingLink] = useState(false);
+
+  const handleManualLinkSubmit = async () => {
+    if (!manualDiscordId.trim()) return;
+    setSubmittingLink(true);
+    try {
+      const res = await fetch('/api/citizen/link-discord-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discordIdToLink: manualDiscordId })
+      });
+      if (res.ok) {
+        setShowManualLinkModal(false);
+        setManualDiscordId("");
+        await checkSession();
+        handleSearch();
+      } else {
+        const err = await res.json();
+        alert(`Failed to link Discord ID: ${err.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error linking Discord ID.");
+    } finally {
+      setSubmittingLink(false);
+    }
+  };
 
   useEffect(() => {
     fetch("/api/onyx/merchants")
@@ -91,7 +120,7 @@ export function CitizenPortal() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6">
           <div>
             <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
               Citizen Portal
@@ -104,11 +133,46 @@ export function CitizenPortal() {
               <span className="text-sm font-bold text-white leading-none">{user.username}</span>
               <span className="text-xs text-slate-500 font-mono mt-1">{user.discordId}</span>
             </div>
-            <button onClick={logout} className="ml-4 text-slate-500 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-red-500/10">
+            <button onClick={logout} className="ml-4 text-slate-500 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-red-500/10" title="Log Out">
               <LogOut size={16} />
             </button>
           </div>
         </div>
+
+        {/* Discord Account Linking Banner */}
+        {(user.discordId?.startsWith("mc_") || !user.discordId || user.discordId.includes("_")) && (
+          <div className="mb-8 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg shadow-indigo-500/5">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-indigo-500/20 rounded-xl text-indigo-400 shrink-0">
+                <Link2 size={24} />
+              </div>
+              <div>
+                <h4 className="text-white font-bold text-sm flex items-center gap-2">
+                  Link Your Discord Account
+                  <span className="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-500/30 uppercase tracking-wider">Unlinked</span>
+                </h4>
+                <p className="text-slate-400 text-xs mt-1">
+                  Connect your Discord ID (@Username) to receive real-time bank bot notifications, approve transfers, and unify your Onyx & Slate profile.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+              <button
+                onClick={() => login(undefined, 'discord', 'link')}
+                className="w-full sm:w-auto bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#5865F2]/20"
+              >
+                <LogIn size={15} />
+                Link via Discord OAuth
+              </button>
+              <button
+                onClick={() => setShowManualLinkModal(true)}
+                className="w-full sm:w-auto bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition-all"
+              >
+                Manual ID
+              </button>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center h-64">
@@ -160,6 +224,49 @@ export function CitizenPortal() {
             </div>
           </div>
         ) : null}
+
+        {/* Manual Discord Link Modal */}
+        {showManualLinkModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+              <button onClick={() => setShowManualLinkModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5">
+                <X size={18} />
+              </button>
+              <div className="flex items-center gap-3 text-indigo-400">
+                <Link2 size={24} />
+                <h3 className="text-lg font-bold text-white">Manual Discord Link</h3>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Enter your numeric Discord User ID or handle to link your profile. This unifies your accounts across all Slate banks and enables automated Discord bot notifications.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Discord ID or Handle</label>
+                <input
+                  type="text"
+                  value={manualDiscordId}
+                  onChange={(e) => setManualDiscordId(e.target.value)}
+                  placeholder="e.g. 123456789012345678 or @john_doe"
+                  className="w-full bg-[#0a0a0f] border border-white/15 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  onClick={() => setShowManualLinkModal(false)}
+                  className="px-4 py-2 text-xs text-slate-400 hover:text-white font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleManualLinkSubmit}
+                  disabled={submittingLink || !manualDiscordId.trim()}
+                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20"
+                >
+                  {submittingLink ? "Linking..." : "Link Profile"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

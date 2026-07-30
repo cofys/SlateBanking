@@ -10,15 +10,17 @@ export interface UserSession {
 interface AuthContextType {
   user: UserSession | null;
   isLoading: boolean;
-  login: (bankId?: string, provider?: 'discord' | 'citycorp') => void;
+  login: (bankId?: string, provider?: 'discord' | 'citycorp', intent?: 'login' | 'link') => void;
   logout: () => void;
+  checkSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  login: (bankId?: string, provider?: 'discord' | 'citycorp') => {},
+  login: () => {},
   logout: () => {},
+  checkSession: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -74,11 +76,12 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     };
   }, []);
 
-  const login = async (bankId?: string, provider?: 'discord' | 'citycorp') => {
+  const login = async (bankId?: string, provider?: 'discord' | 'citycorp', intent?: 'login' | 'link') => {
     try {
       const params = new URLSearchParams();
       if (bankId) params.append('bankId', bankId);
       if (provider) params.append('provider', provider);
+      if (intent) params.append('intent', intent);
       params.append('returnTo', window.location.pathname);
       params.append('origin', window.location.origin);
       
@@ -88,13 +91,19 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         throw new Error('Failed to get auth URL');
       }
       const { url } = await response.json();
-      const authWindow = window.open(
-        url,
-        'oauth_popup',
-        'width=600,height=700'
-      );
-      if (!authWindow) {
-        alert('Please allow popups for this site to connect your Profile.');
+      
+      try {
+        const authWindow = window.open(
+          url,
+          'oauth_popup',
+          'width=600,height=700'
+        );
+        if (!authWindow || authWindow.closed || typeof authWindow.closed === 'undefined') {
+          // Fallback to top-level redirect if popups blocked in iframe
+          window.location.href = url;
+        }
+      } catch (e) {
+        window.location.href = url;
       }
     } catch (error) {
       console.error('OAuth error:', error);
@@ -111,7 +120,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, checkSession }}>
       {children}
     </AuthContext.Provider>
   );

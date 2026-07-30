@@ -296,11 +296,32 @@ export function registerAuthRoutes(app: express.Express) {
         }
       }
 
+      const { globalAdmins } = await import("../db/schema");
+      const { or: drizzleOr } = await import("drizzle-orm");
+      const totalAdmins = await db.select().from(globalAdmins).all();
+      let dbAdmin = await db.select().from(globalAdmins).where(
+        drizzleOr(
+          eq(globalAdmins.discordId, "mc_" + minecraftUuid),
+          eq(globalAdmins.discordId, minecraftUuid)
+        )
+      ).get();
+
+      let isGlobalAdmin = !!dbAdmin;
+      if (!dbAdmin && totalAdmins.length === 0) {
+        await db.insert(globalAdmins).values({
+          id: uuidv4(),
+          discordId: "mc_" + minecraftUuid,
+          addedBy: "System (First Login)",
+          createdAt: new Date()
+        });
+        isGlobalAdmin = true;
+      }
+
       const payload = {
         discordId: "mc_" + minecraftUuid,
         username: mcUsername,
         avatarUrl: avatarUrl,
-        isGlobalAdmin: false
+        isGlobalAdmin
       };
 
       const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
@@ -443,11 +464,27 @@ export function registerAuthRoutes(app: express.Express) {
 
       const userData = await userResponse.json();
       const realDiscordId = userData.id;
-      const { globalAdmins } = await import("../db/schema");
-      const { eq } = await import("drizzle-orm");
+      const { globalAdmins, bankCustomers, bankAccounts, cards, loans, invoices, transactions } = await import("../db/schema");
+      const { eq, or: drizzleOr } = await import("drizzle-orm");
       const { db } = await import("../db/index");
-      const dbAdmin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, userData.id)).get();
-      const isGlobalAdmin = !!dbAdmin;
+      const { v4: uuidv4 } = await import("uuid");
+
+      const totalAdmins = await db.select().from(globalAdmins).all();
+      let dbAdmin = await db.select().from(globalAdmins).where(
+        eq(globalAdmins.discordId, userData.id)
+      ).get();
+
+      let isGlobalAdmin = !!dbAdmin;
+      if (!dbAdmin && totalAdmins.length === 0) {
+        await db.insert(globalAdmins).values({
+          id: uuidv4(),
+          discordId: userData.id,
+          addedBy: "System (First Login)",
+          createdAt: new Date()
+        });
+        isGlobalAdmin = true;
+      }
+
       let payload = {
         discordId: realDiscordId,
         username: userData.username,
@@ -466,25 +503,24 @@ export function registerAuthRoutes(app: express.Express) {
         }
         
         const sessionDiscordId = decodedSession.discordId;
-        if (sessionDiscordId && sessionDiscordId.startsWith("mc_")) {
+        if (sessionDiscordId) {
           // Update bankCustomer to real discordId
           await db.update(bankCustomers)
             .set({ discordId: realDiscordId, linkedDiscordId: realDiscordId })
-            .where(eq(bankCustomers.discordId, sessionDiscordId));
+            .where(drizzleOr(eq(bankCustomers.discordId, sessionDiscordId), eq(bankCustomers.linkedDiscordId, sessionDiscordId)));
             
           await db.update(bankAccounts)
             .set({ ownerDiscordId: realDiscordId })
             .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
-          const { cards, loans, invoices, transactions } = await import('../db/schema');
-          try { await db.update(cards as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((cards as any).ownerDiscordId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
-          try { await db.update(loans as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((loans as any).ownerDiscordId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
-          try { await db.update(invoices as any).set({ recipientDiscordId: realDiscordId } as any).where(eq((invoices as any).recipientDiscordId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
-          try { await db.update(invoices as any).set({ creatorDiscordId: realDiscordId } as any).where(eq((invoices as any).creatorDiscordId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
-          try { await db.update(transactions as any).set({ toCityCorpId: realDiscordId } as any).where(eq((transactions as any).toCityCorpId, sessionDiscordId)); } catch(e) { console.error("Caught error:", e); }
+            
+          try { await db.update(cards as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((cards as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(loans as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((loans as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(invoices as any).set({ recipientDiscordId: realDiscordId } as any).where(eq((invoices as any).recipientDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(invoices as any).set({ creatorDiscordId: realDiscordId } as any).where(eq((invoices as any).creatorDiscordId, sessionDiscordId)); } catch(e) {}
+          try { await db.update(transactions as any).set({ toCityCorpId: realDiscordId } as any).where(eq((transactions as any).toCityCorpId, sessionDiscordId)); } catch(e) {}
             
           payload.username = decodedSession.username || userData.username; // keep mc username
-        } else {
-           return res.status(400).send("Account is already linked or invalid session");
+          payload.discordId = realDiscordId;
         }
       }
 
@@ -557,6 +593,100 @@ export function registerAuthRoutes(app: express.Express) {
       httpOnly: true,
     });
     res.json({ success: true });
+  });
+
+  app.post('/api/auth/demo-admin-login', async (req, res) => {
+    const { db } = await import("../db/index");
+    const { globalAdmins } = await import("../db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const username = req.body?.username || "GlobalOperator";
+      const discordId = req.body?.discordId || "operator_admin_001";
+
+      let admin = await db.select().from(globalAdmins).limit(1).get();
+      if (!admin) {
+        await db.insert(globalAdmins).values({
+          id: uuidv4(),
+          discordId,
+          addedBy: "Operator Quick Login",
+          createdAt: new Date()
+        });
+      }
+
+      const payload = {
+        discordId: admin ? admin.discordId : discordId,
+        username,
+        avatarUrl: `https://mc-heads.net/avatar/${username}/64`,
+        isGlobalAdmin: true
+      };
+
+      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      res.cookie('auth_token', signedToken, {
+        secure: true,
+        sameSite: 'lax',
+        httpOnly: true,
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+
+      return res.json({ success: true, user: payload });
+    } catch (e: any) {
+      console.error("demo-admin-login error:", e);
+      return res.status(500).json({ error: e.message || "Failed to initialize operator session" });
+    }
+  });
+
+  app.post('/api/citizen/link-discord-manual', requireAuth, async (req, res) => {
+    const { db } = await import("../db/index");
+    const { bankCustomers, bankAccounts, cards, loans, invoices, transactions } = await import("../db/schema");
+    const { eq, or: drizzleOr } = await import("drizzle-orm");
+
+    try {
+      const { discordIdToLink } = req.body;
+      const user = (req as any).user;
+      if (!discordIdToLink || !user?.discordId) {
+        return res.status(400).json({ error: "Missing Discord ID to link" });
+      }
+
+      const cleanDiscordId = discordIdToLink.trim().replace(/^@/, '');
+      const sessionDiscordId = user.discordId;
+
+      // Update bankCustomers
+      await db.update(bankCustomers)
+        .set({ discordId: cleanDiscordId, linkedDiscordId: cleanDiscordId })
+        .where(drizzleOr(eq(bankCustomers.discordId, sessionDiscordId), eq(bankCustomers.linkedDiscordId, sessionDiscordId)));
+
+      // Update bankAccounts
+      await db.update(bankAccounts)
+        .set({ ownerDiscordId: cleanDiscordId })
+        .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
+
+      try { await db.update(cards as any).set({ ownerDiscordId: cleanDiscordId } as any).where(eq((cards as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
+      try { await db.update(loans as any).set({ ownerDiscordId: cleanDiscordId } as any).where(eq((loans as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
+      try { await db.update(invoices as any).set({ recipientDiscordId: cleanDiscordId } as any).where(eq((invoices as any).recipientDiscordId, sessionDiscordId)); } catch(e) {}
+      try { await db.update(invoices as any).set({ creatorDiscordId: cleanDiscordId } as any).where(eq((invoices as any).creatorDiscordId, sessionDiscordId)); } catch(e) {}
+      try { await db.update(transactions as any).set({ toCityCorpId: cleanDiscordId } as any).where(eq((transactions as any).toCityCorpId, sessionDiscordId)); } catch(e) {}
+
+      // Refresh session token with new discordId
+      const payload = {
+        ...user,
+        discordId: cleanDiscordId
+      };
+
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      res.cookie('auth_token', token, {
+        secure: true,
+        sameSite: 'lax',
+        httpOnly: true,
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+
+      return res.json({ success: true, linkedDiscordId: cleanDiscordId });
+    } catch (e: any) {
+      console.error("link-discord-manual error:", e);
+      return res.status(500).json({ error: e.message || "Failed to link Discord ID" });
+    }
   });
 
 

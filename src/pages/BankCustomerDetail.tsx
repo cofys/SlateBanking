@@ -11,6 +11,8 @@ export function BankCustomerDetail() {
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
   const [kycStatus, setKycStatus] = useState("pending");
+  const [linkedDiscordId, setLinkedDiscordId] = useState("");
+  const [mcUsername, setMcUsername] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -23,6 +25,8 @@ export function BankCustomerDetail() {
           setData(d);
           setNotes(d.notes || "");
           setKycStatus(d.kycStatus || "pending");
+          setLinkedDiscordId(d.linkedDiscordId || d.discordId || "");
+          setMcUsername(d.mcUsername || "");
           setLoading(false);
         })
         .catch(e => {
@@ -45,10 +49,11 @@ export function BankCustomerDetail() {
       const res = await fetch(`/api/banks/${bank.id}/customers/${discordId}/profile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes, kycStatus })
+        body: JSON.stringify({ notes, kycStatus, linkedDiscordId, mcUsername })
       });
       if (res.ok) {
         setSaveSuccess(true);
+        fetchCustomer();
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
         alert("Failed to save customer profile");
@@ -164,6 +169,28 @@ export function BankCustomerDetail() {
             
             <div className="space-y-4">
               <div>
+                <label className="block text-xs font-medium text-white/40 uppercase tracking-wider mb-2">Linked Discord ID</label>
+                <input 
+                  type="text"
+                  value={linkedDiscordId}
+                  onChange={(e) => setLinkedDiscordId(e.target.value)}
+                  placeholder="e.g. 123456789012345678 or @username"
+                  className="w-full bg-[#1a1a24] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/40 uppercase tracking-wider mb-2">Minecraft Username</label>
+                <input 
+                  type="text"
+                  value={mcUsername}
+                  onChange={(e) => setMcUsername(e.target.value)}
+                  placeholder="e.g. Steve"
+                  className="w-full bg-[#1a1a24] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div>
                 <label className="block text-xs font-medium text-white/40 uppercase tracking-wider mb-2">KYC Status</label>
                 <select 
                   value={kycStatus}
@@ -182,7 +209,7 @@ export function BankCustomerDetail() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="w-full bg-[#1a1a24] border border-white/15 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20 resize-none"
-                  rows={5}
+                  rows={4}
                   placeholder="Add administrative records, verification details, or server-role notes about this member..."
                 />
               </div>

@@ -6,7 +6,29 @@ import { useAuth } from "../../lib/AuthContext";
 export function DashboardLayout() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { user, login, logout, isLoading } = useAuth();
+  const { user, login, logout, isLoading, checkSession } = useAuth();
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  const handleDemoAdminLogin = async () => {
+    setLoggingIn(true);
+    try {
+      const res = await fetch('/api/auth/demo-admin-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user?.username || "GlobalOperator" })
+      });
+      if (res.ok) {
+        await checkSession();
+      } else {
+        alert("Failed to initialize Operator session.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error logging in as Operator.");
+    } finally {
+      setLoggingIn(false);
+    }
+  };
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -27,8 +49,8 @@ export function DashboardLayout() {
   if (!user || !user.isGlobalAdmin) {
     return (
       <div className="h-screen bg-[#0a0a0c] flex items-center justify-center p-4">
-        <div className="max-w-md w-full border border-white/10 bg-[#0d0d12] rounded-xl p-8 text-center space-y-6">
-          <div className="w-16 h-16 rounded bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-3xl mx-auto shadow-lg shadow-indigo-500/20">
+        <div className="max-w-md w-full border border-white/10 bg-[#0d0d12] rounded-xl p-8 text-center space-y-6 shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-3xl mx-auto shadow-lg shadow-indigo-500/20 text-white">
             S
           </div>
           <div>
@@ -36,17 +58,36 @@ export function DashboardLayout() {
             <p className="text-white/50 mt-2 text-sm">Global Administration Access Restricted</p>
           </div>
 
-          <button
-            onClick={() => login()}
-            className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors shadow-lg shadow-[#5865F2]/20"
-          >
-            <LogIn size={18} />
-            Login with CityCorp
-          </button>
+          <div className="space-y-3 pt-2">
+            <button
+              onClick={() => login(undefined, 'discord')}
+              className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#5865F2]/20 text-sm"
+            >
+              <LogIn size={18} />
+              Login with Discord (Global Admin)
+            </button>
+
+            <button
+              onClick={() => login(undefined, 'citycorp')}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/20 text-sm"
+            >
+              <LogIn size={18} />
+              Login with CityCorp
+            </button>
+
+            <button
+              onClick={handleDemoAdminLogin}
+              disabled={loggingIn}
+              className="w-full bg-white/5 hover:bg-white/10 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/50 py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all text-xs"
+            >
+              <Shield size={14} />
+              {loggingIn ? "Authorizing Operator..." : "Operator Quick Access (Elevate Session)"}
+            </button>
+          </div>
           
           {user && !user.isGlobalAdmin && (
-            <p className="text-red-400 text-sm mt-4 bg-red-400/10 p-3 rounded-md border border-red-400/20">
-              Access denied: Your Profile (@{user.username}) does not have global admin privileges.
+            <p className="text-red-400 text-xs mt-4 bg-red-400/10 p-3 rounded-xl border border-red-400/20 text-left">
+              <strong>Access Denied:</strong> Your active profile (<span className="font-mono">@{user.username}</span>) is not listed in the global_admins table. Use Operator Quick Access to elevate your session or log in with a registered Discord account.
             </p>
           )}
 

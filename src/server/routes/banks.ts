@@ -1058,7 +1058,7 @@ banksRouter.post("/api/banks/:bankId/customers/:discordId/profile", requireBankS
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { notes, kycStatus } = req.body;
+      const { notes, kycStatus, linkedDiscordId, mcUsername } = req.body;
       const bankId = req.params.bankId;
       const discordId = req.params.discordId;
 
@@ -1066,22 +1066,31 @@ banksRouter.post("/api/banks/:bankId/customers/:discordId/profile", requireBankS
         and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
       ).limit(1);
 
+      const updateData: any = {
+        notes: notes !== undefined ? notes : "",
+        kycStatus: kycStatus || "pending"
+      };
+      if (linkedDiscordId !== undefined) updateData.linkedDiscordId = linkedDiscordId;
+      if (mcUsername !== undefined) updateData.mcUsername = mcUsername;
+
       if (existing.length > 0) {
         await db.update(bankCustomers)
-          .set({ notes: notes || "", kycStatus: kycStatus || "pending" })
+          .set(updateData)
           .where(and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId)));
       } else {
         await db.insert(bankCustomers).values({
           id: uuidv4(),
           bankId,
           discordId,
+          linkedDiscordId: linkedDiscordId || discordId,
+          mcUsername: mcUsername || "",
           notes: notes || "",
           kycStatus: kycStatus || "pending",
           createdAt: new Date()
         });
       }
 
-      res.json({ success: true, notes, kycStatus });
+      res.json({ success: true, notes, kycStatus, linkedDiscordId, mcUsername });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Internal error" });

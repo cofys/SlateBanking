@@ -619,6 +619,23 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Restores accounts, customer KYC notes, double-entry ledger history, active loan terms, credit applications, invoices, and recurring payroll jobs atomically into Slate SaaS.
   - Displays a detailed visual breakdown badge summary (Accounts, Customers, Ledger Transactions, Loans, Loan Products, Invoices, Payrolls, and Detected Tables) in the Bank Tools operator interface.
 
+## Global Admin Access & Operator Quick Authentication
+- **Multi-Provider Global Admin Login & Emergency Elevation (`DashboardLayout.tsx`, `authRoutes.ts`)**:
+  - Added explicit login provider options on the restricted Control Center landing view: **Login with Discord (Global Admin)**, **Login with CityCorp**, and **Operator Quick Access (Elevate Session)**.
+  - **Auto-Seeding First System Admin**: When `global_admins` database table is empty, the first user logging into the Control Center is automatically seeded as a primary `globalAdmin` to guarantee platform owners are never locked out.
+  - **Operator Quick Access Route (`POST /api/auth/demo-admin-login`)**: Enables single-click operator authentication in development and preview environments, populating a valid admin session cookie with `isGlobalAdmin: true`.
+
+## Citizen Portal Discord Identity Linking & Manual Account Association
+- **Unified Discord Linking Engine (`CitizenPortal.tsx`, `AuthContext.tsx`, `authRoutes.ts`)**:
+  - Added a prominent **Link Your Discord Account** banner and modal in `CitizenPortal.tsx` for users authenticated via Minecraft/CityCorp (`mc_...`).
+  - **OAuth Linking (`intent=link`)**: Executes OAuth authorization with `intent=link`, reading the existing session token and automatically re-linking `bankCustomers` (`discordId` and `linkedDiscordId`), `bankAccounts` (`ownerDiscordId`), `cards`, `loans`, `invoices`, and `transactions` to the verified Discord ID.
+  - **Manual ID Linking (`POST /api/citizen/link-discord-manual`)**: Allows citizens to directly submit their numeric Discord User ID or handle (@Username) from the portal, remapping all associated financial ledger records and issuing a refreshed JWT cookie instantly.
+
+## Administrative Profile Editing & Customer Re-linking for Bank Staff
+- **Staff-Controlled Customer Mapping (`BankCustomerDetail.tsx`, `banks.ts`)**:
+  - Updated `POST /api/banks/:bankId/customers/:discordId/profile` to accept and set `linkedDiscordId` and `mcUsername`.
+  - Updated `BankCustomerDetail.tsx` under Administrative Profile to provide staff with editable fields for **Linked Discord ID** and **Minecraft Username**, allowing bank staff to manually associate, reassign, or verify unassigned customer accounts.
+
 
 
 
