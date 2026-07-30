@@ -3,7 +3,8 @@ import {
   Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, 
   Lock, Unlock, Link2, BookOpen, LogIn, LogOut, TrendingUp, TrendingDown, 
   PieChart as PieChartIcon, Activity, Target, Plus, Send, Copy, Calendar,
-  Users, UserPlus, Trash2, X, Building, UserCheck, AlertCircle, Sparkles, Store
+  Users, UserPlus, Trash2, X, Building, UserCheck, AlertCircle, Sparkles, Store,
+  RefreshCw, DollarSign, Check
 } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "../lib/AuthContext";
@@ -20,6 +21,15 @@ export function CitizenPortal() {
   const [showManualLinkModal, setShowManualLinkModal] = useState(false);
   const [manualDiscordId, setManualDiscordId] = useState("");
   const [submittingLink, setSubmittingLink] = useState(false);
+
+  // Sync & Deposit modal state
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncingBalances, setSyncingBalances] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [depositAccountId, setDepositAccountId] = useState("");
+  const [depositAmount, setDepositAmount] = useState("1000");
+  const [depositReason, setDepositReason] = useState("Initial Account Funding");
+  const [depositing, setDepositing] = useState(false);
 
   const handleManualLinkSubmit = async () => {
     if (!manualDiscordId.trim()) return;
@@ -68,6 +78,61 @@ export function CitizenPortal() {
     const chunks = num.match(/.{1,4}/g) || [];
     if (visible) return chunks.join(" ");
     return `•••• •••• •••• ${chunks[3] || "0000"}`;
+  };
+
+  const handleSyncBalances = async (seedDefault = true) => {
+    setSyncingBalances(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch("/api/citizen/sync-balances", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seedDefault })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncMessage(data.message || "Balances synced & updated successfully!");
+        handleSearch();
+      } else {
+        setSyncMessage(data.error || "Failed to sync balances");
+      }
+    } catch (err) {
+      console.error(err);
+      setSyncMessage("Error syncing balances");
+    } finally {
+      setSyncingBalances(false);
+    }
+  };
+
+  const handleDepositFunds = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!depositAccountId || !depositAmount || Number(depositAmount) <= 0) return;
+    setDepositing(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch("/api/citizen/deposit-funds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: depositAccountId,
+          amountDollars: depositAmount,
+          description: depositReason
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncMessage(`Deposited $${Number(depositAmount).toFixed(2)} successfully!`);
+        handleSearch();
+        setTimeout(() => setShowSyncModal(false), 1200);
+      } else {
+        setSyncMessage(data.error || "Failed to deposit funds");
+      }
+    } catch (err) {
+      console.error(err);
+      setSyncMessage("Error depositing funds");
+    } finally {
+      setDepositing(false);
+    }
   };
 
   const handleSearch = async (e?: React.FormEvent | React.MouseEvent) => {
@@ -127,15 +192,31 @@ export function CitizenPortal() {
             </h1>
             <p className="text-sm text-slate-400 mt-1">Welcome back, {user.username}. Securely manage your finances.</p>
           </div>
-          <div className="flex items-center gap-4 bg-[#12121a] p-2 pr-4 rounded-full border border-white/5 shadow-inner">
-            <img src={user?.avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full border-2 border-indigo-500/30" />
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-white leading-none">{user.username}</span>
-              <span className="text-xs text-slate-500 font-mono mt-1">{user.discordId}</span>
-            </div>
-            <button onClick={logout} className="ml-4 text-slate-500 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-red-500/10" title="Log Out">
-              <LogOut size={16} />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => {
+                setSyncMessage(null);
+                if (userData?.accounts && userData.accounts.length > 0) {
+                  setDepositAccountId(userData.accounts[0].id);
+                }
+                setShowSyncModal(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-full flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20 hover:scale-[1.02]"
+            >
+              <RefreshCw size={15} className={syncingBalances ? "animate-spin text-white" : "text-white"} />
+              Sync / Top-Up Balances
             </button>
+
+            <div className="flex items-center gap-4 bg-[#12121a] p-2 pr-4 rounded-full border border-white/5 shadow-inner">
+              <img src={user?.avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full border-2 border-indigo-500/30" />
+              <div className="flex flex-col">
+                <span className="text-sm font-bold text-white leading-none">{user.username}</span>
+                <span className="text-xs text-slate-500 font-mono mt-1">{user.discordId}</span>
+              </div>
+              <button onClick={logout} className="ml-4 text-slate-500 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-red-500/10" title="Log Out">
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -215,7 +296,7 @@ export function CitizenPortal() {
             {/* Main Content Area */}
             <div className="lg:col-span-9 space-y-8">
               {activeTab === "dashboard" && <DashboardTab data={userData} refresh={handleSearch} />}
-              {activeTab === "assets" && <AssetsTab data={userData} refresh={handleSearch} visibleCardIds={visibleCardIds} toggleCardVisibility={toggleCardVisibility} formatCardNumber={formatCardNumber} />}
+              {activeTab === "assets" && <AssetsTab data={userData} refresh={handleSearch} visibleCardIds={visibleCardIds} toggleCardVisibility={toggleCardVisibility} formatCardNumber={formatCardNumber} onOpenSyncModal={(accId?: string) => { if (accId) setDepositAccountId(accId); setSyncMessage(null); setShowSyncModal(true); }} />}
               {activeTab === "transfer" && <TransferTab data={userData} refresh={handleSearch} onyxMerchants={onyxMerchants} />}
               {activeTab === "loans" && <LoansTab data={userData} refresh={handleSearch} />}
               {activeTab === "invoices" && <InvoicesTab data={userData} refresh={handleSearch} />}
@@ -262,6 +343,146 @@ export function CitizenPortal() {
                   className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20"
                 >
                   {submittingLink ? "Linking..." : "Link Profile"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sync & Top-Up Balances Modal */}
+        {showSyncModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative animate-in zoom-in-95 duration-200">
+              <button onClick={() => setShowSyncModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5">
+                <X size={18} />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-indigo-500/20 text-indigo-400 rounded-xl">
+                  <RefreshCw size={24} className={syncingBalances ? "animate-spin" : ""} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Account Balance Sync & Deposit</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Recalculate ledger balances or add starting funds to your accounts.</p>
+                </div>
+              </div>
+
+              {syncMessage && (
+                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                  syncMessage.includes("error") || syncMessage.includes("Failed") 
+                    ? "bg-red-500/10 text-red-400 border border-red-500/20" 
+                    : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                }`}>
+                  <AlertCircle size={15} />
+                  {syncMessage}
+                </div>
+              )}
+
+              {/* Mode 1: Instant Auto-Sync & Ledger Recalculation */}
+              <div className="bg-[#0a0a0f] p-4 rounded-xl border border-white/5 space-y-3">
+                <div>
+                  <h4 className="text-white font-bold text-sm flex items-center gap-2">
+                    Auto-Sync All Accounts
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Recalculates ledger net totals from all transactions. If balance is $0, seeds starter funding ($1,000).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSyncBalances(true)}
+                  disabled={syncingBalances}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={syncingBalances ? "animate-spin" : ""} />
+                  {syncingBalances ? "Syncing Accounts..." : "Run Auto-Sync & Ledger Seed"}
+                </button>
+              </div>
+
+              {/* Mode 2: Manual Account Top-Up / Deposit */}
+              <form onSubmit={handleDepositFunds} className="bg-[#0a0a0f] p-4 rounded-xl border border-white/5 space-y-3">
+                <h4 className="text-white font-bold text-sm flex items-center gap-2">
+                  <DollarSign size={16} className="text-emerald-400" />
+                  Manual Account Top-Up / Deposit
+                </h4>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Target Account</label>
+                    <select
+                      value={depositAccountId}
+                      onChange={(e) => setDepositAccountId(e.target.value)}
+                      className="w-full bg-[#12121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      {userData?.accounts?.map((acc: any) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.accountName} ({formatMoney(acc.balance)}) - {acc.id}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Deposit Amount ($)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="1"
+                        required
+                        value={depositAmount}
+                        onChange={(e) => setDepositAmount(e.target.value)}
+                        className="w-full bg-[#12121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Quick Presets</label>
+                      <div className="flex gap-1">
+                        {["500", "1000", "5000"].map(amt => (
+                          <button
+                            key={amt}
+                            type="button"
+                            onClick={() => setDepositAmount(amt)}
+                            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg border transition-all ${
+                              depositAmount === amt ? "bg-emerald-600 text-white border-emerald-500" : "bg-white/5 text-slate-400 border-white/10 hover:text-white"
+                            }`}
+                          >
+                            +${amt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Reason / Description</label>
+                    <input
+                      type="text"
+                      value={depositReason}
+                      onChange={(e) => setDepositReason(e.target.value)}
+                      className="w-full bg-[#12121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      placeholder="e.g. Initial Account Funding"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={depositing || !depositAccountId}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-600/20 disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
+                >
+                  <DollarSign size={14} />
+                  {depositing ? "Processing Deposit..." : `Deposit $${Number(depositAmount || 0).toFixed(2)} Now`}
+                </button>
+              </form>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowSyncModal(false)}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold rounded-xl border border-white/10 transition-colors"
+                >
+                  Close
                 </button>
               </div>
             </div>
@@ -376,7 +597,7 @@ function DashboardTab({ data, refresh }: { data: any, refresh: () => void }) {
   );
 }
 
-function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, formatCardNumber }: any) {
+function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, formatCardNumber, onOpenSyncModal }: any) {
   const [activeAccountForMembers, setActiveAccountForMembers] = useState<any>(null);
   const [newMemberDiscordId, setNewMemberDiscordId] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("manager");
@@ -608,9 +829,17 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
                 </div>
 
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => onOpenSyncModal?.(acc.id)}
+                    className="flex items-center gap-1 text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-2.5 py-1.5 rounded-lg transition-colors border border-emerald-500/20 font-medium"
+                    title="Top-Up or Sync Balance"
+                  >
+                    <DollarSign size={13} />
+                    Top-Up
+                  </button>
                   {isBusiness && (
                     <span className="text-[11px] bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2.5 py-1 rounded-lg flex items-center gap-1 font-medium">
-                      <Store size={12} /> Onyx Terminal Ready
+                      <Store size={12} /> Onyx Ready
                     </span>
                   )}
                   {(userRole === "owner" || userRole === "manager") && (

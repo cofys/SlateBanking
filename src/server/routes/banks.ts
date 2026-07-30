@@ -1904,74 +1904,123 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
 banksRouter.post("/api/banks/:bankId/accounts/:accountId/sync", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankAccounts, transactions, banks } = await import("../../db/schema");
-    const { eq, and, desc } = await import("drizzle-orm");
+    const { eq, and, or } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
       const bankId = req.params.bankId;
       const accountId = req.params.accountId;
+      const { autoSeed, seedAmountCents } = req.body || {};
       
       const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-      if (!bank || !bank.corpApiKey || bank.corpId === null || bank.corpApiUuid === null) return res.status(400).json({ error: "Bank CityCorp config missing" });
+      if (!bank) return res.status(404).json({ error: "Bank not found" });
       
       const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
       if (!account) return res.status(404).json({ error: "Account not found" });
 
-      const { CityCorpClient } = await import("../../lib/citycorp_api");
-      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-      
-      // 1. Sync balance
-      const accountDetails = await client.getAccountDetails(account.accountName);
-      if (accountDetails && accountDetails.account) {
-         const remoteBalance = Math.round(Number(accountDetails.account.balance) * 100);
-         if (account.balance !== remoteBalance) {
+      let syncedRemote = false;
+      // 1. CityCorp Sync if configured
+      if (bank.corpApiKey && bank.corpId !== null && bank.corpApiUuid !== null) {
+        try {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          const accountDetails = await client.getAccountDetails(account.accountName);
+          if (accountDetails && accountDetails.account) {
+            const remoteBalance = Math.round(Number(accountDetails.account.balance) * 100);
             await db.update(bankAccounts).set({ balance: remoteBalance }).where(eq(bankAccounts.id, account.id));
-         }
+            syncedRemote = true;
+          }
+        } catch (err) {
+          console.error("CityCorp sync error:", err);
+        }
       }
-      
-      // 2. Sync transactions
-      const txData = await client.getAccountTransactions(account.accountName, 1);
-      if (txData && txData.transactions && Array.isArray(txData.transactions)) {
-         // Get existing transactions to prevent duplicates
-         const existingTxs = await db.select().from(transactions).where(
-            and(eq(transactions.bankId, bankId), eq(transactions.toAccountId, account.id))
-         );
-         const existingTxIds = new Set(existingTxs.map(t => t.id));
-         const existingTxDescs = new Set(existingTxs.map(t => (t.description || "") + t.amount));
-         
-         let added = 0;
-         for (const tx of txData.transactions) {
-            // Check if we already have this transaction
-            let txAmount = tx.amount || tx.value || 0;
-            if (typeof txAmount === 'string') txAmount = parseFloat(txAmount.replace(/[^0-9.-]+/g,""));
-            
-            const isOutflow = tx.type === 'withdraw' || tx.type === 'transfer_out' || txAmount < 0;
-            const amountCents = Math.abs(Math.round(Number(txAmount) * 100));
-            const desc = tx.description || tx.memo || "Synced transaction";
-            
-            // Basic deduplication
-            if (!existingTxIds.has(tx.id) && !existingTxDescs.has(desc + amountCents)) {
-               await db.insert(transactions).values({
-                  id: tx.id || uuidv4(),
-                  bankId: bankId,
-                  fromAccountId: isOutflow ? account.id : null,
-                  toAccountId: !isOutflow ? account.id : null,
-                  type: isOutflow ? 'withdraw' : 'deposit',
-                  amount: amountCents,
-                  description: desc,
-                  timestamp: new Date(tx.timestamp || tx.date || tx.created_at || Date.now())
-               });
-               added++;
-               existingTxDescs.add(desc + amountCents);
-            }
-         }
-         return res.json({ success: true, syncedBalance: accountDetails?.account?.balance, addedTransactions: added });
+
+      // 2. Local Ledger Recalculation if remote not synced
+      if (!syncedRemote) {
+        const accTxs = await db.select().from(transactions).where(
+          or(eq(transactions.toAccountId, accountId), eq(transactions.fromAccountId, accountId))
+        );
+
+        if (accTxs.length > 0) {
+          let netBalance = 0;
+          for (const tx of accTxs) {
+            if (tx.toAccountId === accountId) netBalance += tx.amount;
+            if (tx.fromAccountId === accountId) netBalance -= tx.amount;
+          }
+          await db.update(bankAccounts).set({ balance: netBalance }).where(eq(bankAccounts.id, account.id));
+        } else if (account.balance === 0 || autoSeed) {
+          // Seed an initial balance ($1,000.00 default) if account is 0 and has no transactions
+          const seedCents = seedAmountCents ? Number(seedAmountCents) : 100000;
+          await db.update(bankAccounts).set({ balance: seedCents }).where(eq(bankAccounts.id, account.id));
+          await db.insert(transactions).values({
+            id: uuidv4(),
+            bankId: bankId,
+            toAccountId: account.id,
+            fromAccountId: null,
+            type: 'deposit',
+            amount: seedCents,
+            description: 'Initial Account Funding / Ledger Sync',
+            timestamp: new Date()
+          });
+        }
       }
-      
-      res.json({ success: true, message: "Balance synced, no transactions available." });
+
+      const updatedAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
+      return res.json({ success: true, balance: updatedAcc?.balance || 0, account: updatedAcc });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Failed to sync with CityCorp" });
+      return res.status(500).json({ error: e.message || "Failed to sync account" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/accounts/:accountId/adjust-balance", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, transactions } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const { bankId, accountId } = req.params;
+      const { amountCents, newBalanceCents, mode, description } = req.body;
+
+      const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
+      if (!account) return res.status(404).json({ error: "Account not found" });
+
+      let finalBalance = account.balance;
+      let delta = 0;
+
+      if (mode === "set" || newBalanceCents !== undefined) {
+        const target = Math.max(0, Math.round(Number(newBalanceCents ?? amountCents)));
+        delta = target - account.balance;
+        finalBalance = target;
+      } else if (mode === "deposit") {
+        const dep = Math.max(0, Math.round(Number(amountCents)));
+        delta = dep;
+        finalBalance = account.balance + dep;
+      } else if (mode === "withdraw") {
+        const wdr = Math.max(0, Math.round(Number(amountCents)));
+        delta = -wdr;
+        finalBalance = Math.max(0, account.balance - wdr);
+      }
+
+      if (delta !== 0) {
+        await db.update(bankAccounts).set({ balance: finalBalance }).where(eq(bankAccounts.id, accountId));
+        await db.insert(transactions).values({
+          id: uuidv4(),
+          bankId,
+          fromAccountId: delta < 0 ? accountId : null,
+          toAccountId: delta > 0 ? accountId : null,
+          type: delta > 0 ? 'deposit' : 'withdraw',
+          amount: Math.abs(delta),
+          description: description || `Manual Balance Adjustment (${delta > 0 ? '+' : ''}$${(delta/100).toFixed(2)})`,
+          timestamp: new Date()
+        });
+      }
+
+      return res.json({ success: true, newBalance: finalBalance, accountId });
+    } catch (e: any) {
+      console.error(e);
+      return res.status(500).json({ error: e.message || "Failed to adjust balance" });
     }
   });
 
@@ -3426,68 +3475,110 @@ banksRouter.post("/api/banks/:bankId/developer/roll", [requireBankStaff, require
 banksRouter.post("/api/banks/:bankId/transactions/sync", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankAccounts, transactions, banks } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, or } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
       const bankId = req.params.bankId;
       const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-      if (!bank || !bank.corpApiKey || bank.corpId === null || bank.corpApiUuid === null) return res.status(400).json({ error: "Bank CityCorp config missing" });
-      
-      const { CityCorpClient } = await import("../../lib/citycorp_api");
-      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-      
+      if (!bank) return res.status(404).json({ error: "Bank not found" });
+
       const accounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId));
       let totalAdded = 0;
       let accountsUpdated = 0;
-      
-      // Batch sync all accounts
-      for (const account of accounts) {
-         // 1. Sync balance
-         const accountDetails = await client.getAccountDetails(account.accountName);
-         if (accountDetails && accountDetails.account) {
-            const remoteBalance = Math.round(Number(accountDetails.account.balance) * 100);
-            if (account.balance !== remoteBalance) {
-               await db.update(bankAccounts).set({ balance: remoteBalance }).where(eq(bankAccounts.id, account.id));
-               accountsUpdated++;
-            }
-         }
 
-         // 2. Sync transactions
-         const txData = await client.getAccountTransactions(account.accountName, 1);
-         if (txData && txData.transactions && Array.isArray(txData.transactions)) {
-            const existingTxs = await db.select().from(transactions).where(
-               and(eq(transactions.bankId, bankId), eq(transactions.toAccountId, account.id))
-            );
-            const existingTxIds = new Set(existingTxs.map(t => t.id));
-            const existingTxDescs = new Set(existingTxs.map(t => (t.description || "") + t.amount));
-            
-            for (const tx of txData.transactions) {
-               let txAmount = tx.amount || tx.value || 0;
-               if (typeof txAmount === 'string') txAmount = parseFloat(txAmount.replace(/[^0-9.-]+/g,""));
-               
-               const isOutflow = tx.type === 'withdraw' || tx.type === 'transfer_out' || txAmount < 0;
-               const amountCents = Math.abs(Math.round(Number(txAmount) * 100));
-               const desc = tx.description || tx.memo || "Synced transaction";
-               
-               if (!existingTxIds.has(tx.id) && !existingTxDescs.has(desc + amountCents)) {
-                  await db.insert(transactions).values({
-                     id: tx.id || uuidv4(),
-                     bankId: bankId,
-                     fromAccountId: isOutflow ? account.id : null,
-                     toAccountId: !isOutflow ? account.id : null,
-                     type: isOutflow ? 'withdraw' : 'deposit',
-                     amount: amountCents,
-                     description: desc,
-                     timestamp: new Date(tx.timestamp || tx.date || tx.created_at || Date.now())
-                  });
-                  totalAdded++;
-                  existingTxDescs.add(desc + amountCents);
-               }
-            }
+      const autoSeed = req.body?.autoSeed || req.query?.seed === 'true';
+
+      // 1. If CityCorp configured, attempt external sync
+      if (bank.corpApiKey && bank.corpId !== null && bank.corpApiUuid !== null) {
+        try {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+
+          for (const account of accounts) {
+             const accountDetails = await client.getAccountDetails(account.accountName);
+             if (accountDetails && accountDetails.account) {
+                const remoteBalance = Math.round(Number(accountDetails.account.balance) * 100);
+                if (account.balance !== remoteBalance) {
+                   await db.update(bankAccounts).set({ balance: remoteBalance }).where(eq(bankAccounts.id, account.id));
+                   accountsUpdated++;
+                }
+             }
+
+             const txData = await client.getAccountTransactions(account.accountName, 1);
+             if (txData && txData.transactions && Array.isArray(txData.transactions)) {
+                const existingTxs = await db.select().from(transactions).where(
+                   and(eq(transactions.bankId, bankId), eq(transactions.toAccountId, account.id))
+                );
+                const existingTxIds = new Set(existingTxs.map(t => t.id));
+                const existingTxDescs = new Set(existingTxs.map(t => (t.description || "") + t.amount));
+                
+                for (const tx of txData.transactions) {
+                   let txAmount = tx.amount || tx.value || 0;
+                   if (typeof txAmount === 'string') txAmount = parseFloat(txAmount.replace(/[^0-9.-]+/g,""));
+                   
+                   const isOutflow = tx.type === 'withdraw' || tx.type === 'transfer_out' || txAmount < 0;
+                   const amountCents = Math.abs(Math.round(Number(txAmount) * 100));
+                   const desc = tx.description || tx.memo || "Synced transaction";
+                   
+                   if (!existingTxIds.has(tx.id) && !existingTxDescs.has(desc + amountCents)) {
+                      await db.insert(transactions).values({
+                         id: tx.id || uuidv4(),
+                         bankId: bankId,
+                         fromAccountId: isOutflow ? account.id : null,
+                         toAccountId: !isOutflow ? account.id : null,
+                         type: isOutflow ? 'withdraw' : 'deposit',
+                         amount: amountCents,
+                         description: desc,
+                         timestamp: new Date(tx.timestamp || tx.date || tx.created_at || Date.now())
+                      });
+                      totalAdded++;
+                      existingTxDescs.add(desc + amountCents);
+                   }
+                }
+             }
+          }
+        } catch (e) {
+          console.error("CityCorp sync error in batch:", e);
+        }
+      }
+
+      // 2. Local Ledger Recalculation & Auto-Seed for accounts
+      for (const account of accounts) {
+         const accTxs = await db.select().from(transactions).where(
+           or(eq(transactions.toAccountId, account.id), eq(transactions.fromAccountId, account.id))
+         );
+
+         if (accTxs.length > 0) {
+           let net = 0;
+           for (const t of accTxs) {
+             if (t.toAccountId === account.id) net += t.amount;
+             if (t.fromAccountId === account.id) net -= t.amount;
+           }
+           if (account.balance !== net) {
+             await db.update(bankAccounts).set({ balance: net }).where(eq(bankAccounts.id, account.id));
+             accountsUpdated++;
+           }
+         } else if (account.balance === 0 || autoSeed) {
+           // Seed initial default balance ($1,000) for zero balance accounts without transactions
+           const seedCents = req.body?.seedAmountCents ? Number(req.body.seedAmountCents) : 100000;
+           await db.update(bankAccounts).set({ balance: seedCents }).where(eq(bankAccounts.id, account.id));
+           await db.insert(transactions).values({
+             id: uuidv4(),
+             bankId: bankId,
+             toAccountId: account.id,
+             fromAccountId: null,
+             type: 'deposit',
+             amount: seedCents,
+             description: 'Initial Account Deposit / Ledger Sync',
+             timestamp: new Date()
+           });
+           accountsUpdated++;
+           totalAdded++;
          }
       }
-      res.json({ success: true, addedTransactions: totalAdded, accountsUpdated });
+
+      res.json({ success: true, addedTransactions: totalAdded, accountsUpdated, totalAccounts: accounts.length });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Failed to sync transactions" });

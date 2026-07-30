@@ -636,6 +636,19 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Updated `POST /api/banks/:bankId/customers/:discordId/profile` to accept and set `linkedDiscordId` and `mcUsername`.
   - Updated `BankCustomerDetail.tsx` under Administrative Profile to provide staff with editable fields for **Linked Discord ID** and **Minecraft Username**, allowing bank staff to manually associate, reassign, or verify unassigned customer accounts.
 
+## Dynamic Balance Reconciliation, Ledger Recalculation & Account Top-Up Engine
+- **Local Ledger Recalculation & Auto-Seeding Sync (`/api/banks/:bankId/transactions/sync`, `/api/citizen/sync-balances`)**:
+  - Upgraded the synchronization pipeline to attempt external CityCorp API reconciliation first, automatically falling back to internal transaction history net ledger calculation when CityCorp is unconfigured or offline.
+  - Automatically seeds default starter funding ($1,000) and inserts an initial deposit transaction record whenever an account has a $0 balance and no prior transactions, guaranteeing new accounts have active working capital.
+- **Staff Manual Balance Adjustments (`POST /api/banks/:bankId/accounts/:accountId/adjust-balance`, `BankAccounts.tsx`)**:
+  - Implemented secure staff-controlled balance adjustment endpoint supporting `set`, `deposit`, and `withdraw` actions.
+  - Generates atomic ledger transaction records for every adjustment to prevent ledger drift and maintain double-entry audit history.
+  - Added an **Adjust Balance** modal and row action button (`$`) directly in `BankAccounts.tsx`.
+- **Citizen Portal Balance Sync & Top-Up Modal (`POST /api/citizen/deposit-funds`, `CitizenPortal.tsx`)**:
+  - Added a **Sync / Top-Up Balances** action button in the Citizen Portal header and a **Top-Up** button on every account card.
+  - Opens a dedicated modal allowing citizens to run instant balance auto-syncs or execute direct account deposits with quick preset amounts (+$500, +$1,000, +$5,000).
+
+
 
 
 

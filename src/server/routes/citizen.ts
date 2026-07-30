@@ -1039,3 +1039,145 @@ citizenRouter.post("/api/citizen/vaults/:id/withdraw", requireAuth, async (req: 
         res.status(500).json({ error: "Internal error" });
     }
 });
+
+citizenRouter.post("/api/citizen/sync-balances", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, transactions, accountMembers, banks } = await import("../../db/schema.js");
+    const { eq, or, inArray } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+    const discordId = (req as any).user.discordId;
+
+    try {
+      const seedDefault = req.body?.seedDefault ?? true; // Default to seeding if $0
+      const customSeedAmount = req.body?.amount ? Math.round(Number(req.body.amount) * 100) : 100000; // $1,000 default
+
+      // 1. Get owned accounts
+      const ownedAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.ownerDiscordId, discordId));
+      
+      // 2. Get member accounts
+      const memberships = await db.select().from(accountMembers).where(eq(accountMembers.discordId, discordId));
+      const memberAccountIds = memberships.map(m => m.accountId);
+      let memberAccounts: any[] = [];
+      if (memberAccountIds.length > 0) {
+        memberAccounts = await db.select().from(bankAccounts).where(inArray(bankAccounts.id, memberAccountIds));
+      }
+
+      const allAccounts = [...ownedAccounts];
+      memberAccounts.forEach(m => {
+        if (!allAccounts.some(a => a.id === m.id)) allAccounts.push(m);
+      });
+
+      let updatedCount = 0;
+      let seededCount = 0;
+
+      for (const acc of allAccounts) {
+        // Attempt CityCorp remote sync if bank has credentials
+        let syncedRemote = false;
+        if (acc.bankId) {
+          const bank = await db.select().from(banks).where(eq(banks.id, acc.bankId)).get();
+          if (bank && bank.corpApiKey && bank.corpId !== null && bank.corpApiUuid !== null) {
+            try {
+              const { CityCorpClient } = await import("../../lib/citycorp_api");
+              const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+              const details = await client.getAccountDetails(acc.accountName);
+              if (details && details.account) {
+                const remBal = Math.round(Number(details.account.balance) * 100);
+                if (acc.balance !== remBal) {
+                  await db.update(bankAccounts).set({ balance: remBal }).where(eq(bankAccounts.id, acc.id));
+                  updatedCount++;
+                }
+                syncedRemote = true;
+              }
+            } catch (err) {
+              console.error("CityCorp sync error for citizen account:", err);
+            }
+          }
+        }
+
+        if (!syncedRemote) {
+          // Calculate from transactions
+          const accTxs = await db.select().from(transactions).where(
+            or(eq(transactions.toAccountId, acc.id), eq(transactions.fromAccountId, acc.id))
+          );
+
+          if (accTxs.length > 0) {
+            let net = 0;
+            for (const t of accTxs) {
+              if (t.toAccountId === acc.id) net += t.amount;
+              if (t.fromAccountId === acc.id) net -= t.amount;
+            }
+            if (acc.balance !== net) {
+              await db.update(bankAccounts).set({ balance: net }).where(eq(bankAccounts.id, acc.id));
+              updatedCount++;
+            }
+          } else if (acc.balance === 0 && seedDefault) {
+            // Seed starter balance so accounts do not remain at $0
+            await db.update(bankAccounts).set({ balance: customSeedAmount }).where(eq(bankAccounts.id, acc.id));
+            await db.insert(transactions).values({
+              id: uuidv4(),
+              bankId: acc.bankId,
+              toAccountId: acc.id,
+              fromAccountId: null,
+              type: 'deposit',
+              amount: customSeedAmount,
+              description: 'Initial Account Funding / Balance Sync',
+              timestamp: new Date()
+            });
+            seededCount++;
+            updatedCount++;
+          }
+        }
+      }
+
+      res.json({ success: true, updatedCount, seededCount, message: `Synced ${allAccounts.length} accounts.` });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to sync balances" });
+    }
+});
+
+citizenRouter.post("/api/citizen/deposit-funds", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, transactions } = await import("../../db/schema.js");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+    const discordId = (req as any).user.discordId;
+
+    try {
+      const { accountId, amountDollars, description } = req.body;
+      if (!accountId || !amountDollars || Number(amountDollars) <= 0) {
+        return res.status(400).json({ error: "Valid account ID and positive deposit amount required" });
+      }
+
+      const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
+      if (!account) return res.status(404).json({ error: "Account not found" });
+
+      if (account.ownerDiscordId !== discordId) {
+        const { accountMembers } = await import("../../db/schema.js");
+        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.discordId, discordId))).get();
+        if (!membership || (membership.role !== "owner" && membership.role !== "manager")) {
+          return res.status(403).json({ error: "Unauthorized to deposit into this account" });
+        }
+      }
+
+      const depositCents = Math.round(Number(amountDollars) * 100);
+      const newBalance = account.balance + depositCents;
+
+      await db.update(bankAccounts).set({ balance: newBalance }).where(eq(bankAccounts.id, account.id));
+      await db.insert(transactions).values({
+        id: uuidv4(),
+        bankId: account.bankId,
+        toAccountId: account.id,
+        fromAccountId: null,
+        type: 'deposit',
+        amount: depositCents,
+        description: description || `Manual Deposit / Account Funding (+$${Number(amountDollars).toFixed(2)})`,
+        timestamp: new Date()
+      });
+
+      res.json({ success: true, newBalance, depositedCents: depositCents, message: `Successfully deposited $${Number(amountDollars).toFixed(2)}` });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message || "Failed to deposit funds" });
+    }
+});

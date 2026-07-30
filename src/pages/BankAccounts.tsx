@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
-import { Plus, Trash2, Search, Wallet, User, Eye, ArrowRight } from "lucide-react";
+import { Plus, Trash2, Search, Wallet, User, Eye, ArrowRight, RefreshCw, DollarSign, X } from "lucide-react";
 import { formatMoney } from "../lib/utils";
 
 export function BankAccounts() {
@@ -10,30 +10,49 @@ export function BankAccounts() {
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Balance adjustment modal state
+  const [adjustingAcc, setAdjustingAcc] = useState<any | null>(null);
+  const [adjustAmount, setAdjustAmount] = useState("1000");
+  const [adjustMode, setAdjustMode] = useState<"deposit" | "set" | "withdraw">("deposit");
+  const [adjustingSubmitting, setAdjustingSubmitting] = useState(false);
 
   const fetchAccounts = () => {
     setLoading(true);
-    // Background sync balances and transactions for all accounts
-    fetch(`/api/banks/${bank.id}/transactions/sync`, { method: 'POST' })
-      .then(r => r.json())
-      .then(d => {
-         if (d.accountsUpdated > 0 || d.addedTransactions > 0) {
-            // Re-fetch to get new balances
-            fetch(`/api/banks/${bank.id}/accounts`)
-              .then(r => r.json())
-              .then(data => setAccounts(data));
-         }
-      })
-      .catch(console.error);
-
     fetch(`/api/banks/${bank.id}/accounts`)
-
       .then(r => r.json())
       .then(data => {
-        setAccounts(data);
+        setAccounts(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
         setLoading(false);
       });
+  };
+
+  const handleSyncAll = async (autoSeed = true) => {
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/transactions/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoSeed })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        fetchAccounts();
+      } else {
+        alert(data.error || "Failed to sync balances");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error triggering balance sync");
+    } finally {
+      setSyncing(false);
+    }
   };
 
   useEffect(() => {
@@ -67,6 +86,36 @@ export function BankAccounts() {
     });
   };
 
+  const handleAdjustSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustingAcc || !adjustAmount || Number(adjustAmount) < 0) return;
+    setAdjustingSubmitting(true);
+    try {
+      const amountCents = Math.round(Number(adjustAmount) * 100);
+      const res = await fetch(`/api/banks/${bank.id}/accounts/${adjustingAcc.id}/adjust-balance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountCents,
+          mode: adjustMode,
+          description: `Staff Manual Adjustment (${adjustMode})`
+        })
+      });
+      if (res.ok) {
+        setAdjustingAcc(null);
+        fetchAccounts();
+      } else {
+        const err = await res.json();
+        alert(`Failed to adjust balance: ${err.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error adjusting balance");
+    } finally {
+      setAdjustingSubmitting(false);
+    }
+  };
+
   const handleDelete = (accountId: string) => {
     if (confirm("Are you sure you want to delete this account?")) {
       fetch(`/api/banks/${bank.id}/accounts/${accountId}`, { method: "DELETE" })
@@ -92,6 +141,17 @@ export function BankAccounts() {
               className="bg-[#1a1a24] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors w-full sm:w-64"
             />
           </div>
+
+          <button 
+            onClick={() => handleSyncAll(true)}
+            disabled={syncing}
+            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/15 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 hover:border-indigo-500/50"
+            title="Recalculate balances from transactions & seed zero-balance accounts"
+          >
+            <RefreshCw size={15} className={syncing ? "animate-spin text-indigo-400" : "text-indigo-400"} />
+            {syncing ? "Syncing..." : "Sync Balances"}
+          </button>
+
           <button 
             onClick={() => setShowAdd(true)}
             className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 hover:scale-[1.02] shadow-lg shadow-indigo-600/10"
@@ -130,6 +190,88 @@ export function BankAccounts() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Adjust Balance Modal */}
+      {adjustingAcc && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative animate-in zoom-in-95 duration-200">
+            <button onClick={() => setAdjustingAcc(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5">
+              <X size={18} />
+            </button>
+            <div className="flex items-center gap-3 text-indigo-400">
+              <DollarSign size={24} />
+              <div>
+                <h3 className="text-lg font-bold text-white">Adjust Account Balance</h3>
+                <p className="text-xs text-slate-400">{adjustingAcc.accountName} ({adjustingAcc.id})</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleAdjustSubmit} className="space-y-4 pt-2">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Adjustment Mode</label>
+                <div className="grid grid-cols-3 gap-2 bg-[#0a0a0f] p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustMode("deposit")}
+                    className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustMode === "deposit" ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                  >
+                    Deposit (+)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustMode("set")}
+                    className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustMode === "set" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                  >
+                    Set Exact (=)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustMode("withdraw")}
+                    className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustMode === "withdraw" ? "bg-rose-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                  >
+                    Withdraw (-)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  {adjustMode === "deposit" ? "Deposit Amount ($)" : adjustMode === "withdraw" ? "Withdrawal Amount ($)" : "New Total Balance ($)"}
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={adjustAmount}
+                    onChange={(e) => setAdjustAmount(e.target.value)}
+                    className="w-full bg-[#1a1a24] border border-white/15 rounded-xl pl-8 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={adjustingSubmitting}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+                >
+                  {adjustingSubmitting ? "Updating..." : "Confirm Adjustment"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdjustingAcc(null)}
+                  className="px-4 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold rounded-xl border border-white/10 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -180,6 +322,13 @@ export function BankAccounts() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={() => { setAdjustingAcc(acc); setAdjustAmount("1000"); }}
+                        className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-2 rounded transition-colors"
+                        title="Top-Up / Adjust Balance"
+                      >
+                        <DollarSign size={16} />
+                      </button>
                       <button 
                         onClick={() => navigate(`/bank/${bank.id}/accounts/${acc.id}`)}
                         className="text-white/60 hover:text-white hover:bg-white/5 p-2 rounded transition-colors"
