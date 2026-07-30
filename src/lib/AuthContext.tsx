@@ -10,7 +10,9 @@ export interface UserSession {
 interface AuthContextType {
   user: UserSession | null;
   isLoading: boolean;
-  login: (bankId?: string, provider?: 'discord' | 'citycorp', intent?: 'login' | 'link') => void;
+  rememberMe: boolean;
+  setRememberMe: (remember: boolean) => void;
+  login: (bankId?: string, provider?: 'discord' | 'citycorp', intent?: 'login' | 'link', rememberMeOverride?: boolean) => void;
   logout: () => void;
   checkSession: () => Promise<void>;
 }
@@ -18,6 +20,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
+  rememberMe: true,
+  setRememberMe: () => {},
   login: () => {},
   logout: () => {},
   checkSession: async () => {},
@@ -28,6 +32,14 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const [user, setUser] = useState<UserSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [rememberMe, setRememberMeState] = useState<boolean>(() => {
+    return localStorage.getItem('slate_remember_me') !== 'false';
+  });
+
+  const setRememberMe = (remember: boolean) => {
+    setRememberMeState(remember);
+    localStorage.setItem('slate_remember_me', String(remember));
+  };
 
   const checkSession = async () => {
     console.log("checkSession called!");
@@ -76,12 +88,14 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     };
   }, []);
 
-  const login = async (bankId?: string, provider?: 'discord' | 'citycorp', intent?: 'login' | 'link') => {
+  const login = async (bankId?: string, provider?: 'discord' | 'citycorp', intent?: 'login' | 'link', rememberMeOverride?: boolean) => {
     try {
+      const finalRemember = rememberMeOverride !== undefined ? rememberMeOverride : rememberMe;
       const params = new URLSearchParams();
       if (bankId) params.append('bankId', bankId);
       if (provider) params.append('provider', provider);
       if (intent) params.append('intent', intent);
+      params.append('rememberMe', String(finalRemember));
       params.append('returnTo', window.location.pathname);
       params.append('origin', window.location.origin);
       
@@ -120,7 +134,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, checkSession }}>
+    <AuthContext.Provider value={{ user, isLoading, rememberMe, setRememberMe, login, logout, checkSession }}>
       {children}
     </AuthContext.Provider>
   );

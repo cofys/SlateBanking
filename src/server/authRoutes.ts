@@ -75,11 +75,13 @@ export function registerAuthRoutes(app: express.Express) {
       const mockBankObj = { cityCorpAppId: bank?.cityCorpAppId || process.env.CITYRP_APP_ID || "9", cityCorpAuthUrl: bank?.cityCorpAuthUrl || null };
       const authResultInitial = buildCityCorpAuthUrl(mockBankObj, redirectUri, "");
 
+      const rememberMe = req.query.rememberMe !== 'false';
       const stateObj = {
         bankId: bank?.id,
         appId: authResultInitial.appIdUsed,
         redirectUri: authResultInitial.redirectUriUsed,
         returnTo: req.query.returnTo,
+        rememberMe,
         nonce
       };
       const state = encodeURIComponent(JSON.stringify(stateObj));
@@ -98,7 +100,8 @@ export function registerAuthRoutes(app: express.Express) {
     const { v4: uuidv4 } = await import("uuid");
     const nonce = uuidv4();
     res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
-    const stateObj: any = { intent, nonce };
+    const rememberMe = req.query.rememberMe !== 'false';
+    const stateObj: any = { intent, rememberMe, nonce };
     if (bank) stateObj.bankId = bank.id;
     if (returnTo) stateObj.returnTo = returnTo;
     const state = encodeURIComponent(JSON.stringify(stateObj));
@@ -133,6 +136,7 @@ export function registerAuthRoutes(app: express.Express) {
       let returnTo;
       let redirectUriFromState;
       let appIdFromState;
+      let rememberMeFromState = true;
       try {
         const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
         const expectedNonce = req.cookies?.oauth_nonce;
@@ -144,6 +148,9 @@ export function registerAuthRoutes(app: express.Express) {
         returnTo = parsedState.returnTo;
         redirectUriFromState = parsedState.redirectUri;
         appIdFromState = parsedState.appId;
+        if (parsedState.rememberMe !== undefined) {
+          rememberMeFromState = Boolean(parsedState.rememberMe);
+        }
       } catch (e) {
         const host = req.get('host');
         let possibleBank = await db.select().from(banks).where(eq(banks.customDomain, host || "")).get();
@@ -324,12 +331,15 @@ export function registerAuthRoutes(app: express.Express) {
         isGlobalAdmin
       };
 
-      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
+      const tokenExpiry = rememberMeFromState ? '30d' : '24h';
+      const cookieMaxAge = rememberMeFromState ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: tokenExpiry });
       res.cookie('auth_token', signedToken, {
         secure: true,
         sameSite: 'lax',
         httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000
+        maxAge: cookieMaxAge
       });
 
       res.send(`
@@ -394,8 +404,9 @@ export function registerAuthRoutes(app: express.Express) {
     
     let intent = 'login';
     let bankId = null;
+    let rememberMeFromState = true;
     try {
-            if (state) {
+      if (state) {
         const decodedState = JSON.parse(decodeURIComponent(state as string));
         if (decodedState.nonce !== expectedNonce) {
            return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
@@ -403,6 +414,9 @@ export function registerAuthRoutes(app: express.Express) {
         console.log("Discord Callback - Decoded State:", decodedState);
         intent = decodedState.intent || 'login';
         bankId = decodedState.bankId;
+        if (decodedState.rememberMe !== undefined) {
+          rememberMeFromState = Boolean(decodedState.rememberMe);
+        }
       }
     } catch (e) {
         console.error("Discord Callback - State Parse Error:", e, "State was:", state);
@@ -524,12 +538,15 @@ export function registerAuthRoutes(app: express.Express) {
         }
       }
 
-      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
+      const tokenExpiry = rememberMeFromState ? '30d' : '24h';
+      const cookieMaxAge = rememberMeFromState ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: tokenExpiry });
       res.cookie('auth_token', token, {
         secure: true,
         sameSite: 'lax',
         httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000
+        maxAge: cookieMaxAge
       });
 
       let dest = (intent === 'link' || bankId) ? '/portal' : '/admin';
@@ -622,12 +639,16 @@ export function registerAuthRoutes(app: express.Express) {
         isGlobalAdmin: true
       };
 
-      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      const remember = req.body?.rememberMe !== false;
+      const expiresIn = remember ? '30d' : '24h';
+      const maxAge = remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn });
       res.cookie('auth_token', signedToken, {
         secure: true,
         sameSite: 'lax',
         httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000
+        maxAge
       });
 
       return res.json({ success: true, user: payload });

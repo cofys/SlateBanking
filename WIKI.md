@@ -652,6 +652,29 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Added a **Sync / Top-Up Balances** action button in the Citizen Portal header and a **Top-Up** button on every account card.
   - Opens a dedicated modal allowing citizens to run instant balance auto-syncs or execute direct explicit account deposits with custom descriptions and quick preset amounts (+$500, +$1,000, +$5,000).
 
+## Session Persistence & "Remember Me" Authentication
+- **Long-Lived Session Tokens (`src/server/authRoutes.ts`, `src/lib/AuthContext.tsx`)**:
+  - Implemented a **"Remember me on this device"** toggle option across all authentication entry points (Bank Staff Portal, Slate Control Center, Citizen Portal, and Payment Links).
+  - **30-Day Persistent Token**: When "Remember Me" is enabled (default checked), the system signs JWT session tokens with a **30-day expiration (`30d`)** and sets the `auth_token` HTTP cookie `maxAge` to 30 days (`30 * 24 * 60 * 60 * 1000`), preventing users from having to frequently re-authorize.
+  - **Single-Session Fallback**: When unchecked, authentication issues a short-lived 24-hour token (`24h`) for secure temporary or shared device access.
+  - **Client Persistence**: User preference is stored in `localStorage` under `slate_remember_me` and automatically passed to the OAuth state pipeline (`/api/auth/url?rememberMe=true/false`).
+
+## Throttled Background Sync Job Engine, In-Game Verification & Account Provisioning
+- **Asynchronous Background Job Engine (`src/server/sync_jobs.ts`)**:
+  - Replaced synchronous bulk sync loops with an asynchronous background task queue (`startBankSyncJob`, `startCitizenSyncJob`) to eliminate infinite loading spinners, server timeouts, and CityCorp API rate-limiting issues.
+  - **Throttled CityCorp API Queries**: Enforces a mandatory `250ms` delay between sequential account API checks, preventing rate limits and API bans when syncing large account lists.
+  - **Progress Tracking APIs (`GET /api/banks/:bankId/sync-job/:jobId`, `GET /api/citizen/sync-job/:jobId`)**: Provides live real-time job progress tracking (`processed`, `total`, `currentAccountName`, `syncedCount`, `flaggedCount`, `status`).
+  - **Frontend Progress Bar**: Integrated real-time animated progress bars and percentage counters in both `BankAccounts.tsx` and `CitizenPortal.tsx`.
+- **In-Game Account Verification & Missing Account Flagging (`bankAccounts` Schema)**:
+  - Added `existsInGame` (boolean), `lastSyncedAt` (timestamp), and `syncError` (text) columns to `bankAccounts`.
+  - When a balance sync runs, each account is queried one-by-one against CityCorp API (`getAccountDetails` and `getAllAccountTransactions`).
+  - If CityCorp returns an account error or non-existent status, `existsInGame` is flagged as `false` and saved in the database.
+  - Accounts flagged as `false` render prominent `⚠️ Not Found In-Game` badges in `BankAccounts.tsx`, `BankAccountDetail.tsx`, and `CitizenPortal.tsx`.
+- **Manual Corporate Account Provisioning (`POST /api/banks/:bankId/accounts/:accountId/provision-game`)**:
+  - Added a manual **"+ Provision in Game"** endpoint and action button on flagged accounts in both `BankAccounts.tsx` and `BankAccountDetail.tsx`.
+  - Calls `CityCorpClient.createAccount(accountName)` to provision the corporate account in-game via CityCorp, establishing the missing remote account, setting `existsInGame = true`, and clearing sync flags automatically.
+
+
 
 
 

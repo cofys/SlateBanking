@@ -11,6 +11,8 @@ export function BankAccounts() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ total: number; processed: number; current?: string; syncedCount: number; flaggedCount: number } | null>(null);
+  const [syncResultMsg, setSyncResultMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
   // Balance adjustment modal state
@@ -33,25 +35,87 @@ export function BankAccounts() {
       });
   };
 
-  const handleSyncAll = async (autoSeed = true) => {
+  const handleSyncAll = async () => {
     setSyncing(true);
+    setSyncResultMsg(null);
+    setSyncProgress(null);
+
     try {
       const res = await fetch(`/api/banks/${bank.id}/transactions/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ autoSeed })
+        headers: { 'Content-Type': 'application/json' }
       });
       const data = await res.json();
-      if (res.ok) {
-        fetchAccounts();
-      } else {
-        alert(data.error || "Failed to sync balances");
+
+      if (!res.ok) {
+        alert(data.error || "Failed to initiate sync job");
+        setSyncing(false);
+        return;
       }
+
+      if (data.totalAccounts === 0) {
+        setSyncResultMsg("No accounts found to sync.");
+        setSyncing(false);
+        return;
+      }
+
+      const jobId = data.jobId;
+      // Poll progress every 500ms
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/banks/${bank.id}/sync-job/${jobId}`);
+          if (!statusRes.ok) return;
+          const jobData = await statusRes.json();
+
+          setSyncProgress({
+            total: jobData.total,
+            processed: jobData.processed,
+            current: jobData.currentAccountName,
+            syncedCount: jobData.syncedCount,
+            flaggedCount: jobData.flaggedCount
+          });
+
+          if (jobData.status === 'completed' || jobData.status === 'failed') {
+            clearInterval(pollInterval);
+            setSyncing(false);
+            fetchAccounts();
+
+            if (jobData.status === 'completed') {
+              const msg = `Sync complete! Verified ${jobData.syncedCount} in-game account(s). ${jobData.flaggedCount > 0 ? `⚠️ ${jobData.flaggedCount} account(s) not found in-game.` : ''}`;
+              setSyncResultMsg(msg);
+            } else {
+              setSyncResultMsg("Sync failed: " + (jobData.error || "Unknown error"));
+            }
+          }
+        } catch (pollErr) {
+          console.error("Poll error:", pollErr);
+        }
+      }, 500);
+
     } catch (err) {
       console.error(err);
       alert("Error triggering balance sync");
-    } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleProvisionGame = async (accountId: string, accountName: string) => {
+    if (!confirm(`Are you sure you want to create the corporate account "${accountName}" on CityCorp in-game?`)) return;
+
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/provision-game`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || "Account successfully created in game!");
+        fetchAccounts();
+      } else {
+        alert(data.error || "Failed to create account in game");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error provisioning account in game");
     }
   };
 
@@ -143,13 +207,13 @@ export function BankAccounts() {
           </div>
 
           <button 
-            onClick={() => handleSyncAll(true)}
+            onClick={handleSyncAll}
             disabled={syncing}
-            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/15 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 hover:border-indigo-500/50"
-            title="Recalculate balances from transactions & seed zero-balance accounts"
+            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/15 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 hover:border-indigo-500/50 disabled:opacity-50"
+            title="Check each account against CityCorp API in-game"
           >
             <RefreshCw size={15} className={syncing ? "animate-spin text-indigo-400" : "text-indigo-400"} />
-            {syncing ? "Syncing..." : "Sync Balances"}
+            {syncing ? "Syncing Accounts..." : "Sync Balances"}
           </button>
 
           <button 
@@ -275,6 +339,39 @@ export function BankAccounts() {
         </div>
       )}
 
+      {/* Sync Progress Banner */}
+      {syncProgress && (
+        <div className="bg-[#12121e] border border-indigo-500/30 p-4 rounded-xl mb-6 shadow-xl animate-in fade-in duration-300">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={16} className="animate-spin text-indigo-400" />
+              <span className="text-sm font-semibold text-indigo-200">
+                Syncing CityCorp In-Game Balances... ({syncProgress.processed}/{syncProgress.total})
+              </span>
+            </div>
+            <span className="text-xs font-mono text-indigo-300">
+              {Math.round((syncProgress.processed / syncProgress.total) * 100)}%
+            </span>
+          </div>
+          <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden mb-2">
+            <div 
+              className="bg-indigo-500 h-full transition-all duration-300" 
+              style={{ width: `${(syncProgress.processed / syncProgress.total) * 100}%` }}
+            />
+          </div>
+          <p className="text-xs text-slate-400 font-mono">
+            {syncProgress.current ? `Checking account: "${syncProgress.current}"` : "Finalizing sync..."}
+          </p>
+        </div>
+      )}
+
+      {syncResultMsg && (
+        <div className={`p-4 rounded-xl mb-6 text-sm font-medium border flex items-center justify-between animate-in fade-in ${syncResultMsg.includes("⚠️") ? "bg-amber-500/10 border-amber-500/30 text-amber-200" : "bg-emerald-500/10 border-emerald-500/30 text-emerald-200"}`}>
+          <span>{syncResultMsg}</span>
+          <button onClick={() => setSyncResultMsg(null)} className="text-white/40 hover:text-white text-xs ml-4">Dismiss</button>
+        </div>
+      )}
+
       <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden overflow-x-auto shadow-2xl">
         {loading ? (
            <div className="p-8 text-center text-white/50">Loading accounts...</div>
@@ -303,9 +400,14 @@ export function BankAccounts() {
                         <Wallet size={16} />
                       </div>
                       <div>
-                        <div className="font-semibold text-white/95 group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                        <div className="font-semibold text-white/95 group-hover:text-indigo-400 transition-colors flex items-center gap-1.5 flex-wrap">
                           {acc.accountName}
                           <ArrowRight size={12} className="opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-indigo-400" />
+                          {acc.existsInGame === false && (
+                            <span className="px-2 py-0.5 text-[10px] uppercase font-extrabold rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 tracking-wider">
+                              ⚠️ Not Found In-Game
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-white/30 font-mono mt-0.5">{acc.id}</div>
                       </div>
@@ -322,6 +424,15 @@ export function BankAccounts() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
+                      {acc.existsInGame === false && (
+                        <button
+                          onClick={() => handleProvisionGame(acc.id, acc.accountName)}
+                          className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-xs px-2.5 py-1.5 rounded-lg transition-all font-semibold flex items-center gap-1 hover:scale-105"
+                          title="Create this account on CityCorp in-game"
+                        >
+                          + Provision in Game
+                        </button>
+                      )}
                       <button 
                         onClick={() => { setAdjustingAcc(acc); setAdjustAmount("1000"); }}
                         className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-2 rounded transition-colors"

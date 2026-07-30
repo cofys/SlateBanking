@@ -12,7 +12,7 @@ import { formatMoney } from "../lib/utils";
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 
 export function CitizenPortal() {
-  const { user, login, logout, isLoading, checkSession } = useAuth();
+  const { user, login, logout, isLoading, checkSession, rememberMe, setRememberMe } = useAuth();
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"dashboard" | "assets" | "transfer" | "invoices" | "loans" | "analytics" | "vaults">("dashboard");
@@ -25,6 +25,7 @@ export function CitizenPortal() {
   // Sync & Deposit modal state
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncingBalances, setSyncingBalances] = useState(false);
+  const [citizenSyncProgress, setCitizenSyncProgress] = useState<{ total: number; processed: number; current?: string; syncedCount: number; flaggedCount: number } | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [depositAccountId, setDepositAccountId] = useState("");
   const [depositAmount, setDepositAmount] = useState("1000");
@@ -80,26 +81,63 @@ export function CitizenPortal() {
     return `•••• •••• •••• ${chunks[3] || "0000"}`;
   };
 
-  const handleSyncBalances = async (seedDefault = true) => {
+  const handleSyncBalances = async () => {
     setSyncingBalances(true);
     setSyncMessage(null);
+    setCitizenSyncProgress(null);
     try {
       const res = await fetch("/api/citizen/sync-balances", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seedDefault })
+        headers: { "Content-Type": "application/json" }
       });
       const data = await res.json();
-      if (res.ok) {
-        setSyncMessage(data.message || "Balances synced & updated successfully!");
-        handleSearch();
-      } else {
-        setSyncMessage(data.error || "Failed to sync balances");
+      if (!res.ok) {
+        setSyncMessage(data.error || "Failed to start balance sync job");
+        setSyncingBalances(false);
+        return;
       }
+
+      if (data.totalAccounts === 0) {
+        setSyncMessage("No accounts found to sync.");
+        setSyncingBalances(false);
+        return;
+      }
+
+      const jobId = data.jobId;
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/citizen/sync-job/${jobId}`);
+          if (!statusRes.ok) return;
+          const jobData = await statusRes.json();
+
+          setCitizenSyncProgress({
+            total: jobData.total,
+            processed: jobData.processed,
+            current: jobData.currentAccountName,
+            syncedCount: jobData.syncedCount,
+            flaggedCount: jobData.flaggedCount
+          });
+
+          if (jobData.status === 'completed' || jobData.status === 'failed') {
+            clearInterval(pollInterval);
+            setSyncingBalances(false);
+            handleSearch();
+
+            if (jobData.status === 'completed') {
+              const msg = `Sync completed! ${jobData.syncedCount} account(s) verified. ${jobData.flaggedCount > 0 ? `⚠️ ${jobData.flaggedCount} account(s) not found in-game.` : ''}`;
+              setSyncMessage(msg);
+            } else {
+              setSyncMessage("Sync failed: " + (jobData.error || "Unknown error"));
+            }
+          }
+        } catch (pollErr) {
+          console.error("Poll error:", pollErr);
+        }
+      }, 500);
+
     } catch (err) {
       console.error(err);
-      setSyncMessage("Error syncing balances");
-    } finally {
+      setSyncMessage("Error starting balance sync");
       setSyncingBalances(false);
     }
   };
@@ -167,7 +205,18 @@ export function CitizenPortal() {
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
           <ShieldCheck className="w-16 h-16 text-indigo-400 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(99,102,241,0.3)]" />
           <h1 className="text-3xl font-black text-white tracking-tight mb-3">Citizen Portal</h1>
-          <p className="text-slate-400 text-sm mb-8">Secure access to your unified financial identity. Authenticate via CityCorp to view your accounts across all institutions.</p>
+          <p className="text-slate-400 text-sm mb-6">Secure access to your unified financial identity. Authenticate via CityCorp to view your accounts across all institutions.</p>
+          
+          <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-slate-400 hover:text-slate-200 mb-6 select-none transition-colors">
+            <input 
+              type="checkbox" 
+              checked={rememberMe} 
+              onChange={(e) => setRememberMe(e.target.checked)} 
+              className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-blue-500 focus:ring-offset-slate-900 cursor-pointer"
+            />
+            <span>Remember me on this device</span>
+          </label>
+
           <button 
             onClick={() => login(undefined, 'citycorp')}
             className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors"
@@ -367,10 +416,33 @@ export function CitizenPortal() {
                 </div>
               </div>
 
+              {citizenSyncProgress && (
+                <div className="bg-[#12121e] border border-indigo-500/30 p-3 rounded-xl shadow-lg">
+                  <div className="flex items-center justify-between mb-1 text-xs">
+                    <span className="font-semibold text-indigo-300 flex items-center gap-1.5">
+                      <RefreshCw size={12} className="animate-spin text-indigo-400" />
+                      Checking CityCorp Accounts ({citizenSyncProgress.processed}/{citizenSyncProgress.total})
+                    </span>
+                    <span className="font-mono text-indigo-400 font-bold">
+                      {Math.round((citizenSyncProgress.processed / citizenSyncProgress.total) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mb-1">
+                    <div 
+                      className="bg-indigo-500 h-full transition-all duration-300"
+                      style={{ width: `${(citizenSyncProgress.processed / citizenSyncProgress.total) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    {citizenSyncProgress.current ? `Account: "${citizenSyncProgress.current}"` : "Finalizing..."}
+                  </p>
+                </div>
+              )}
+
               {syncMessage && (
                 <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
-                  syncMessage.includes("error") || syncMessage.includes("Failed") 
-                    ? "bg-red-500/10 text-red-400 border border-red-500/20" 
+                  syncMessage.includes("error") || syncMessage.includes("Failed") || syncMessage.includes("⚠️")
+                    ? "bg-amber-500/10 text-amber-300 border border-amber-500/20" 
                     : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                 }`}>
                   <AlertCircle size={15} />
@@ -385,17 +457,17 @@ export function CitizenPortal() {
                     Auto-Sync All Accounts
                   </h4>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Recalculates ledger net totals from all transactions. If balance is $0, seeds starter funding ($1,000).
+                    Checks each linked account against the CityCorp API in-game, recalculating ledger totals and verifying remote balances.
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleSyncBalances(true)}
+                  onClick={handleSyncBalances}
                   disabled={syncingBalances}
                   className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <RefreshCw size={14} className={syncingBalances ? "animate-spin" : ""} />
-                  {syncingBalances ? "Syncing Accounts..." : "Run Auto-Sync & Ledger Seed"}
+                  {syncingBalances ? "Syncing Accounts..." : "Run In-Game Balance Sync"}
                 </button>
               </div>
 
@@ -804,6 +876,13 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
                     }`}>
                       {userRole}
                     </span>
+
+                    {/* In-game existence warning badge */}
+                    {acc.existsInGame === false && (
+                      <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded border bg-amber-500/20 text-amber-300 border-amber-500/40 flex items-center gap-1 tracking-wider" title={acc.syncError || "Account was not found on CityCorp in-game"}>
+                        ⚠️ Not Found In-Game
+                      </span>
+                    )}
                   </div>
 
                   <p className="text-sm text-slate-400 mt-0.5">{acc.bankName}</p>

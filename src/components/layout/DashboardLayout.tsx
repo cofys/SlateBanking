@@ -6,7 +6,7 @@ import { useAuth } from "../../lib/AuthContext";
 export function DashboardLayout() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { user, login, logout, isLoading, checkSession } = useAuth();
+  const { user, login, logout, isLoading, checkSession, rememberMe, setRememberMe } = useAuth();
   const [loggingIn, setLoggingIn] = useState(false);
 
   const handleDemoAdminLogin = async () => {
@@ -15,7 +15,7 @@ export function DashboardLayout() {
       const res = await fetch('/api/auth/demo-admin-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user?.username || "GlobalOperator" })
+        body: JSON.stringify({ username: user?.username || "GlobalOperator", rememberMe })
       });
       if (res.ok) {
         await checkSession();
@@ -59,6 +59,16 @@ export function DashboardLayout() {
           </div>
 
           <div className="space-y-3 pt-2">
+            <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 py-1 select-none transition-colors">
+              <input 
+                type="checkbox" 
+                checked={rememberMe} 
+                onChange={(e) => setRememberMe(e.target.checked)} 
+                className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 cursor-pointer"
+              />
+              <span>Remember me on this device</span>
+            </label>
+
             <button
               onClick={() => login(undefined, 'discord')}
               className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#5865F2]/20 text-sm"

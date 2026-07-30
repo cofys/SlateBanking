@@ -1042,9 +1042,9 @@ citizenRouter.post("/api/citizen/vaults/:id/withdraw", requireAuth, async (req: 
 
 citizenRouter.post("/api/citizen/sync-balances", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, transactions, accountMembers, banks } = await import("../../db/schema.js");
-    const { eq, and, or, inArray } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { bankAccounts, accountMembers } = await import("../../db/schema.js");
+    const { eq, inArray } = await import("drizzle-orm");
+    const { startCitizenSyncJob } = await import("../sync_jobs");
     const discordId = (req as any).user.discordId;
 
     try {
@@ -1064,126 +1064,23 @@ citizenRouter.post("/api/citizen/sync-balances", requireAuth, async (req: expres
         if (!allAccounts.some(a => a.id === m.id)) allAccounts.push(m);
       });
 
-      let updatedCount = 0;
-
-      for (const acc of allAccounts) {
-        // Attempt CityCorp remote sync if bank has credentials
-        let syncedRemote = false;
-        let remBal: number | null = null;
-
-        if (acc.bankId) {
-          const bank = await db.select().from(banks).where(eq(banks.id, acc.bankId)).get();
-          if (bank && bank.corpApiKey && bank.corpId !== null && bank.corpApiUuid !== null) {
-            try {
-              const { CityCorpClient } = await import("../../lib/citycorp_api");
-              const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-              const details = await client.getAccountDetails(acc.accountName);
-              if (details && details.account) {
-                remBal = Math.round(Number(details.account.balance) * 100);
-                syncedRemote = true;
-              }
-
-              // Pull ALL remote transactions for double verification
-              const remoteTxs = await client.getAllAccountTransactions(acc.accountName);
-              if (remoteTxs && Array.isArray(remoteTxs) && remoteTxs.length > 0) {
-                const existingTxs = await db.select().from(transactions).where(
-                  and(
-                    eq(transactions.bankId, acc.bankId),
-                    or(eq(transactions.toAccountId, acc.id), eq(transactions.fromAccountId, acc.id))
-                  )
-                );
-                const existingTxIds = new Set(existingTxs.map(t => t.id));
-                const existingTxKeys = new Set(existingTxs.map(t => `${t.type}_${t.amount}_${t.description}`));
-
-                for (const tx of remoteTxs) {
-                  let txAmount = tx.amount || tx.value || 0;
-                  if (typeof txAmount === 'string') txAmount = parseFloat(txAmount.replace(/[^0-9.-]+/g,""));
-                  
-                  const isOutflow = tx.type === 'withdraw' || tx.type === 'transfer_out' || txAmount < 0;
-                  const amountCents = Math.abs(Math.round(Number(txAmount) * 100));
-                  const desc = tx.description || tx.memo || "Synced transaction";
-                  const txTypeKey = `${isOutflow ? 'withdraw' : 'deposit'}_${amountCents}_${desc}`;
-
-                  if (!existingTxIds.has(tx.id) && !existingTxKeys.has(txTypeKey)) {
-                    await db.insert(transactions).values({
-                      id: tx.id || uuidv4(),
-                      bankId: acc.bankId,
-                      fromAccountId: isOutflow ? acc.id : null,
-                      toAccountId: !isOutflow ? acc.id : null,
-                      type: isOutflow ? 'withdraw' : 'deposit',
-                      amount: amountCents,
-                      description: desc,
-                      timestamp: new Date(tx.timestamp || tx.date || tx.created_at || Date.now())
-                    });
-                    existingTxKeys.add(txTypeKey);
-                  }
-                }
-              }
-            } catch (err) {
-              console.error("CityCorp sync error for citizen account:", err);
-            }
-          }
-        }
-
-        // Clean up duplicate "Initial Account Funding / Balance Sync" entries from past bug
-        let accTxs = await db.select().from(transactions).where(
-          or(eq(transactions.toAccountId, acc.id), eq(transactions.fromAccountId, acc.id))
-        );
-
-        const dupSyncTxs = accTxs.filter(t => 
-          t.description && (
-            t.description.includes("Initial Account Funding") || 
-            t.description.includes("Initial Account Deposit") ||
-            t.description.includes("Balance Sync")
-          )
-        );
-
-        if (dupSyncTxs.length > 1) {
-          dupSyncTxs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          const duplicates = dupSyncTxs.slice(1);
-          const dupIds = duplicates.map(d => d.id);
-          if (dupIds.length > 0) {
-            await db.delete(transactions).where(inArray(transactions.id, dupIds));
-            // Refresh accTxs list
-            accTxs = await db.select().from(transactions).where(
-              or(eq(transactions.toAccountId, acc.id), eq(transactions.fromAccountId, acc.id))
-            );
-          }
-        }
-
-        let net = 0;
-        for (const t of accTxs) {
-          if (t.toAccountId === acc.id) net += t.amount;
-          if (t.fromAccountId === acc.id) net -= t.amount;
-        }
-
-        const targetBalance = (syncedRemote && remBal !== null) ? remBal : net;
-
-        if (acc.balance !== targetBalance) {
-          await db.update(bankAccounts).set({ balance: targetBalance }).where(eq(bankAccounts.id, acc.id));
-          updatedCount++;
-        }
-
-        if (accTxs.length === 0 && targetBalance > 0) {
-          // Create a single baseline transaction for existing account balance so ledger stays consistent
-          await db.insert(transactions).values({
-            id: uuidv4(),
-            bankId: acc.bankId,
-            toAccountId: acc.id,
-            fromAccountId: null,
-            type: 'deposit',
-            amount: targetBalance,
-            description: 'Opening Account Balance',
-            timestamp: new Date(acc.createdAt || Date.now())
-          });
-        }
+      if (allAccounts.length === 0) {
+        return res.json({ success: true, message: "No accounts found to sync", totalAccounts: 0 });
       }
 
-      res.json({ success: true, updatedCount, message: `Synced & reconciled ${allAccounts.length} accounts.` });
+      const jobId = startCitizenSyncJob(discordId, allAccounts);
+      return res.json({ success: true, jobId, totalAccounts: allAccounts.length });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Failed to sync balances" });
+      res.status(500).json({ error: "Failed to start citizen balance sync job" });
     }
+});
+
+citizenRouter.get("/api/citizen/sync-job/:jobId", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { getSyncJob } = await import("../sync_jobs");
+    const job = getSyncJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: "Job not found or expired" });
+    res.json(job);
 });
 
 citizenRouter.post("/api/citizen/deposit-funds", requireAuth, async (req: express.Request, res: express.Response) => {

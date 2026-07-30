@@ -6,7 +6,7 @@ import { formatMoney } from "../lib/utils";
 
 export function PayLink() {
   const { linkId } = useParams();
-  const { user, login } = useAuth();
+  const { user, login, rememberMe, setRememberMe } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [linkData, setLinkData] = useState<any>(null);
@@ -54,7 +54,18 @@ export function PayLink() {
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
           <ShieldCheck className="w-16 h-16 text-indigo-400 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(99,102,241,0.3)]" />
           <h1 className="text-3xl font-black text-white tracking-tight mb-3">Login to Pay</h1>
-          <p className="text-slate-400 text-sm mb-8">You need to log in to complete this payment.</p>
+          <p className="text-slate-400 text-sm mb-6">You need to log in to complete this payment.</p>
+          
+          <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-slate-400 hover:text-slate-200 mb-6 select-none transition-colors">
+            <input 
+              type="checkbox" 
+              checked={rememberMe} 
+              onChange={(e) => setRememberMe(e.target.checked)} 
+              className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-blue-500 focus:ring-offset-slate-900 cursor-pointer"
+            />
+            <span>Remember me on this device</span>
+          </label>
+
           <button 
             onClick={() => login(undefined, 'citycorp')}
             className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors"

@@ -97,7 +97,7 @@ const schemeMap: Record<string, ThemeConfig> = {
 export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const params = useParams();
   const bankId = overrideBankId || params.bankId;
-  const { user, login, logout, isLoading } = useAuth();
+  const { user, login, logout, isLoading, rememberMe, setRememberMe } = useAuth();
   const [bank, setBank] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
@@ -367,6 +367,16 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             </div>
 
             <div className="space-y-3">
+              <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 py-1 select-none transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={rememberMe} 
+                  onChange={(e) => setRememberMe(e.target.checked)} 
+                  className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 cursor-pointer"
+                />
+                <span>Remember me on this device</span>
+              </label>
+
               {bank.cityCorpAppId ? (
                 <button 
                   onClick={() => login(bankId, 'citycorp')}

@@ -72,6 +72,9 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   customTransferFeePercent: integer("custom_transfer_fee_percent"), // Custom transfer fee override in basis points (multiplied by 100); null uses bank settings default
   customDepositFeePercent: integer("custom_deposit_fee_percent"),   // Custom deposit fee override in basis points; null uses bank settings default
   customWithdrawFeePercent: integer("custom_withdraw_fee_percent"), // Custom withdraw fee override in basis points; null uses bank settings default
+  existsInGame: integer("exists_in_game", { mode: "boolean" }).default(true),
+  lastSyncedAt: integer("last_synced_at", { mode: "timestamp" }),
+  syncError: text("sync_error"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
   bankIdIdx: index("idx_bank_accounts_bank_id").on(table.bankId),

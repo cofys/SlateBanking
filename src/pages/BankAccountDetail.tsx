@@ -180,8 +180,15 @@ export function BankAccountDetail() {
         </Link>
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight mb-2">{account.accountName}</h2>
-            <div className="flex items-center gap-6 text-white/50 text-sm">
+            <div className="flex items-center gap-3 mb-2">
+              <h2 className="text-3xl font-bold tracking-tight">{account.accountName}</h2>
+              {account.existsInGame === false && (
+                <span className="px-2.5 py-1 text-xs uppercase font-extrabold rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 tracking-wider">
+                  ⚠️ Not Found In-Game
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-6 text-white/50 text-sm flex-wrap">
               <span className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Active
               </span>
@@ -215,11 +222,29 @@ export function BankAccountDetail() {
               </div>
             </div>
           </div>
-          <div className="text-right">
-             <div className="text-xs text-white/40 mb-1 uppercase tracking-widest font-semibold">Available Balance</div>
+          <div className="text-right flex flex-col items-end gap-2">
+             <div className="text-xs text-white/40 uppercase tracking-widest font-semibold">Available Balance</div>
              <div className="text-4xl font-extrabold text-emerald-400 tracking-tight font-mono">
                {formatMoney(account.balance)}
              </div>
+             {account.existsInGame === false && (
+               <button
+                 onClick={async () => {
+                   if (!confirm(`Create corporate account "${account.accountName}" on CityCorp in-game?`)) return;
+                   const res = await fetch(`/api/banks/${bank.id}/accounts/${account.id}/provision-game`, { method: 'POST' });
+                   const d = await res.json();
+                   if (res.ok) {
+                     alert(d.message || "Created in game!");
+                     fetchAcc();
+                   } else {
+                     alert(d.error || "Failed to create account in game");
+                   }
+                 }}
+                 className="mt-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-xs px-3 py-1.5 rounded-lg transition-all font-semibold flex items-center gap-1.5"
+               >
+                 + Provision in Game
+               </button>
+             )}
           </div>
         </div>
       </div>
