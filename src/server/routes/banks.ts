@@ -3447,7 +3447,7 @@ banksRouter.post("/api/banks/:bankId/vaults/:vaultId/release", requireBankStaff,
 
 banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { cards, bankAccounts } = await import("../../db/schema");
+    const { cards, bankAccounts, bankCustomers } = await import("../../db/schema");
     const { eq } = await import("drizzle-orm");
     try {
        const bankCards = await db.select({
@@ -3465,7 +3465,24 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
        .innerJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
        .where(eq(cards.bankId, req.params.bankId));
        
-       res.json(bankCards);
+       const customers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
+       const customerMap = new Map<string, string>();
+       for (const c of customers) {
+         if (c.discordId && c.mcUsername) customerMap.set(c.discordId, c.mcUsername);
+       }
+
+       const enrichedCards = bankCards.map(c => {
+         let ownerName = customerMap.get(c.ownerDiscordId!);
+         if (!ownerName && c.ownerDiscordId && !/^\d{17,20}$/.test(c.ownerDiscordId)) {
+           ownerName = c.ownerDiscordId;
+         }
+         return {
+           ...c,
+           resolvedOwnerName: ownerName || c.ownerDiscordId
+         };
+       });
+
+       res.json(enrichedCards);
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
@@ -3505,6 +3522,20 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
        }).returning().get();
 
        res.json(result);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+banksRouter.delete("/api/banks/:bankId/cards/:cardId", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { cards } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    try {
+       await db.delete(cards)
+         .where(and(eq(cards.id, req.params.cardId), eq(cards.bankId, req.params.bankId)));
+       res.json({ success: true });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });

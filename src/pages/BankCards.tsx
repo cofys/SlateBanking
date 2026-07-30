@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { CreditCard, Plus, Lock, Unlock, RefreshCw, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { CreditCard, Plus, Lock, Unlock, RefreshCw, AlertCircle, Eye, EyeOff, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export function BankCards() {
@@ -48,6 +48,20 @@ export function BankCards() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isLocked: !currentStatus })
       });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const deleteCard = async (cardId: string) => {
+    if (!confirm("Are you sure you want to permanently delete this card? This action cannot be undone.")) return;
+    try {
+      const res = await fetch(`/api/banks/${bankId}/cards/${cardId}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        fetchData();
+      }
     } catch (e) {
       console.error(e);
     }
@@ -229,8 +243,8 @@ export function BankCards() {
                 <div className="flex justify-between items-end relative z-10">
                   <div>
                     <div className="text-[10px] text-white/50 uppercase tracking-widest mb-0.5">Cardholder</div>
-                    <div className="text-sm font-medium text-white/90 tracking-wider truncate max-w-[150px]">
-                      {card.accountName}
+                    <div className="text-sm font-medium text-white/90 tracking-wider truncate max-w-[150px]" title={card.accountName}>
+                      {card.resolvedOwnerName || card.accountName}
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
@@ -261,6 +275,13 @@ export function BankCards() {
                   title="Toggle details visibility"
                 >
                   {visibleNumber[card.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+                <button 
+                  onClick={() => deleteCard(card.id)}
+                  className="py-2 px-4 rounded-lg flex items-center justify-center text-sm font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-colors"
+                  title="Delete Card"
+                >
+                  <Trash2 size={16} />
                 </button>
               </div>
             </div>
