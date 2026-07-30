@@ -665,10 +665,12 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - **Throttled CityCorp API Queries**: Enforces a mandatory `250ms` delay between sequential account API checks, preventing rate limits and API bans when syncing large account lists.
   - **Progress Tracking APIs (`GET /api/banks/:bankId/sync-job/:jobId`, `GET /api/citizen/sync-job/:jobId`)**: Provides live real-time job progress tracking (`processed`, `total`, `currentAccountName`, `syncedCount`, `flaggedCount`, `status`).
   - **Frontend Progress Bar**: Integrated real-time animated progress bars and percentage counters in both `BankAccounts.tsx` and `CitizenPortal.tsx`.
-- **In-Game Account Verification & Robust API Response Handling (`bankAccounts` Schema, `src/lib/citycorp_api.ts`)**:
+- **In-Game Account Verification & Robust API Response Handling (`bankAccounts` Schema, `src/lib/citycorp_api.ts`, `src/server/sync_jobs.ts`)**:
   - Added `existsInGame` (boolean), `lastSyncedAt` (timestamp), and `syncError` (text) columns to `bankAccounts`.
-  - Normalized `CityCorpClient.getAccountDetails(accountName)` to parse both flat and nested account response shapes (`data.balance`, `data.account.balance`, `data.data.balance`).
-  - Differentiates actual HTTP 404 / account missing errors from general API failures (such as HTTP 401 Unauthorized, rate-limiting, or temporary timeouts), preserving `existsInGame = true` state on network/auth errors and displaying descriptive `syncError` messages instead of falsely marking accounts as non-existent.
+  - **Optimized Corporation Pre-Fetching (`CityCorpClient.fetchAllAccounts()`)**: Pre-fetches the entire corporation account list from `/accounts/list` in bulk at job startup, constructing a case-insensitive normalized lookup map (`remoteAccountsMap`).
+  - **Accurate In-Game Verification**: Matches each local account against the in-game corporation registry in memory, bypassing single-endpoint query mismatches while drastically reducing total API round-trips.
+  - **Fallback Resolution**: `CityCorpClient.getAccountDetails(accountName)` includes fallback resolution against `fetchAllAccounts()` if direct query fails.
+  - **Network & Credential Guardrails**: Differentiates actual account missing states from API connection, authorization, or rate-limiting errors, keeping `existsInGame` intact when API errors occur and displaying descriptive `syncError` messages instead of falsely flagging accounts.
   - Accounts confirmed as missing on CityCorp render prominent `⚠️ Not Found In-Game` badges in `BankAccounts.tsx`, `BankAccountDetail.tsx`, and `CitizenPortal.tsx`.
 - **Manual Corporate Account Provisioning (`POST /api/banks/:bankId/accounts/:accountId/provision-game`)**:
   - Added a manual **"+ Provision in Game"** endpoint and action button on flagged accounts in both `BankAccounts.tsx` and `BankAccountDetail.tsx`.

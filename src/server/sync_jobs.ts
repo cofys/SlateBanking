@@ -36,7 +36,12 @@ export function getSyncJob(jobId: string): SyncJob | undefined {
   return syncJobs.get(jobId);
 }
 
-export async function syncSingleAccount(account: any, bank: any) {
+export async function syncSingleAccount(
+  account: any, 
+  bank: any, 
+  preMap?: Map<string, any> | null, 
+  preError?: string | null
+) {
   let syncedRemote = false;
   let existsInGame = account.existsInGame ?? true;
   let syncError: string | null = null;
@@ -46,7 +51,42 @@ export async function syncSingleAccount(account: any, bank: any) {
   if (bank && bank.corpApiKey && bank.corpId !== null && bank.corpApiUuid !== null) {
     try {
       const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-      const res = await client.getAccountDetails(account.accountName);
+
+      let res: any = null;
+
+      // 1. If a pre-fetched map from fetchAllAccounts() was provided:
+      if (preMap !== undefined) {
+        if (preMap !== null) {
+          const targetKey = (account.accountName || "").toLowerCase().trim();
+          const matchedRemote = preMap.get(targetKey);
+          if (matchedRemote) {
+            res = {
+              success: true,
+              status: 200,
+              balance: matchedRemote.balance ?? 0,
+              account: matchedRemote
+            };
+          } else {
+            res = {
+              success: false,
+              status: 404,
+              notFound: true,
+              error: "Account does not exist on CityCorp in-game"
+            };
+          }
+        } else {
+          // Pre-fetch failed with an API error
+          res = {
+            success: false,
+            status: 500,
+            notFound: false,
+            error: preError || "CityCorp API error"
+          };
+        }
+      } else {
+        // Direct query for single account
+        res = await client.getAccountDetails(account.accountName);
+      }
 
       if (res && res.success) {
         remoteBalanceCents = Math.round(Number(res.balance ?? 0) * 100);
@@ -197,12 +237,35 @@ async function processSyncJob(jobId: string, accounts: any[], bank: any) {
   job.status = 'processing';
   job.updatedAt = new Date();
 
+  let remoteAccountsMap: Map<string, any> | null = null;
+  let remoteFetchError: string | null = null;
+
+  if (bank && bank.corpApiKey && bank.corpId !== null && bank.corpApiUuid !== null) {
+    try {
+      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+      const allRemote = await client.fetchAllAccounts();
+      if (allRemote.success) {
+        remoteAccountsMap = new Map();
+        for (const remoteAcc of allRemote.accounts) {
+          const nameKey = (remoteAcc.name || remoteAcc.account_name || "").toLowerCase().trim();
+          if (nameKey) {
+            remoteAccountsMap.set(nameKey, remoteAcc);
+          }
+        }
+      } else {
+        remoteFetchError = allRemote.error || `CityCorp API error (${allRemote.status})`;
+      }
+    } catch (err: any) {
+      remoteFetchError = err.message || "Failed to reach CityCorp API";
+    }
+  }
+
   for (const acc of accounts) {
     job.currentAccountName = acc.accountName;
     job.updatedAt = new Date();
 
     try {
-      const res = await syncSingleAccount(acc, bank);
+      const res = await syncSingleAccount(acc, bank, remoteAccountsMap, remoteFetchError);
       if (res.existsInGame) {
         job.syncedCount++;
       } else {
@@ -216,8 +279,7 @@ async function processSyncJob(jobId: string, accounts: any[], bank: any) {
     job.processed++;
     job.updatedAt = new Date();
 
-    // 250ms pause between accounts to prevent hitting API limits
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 50));
   }
 
   job.status = 'completed';
@@ -232,8 +294,9 @@ async function processCitizenSyncJob(jobId: string, accounts: any[]) {
   job.status = 'processing';
   job.updatedAt = new Date();
 
-  // Cache bank details
+  // Cache bank details and bank remote account maps
   const bankCache = new Map<string, any>();
+  const bankRemoteMaps = new Map<string, { map: Map<string, any> | null; error: string | null }>();
 
   for (const acc of accounts) {
     job.currentAccountName = acc.accountName;
@@ -250,7 +313,39 @@ async function processCitizenSyncJob(jobId: string, accounts: any[]) {
         }
       }
 
-      const res = await syncSingleAccount(acc, bank);
+      let bankMapInfo: { map: Map<string, any> | null; error: string | null } | undefined = undefined;
+
+      if (bank && bank.corpApiKey && bank.corpId !== null && bank.corpApiUuid !== null) {
+        if (bankRemoteMaps.has(bank.id)) {
+          bankMapInfo = bankRemoteMaps.get(bank.id)!;
+        } else {
+          try {
+            const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+            const allRemote = await client.fetchAllAccounts();
+            if (allRemote.success) {
+              const map = new Map<string, any>();
+              for (const remoteAcc of allRemote.accounts) {
+                const nameKey = (remoteAcc.name || remoteAcc.account_name || "").toLowerCase().trim();
+                if (nameKey) map.set(nameKey, remoteAcc);
+              }
+              bankMapInfo = { map, error: null };
+            } else {
+              bankMapInfo = { map: null, error: allRemote.error || `CityCorp API error (${allRemote.status})` };
+            }
+          } catch (err: any) {
+            bankMapInfo = { map: null, error: err.message || "Failed to reach CityCorp API" };
+          }
+          bankRemoteMaps.set(bank.id, bankMapInfo);
+        }
+      }
+
+      const res = await syncSingleAccount(
+        acc, 
+        bank, 
+        bankMapInfo ? bankMapInfo.map : undefined, 
+        bankMapInfo ? bankMapInfo.error : undefined
+      );
+
       if (res.existsInGame) {
         job.syncedCount++;
       } else {
@@ -264,8 +359,7 @@ async function processCitizenSyncJob(jobId: string, accounts: any[]) {
     job.processed++;
     job.updatedAt = new Date();
 
-    // 250ms pause between accounts
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 50));
   }
 
   job.status = 'completed';

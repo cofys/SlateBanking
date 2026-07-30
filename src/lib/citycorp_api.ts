@@ -160,6 +160,43 @@ export class CityCorpClient {
     }
   }
 
+  async fetchAllAccounts(maxPages: number = 25) {
+    let allAccounts: any[] = [];
+    let page = 1;
+    let apiStatus = 200;
+    let apiError: string | null = null;
+    let success = false;
+
+    while (page <= maxPages) {
+      const res = await this.listAccounts(page);
+      if (res.error) {
+        apiStatus = res.status || 500;
+        apiError = res.error;
+        break;
+      }
+      success = true;
+      let list: any[] = [];
+      if (Array.isArray(res.accounts)) list = res.accounts;
+      else if (Array.isArray(res.data)) list = res.data;
+      else if (Array.isArray(res.results)) list = res.results;
+      else if (Array.isArray(res)) list = res;
+
+      allAccounts.push(...list);
+      const totalPages = res.totalPages || res.total_pages || 1;
+      if (page >= totalPages || list.length === 0) {
+        break;
+      }
+      page++;
+    }
+
+    return {
+      success,
+      status: apiStatus,
+      error: apiError,
+      accounts: allAccounts
+    };
+  }
+
   async getAccountDetails(accountName: string) {
     const url = new URL(`${this.baseUrl}/accounts`);
     url.searchParams.append("corp_id", this.corpId.toString());
@@ -193,6 +230,21 @@ export class CityCorpClient {
 
       await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, res.status, false, parsedErr);
       
+      // Fallback: check fetchAllAccounts() via /accounts/list
+      const allRes = await this.fetchAllAccounts();
+      if (allRes.success && Array.isArray(allRes.accounts)) {
+        const target = accountName.toLowerCase().trim();
+        const found = allRes.accounts.find((a: any) => (a.name || a.account_name || "").toLowerCase().trim() === target);
+        if (found) {
+          return {
+            success: true,
+            status: 200,
+            balance: found.balance ?? 0,
+            account: found
+          };
+        }
+      }
+
       const isNotFound = res.status === 404 || parsedErr.toLowerCase().includes("not found") || parsedErr.toLowerCase().includes("does not exist");
       return {
         success: false,
@@ -201,6 +253,22 @@ export class CityCorpClient {
         error: parsedErr || "Account request failed"
       };
     } catch (e: any) {
+      try {
+        const allRes = await this.fetchAllAccounts();
+        if (allRes.success && Array.isArray(allRes.accounts)) {
+          const target = accountName.toLowerCase().trim();
+          const found = allRes.accounts.find((a: any) => (a.name || a.account_name || "").toLowerCase().trim() === target);
+          if (found) {
+            return {
+              success: true,
+              status: 200,
+              balance: found.balance ?? 0,
+              account: found
+            };
+          }
+        }
+      } catch (inner) {}
+
       const latencyMs = Date.now() - startTime;
       await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, 0, false, e.message);
       return {
