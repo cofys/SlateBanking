@@ -739,12 +739,23 @@ export function BanksList() {
             
             <div className="p-6 space-y-6">
                <div className="flex justify-end -mt-2 mb-2">
-                  <Link 
-                    to={`/bank/${selectedBank.id}`} 
-                    className="flex items-center gap-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-4 py-2 rounded-lg font-medium transition-colors text-sm"
-                  >
-                    Login to Whitelabeled Operator Dashboard <ArrowUpRight size={16} />
-                  </Link>
+                  {selectedBank.customDomain ? (
+                    <a 
+                      href={`https://${selectedBank.customDomain}/admin`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-4 py-2 rounded-lg font-medium transition-colors text-sm"
+                    >
+                      Login to Whitelabeled Operator Dashboard <ArrowUpRight size={16} />
+                    </a>
+                  ) : (
+                    <Link 
+                      to={`/bank/${selectedBank.id}`} 
+                      className="flex items-center gap-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-4 py-2 rounded-lg font-medium transition-colors text-sm"
+                    >
+                      Login to Whitelabeled Operator Dashboard <ArrowUpRight size={16} />
+                    </Link>
+                  )}
                </div>
                
                <div className="grid grid-cols-2 gap-4">

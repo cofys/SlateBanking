@@ -134,7 +134,7 @@ export function BankCustomers() {
                   const status = c.kycStatus || 'pending';
                   const isUnassigned = c.discordId.startsWith("unassigned_") || c.discordId === "imported";
                   return (
-                    <tr key={c.discordId} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => !isUnassigned && navigate(`/portal/${bank.id}/customers/${c.discordId}`)}>
+                    <tr key={c.discordId} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => !isUnassigned && navigate(`/bank/${bank.id}/customers/${c.discordId}`)}>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">

@@ -3196,12 +3196,30 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId/status", requireBankStaff, asy
 
 banksRouter.get("/api/banks/:bankId/credit-applications", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { creditApplications } = await import("../../db/schema");
+    const { creditApplications, bankCustomers } = await import("../../db/schema");
     const { eq } = await import("drizzle-orm");
 
     try {
       const apps = await db.select().from(creditApplications).where(eq(creditApplications.bankId, req.params.bankId));
-      res.json(apps);
+      const customers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
+      
+      const customerMap = new Map<string, string>();
+      for (const c of customers) {
+        if (c.discordId && c.mcUsername) customerMap.set(c.discordId, c.mcUsername);
+      }
+
+      const enrichedApps = apps.map(app => {
+        let ownerName = customerMap.get(app.discordId);
+        if (!ownerName && !/^\d{17,20}$/.test(app.discordId)) {
+          ownerName = app.discordId;
+        }
+        return {
+          ...app,
+          resolvedName: ownerName || app.discordId
+        };
+      });
+
+      res.json(enrichedApps);
     } catch(e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });

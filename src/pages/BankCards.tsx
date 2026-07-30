@@ -129,7 +129,7 @@ export function BankCards() {
             <tbody className="divide-y divide-white/5">
               {apps.map((app: any) => (
                 <tr key={app.id} className="hover:bg-white/5 transition-colors">
-                  <td className="p-4 text-sm font-medium text-white/90 font-mono">{app.discordId}</td>
+                  <td className="p-4 text-sm font-medium text-white/90 font-mono">{app.resolvedName || app.discordId}</td>
                   <td className="p-4 text-sm text-indigo-400 font-medium">${(app.requestedLimit/100).toLocaleString()}</td>
                   <td className="p-4 text-sm text-emerald-400 font-medium">${(app.monthlyIncome/100).toLocaleString()}</td>
                   <td className="p-4 text-sm">
