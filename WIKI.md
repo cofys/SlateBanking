@@ -678,6 +678,8 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Calls `CityCorpClient.createAccount(accountName)` to provision the corporate account in-game via CityCorp, establishing the missing remote account, setting `existsInGame = true`, and clearing sync flags automatically.
 - **Comprehensive CityCorp Bank Accounts API Coverage (`src/lib/citycorp_api.ts`)**:
   - **Base URL Alignment (`https://api.cityrp.org/citycorp/corp`)**: Corrected base URL pathing in `CityCorpClient` to route all account operations under `/citycorp/corp/*`, resolving 404 errors on `/accounts/list`.
+  - **Player Resolution & Account Ownership (`src/server/player_resolver.ts`)**: Implemented a comprehensive multi-fallback player resolution service. When importing CityCorp accounts, the system securely resolves the first subuser on the account as the true account owner, resolving their Minecraft UUID to a human-readable username via local DB caches, CityCorp's player API, and fallback Mojang/Ashcon APIs. This replaces raw Discord IDs with exact Minecraft Usernames in the accounts table.
+  - **Account Type Classification**: Differentiates personal vs. business accounts automatically. Staff can now edit the owner and account type (`personal`, `business`, `payroll`) dynamically via a new `update-account` endpoint directly in the `BankAccountDetail` view.
   - **Native Endpoints**: Fully aligned `CityCorpClient` with official CityCorp API documentation:
     - `GET /corp/accounts`: `getAccountDetails(accountName)`
     - `POST /corp/accounts`: `createAccount(accountName)`

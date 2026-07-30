@@ -1128,7 +1128,7 @@ banksRouter.get("/api/banks/:bankId/accounts/:accountId", requireBankStaff, asyn
     }
   });
 
-banksRouter.post("/api/banks/:bankId/accounts/:accountId/update-owner", requireBankStaff, async (req: express.Request, res: express.Response) => {
+banksRouter.post("/api/banks/:bankId/accounts/:accountId/update-account", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankAccounts, auditLogs } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -1137,7 +1137,7 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/update-owner", requireB
     try {
       const bId = req.params.bankId;
       const accId = req.params.accountId;
-      const { newDiscordId } = req.body;
+      const { newDiscordId, accountType } = req.body;
 
       if (!newDiscordId || typeof newDiscordId !== 'string') {
         return res.status(400).json({ error: "Missing or invalid newDiscordId" });
@@ -1147,7 +1147,7 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/update-owner", requireB
       const { or, like } = await import("drizzle-orm");
       
       // Resolve username or discord ID
-      let finalDiscordId = newDiscordId;
+      let finalOwner = newDiscordId;
       const existingCustomer = await db.select().from(bankCustomers).where(
         and(
           eq(bankCustomers.bankId, bId),
@@ -1158,24 +1158,31 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/update-owner", requireB
         )
       ).get();
       
-      if (existingCustomer) {
-        finalDiscordId = existingCustomer.discordId;
+      if (existingCustomer && existingCustomer.mcUsername) {
+        finalOwner = existingCustomer.mcUsername;
+      } else if (existingCustomer) {
+        finalOwner = existingCustomer.discordId;
+      }
+
+      const updateData: any = { ownerDiscordId: finalOwner };
+      if (accountType) {
+        updateData.accountType = accountType;
       }
 
       await db.update(bankAccounts)
-        .set({ ownerDiscordId: finalDiscordId })
+        .set(updateData)
         .where(and(eq(bankAccounts.bankId, bId), eq(bankAccounts.id, accId)));
 
       await db.insert(auditLogs).values({
         id: uuidv4(),
         bankId: bId,
         userDiscordId: 'Operator',
-        action: 'account_owner_updated',
-        details: `Reassigned account ${accId} to Discord ID ${newDiscordId}`,
+        action: 'account_updated',
+        details: `Updated account ${accId}: owner ${finalOwner}, type ${accountType || 'unchanged'}`,
         timestamp: new Date()
       });
 
-      res.json({ success: true, newDiscordId });
+      res.json({ success: true, ownerDiscordId: finalOwner, accountType });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message });
@@ -1522,14 +1529,50 @@ banksRouter.post("/api/banks/:bankId/products", requireGlobalAdmin, async (req: 
 
 banksRouter.get("/api/banks/:bankId/accounts", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts } = await import("../../db/schema");
+    const { bankAccounts, bankCustomers, users } = await import("../../db/schema");
     const { eq, desc } = await import("drizzle-orm");
     try {
       const accounts = await db.select()
         .from(bankAccounts)
         .where(eq(bankAccounts.bankId, req.params.bankId))
         .orderBy(desc(bankAccounts.createdAt));
-      res.json(accounts);
+
+      const customers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
+      const allUsers = await db.select().from(users);
+
+      const customerMap = new Map<string, string>();
+      for (const u of allUsers) {
+        if (u.discordId && u.mcUsername) customerMap.set(u.discordId, u.mcUsername);
+        if (u.mcUsername) customerMap.set(u.mcUsername, u.mcUsername);
+      }
+      for (const c of customers) {
+        if (c.discordId && c.mcUsername) customerMap.set(c.discordId, c.mcUsername);
+        if (c.mcUsername) customerMap.set(c.mcUsername, c.mcUsername);
+      }
+
+      const enrichedAccounts = accounts.map(acc => {
+        const isPersonalName = acc.accountName.toLowerCase().startsWith("personal-") || 
+                               acc.accountName.toLowerCase().startsWith("personal_") || 
+                               acc.accountName.toLowerCase().includes("personal");
+        const resolvedType = acc.accountType || (isPersonalName ? "personal" : "business");
+        
+        let ownerMcUsername = customerMap.get(acc.ownerDiscordId);
+        if (!ownerMcUsername) {
+          if (acc.ownerDiscordId && acc.ownerDiscordId !== "imported" && !/^\d{17,20}$/.test(acc.ownerDiscordId)) {
+            ownerMcUsername = acc.ownerDiscordId;
+          } else {
+            ownerMcUsername = acc.ownerDiscordId;
+          }
+        }
+
+        return {
+          ...acc,
+          accountType: resolvedType,
+          ownerMcUsername: ownerMcUsername || acc.ownerDiscordId
+        };
+      });
+
+      res.json(enrichedAccounts);
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
@@ -1538,12 +1581,12 @@ banksRouter.get("/api/banks/:bankId/accounts", requireBankStaff, async (req: exp
 
 banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, banks } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { bankAccounts, banks, bankCustomers } = await import("../../db/schema");
+    const { eq, and, or, like } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     
     // We expect minecraftUsername in the body
-    const { accountName, ownerDiscordId, initialBalanceCents, minecraftUsername } = req.body;
+    const { accountName, ownerDiscordId, initialBalanceCents, minecraftUsername, accountType } = req.body;
     
     try {
       // 1. Fetch Bank Configuration
@@ -1555,25 +1598,30 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
 
       // 2. Fetch Mojang UUID if username is provided
       let mojangUuid = null;
-      if (minecraftUsername) {
+      let resolvedMcUsername = minecraftUsername || ownerDiscordId || "";
+      if (resolvedMcUsername && !/^\d{17,20}$/.test(resolvedMcUsername) && resolvedMcUsername !== "imported") {
         try {
-          const mojangRes = await fetch(`https://api.mojang.com/users/profiles/minecraft/${minecraftUsername}`);
+          const { resolveMinecraftUsername } = await import("../player_resolver.js");
+          // Attempt Mojang API lookup if username looks like a MC username
+          const mojangRes = await fetch(`https://api.mojang.com/users/profiles/minecraft/${resolvedMcUsername}`);
           if (mojangRes.ok) {
             const mojangData = await mojangRes.json();
             if (mojangData && mojangData.id) {
-              // Add dashes to UUID (CityCorp usually requires dashed UUIDs, but we'll format it just in case)
               const id = mojangData.id;
               mojangUuid = `${id.substring(0,8)}-${id.substring(8,12)}-${id.substring(12,16)}-${id.substring(16,20)}-${id.substring(20)}`;
+              if (mojangData.name) resolvedMcUsername = mojangData.name;
             }
-          } else {
-             console.warn(`Mojang API returned ${mojangRes.status} for ${minecraftUsername}`);
-             // If we strict-fail on invalid MC username:
-             return res.status(400).json({ error: "Invalid Minecraft username" });
           }
         } catch (e) {
           console.error("Mojang API error", e);
         }
       }
+
+      // Determine default accountType if not provided
+      const isPersonalName = accountName.toLowerCase().startsWith("personal-") || 
+                             accountName.toLowerCase().startsWith("personal_") || 
+                             accountName.toLowerCase().includes("personal");
+      const finalAccountType = accountType || (isPersonalName ? "personal" : "business");
 
       // 3. CityCorp API Integration if configured
       if (bank.corpId && bank.corpApiUuid && bank.corpApiKey) {
@@ -1588,7 +1636,6 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
              linkExisting = true;
           } else {
             console.error(`CityCorp API Create Account Failed:`, createRes.message);
-            // depending on policy, fail or continue. Let's return error to user.
             return res.status(400).json({ error: `CityCorp Error: ${createRes.message}` });
           }
         }
@@ -1597,8 +1644,6 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
         if (linkExisting) {
            const details = await client.getAccountDetails(accountName);
            if (details && details.balance !== undefined) {
-             // Overwrite initialBalanceCents with the actual balance from the remote
-             // Assuming details.balance is in float dollars
              req.body.initialBalanceCents = Math.round(details.balance * 100);
            }
         }
@@ -1608,7 +1653,6 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
           const subuserRes = await client.addSubuser(accountName, mojangUuid);
           if (!subuserRes.success) {
              console.error(`CityCorp Add Subuser Failed:`, subuserRes.message);
-             // Inform but don't hard crash the whole creation
           }
         }
         
@@ -1619,37 +1663,42 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
                console.error(`CityCorp Initial Deposit Failed:`, depositRes.message);
             }
         }
-      } else {
-         console.warn("CityCorp API credentials missing for bank, skipping external creation");
       }
 
-      // 4. Resolve Discord ID if username provided
-      const { bankCustomers } = await import("../../db/schema");
-      const { or, like, and } = await import("drizzle-orm");
-      let finalDiscordId = ownerDiscordId || 'imported';
+      // 4. Resolve Owner ID
+      let finalOwner = resolvedMcUsername || ownerDiscordId || 'imported';
+      const existingCustomer = await db.select().from(bankCustomers).where(
+        and(
+          eq(bankCustomers.bankId, req.params.bankId),
+          or(
+            eq(bankCustomers.discordId, finalOwner),
+            like(bankCustomers.mcUsername, finalOwner)
+          )
+        )
+      ).get();
       
-      if (ownerDiscordId) {
-          const existingCustomer = await db.select().from(bankCustomers).where(
-            and(
-              eq(bankCustomers.bankId, req.params.bankId),
-              or(
-                eq(bankCustomers.discordId, ownerDiscordId),
-                like(bankCustomers.mcUsername, ownerDiscordId)
-              )
-            )
-          ).get();
-          
-          if (existingCustomer) {
-            finalDiscordId = existingCustomer.discordId;
-          }
+      if (existingCustomer && existingCustomer.mcUsername) {
+        finalOwner = existingCustomer.mcUsername;
+      } else if (resolvedMcUsername && resolvedMcUsername !== "imported") {
+        // Upsert customer
+        await db.insert(bankCustomers).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          discordId: resolvedMcUsername,
+          mcUsername: resolvedMcUsername,
+          mcUuid: mojangUuid,
+          kycStatus: "approved",
+          createdAt: new Date()
+        }).onConflictDoNothing();
       }
 
       // 5. Create in local DB
       const newAccount = {
         id: uuidv4(),
         bankId: req.params.bankId,
-        ownerDiscordId: finalDiscordId,
+        ownerDiscordId: finalOwner,
         accountName,
+        accountType: finalAccountType,
         balance: req.body.initialBalanceCents || initialBalanceCents || 0,
         createdAt: new Date(),
       };
@@ -1662,11 +1711,11 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
         bankId: req.params.bankId,
         userDiscordId: 'Operator',
         action: 'create_account',
-        details: `Created account: ${accountName}`,
+        details: `Created ${finalAccountType} account: ${accountName} for owner ${finalOwner}`,
         timestamp: new Date()
       });
 
-      res.json(newAccount);
+      res.json({ ...newAccount, ownerMcUsername: finalOwner });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Internal error" });
@@ -1707,41 +1756,76 @@ banksRouter.post("/api/banks/:bankId/import", requireBankStaff, async (req: expr
       let importedCount = 0;
       let syncedCount = 0;
 
+      const { fetchAndResolveAccountOwner } = await import("../player_resolver.js");
+
       for (const remoteAccount of remoteAccounts) {
         const accName = (remoteAccount.account_name || remoteAccount.name || remoteAccount.title || remoteAccount.accountName || "").toString().trim();
         if (!accName) continue;
 
         const currentBalance = Math.round((Number(remoteAccount.balance) || 0) * 100);
 
+        // Subuser lookup: First subuser is the actual account owner!
+        const ownerInfo = await fetchAndResolveAccountOwner(client, accName);
+        const ownerUsername = ownerInfo.username || ownerInfo.ownerUuid || "imported";
+
+        // Determine account type:
+        const isPersonal = accName.toLowerCase().startsWith("personal-") || 
+                           accName.toLowerCase().startsWith("personal_") || 
+                           accName.toLowerCase().includes("personal");
+        const accType = isPersonal ? "personal" : "business";
+
         // Try matching an existing local account
         const matchedLocal = localAccounts.find(a => matchAccountNames(a.accountName, accName));
 
         if (matchedLocal) {
-          // UPDATE existing local account balance and in-game state
-          await db.update(bankAccounts).set({
+          // UPDATE existing local account balance, owner, accountType, and in-game state
+          const updateObj: any = {
             balance: currentBalance,
             existsInGame: true,
             lastSyncedAt: new Date(),
-            syncError: null
-          }).where(eq(bankAccounts.id, matchedLocal.id));
+            syncError: null,
+            accountType: matchedLocal.accountType || accType
+          };
+
+          if (ownerUsername && ownerUsername !== "imported" && (matchedLocal.ownerDiscordId === "imported" || !matchedLocal.ownerDiscordId || /^\d{17,20}$/.test(matchedLocal.ownerDiscordId))) {
+            updateObj.ownerDiscordId = ownerUsername;
+          }
+
+          await db.update(bankAccounts).set(updateObj).where(eq(bankAccounts.id, matchedLocal.id));
 
           syncedCount++;
         } else {
             const accountId = uuidv4();
             const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 
-            // 1. Create the Local Bank Account
+            // 1. Create the Local Bank Account with resolved owner and type
             await db.insert(bankAccounts).values({
               id: accountId,
               bankId: bank.id,
-              ownerDiscordId: "imported",
+              ownerDiscordId: ownerUsername,
               accountName: accName,
+              accountType: accType,
               balance: currentBalance,
               existsInGame: true,
               lastSyncedAt: new Date(),
               syncError: null,
               createdAt: fifteenDaysAgo,
             });
+
+            // Upsert bankCustomer record if resolved owner username is present
+            if (ownerUsername && ownerUsername !== "imported") {
+              await db.insert(bankCustomers).values({
+                id: uuidv4(),
+                bankId: bank.id,
+                discordId: ownerUsername,
+                mcUsername: ownerUsername,
+                mcUuid: ownerInfo.ownerUuid,
+                kycStatus: "approved",
+                createdAt: new Date()
+              }).onConflictDoNothing();
+            }
+
+            importedCount++;
 
             // 3. Generate high-quality realistic historical transactions leading up to the current balance
             const txCount = Math.floor(Math.random() * 3) + 4; // 4 to 6 transactions

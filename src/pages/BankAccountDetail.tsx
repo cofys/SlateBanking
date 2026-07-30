@@ -202,7 +202,7 @@ export function BankAccountDetail() {
                   onClick={async () => {
                     const newId = prompt("Enter the new account owner's Username or Discord ID:", account.ownerDiscordId);
                     if (!newId || newId === account.ownerDiscordId) return;
-                    const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/update-owner`, {
+                    const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/update-account`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ newDiscordId: newId })
@@ -216,6 +216,30 @@ export function BankAccountDetail() {
                   }}
                   className="text-white/40 hover:text-white transition-colors ml-1"
                   title="Reassign Account Owner"
+                >
+                  <Pencil size={14} />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors">
+                Type: <span className="capitalize">{account.accountType || "Personal"}</span>
+                <button
+                  onClick={async () => {
+                    const t = prompt("Enter new account type (personal, business, payroll):", account.accountType || "personal");
+                    if (!t || t === account.accountType) return;
+                    const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/update-account`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ newDiscordId: account.ownerDiscordId, accountType: t.toLowerCase() })
+                    });
+                    if (res.ok) {
+                      fetchAcc();
+                    } else {
+                      const err = await res.json();
+                      alert(`Failed to update type: ${err.error || 'Unknown error'}`);
+                    }
+                  }}
+                  className="text-white/40 hover:text-white transition-colors ml-1"
+                  title="Change Account Type"
                 >
                   <Pencil size={14} />
                 </button>

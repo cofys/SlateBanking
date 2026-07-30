@@ -80,6 +80,7 @@ export function BankAccounts() {
             clearInterval(pollInterval);
             setSyncing(false);
             fetchAccounts();
+            setSyncProgress(null);
 
             if (jobData.status === 'completed') {
               const msg = `Sync complete! Verified ${jobData.syncedCount} in-game account(s). ${jobData.flaggedCount > 0 ? `⚠️ ${jobData.flaggedCount} account(s) not found in-game.` : ''}`;
@@ -427,6 +428,7 @@ export function BankAccounts() {
               {accounts.filter(acc => 
                 acc.accountName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                 acc.ownerDiscordId.includes(searchTerm) ||
+                (acc.ownerMcUsername && acc.ownerMcUsername.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 acc.id.includes(searchTerm)
               ).map(acc => (
                 <tr key={acc.id} onClick={() => navigate(`/bank/${bank.id}/accounts/${acc.id}`)} className="hover:bg-white/[0.02] transition-colors cursor-pointer group">
@@ -445,14 +447,14 @@ export function BankAccounts() {
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-white/30 font-mono mt-0.5">{acc.id}</div>
+                        <div className="text-xs text-white/30 font-mono mt-0.5">{acc.id} • {acc.accountType || "personal"}</div>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">
                       <User size={13} className="text-white/30" />
-                      <span className="font-mono text-white/70 text-xs">{acc.ownerDiscordId}</span>
+                      <span className="font-mono text-white/70 text-xs">{acc.ownerMcUsername || acc.ownerDiscordId}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-emerald-400 font-mono text-base">

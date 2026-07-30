@@ -121,6 +121,7 @@ export function CitizenPortal() {
           if (jobData.status === 'completed' || jobData.status === 'failed') {
             clearInterval(pollInterval);
             setSyncingBalances(false);
+            setCitizenSyncProgress(null);
             handleSearch();
 
             if (jobData.status === 'completed') {
