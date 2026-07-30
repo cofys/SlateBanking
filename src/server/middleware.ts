@@ -31,8 +31,18 @@ export const requireGlobalAdmin = async (req: express.Request, res: express.Resp
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { db } = await import("../db/index.js");
     const { globalAdmins } = await import("../db/schema.js");
-    const { eq } = await import("drizzle-orm");
-    const admin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, decoded.discordId)).get();
+    const { eq, or } = await import("drizzle-orm");
+    const admin = await db.select().from(globalAdmins).where(
+      or(
+        eq(globalAdmins.discordId, decoded.discordId),
+        eq(globalAdmins.discordId, decoded.discordId.replace(/^mc_/, "")),
+        eq(globalAdmins.discordId, "mc_" + decoded.discordId.replace(/^mc_/, "")),
+        ...(decoded.username ? [
+          eq(globalAdmins.discordId, decoded.username),
+          eq(globalAdmins.discordId, `@${decoded.username}`)
+        ] : [])
+      )
+    ).get();
     if (!admin) return res.status(403).json({ error: "Forbidden - Not a Global Admin" });
     decoded.isGlobalAdmin = true;
     (req as any).user = decoded;
@@ -50,16 +60,34 @@ export const requireBankStaff = async (req: express.Request, res: express.Respon
     (req as any).user = decoded;
     const { db } = await import("../db/index.js");
     const { bankStaff, globalAdmins } = await import("../db/schema.js");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, or } = await import("drizzle-orm");
     if (decoded.isGlobalAdmin) {
-        const stillAdmin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, decoded.discordId)).get();
+        const stillAdmin = await db.select().from(globalAdmins).where(
+          or(
+            eq(globalAdmins.discordId, decoded.discordId),
+            eq(globalAdmins.discordId, decoded.discordId.replace(/^mc_/, "")),
+            eq(globalAdmins.discordId, "mc_" + decoded.discordId.replace(/^mc_/, ""))
+          )
+        ).get();
         if (stillAdmin) return next();
     }
     const bankId = req.params.bankId || req.params.id;
     if (!bankId) return res.status(400).json({ error: "Bank ID missing" });
+    const cleanId = decoded.discordId.replace(/^mc_/, "");
     const staff = await db.select()
        .from(bankStaff)
-       .where(and(eq(bankStaff.bankId, bankId), eq(bankStaff.discordId, decoded.discordId)))
+       .where(and(
+         eq(bankStaff.bankId, bankId), 
+         or(
+           eq(bankStaff.discordId, decoded.discordId),
+           eq(bankStaff.discordId, cleanId),
+           eq(bankStaff.discordId, "mc_" + cleanId),
+           ...(decoded.username ? [
+             eq(bankStaff.discordId, decoded.username),
+             eq(bankStaff.discordId, `@${decoded.username}`)
+           ] : [])
+         )
+       ))
        .get();
     if (!staff) return res.status(403).json({ error: "Forbidden - Not bank staff" });
     (req as any).staffRole = staff.role;

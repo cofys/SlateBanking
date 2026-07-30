@@ -982,7 +982,7 @@ banksRouter.post("/api/banks/:bankId/team", [requireBankStaff, requireRole(["own
       const newStaff = {
         id: uuidv4(),
         bankId: req.params.bankId,
-        discordId: req.body.discordId,
+        discordId: req.body.discordId?.trim(),
         role: req.body.role,
         createdAt: new Date(),
       };

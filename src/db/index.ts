@@ -55,6 +55,12 @@ function ensureDatabaseSchemaSynced() {
   createTableIfNotExists("credit_applications", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, discord_id TEXT NOT NULL, account_id TEXT NOT NULL, requested_limit INTEGER NOT NULL, monthly_income INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("vault_deposits", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, account_id TEXT NOT NULL, amount INTEGER NOT NULL, locked_until INTEGER NOT NULL, interest_rate INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("cards", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, account_id TEXT NOT NULL, card_number TEXT NOT NULL UNIQUE, cvv TEXT NOT NULL, expiry_date TEXT NOT NULL, type TEXT NOT NULL, created_at INTEGER NOT NULL");
+  checkAndAddColumn("cards", "is_locked", "INTEGER DEFAULT 0");
+  checkAndAddColumn("cards", "credit_limit", "INTEGER DEFAULT 0");
+  checkAndAddColumn("cards", "credit_used", "INTEGER DEFAULT 0");
+  checkAndAddColumn("cards", "apr", "INTEGER DEFAULT 0");
+  checkAndAddColumn("cards", "minimum_payment", "INTEGER DEFAULT 0");
+  checkAndAddColumn("cards", "next_payment_date", "INTEGER");
   createTableIfNotExists("payroll_jobs", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, employer_account_id TEXT NOT NULL, employee_account_id TEXT NOT NULL, amount INTEGER NOT NULL, frequency TEXT NOT NULL, next_run INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("subscriptions", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, biller_account_id TEXT NOT NULL, customer_account_id TEXT NOT NULL, amount INTEGER NOT NULL, frequency TEXT NOT NULL, next_run INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("clearinghouse_balances", "bank_id TEXT PRIMARY KEY NOT NULL, balance INTEGER DEFAULT 0 NOT NULL");
@@ -67,6 +73,7 @@ function ensureDatabaseSchemaSynced() {
   createTableIfNotExists("loan_products", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, name TEXT NOT NULL, interest_rate INTEGER NOT NULL, max_amount INTEGER NOT NULL, term_days INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("credit_products", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, name TEXT NOT NULL, interest_rate INTEGER NOT NULL, max_limit INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("global_admins", "id TEXT PRIMARY KEY NOT NULL, discord_id TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL");
+  checkAndAddColumn("global_admins", "added_by", "TEXT");
   createTableIfNotExists("address_book", "id TEXT PRIMARY KEY NOT NULL, owner_discord_id TEXT NOT NULL, contact_account_id TEXT NOT NULL, nickname TEXT NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("recurring_transfers", "id TEXT PRIMARY KEY NOT NULL, owner_discord_id TEXT NOT NULL, from_account_id TEXT NOT NULL, to_account_id TEXT NOT NULL, amount INTEGER NOT NULL, frequency TEXT NOT NULL, next_run_at INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("savings_goals", "id TEXT PRIMARY KEY NOT NULL, owner_discord_id TEXT NOT NULL, account_id TEXT NOT NULL, name TEXT NOT NULL, target_amount INTEGER NOT NULL, created_at INTEGER NOT NULL");
