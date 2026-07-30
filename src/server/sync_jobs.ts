@@ -38,7 +38,7 @@ export function getSyncJob(jobId: string): SyncJob | undefined {
 
 export async function syncSingleAccount(account: any, bank: any) {
   let syncedRemote = false;
-  let existsInGame = true;
+  let existsInGame = account.existsInGame ?? true;
   let syncError: string | null = null;
   let remoteBalanceCents: number | null = null;
   let addedTxsCount = 0;
@@ -46,10 +46,10 @@ export async function syncSingleAccount(account: any, bank: any) {
   if (bank && bank.corpApiKey && bank.corpId !== null && bank.corpApiUuid !== null) {
     try {
       const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-      const accountDetails = await client.getAccountDetails(account.accountName);
+      const res = await client.getAccountDetails(account.accountName);
 
-      if (accountDetails && accountDetails.account) {
-        remoteBalanceCents = Math.round(Number(accountDetails.account.balance) * 100);
+      if (res && res.success) {
+        remoteBalanceCents = Math.round(Number(res.balance ?? 0) * 100);
         syncedRemote = true;
         existsInGame = true;
         syncError = null;
@@ -94,12 +94,17 @@ export async function syncSingleAccount(account: any, bank: any) {
         } catch (txErr) {
           console.error(`Non-fatal transaction fetch error for ${account.accountName}:`, txErr);
         }
-      } else {
-        // Account does NOT exist on CityCorp in game!
+      } else if (res && res.notFound) {
+        // Account specifically does NOT exist on CityCorp in game
         existsInGame = false;
         syncError = "Account does not exist on CityCorp in-game";
         remoteBalanceCents = 0;
         syncedRemote = true;
+      } else if (res && !res.success) {
+        // CityCorp API error (e.g. 401 Unauthorized, 403, 429, 500)
+        // Keep previous existsInGame state (do not falsely mark as missing in game!), and present clear API error
+        syncError = res.error || `CityCorp API error (${res.status})`;
+        syncedRemote = false;
       }
     } catch (err: any) {
       console.error(`Error syncing account ${account.accountName}:`, err);

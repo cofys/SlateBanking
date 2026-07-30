@@ -173,16 +173,42 @@ export class CityCorpClient {
       if (res.ok) {
          const data = await res.json();
          await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, res.status, true);
-         return data;
+         const rawBalance = data.balance ?? data.account?.balance ?? data.data?.balance ?? 0;
+         return {
+           success: true,
+           status: res.status,
+           balance: rawBalance,
+           account: data.account || data,
+           ...data
+         };
       }
       
       let errMsg = await res.text();
-      await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, res.status, false, errMsg);
-      return null;
+      let parsedErr = errMsg;
+      try {
+        const json = JSON.parse(errMsg);
+        if (json.error?.message) parsedErr = json.error.message;
+        else if (json.message) parsedErr = json.message;
+      } catch (e) {}
+
+      await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, res.status, false, parsedErr);
+      
+      const isNotFound = res.status === 404 || parsedErr.toLowerCase().includes("not found") || parsedErr.toLowerCase().includes("does not exist");
+      return {
+        success: false,
+        status: res.status,
+        notFound: isNotFound,
+        error: parsedErr || "Account request failed"
+      };
     } catch (e: any) {
       const latencyMs = Date.now() - startTime;
       await this.logApiResult("/accounts", { account_name: accountName }, latencyMs, 0, false, e.message);
-      return null;
+      return {
+        success: false,
+        status: 0,
+        notFound: false,
+        error: e.message || "Network exception"
+      };
     }
   }
 

@@ -665,11 +665,11 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - **Throttled CityCorp API Queries**: Enforces a mandatory `250ms` delay between sequential account API checks, preventing rate limits and API bans when syncing large account lists.
   - **Progress Tracking APIs (`GET /api/banks/:bankId/sync-job/:jobId`, `GET /api/citizen/sync-job/:jobId`)**: Provides live real-time job progress tracking (`processed`, `total`, `currentAccountName`, `syncedCount`, `flaggedCount`, `status`).
   - **Frontend Progress Bar**: Integrated real-time animated progress bars and percentage counters in both `BankAccounts.tsx` and `CitizenPortal.tsx`.
-- **In-Game Account Verification & Missing Account Flagging (`bankAccounts` Schema)**:
+- **In-Game Account Verification & Robust API Response Handling (`bankAccounts` Schema, `src/lib/citycorp_api.ts`)**:
   - Added `existsInGame` (boolean), `lastSyncedAt` (timestamp), and `syncError` (text) columns to `bankAccounts`.
-  - When a balance sync runs, each account is queried one-by-one against CityCorp API (`getAccountDetails` and `getAllAccountTransactions`).
-  - If CityCorp returns an account error or non-existent status, `existsInGame` is flagged as `false` and saved in the database.
-  - Accounts flagged as `false` render prominent `⚠️ Not Found In-Game` badges in `BankAccounts.tsx`, `BankAccountDetail.tsx`, and `CitizenPortal.tsx`.
+  - Normalized `CityCorpClient.getAccountDetails(accountName)` to parse both flat and nested account response shapes (`data.balance`, `data.account.balance`, `data.data.balance`).
+  - Differentiates actual HTTP 404 / account missing errors from general API failures (such as HTTP 401 Unauthorized, rate-limiting, or temporary timeouts), preserving `existsInGame = true` state on network/auth errors and displaying descriptive `syncError` messages instead of falsely marking accounts as non-existent.
+  - Accounts confirmed as missing on CityCorp render prominent `⚠️ Not Found In-Game` badges in `BankAccounts.tsx`, `BankAccountDetail.tsx`, and `CitizenPortal.tsx`.
 - **Manual Corporate Account Provisioning (`POST /api/banks/:bankId/accounts/:accountId/provision-game`)**:
   - Added a manual **"+ Provision in Game"** endpoint and action button on flagged accounts in both `BankAccounts.tsx` and `BankAccountDetail.tsx`.
   - Calls `CityCorpClient.createAccount(accountName)` to provision the corporate account in-game via CityCorp, establishing the missing remote account, setting `existsInGame = true`, and clearing sync flags automatically.
