@@ -214,6 +214,23 @@ export class CityCorpClient {
     }
   }
 
+  async getAllAccountTransactions(accountName: string, maxPages: number = 25) {
+    let allTxs: any[] = [];
+    let page = 1;
+    while (page <= maxPages) {
+      const res = await this.getAccountTransactions(accountName, page);
+      if (!res || !res.transactions || !Array.isArray(res.transactions) || res.transactions.length === 0) {
+        break;
+      }
+      allTxs.push(...res.transactions);
+      if (res.totalPages && page >= res.totalPages) {
+        break;
+      }
+      page++;
+    }
+    return allTxs;
+  }
+
   async listAccounts(page: number = 1) {
     const url = new URL(`${this.baseUrl}/accounts/list`);
     url.searchParams.append("corp_id", this.corpId.toString());

@@ -637,16 +637,20 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Updated `BankCustomerDetail.tsx` under Administrative Profile to provide staff with editable fields for **Linked Discord ID** and **Minecraft Username**, allowing bank staff to manually associate, reassign, or verify unassigned customer accounts.
 
 ## Dynamic Balance Reconciliation, Ledger Recalculation & Account Top-Up Engine
-- **Local Ledger Recalculation & Auto-Seeding Sync (`/api/banks/:bankId/transactions/sync`, `/api/citizen/sync-balances`)**:
-  - Upgraded the synchronization pipeline to attempt external CityCorp API reconciliation first, automatically falling back to internal transaction history net ledger calculation when CityCorp is unconfigured or offline.
-  - Automatically seeds default starter funding ($1,000) and inserts an initial deposit transaction record whenever an account has a $0 balance and no prior transactions, guaranteeing new accounts have active working capital.
+- **Accurate Local Ledger Recalculation & Reconciliation (`/api/banks/:bankId/transactions/sync`, `/api/citizen/sync-balances`, `/api/banks/:bankId/accounts/:accountId/sync`)**:
+  - Upgraded the synchronization pipeline to perform strict double-entry ledger reconciliation. External CityCorp API reconciliation is attempted first when credentials are provided.
+  - **Multi-Page Transaction Import**: Syncing now pulls all pages of remote account transactions via `getAllAccountTransactions()` rather than limiting to page 1, ensuring complete remote transaction coverage for double-verification.
+  - **Ledger Double-Verification**: All local and newly fetched remote transactions are saved and verified (`net = sum(inflows) - sum(outflows)`).
+  - **No Unsolicited Auto-Seeding**: Syncing performs pure reconciliation and does NOT inject unrequested funds into $0 balance accounts. Accounts with $0 balances remain $0.
+  - **Opening Balance Baseline**: For accounts created or imported with positive balances but 0 transaction records, syncing inserts a single `Opening Account Balance` deposit transaction to anchor the transaction history baseline without modifying the numerical balance.
+  - **Automatic Deduplication & Cleanup**: Automatically deduplicates CityCorp remote sync calls by matching both transaction IDs and composite keys (`type_amount_description`). Also cleans up duplicate balance sync records from prior legacy sync attempts.
 - **Staff Manual Balance Adjustments (`POST /api/banks/:bankId/accounts/:accountId/adjust-balance`, `BankAccounts.tsx`)**:
   - Implemented secure staff-controlled balance adjustment endpoint supporting `set`, `deposit`, and `withdraw` actions.
   - Generates atomic ledger transaction records for every adjustment to prevent ledger drift and maintain double-entry audit history.
   - Added an **Adjust Balance** modal and row action button (`$`) directly in `BankAccounts.tsx`.
 - **Citizen Portal Balance Sync & Top-Up Modal (`POST /api/citizen/deposit-funds`, `CitizenPortal.tsx`)**:
   - Added a **Sync / Top-Up Balances** action button in the Citizen Portal header and a **Top-Up** button on every account card.
-  - Opens a dedicated modal allowing citizens to run instant balance auto-syncs or execute direct account deposits with quick preset amounts (+$500, +$1,000, +$5,000).
+  - Opens a dedicated modal allowing citizens to run instant balance auto-syncs or execute direct explicit account deposits with custom descriptions and quick preset amounts (+$500, +$1,000, +$5,000).
 
 
 
