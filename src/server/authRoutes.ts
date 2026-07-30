@@ -104,7 +104,7 @@ export function registerAuthRoutes(app: express.Express) {
     const stateObj: any = { intent, rememberMe, nonce };
     if (bank) stateObj.bankId = bank.id;
     if (returnTo) stateObj.returnTo = returnTo;
-    const state = encodeURIComponent(JSON.stringify(stateObj));
+    const state = JSON.stringify(stateObj);
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
