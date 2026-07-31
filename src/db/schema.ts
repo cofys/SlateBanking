@@ -61,6 +61,7 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   ownerDiscordId: text("owner_discord_id").notNull(),
   accountName: text("account_name").notNull(), // e.g. "Main Checking" or "Corp Savings"
   accountType: text("account_type").default("personal"), // "personal", "business", "payroll", "system_asset", "system_revenue", "system_expense", "system_liability"
+  tierId: text("tier_id"),
   balance: integer("balance").notNull().default(0), // stored in cents or lowest denominaton to avoid floats
   creditLimit: integer("credit_limit").notNull().default(0), // For credit accounts
   businessTaxId: text("business_tax_id"),
@@ -129,6 +130,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   enableSubscriptions: integer("enable_subscriptions", { mode: "boolean" }).default(true),
   enableEscrow: integer("enable_escrow", { mode: "boolean" }).default(true),
   enableTreasury: integer("enable_treasury", { mode: "boolean" }).default(true),
+  enableAccountTiers: integer("enable_account_tiers", { mode: "boolean" }).default(false),
   guiChannelId: text("gui_channel_id"),
   guiMessageId: text("gui_message_id"),
   staffChannelId: text("staff_channel_id"),
@@ -139,6 +141,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   maxAutoApproveLoanAmount: integer("max_auto_approve_loan_amount").default(1000000), // 10,000.00
   vaultTiers: text("vault_tiers", { mode: "json" }).$type<{ lockDays: number; interestRate: number; penaltyPercent: number }[]>(),
   loginBgUrl: text("login_bg_url"),
+  accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean }[]>(),
   savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
   interestPaymentSchedule: text("interest_payment_schedule").default("manual"), // manual, daily, weekly, monthly
   interestNextPaymentAt: integer("interest_next_payment_at", { mode: "timestamp" }),

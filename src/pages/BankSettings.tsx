@@ -49,6 +49,7 @@ export function BankSettings() {
       enableSubscriptions: formData.get("enableSubscriptions") === "on",
       enableEscrow: formData.get("enableEscrow") === "on",
       enableTreasury: formData.get("enableTreasury") === "on",
+      enableAccountTiers: formData.get("enableAccountTiers") === "on",
       enableGoogleDocsContracts: formData.get("enableGoogleDocsContracts") === "on",
       googleDocsLoanTemplateUrl: formData.get("googleDocsLoanTemplateUrl"),
       googleDocsCreditTemplateUrl: formData.get("googleDocsCreditTemplateUrl"),
@@ -736,6 +737,13 @@ export function BankSettings() {
                </div>
                <input type="checkbox" name="enableTreasury" className="hidden" defaultChecked={settings?.enableTreasury} onChange={(e) => setSettings({...settings, enableTreasury: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Treasury Analytics</span>
+            </label>
+            <label className="flex items-center gap-4 cursor-pointer group">
+               <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableAccountTiers ? 'bg-pink-500' : 'bg-white/10'}`}>
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableAccountTiers ? 'translate-x-4' : 'translate-x-0'}`}></div>
+               </div>
+               <input type="checkbox" name="enableAccountTiers" className="hidden" defaultChecked={settings?.enableAccountTiers} onChange={(e) => setSettings({...settings, enableAccountTiers: e.target.checked})} />
+               <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Custom Account Tiers</span>
             </label>
           </div>
 

@@ -431,7 +431,7 @@ export function registerAuthRoutes(app: express.Express) {
     let bankToUse = null;
     if (bankId) {
        bankToUse = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-    } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && !hostname.includes('onyx-network.com')) {
+    } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && hostname !== 'sb.azisle.com' && hostname !== 'azisle.com' && hostname !== 'www.azisle.com') {
        try {
          bankToUse = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
        } catch (e) {

@@ -1,7 +1,7 @@
 import express from "express";
 import { requireAuth, requireBankStaff } from "./middleware.js";
 import { db } from "../db/index.js";
-import { banks, bankAccounts, transactions } from "../db/schema.js";
+import { banks, bankAccounts, transactions, bankSettings } from "../db/schema.js";
 import { eq, and, lte, or, inArray } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
@@ -11,6 +11,7 @@ export function registerInterestRoutes(app: express.Express) {
     try {
       const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
       if (!bank) return res.status(404).json({ error: "Bank not found" });
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
       
       res.json({
         savingsApyPercent: bank.savingsApyPercent,
@@ -124,7 +125,12 @@ export function registerInterestRoutes(app: express.Express) {
       
       // Process in a transaction? SQLite can handle it.
       for (const account of eligibleAccounts) {
-        const apyToUse = account.customApyPercent !== null ? account.customApyPercent : bank.savingsApyPercent;
+        let tierApy = null;
+        if (settings && settings.enableAccountTiers && account.tierId && settings.accountTiers) {
+          const t = settings.accountTiers.find((x:any) => x.id === account.tierId);
+          if (t && t.apyPercent !== null) tierApy = t.apyPercent;
+        }
+        const apyToUse = account.customApyPercent !== null ? account.customApyPercent : (tierApy !== null ? tierApy : bank.savingsApyPercent);
         if (!apyToUse || apyToUse <= 0) continue;
 
         let principal = account.balance;

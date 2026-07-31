@@ -178,6 +178,7 @@ export function BankAdminLayout() {
         settings?.enableSubscriptions !== false && { name: "Subscriptions", path: `/bank/${bankId}/subscriptions`, icon: Repeat },
         settings?.enableEscrow !== false && { name: "Escrow", path: `/bank/${bankId}/escrow`, icon: ShieldCheck },
         settings?.enableTreasury !== false && { name: "Treasury", path: `/bank/${bankId}/treasury`, icon: BarChart3 },
+        settings?.enableAccountTiers !== false && { name: "Account Tiers", path: `/bank/${bankId}/tiers`, icon: Layers },
       ].filter(Boolean) as { name: string, path: string, icon: any }[]
     },
     {

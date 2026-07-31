@@ -16,6 +16,7 @@ import { BankAccounts } from "./pages/BankAccounts";
 
 import { BankTransactions } from "./pages/BankTransactions";
 import { BankSettings } from "./pages/BankSettings";
+import { BankTiers } from "./pages/BankTiers";
 import { NotFound } from "./pages/NotFound";
 import { BankAuditLog } from "./pages/BankAuditLog";
 import { BankCustomers } from "./pages/BankCustomers";
@@ -51,7 +52,7 @@ function App() {
   useEffect(() => {
     const hostname = window.location.hostname;
     // Don't lookup for default domains or localhost
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('run.app') || hostname.includes('onyx-network.com')) {
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('run.app') || hostname === 'sb.azisle.com' || hostname === 'azisle.com' || hostname === 'www.azisle.com') {
        setCheckingDomain(false);
        return;
     }
@@ -96,6 +97,8 @@ function App() {
             <Route path="subscriptions" element={<BankSubscriptions />} />
             <Route path="escrow" element={<BankEscrow />} />
             <Route path="treasury" element={<BankTreasury />} />
+          <Route path="tiers" element={<BankTiers />} />
+            <Route path="tiers" element={<BankTiers />} />
             <Route path="invoices" element={<BankInvoices />} />
             <Route path="clearinghouse" element={<BankClearinghouse />} />
             <Route path="audit" element={<BankAuditLog />} />

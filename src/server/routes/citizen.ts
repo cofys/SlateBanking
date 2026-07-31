@@ -784,10 +784,15 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
       const toBank = destAccount.bankId;
 
       // Determine transfer fee rate (using custom account fee override if defined, else bank default)
+      const fromSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, fromBank)).get();
       let transferFeeBps = sourceAccount.customTransferFeePercent;
       if (transferFeeBps === null || transferFeeBps === undefined) {
-        const fromSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, fromBank)).get();
-        transferFeeBps = fromSettings?.transferFeePercent ?? 0;
+        let tierFee = null;
+        if (fromSettings?.enableAccountTiers && sourceAccount.tierId && fromSettings.accountTiers) {
+           const t = fromSettings.accountTiers.find((x:any) => x.id === sourceAccount.tierId);
+           if (t && t.transferFeePercent !== null) tierFee = t.transferFeePercent;
+        }
+        transferFeeBps = tierFee !== null ? tierFee : (fromSettings?.transferFeePercent ?? 0);
       }
 
       const feeCents = transferFeeBps > 0 ? Math.round((parsedAmount * transferFeeBps) / 10000) : 0;

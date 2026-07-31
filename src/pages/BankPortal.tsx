@@ -99,6 +99,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const bankId = overrideBankId || params.bankId;
   const { user, login, logout, isLoading, rememberMe, setRememberMe } = useAuth();
   const [bank, setBank] = useState<any>(null);
+  const [bankNotFound, setBankNotFound] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
@@ -159,8 +160,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     fetch(`/api/portal/${bankId}/info`)
       .then(r => r.json())
       .then(d => {
-        if (!d.error) { setBank(d); document.title = `${d.name} | Client Portal`; }
-      });
+        if (!d.error) { 
+          setBank(d); 
+          document.title = `${d.name} | Client Portal`; 
+        } else {
+          setBankNotFound(true);
+        }
+      })
+      .catch(() => setBankNotFound(true));
       
     fetch("/api/onyx/merchants")
       .then(r => r.json())
@@ -215,6 +222,16 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       (tx.toAccountId || "").toLowerCase().includes(term)
     );
   }) || [];
+
+  if (bankNotFound || !bankId) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] flex flex-col items-center justify-center gap-4 text-white">
+        <AlertTriangle className="text-red-500" size={48} />
+        <h2 className="text-xl font-bold">Bank Not Found</h2>
+        <p className="text-white/50">The requested financial gateway could not be located.</p>
+      </div>
+    );
+  }
 
   if (isLoading || !bank) {
     return (

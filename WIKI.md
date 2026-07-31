@@ -712,3 +712,19 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 - **Bank-Level Configuration**: Bank Managers and Admins can configure the Base APY Yield (in basis points), minimum balances, max balance caps, and target account types (Savings, Personal, Business, or All).
 - **Manual Trigger**: Bank staff can currently run the interest accrual manually from the UI. When triggered, the system automatically loops through all eligible active accounts (excluding system accounts) and securely calculates and deposits the configured APY directly into the accounts.
 - **Account-Level Overrides**: Added `customApyPercent` to the `bankAccounts` schema so that specific VIP accounts can override the bank's base APY.
+
+### Account Tiers System
+- **Tier Configuration**: Banks can toggle the "Custom Account Tiers" feature in the Settings page. This reveals the "Account Tiers" menu item under "Products & Services".
+- **Granular Rulesets**: Within the Account Tiers UI, bank staff can create tiers (e.g., Gold Savings, Premium Checking) customized with a monthly fee, minimum balance requirements, and custom APY/transfer/deposit/withdraw fee percentages.
+- **Account Creation Support**: When creating or provisioning new bank accounts manually via the staff portal, the selected tier is seamlessly linked if Account Tiers are enabled.
+- **Transaction Engine Integration**: The citizen transaction engine inherently supports these customized configurations. Transfer logic overrides the bank's default transfer fees with the tier's custom rates if assigned.
+
+### Multi-Tenant Domain Routing (Subdomains)
+- **Domain Lookups**: The application evaluates `window.location.hostname` to resolve customized domains to specific banks.
+- **Root Domains Skip Logic**: Domains such as `localhost`, `127.0.0.1`, `.run.app` instances, and specifically the naked `onyx-network.com` domain bypass the domain lookup and use the primary platform routers. 
+- **Subdomain Catch-All**: Using subdomains (like `mybank.onyx-network.com`) triggers the custom domain lookup flow, retrieving the bank details and mounting the localized Client Portal experience.
+- **Fail-safe Loading**: If an unknown or unmapped domain accesses the client portal, it safely exits out of the "Loading financial gateway" state into a "Bank Not Found" fallback error screen to avoid infinite loading spinners.
+
+### Environment & Domain Configuration
+- **Root Domain Bypass**: The primary platform application bypasses custom domain routing for `localhost`, `127.0.0.1`, Google Cloud Run URLs (`*.run.app`), and specifically the platform roots `sb.azisle.com`, `azisle.com`, and `www.azisle.com`.
+- **Database Migrations**: In production environments without explicit `npm run db:push` usage, the platform relies on `src/db/index.ts` executing automatic structural checks (`ensureDatabaseSchemaSynced`). Whenever new columns are added to `src/db/schema.ts`, they MUST be registered inside `ensureDatabaseSchemaSynced` or else DrizzleORM will throw exceptions when querying.

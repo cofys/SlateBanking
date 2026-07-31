@@ -158,7 +158,8 @@ export function BankAccounts() {
       accountName: formData.get("accountName"),
       ownerDiscordId: formData.get("ownerDiscordId"),
       minecraftUsername: formData.get("minecraftUsername"),
-      initialBalanceCents: Math.round(parseFloat(formData.get("initialBalance") as string) * 100) || 0
+      initialBalanceCents: Math.round(parseFloat(formData.get("initialBalance") as string) * 100) || 0,
+      tierId: formData.get("tierId") || null
     };
 
     fetch(`/api/banks/${bank.id}/accounts`, {
@@ -270,6 +271,17 @@ export function BankAccounts() {
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Account Name</label>
               <input name="accountName" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="e.g. Checking" />
             </div>
+            {bank.settings?.enableAccountTiers && (
+              <div className="flex-1 w-full">
+                <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Account Tier</label>
+                <select name="tierId" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors">
+                  <option value="">(No Tier / Default)</option>
+                  {(bank.settings?.accountTiers || []).map((t: any) => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Owner Username / Discord ID</label>
               <input name="ownerDiscordId" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="123456789" />
@@ -419,6 +431,7 @@ export function BankAccounts() {
             <thead className="text-xs text-white/40 uppercase tracking-widest bg-white/[0.02] border-b border-white/10">
               <tr>
                 <th className="px-6 py-4 font-semibold">Account Name</th>
+                {bank.settings?.enableAccountTiers && <th className="px-6 py-4 font-semibold">Tier</th>}
                 <th className="px-6 py-4 font-semibold">Owner Username / Discord ID</th>
                 <th className="px-6 py-4 font-semibold text-right">Balance</th>
                 <th className="px-6 py-4 font-semibold text-right">Actions</th>

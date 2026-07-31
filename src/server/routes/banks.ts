@@ -9,6 +9,31 @@ const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
 export const banksRouter = express.Router();
 
+banksRouter.get("/api/banks/:bankId/tiers", requireBankStaff, async (req: any, res: any) => {
+  const { bankId } = req.params;
+  try {
+    const bank = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    if (!bank) return res.status(404).json({ error: "Bank not found" });
+    res.json({ accountTiers: bank.accountTiers });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+banksRouter.put("/api/banks/:bankId/tiers", [requireBankStaff, requireRole(["owner", "admin", "manager"])], async (req: any, res: any) => {
+  const { bankId } = req.params;
+  const { accountTiers } = req.body;
+  try {
+    await db.update(bankSettings)
+      .set({ accountTiers })
+      .where(eq(bankSettings.bankId, bankId));
+    res.json({ accountTiers });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 interface CityCorpSearchCacheEntry {
   timestamp: number;
   results: any[];
@@ -1264,7 +1289,8 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
           enablePayroll: true,
           enableSubscriptions: true,
           enableEscrow: true,
-          enableTreasury: true
+          enableTreasury: true,
+          enableAccountTiers: true
         } as any;
       }
       res.json({
@@ -1346,6 +1372,7 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         enableSubscriptions: req.body.enableSubscriptions,
         enableEscrow: req.body.enableEscrow,
         enableTreasury: req.body.enableTreasury,
+        enableAccountTiers: req.body.enableAccountTiers,
         autoApproveLoans: req.body.autoApproveLoans,
         autoApproveCreditCards: req.body.autoApproveCreditCards,
         maxAutoApproveLoanAmount: req.body.maxAutoApproveLoanAmount,
@@ -1586,10 +1613,12 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
     const { v4: uuidv4 } = await import("uuid");
     
     // We expect minecraftUsername in the body
-    const { accountName, ownerDiscordId, initialBalanceCents, minecraftUsername, accountType } = req.body;
+    const { accountName, ownerDiscordId, initialBalanceCents, minecraftUsername, accountType, tierId } = req.body;
     
     try {
       // 1. Fetch Bank Configuration
+      const { bankSettings } = await import("../../db/schema");
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, req.params.bankId)).get();
       const bankResult = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).limit(1);
       if (bankResult.length === 0) {
         return res.status(404).json({ error: "Bank not found" });
@@ -1699,6 +1728,7 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
         ownerDiscordId: finalOwner,
         accountName,
         accountType: finalAccountType,
+        tierId: (req.body.tierId || tierId) || (settings?.enableAccountTiers && settings?.accountTiers?.find((t: any) => t.isDefault && t.type === finalAccountType)?.id) || null,
         balance: req.body.initialBalanceCents || initialBalanceCents || 0,
         createdAt: new Date(),
       };

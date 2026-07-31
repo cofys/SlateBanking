@@ -128,6 +128,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_accounts", "exists_in_game", "INTEGER DEFAULT 1");
   checkAndAddColumn("bank_accounts", "last_synced_at", "INTEGER");
   checkAndAddColumn("bank_accounts", "sync_error", "TEXT");
+  checkAndAddColumn("bank_accounts", "tier_id", "TEXT");
 
   // Bank Customers table
   checkAndAddColumn("bank_customers", "kyc_status", "TEXT DEFAULT 'pending'");
@@ -174,6 +175,14 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "google_docs_escrow_template_url", "TEXT");
   checkAndAddColumn("bank_settings", "google_docs_folder_url", "TEXT");
   checkAndAddColumn("bank_settings", "google_docs_auto_generate", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "enable_account_tiers", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "account_tiers", "TEXT");
+  checkAndAddColumn("bank_settings", "interest_payment_schedule", "TEXT DEFAULT 'manual'");
+  checkAndAddColumn("bank_settings", "interest_next_payment_at", "INTEGER");
+  checkAndAddColumn("bank_settings", "interest_target_accounts", "TEXT DEFAULT 'savings_only'");
+  checkAndAddColumn("bank_settings", "interest_min_balance", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "interest_max_account_balance", "INTEGER");
+  checkAndAddColumn("bank_settings", "interest_requires_activity_days", "INTEGER");
 
   // Transactions table
   checkAndAddColumn("transactions", "from_account_id", "TEXT");
