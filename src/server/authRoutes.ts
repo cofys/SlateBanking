@@ -90,7 +90,8 @@ export function registerAuthRoutes(app: express.Express) {
       return res.json({ url: finalAuthResult.url, state });
     }
 
-    if (bank && bank.discordClientId) {
+    const isCustomDomain = bank && bank.customDomain && hostHeader && hostHeader.includes(bank.customDomain);
+    if (isCustomDomain && bank.discordClientId) {
        clientId = bank.discordClientId;
     }
 
@@ -438,7 +439,8 @@ export function registerAuthRoutes(app: express.Express) {
        }
     }
     
-    if (bankToUse && bankToUse.discordClientId && bankToUse.discordClientSecret) {
+    const isCustomDomain = bankToUse && bankToUse.customDomain && hostname && hostname.includes(bankToUse.customDomain);
+    if (isCustomDomain && bankToUse.discordClientId && bankToUse.discordClientSecret) {
        clientId = bankToUse.discordClientId;
        clientSecret = bankToUse.discordClientSecret;
     }

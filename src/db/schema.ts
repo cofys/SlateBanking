@@ -72,6 +72,7 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   customTransferFeePercent: integer("custom_transfer_fee_percent"), // Custom transfer fee override in basis points (multiplied by 100); null uses bank settings default
   customDepositFeePercent: integer("custom_deposit_fee_percent"),   // Custom deposit fee override in basis points; null uses bank settings default
   customWithdrawFeePercent: integer("custom_withdraw_fee_percent"), // Custom withdraw fee override in basis points; null uses bank settings default
+  customApyPercent: integer("custom_apy_percent"), // Override for this specific account
   existsInGame: integer("exists_in_game", { mode: "boolean" }).default(true),
   lastSyncedAt: integer("last_synced_at", { mode: "timestamp" }),
   syncError: text("sync_error"),
@@ -139,6 +140,12 @@ export const bankSettings = sqliteTable("bank_settings", {
   vaultTiers: text("vault_tiers", { mode: "json" }).$type<{ lockDays: number; interestRate: number; penaltyPercent: number }[]>(),
   loginBgUrl: text("login_bg_url"),
   savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
+  interestPaymentSchedule: text("interest_payment_schedule").default("manual"), // manual, daily, weekly, monthly
+  interestNextPaymentAt: integer("interest_next_payment_at", { mode: "timestamp" }),
+  interestTargetAccounts: text("interest_target_accounts").default("savings_only"), // savings_only, personal_only, business_only, all_accounts
+  interestMinBalance: integer("interest_min_balance").default(0),
+  interestMaxAccountBalance: integer("interest_max_account_balance"),
+  interestRequiresActivityDays: integer("interest_requires_activity_days"), // null = none, otherwise max days since last login/activity
   requirePersonalForBusiness: integer("require_personal_for_business", { mode: "boolean" }).default(true),
   lastInterestAccrualAt: integer("last_interest_accrual_at", { mode: "timestamp" }),
   // Google Docs Contract Integration Settings

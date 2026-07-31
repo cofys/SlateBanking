@@ -706,3 +706,9 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 
 
 
+
+### Interest Engine (APY System)
+- **Automated Yields**: Added an interactive "Interest Engine" page in the Bank Staff Portal under Operations. 
+- **Bank-Level Configuration**: Bank Managers and Admins can configure the Base APY Yield (in basis points), minimum balances, max balance caps, and target account types (Savings, Personal, Business, or All).
+- **Manual Trigger**: Bank staff can currently run the interest accrual manually from the UI. When triggered, the system automatically loops through all eligible active accounts (excluding system accounts) and securely calculates and deposits the configured APY directly into the accounts.
+- **Account-Level Overrides**: Added `customApyPercent` to the `bankAccounts` schema so that specific VIP accounts can override the bank's base APY.

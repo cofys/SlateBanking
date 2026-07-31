@@ -115,6 +115,9 @@ async function startServer() {
 
   const { registerAuthRoutes } = await import("./src/server/authRoutes.js");
   registerAuthRoutes(app);
+  
+  const { registerInterestRoutes } = await import("./src/server/interestRoutes.js");
+  registerInterestRoutes(app);
 
     const { registerAllRoutes } = await import("./src/server/routes.js");
     registerAllRoutes(app, { getRedirectUri, requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET,  });

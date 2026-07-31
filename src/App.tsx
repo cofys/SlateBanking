@@ -22,6 +22,7 @@ import { BankCustomers } from "./pages/BankCustomers";
 import { BankTeam } from "./pages/BankTeam";
 import { BankAnalytics } from "./pages/BankAnalytics";
 import { BankTools } from "./pages/BankTools";
+import { BankInterest } from "./pages/BankInterest";
 import { BankDeveloper } from "./pages/BankDeveloper";
 import { BankCustomerDetail } from "./pages/BankCustomerDetail";
 import { BankAccountDetail } from "./pages/BankAccountDetail";
@@ -85,6 +86,8 @@ function App() {
             <Route path="accounts/:accountId" element={<BankAccountDetail />} />
             <Route path="transactions" element={<BankTransactions />} />
             <Route path="compliance" element={<BankCompliance />} />
+          <Route path="interest" element={<BankInterest />} />
+            <Route path="interest" element={<BankInterest />} />
             <Route path="mea-report" element={<BankMEAReport />} />
             <Route path="loans" element={<BankLoans />} />
             <Route path="vaults" element={<BankVaults />} />

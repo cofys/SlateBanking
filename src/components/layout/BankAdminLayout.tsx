@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Percent,  useEffect, useState } from "react";
 import { useParams, Routes, Route, Link, Outlet, useLocation } from "react-router-dom";
 import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -184,6 +184,7 @@ export function BankAdminLayout() {
       title: "Operations",
       links: [
         { name: "Compliance", path: `/bank/${bankId}/compliance`, icon: ShieldCheck },
+        { name: "Interest Engine", path: `/bank/${bankId}/interest`, icon: Percent },
         { name: "MEA Monthly Report", path: `/bank/${bankId}/mea-report`, icon: FileText },
         { name: "Clearinghouse", path: `/bank/${bankId}/clearinghouse`, icon: Building2 },
         { name: "Audit Log", path: `/bank/${bankId}/audit`, icon: ShieldCheck },
