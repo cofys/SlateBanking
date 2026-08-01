@@ -23,15 +23,16 @@ export function BankOverview() {
          .catch(() => {});
 
        Promise.all([
-          fetch(`/api/banks/${bank.id}/customers`).then(r => r.json()),
+          fetch(`/api/banks/${bank.id}/customers`).then(r => r.ok ? r.json() : []).catch(() => []),
        ]).then(([customers]) => {
-          const totalBalance = customers.reduce((sum: number, c: any) => sum + c.totalBalance, 0);
-          const totalAccounts = customers.reduce((sum: number, c: any) => sum + c.accountCount, 0);
+          const custArray = Array.isArray(customers) ? customers : [];
+          const totalBalance = custArray.reduce((sum: number, c: any) => sum + c.totalBalance, 0);
+          const totalAccounts = custArray.reduce((sum: number, c: any) => sum + c.accountCount, 0);
           
           setStats({
             totalBalance,
             totalAccounts,
-            topCustomers: customers.sort((a: any, b: any) => b.totalBalance - a.totalBalance).slice(0, 5)
+            topCustomers: custArray.sort((a: any, b: any) => b.totalBalance - a.totalBalance).slice(0, 5)
           });
           setLoading(false);
        });
