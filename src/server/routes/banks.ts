@@ -376,9 +376,9 @@ banksRouter.get("/api/admin/banks/:id/calculate-billing", requireGlobalAdmin, as
         },
         allModelProjections: modelCalculations,
       });
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -661,9 +661,9 @@ banksRouter.post("/api/banks/:id/bot-status", requireGlobalAdmin, async (req: ex
       } else {
         res.status(400).json({ error: 'Invalid action' });
       }
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -712,7 +712,7 @@ banksRouter.get("/api/banks", requireAuth, async (req: express.Request, res: exp
       res.json(enrichedBanks);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -779,7 +779,7 @@ banksRouter.post("/api/banks", requireGlobalAdmin, async (req: express.Request, 
       res.json(newBank);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -792,7 +792,7 @@ banksRouter.get("/api/banks/:bankId/invoices", requireBankStaff, async (req: exp
       res.json(data);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -842,7 +842,7 @@ banksRouter.put("/api/banks/:bankId/invoices/:invoiceId/status", requireBankStaf
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -955,7 +955,7 @@ banksRouter.get("/api/banks/:bankId/audit", requireBankStaff, async (req: expres
       res.json(logs);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -985,7 +985,7 @@ banksRouter.get("/api/banks/:bankId/customers", requireBankStaff, async (req: ex
       res.json(Array.from(customerMap.values()));
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -998,7 +998,7 @@ banksRouter.get("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owne
       res.json(staff);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -1018,7 +1018,7 @@ banksRouter.post("/api/banks/:bankId/team", [requireBankStaff, requireRole(["own
       res.json(newStaff);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -1031,7 +1031,7 @@ banksRouter.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requir
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -1075,7 +1075,7 @@ banksRouter.get("/api/banks/:bankId/customers/:discordId", requireBankStaff, asy
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -1152,7 +1152,7 @@ banksRouter.get("/api/banks/:bankId/accounts/:accountId", requireBankStaff, asyn
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -1305,7 +1305,7 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -1423,7 +1423,7 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
       res.json(data);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -1508,7 +1508,7 @@ banksRouter.get("/api/banks/:bankId/products", requireBankStaff, async (req: exp
       const creditsList = await db.select().from(creditProducts).where(eq(creditProducts.bankId, bankId));
       
       res.json({ loans: loansList, credits: creditsList });
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Failed to fetch products" });
     }
@@ -1551,7 +1551,7 @@ banksRouter.post("/api/banks/:bankId/products", requireGlobalAdmin, async (req: 
       }
       
       res.json({ success: true });
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Failed to create product" });
     }
@@ -1605,7 +1605,7 @@ banksRouter.get("/api/banks/:bankId/accounts", requireBankStaff, async (req: exp
       res.json(enrichedAccounts);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2181,7 +2181,7 @@ banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, a
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2230,7 +2230,7 @@ banksRouter.get("/api/banks/:bankId/analytics", requireBankStaff, async (req: ex
       res.json(Object.values(grouped));
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2283,7 +2283,7 @@ banksRouter.get("/api/banks/:bankId/clearinghouse", requireBankStaff, async (req
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2326,7 +2326,7 @@ banksRouter.post("/api/banks/:bankId/clearinghouse/settle", requireBankStaff, as
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2388,7 +2388,7 @@ banksRouter.put("/api/banks/:bankId/clearinghouse/wires/:wireId", requireBankSta
        }
 
        res.json({ success: true });
-     } catch(e) {
+     } catch (e: any) {
         console.error(e);
         res.status(500).json({ error: "Internal Error" });
      }
@@ -2467,7 +2467,7 @@ banksRouter.post("/api/banks/:bankId/wire", requireBankStaff, async (req: expres
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2501,7 +2501,7 @@ banksRouter.get("/api/banks/:bankId/subscriptions", requireBankStaff, async (req
       res.json(subs);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2538,7 +2538,7 @@ banksRouter.post("/api/banks/:bankId/subscriptions", requireBankStaff, async (re
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2555,7 +2555,7 @@ banksRouter.patch("/api/banks/:bankId/subscriptions/:subId", requireBankStaff, a
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2603,7 +2603,7 @@ banksRouter.post("/api/banks/:bankId/subscriptions/:subId/charge", requireBankSt
       res.json({ success: true, nextRun });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2636,7 +2636,7 @@ banksRouter.get("/api/banks/:bankId/payroll", requireBankStaff, async (req: expr
       res.json(jobs);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2672,7 +2672,7 @@ banksRouter.post("/api/banks/:bankId/payroll", requireBankStaff, async (req: exp
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2689,7 +2689,7 @@ banksRouter.patch("/api/banks/:bankId/payroll/:jobId", requireBankStaff, async (
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2738,7 +2738,7 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
       res.json({ success: true, nextRun });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2817,7 +2817,7 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2853,7 +2853,7 @@ banksRouter.get("/api/banks/:bankId/escrows", requireBankStaff, async (req: expr
       res.json(dbEscrows);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2907,7 +2907,7 @@ banksRouter.post("/api/banks/:bankId/escrows", requireBankStaff, async (req: exp
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2942,7 +2942,7 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, 
       res.json({ success: true, status: "funded" });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -2975,7 +2975,7 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/release", requireBankStaf
       res.json({ success: true, status: "released" });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3008,7 +3008,7 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/refund", requireBankStaff
       res.json({ success: true, status: "refunded" });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3046,7 +3046,7 @@ banksRouter.get("/api/banks/:bankId/loans", requireBankStaff, async (req: expres
       res.json(bankLoans);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3129,7 +3129,7 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3217,7 +3217,7 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId", requireBankStaff, async (req
 
       await db.update(loans).set(updates).where(eq(loans.id, req.params.loanId));
       res.json({ success: true });
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
     }
@@ -3253,7 +3253,7 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId/status", requireBankStaff, asy
         await db.update(loans).set({ status }).where(eq(loans.id, req.params.loanId));
       }
       res.json({ success: true });
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
     }
@@ -3285,9 +3285,9 @@ banksRouter.get("/api/banks/:bankId/credit-applications", requireBankStaff, asyn
       });
 
       res.json(enrichedApps);
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3330,7 +3330,7 @@ banksRouter.put("/api/banks/:bankId/credit-applications/:appId", requireBankStaf
       
       await db.update(creditApplications).set({ status }).where(eq(creditApplications.id, req.params.appId));
       res.json({ success: true });
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
     }
@@ -3345,7 +3345,7 @@ banksRouter.delete("/api/banks/:bankId/credit-applications/:appId", requireBankS
       await db.delete(creditApplications)
         .where(and(eq(creditApplications.id, req.params.appId), eq(creditApplications.bankId, req.params.bankId)));
       res.json({ success: true });
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
     }
@@ -3397,7 +3397,7 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
       res.json({ success: true, newRemaining, isPaid });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3423,7 +3423,7 @@ banksRouter.get("/api/banks/:bankId/vaults", requireBankStaff, async (req: expre
       res.json(vaults);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3476,7 +3476,7 @@ banksRouter.post("/api/banks/:bankId/vaults", requireBankStaff, async (req: expr
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3521,7 +3521,7 @@ banksRouter.post("/api/banks/:bankId/vaults/:vaultId/release", requireBankStaff,
       res.json({ success: true, payout, isEarly });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3565,7 +3565,7 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
        res.json(enrichedCards);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3604,7 +3604,7 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
        res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3618,7 +3618,7 @@ banksRouter.delete("/api/banks/:bankId/cards/:cardId", requireBankStaff, async (
        res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3638,7 +3638,7 @@ banksRouter.patch("/api/banks/:bankId/cards/:cardId", requireBankStaff, async (r
        res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3659,7 +3659,7 @@ banksRouter.get("/api/banks/:bankId/developer", [requireBankStaff, requireRole([
       res.json({ apiKey: bank.apiKey, webhookSecret: bank.webhookSecret });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3675,7 +3675,7 @@ banksRouter.post("/api/banks/:bankId/developer", [requireBankStaff, requireRole(
       await db.update(banks).set({ apiWebhookUrl }).where(eq(banks.id, bankId));
       
       res.json({ success: true });
-    } catch(e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Failed to update webhook url" });
     }
@@ -3696,7 +3696,7 @@ banksRouter.post("/api/banks/:bankId/developer/roll", [requireBankStaff, require
        res.json({ apiKey: bank.apiKey, webhookSecret: bank.webhookSecret });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -3758,7 +3758,7 @@ banksRouter.get("/api/banks/:bankId/transactions", requireBankStaff, async (req:
        res.json(bankTxs);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -4752,7 +4752,7 @@ banksRouter.get("/api/banks/:bankId/compliance/flagged", requireBankStaff, async
       res.json(data);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -4765,7 +4765,7 @@ banksRouter.post("/api/banks/:bankId/compliance/flagged/:txId/resolve", requireB
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -4778,7 +4778,7 @@ banksRouter.get("/api/banks/:bankId/compliance/frozen", requireBankStaff, async 
       res.json(data);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
 
@@ -4791,6 +4791,6 @@ banksRouter.post("/api/banks/:bankId/compliance/frozen/:accId/unfreeze", require
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message, stack: e.stack });
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });

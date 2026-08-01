@@ -41,12 +41,12 @@ async function startServer() {
         let bankId = req.params?.bankId || req.body?.bankId || req.query?.bankId || null;
         
         // Try to grab from user if set by requireAuth
-        if (req.user && req.user.discordId) {
-          discordId = req.user.discordId;
+        if ((req as any).user && (req as any).user.discordId) {
+          discordId = (req as any).user.discordId;
         } else if (req.cookies && req.cookies.auth_token) {
           try {
             const decoded = jwt.decode(req.cookies.auth_token);
-            if (decoded && decoded.discordId) discordId = (decoded as any).discordId;
+            if (decoded && (decoded as any).discordId) discordId = (decoded as any).discordId;
           } catch(e) {}
         }
         
@@ -67,7 +67,7 @@ async function startServer() {
           discordId,
           action,
           details: JSON.stringify(details),
-          ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+          ipAddress: (req.ip || req.headers["x-forwarded-for"] || null) as string | null,
           route: path,
           method: req.method,
           bankId,

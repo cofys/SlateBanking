@@ -81,7 +81,7 @@ export function BankLoans() {
         contractUrl: editContractUrl,
         contractText: editContractText,
       };
-      if (statusOverride) updates.status = statusOverride;
+      if (statusOverride) (updates as any).status = statusOverride;
       
       const res = await fetch(`/api/banks/${bankId}/loans/${selectedLoan.id}`, {
         method: "PUT",
@@ -96,7 +96,7 @@ export function BankLoans() {
         const err = await res.json();
         alert("Error: " + err.error);
       }
-    } catch (e) {
+    } catch (e: any) {
       alert("Error: " + e.message);
     }
   };
@@ -163,7 +163,7 @@ export function BankLoans() {
         setCollateralValue("");
         fetchData();
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
     }
   };
@@ -185,7 +185,7 @@ export function BankLoans() {
         fetchData();
         setSelectedLoan(null);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
     }
   };

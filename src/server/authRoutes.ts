@@ -91,8 +91,8 @@ export function registerAuthRoutes(app: express.Express) {
     }
 
     const isCustomDomain = bank && bank.customDomain && hostHeader && hostHeader.includes(bank.customDomain);
-    if (isCustomDomain && bank.discordClientId) {
-       clientId = bank.discordClientId;
+    if (isCustomDomain && bank!.discordClientId) {
+       clientId = (bank as any).discordClientId;
     }
 
     const redirectUri = await getRedirectUri(req);
@@ -439,7 +439,7 @@ export function registerAuthRoutes(app: express.Express) {
        }
     }
     
-    const isCustomDomain = bankToUse && bankToUse.customDomain && hostname && hostname.includes(bankToUse.customDomain as string);
+    const isCustomDomain = bankToUse && bankToUse.customDomain && hostname && hostname.includes(bankToUse.customDomain);
     if (bankToUse && isCustomDomain && bankToUse.discordClientId && bankToUse.discordClientSecret) {
        clientId = bankToUse.discordClientId;
        clientSecret = bankToUse.discordClientSecret;
