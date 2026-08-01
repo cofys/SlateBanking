@@ -220,3 +220,133 @@ globalRouter.get("/api/global/audit", requireGlobalAdmin, async (req: express.Re
     res.status(500).json({ error: e.message });
   }
 });
+
+
+// --- Global Announcements ---
+globalRouter.get("/api/global/announcements", async (req, res) => {
+    const { db } = await import("../../db/index.js");
+    const { globalAnnouncements } = await import("../../db/schema.js");
+    const { desc, eq } = await import("drizzle-orm");
+    try {
+        const query = db.select().from(globalAnnouncements).orderBy(desc(globalAnnouncements.createdAt));
+        // If not global admin, only show active
+        const authModule = await import("../middleware.js");
+        
+        let isGlobalAdmin = false;
+        const token = req.cookies.auth_token;
+        if (token) {
+            try {
+                const jwt = await import('jsonwebtoken');
+                const decoded: any = jwt.default.verify(token, authModule.JWT_SECRET);
+                isGlobalAdmin = !!decoded.isGlobalAdmin;
+            } catch(e) {}
+        }
+        
+        if (!isGlobalAdmin) {
+            const results = await query.where(eq(globalAnnouncements.isActive, true));
+            return res.json(results);
+        }
+        
+        const results = await query;
+        res.json(results);
+    } catch(e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+globalRouter.post("/api/global/announcements", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("../../db/index.js");
+    const { globalAnnouncements } = await import("../../db/schema.js");
+    const { v4: uuidv4 } = await import("uuid");
+    try {
+        const { title, content, type, isActive } = req.body;
+        await db.insert(globalAnnouncements).values({
+            id: uuidv4(),
+            title,
+            content,
+            type: type || 'info',
+            isActive: isActive !== undefined ? isActive : true,
+            createdBy: (req as any).user.discordId,
+            createdAt: new Date(),
+        });
+        res.json({ success: true });
+    } catch(e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+globalRouter.delete("/api/global/announcements/:id", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("../../db/index.js");
+    const { globalAnnouncements } = await import("../../db/schema.js");
+    const { eq } = await import("drizzle-orm");
+    try {
+        await db.delete(globalAnnouncements).where(eq(globalAnnouncements.id, req.params.id));
+        res.json({ success: true });
+    } catch(e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- Global Sanctions ---
+globalRouter.get("/api/global/sanctions", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("../../db/index.js");
+    const { globalSanctions } = await import("../../db/schema.js");
+    const { desc } = await import("drizzle-orm");
+    try {
+        const results = await db.select().from(globalSanctions).orderBy(desc(globalSanctions.createdAt));
+        res.json(results);
+    } catch(e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+globalRouter.post("/api/global/sanctions", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("../../db/index.js");
+    const { globalSanctions } = await import("../../db/schema.js");
+    const { v4: uuidv4 } = await import("uuid");
+    try {
+        const { discordId, mcUuid, reason } = req.body;
+        if (!discordId && !mcUuid) return res.status(400).json({ error: "Provide discordId or mcUuid" });
+        await db.insert(globalSanctions).values({
+            id: uuidv4(),
+            discordId: discordId || null,
+            mcUuid: mcUuid || null,
+            reason,
+            createdBy: (req as any).user.discordId,
+            createdAt: new Date(),
+        });
+        res.json({ success: true });
+    } catch(e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+globalRouter.delete("/api/global/sanctions/:id", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("../../db/index.js");
+    const { globalSanctions } = await import("../../db/schema.js");
+    const { eq } = await import("drizzle-orm");
+    try {
+        await db.delete(globalSanctions).where(eq(globalSanctions.id, req.params.id));
+        res.json({ success: true });
+    } catch(e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- Global Clearinghouse ---
+globalRouter.get("/api/global/clearinghouse", requireGlobalAdmin, async (req, res) => {
+    const { db } = await import("../../db/index.js");
+    const { clearinghouseBalances, banks } = await import("../../db/schema.js");
+    const { eq } = await import("drizzle-orm");
+    try {
+        const results = await db.select({
+            bankId: clearinghouseBalances.bankId,
+            bankName: banks.name,
+            balance: clearinghouseBalances.balance,
+        }).from(clearinghouseBalances)
+        .leftJoin(banks, eq(clearinghouseBalances.bankId, banks.id));
+        res.json(results);
+    } catch(e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});

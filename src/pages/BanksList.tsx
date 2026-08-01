@@ -989,20 +989,37 @@ export function BanksList() {
                      <span className="text-sm font-medium">Database Migration</span>
                    </div>
                    <p className="text-xs text-white/40 mb-4">Upload a legacy v1 SQLite database to merge its contents into this bank instance.</p>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isUploadingDb}
-                      className={`block bg-[#20202e] hover:bg-[#2c2c3e] text-[#a5b4fc] transition-colors w-full font-medium text-xs py-2.5 rounded border border-[#4f46e5]/20 text-center cursor-pointer ${isUploadingDb ? "opacity-50 pointer-events-none" : ""}`}
-                    >
-                      {isUploadingDb ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <Loader2 size={12} className="animate-spin" /> Migrating...
-                        </span>
-                      ) : (
-                        "Upload bank.db"
-                      )}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploadingDb}
+                        className={`flex-1 block bg-[#20202e] hover:bg-[#2c2c3e] text-[#a5b4fc] transition-colors font-medium text-xs py-2.5 rounded border border-[#4f46e5]/20 text-center cursor-pointer ${isUploadingDb ? "opacity-50 pointer-events-none" : ""}`}
+                      >
+                        {isUploadingDb ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <Loader2 size={12} className="animate-spin" /> Migrating...
+                          </span>
+                        ) : (
+                          "Upload"
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = document.createElement("a");
+                          link.href = `/api/banks/${selectedBank.id}/snapshot`;
+                          link.target = "_blank";
+                          link.download = `snapshot_${selectedBank.name}_${new Date().toISOString().split('T')[0]}.json`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}
+                        className="flex-1 block bg-[#20202e] hover:bg-[#2c2c3e] text-[#a5b4fc] transition-colors font-medium text-xs py-2.5 rounded border border-[#4f46e5]/20 text-center cursor-pointer"
+                      >
+                        Download DB
+                      </button>
+                    </div>
                     <input ref={fileInputRef} type="file" accept=".db,.sqlite,application/x-sqlite3" onChange={handleUploadDb} className="hidden" disabled={isUploadingDb} />
                  </div>
 

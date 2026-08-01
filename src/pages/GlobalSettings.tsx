@@ -216,6 +216,10 @@ export function GlobalSettings() {
           </div>
 
           <SaasBillingManager />
+          <BotFleetManagerPanel />
+          <GlobalAnnouncementsPanel />
+          <GlobalSanctionsPanel />
+          <GlobalClearinghousePanel />
           
           <div className="flex justify-end">
             <button
@@ -502,6 +506,381 @@ function SaasBillingManager() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function BotFleetManagerPanel() {
+  const [fleetStatus, setFleetStatus] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchFleetStatus();
+  }, []);
+
+  const fetchFleetStatus = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/bots/status");
+      if (res.ok) {
+        setFleetStatus(await res.json());
+      }
+    } catch(e) {}
+    setLoading(false);
+  };
+
+  return (
+    <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 mt-8">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2 text-lg font-semibold text-white">
+          <Globe className="text-blue-400" size={20} />
+          Bot Fleet Management
+        </div>
+        <button onClick={fetchFleetStatus} className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded transition-colors">
+          Refresh Fleet Status
+        </button>
+      </div>
+      
+      {loading ? (
+        <div className="text-white/50 text-sm animate-pulse">Loading fleet status...</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-white/5 text-white/50">
+              <tr>
+                <th className="px-4 py-2 rounded-tl">Bank ID</th>
+                <th className="px-4 py-2">Bot Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {fleetStatus.map((bot, idx) => (
+                <tr key={idx} className="hover:bg-white/5">
+                  <td className="px-4 py-3 font-mono text-xs">{bot.id}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${bot.status === 'online' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                      {bot.status.toUpperCase()}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {fleetStatus.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="px-4 py-4 text-center text-white/50">No bots provisioned in the fleet yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GlobalAnnouncementsPanel() {
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [formData, setFormData] = useState({ title: '', content: '', type: 'info' });
+
+  useEffect(() => {
+    fetchAnnouncements();
+  }, []);
+
+  const fetchAnnouncements = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/global/announcements");
+      if (res.ok) {
+        setAnnouncements(await res.json());
+      }
+    } catch(e) {}
+    setLoading(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this announcement?")) return;
+    try {
+      await fetch(`/api/global/announcements/${id}`, { method: "DELETE" });
+      fetchAnnouncements();
+    } catch(e) {}
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/global/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        setShowModal(false);
+        setFormData({ title: '', content: '', type: 'info' });
+        fetchAnnouncements();
+      } else {
+          alert("Failed to create announcement");
+      }
+    } catch(e) {}
+  };
+
+  return (
+    <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 mt-8">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2 text-lg font-semibold text-white">
+          <Bell className="text-yellow-400" size={20} />
+          System-Wide Announcements
+        </div>
+        <button onClick={() => setShowModal(true)} className="bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 text-xs font-semibold px-3 py-1.5 rounded transition-colors flex items-center gap-1">
+          <Plus size={14} /> New Announcement
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-white/50 text-sm animate-pulse">Loading...</div>
+      ) : (
+        <div className="space-y-3">
+          {announcements.map((a) => (
+            <div key={a.id} className="bg-white/5 border border-white/10 p-4 rounded-lg flex justify-between items-start">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${a.type === 'alert' ? 'bg-red-500/20 text-red-400' : a.type === 'warning' ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'}`}>{a.type}</span>
+                  <h4 className="font-medium text-white">{a.title}</h4>
+                </div>
+                <p className="text-sm text-white/70 mt-2">{a.content}</p>
+                <div className="text-[10px] text-white/40 mt-3">Posted on {new Date(a.createdAt).toLocaleString()}</div>
+              </div>
+              <button onClick={() => handleDelete(a.id)} className="text-white/40 hover:text-red-400 transition-colors p-1">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+          {announcements.length === 0 && (
+            <div className="text-white/50 text-sm py-4 text-center">No active announcements.</div>
+          )}
+        </div>
+      )}
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#12121a] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
+            <h4 className="text-base font-bold text-white">Broadcast Announcement</h4>
+            <form onSubmit={handleCreate} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Title</label>
+                <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Type</label>
+                <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                  <option value="info">Info</option>
+                  <option value="warning">Warning</option>
+                  <option value="alert">Alert</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Content</label>
+                <textarea required rows={4} value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowModal(false)} className="px-3 py-1.5 text-xs text-white/60 hover:text-white">Cancel</button>
+                <button type="submit" className="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded-lg font-medium">Broadcast</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GlobalSanctionsPanel() {
+  const [sanctions, setSanctions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [formData, setFormData] = useState({ discordId: '', mcUuid: '', reason: '' });
+
+  useEffect(() => {
+    fetchSanctions();
+  }, []);
+
+  const fetchSanctions = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/global/sanctions");
+      if (res.ok) {
+        setSanctions(await res.json());
+      }
+    } catch(e) {}
+    setLoading(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Revoke this sanction?")) return;
+    try {
+      await fetch(`/api/global/sanctions/${id}`, { method: "DELETE" });
+      fetchSanctions();
+    } catch(e) {}
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/global/sanctions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        setShowModal(false);
+        setFormData({ discordId: '', mcUuid: '', reason: '' });
+        fetchSanctions();
+      } else {
+        alert("Failed to issue sanction. Make sure discordId or mcUuid is provided.");
+      }
+    } catch(e) {}
+  };
+
+  return (
+    <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 mt-8">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2 text-lg font-semibold text-white">
+          <Shield className="text-red-400" size={20} />
+          Global Sanctions & Bans
+        </div>
+        <button onClick={() => setShowModal(true)} className="bg-red-500/20 text-red-400 hover:bg-red-500/30 text-xs font-semibold px-3 py-1.5 rounded transition-colors flex items-center gap-1">
+          <Plus size={14} /> Issue Sanction
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-white/50 text-sm animate-pulse">Loading...</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-white/5 text-white/50">
+              <tr>
+                <th className="px-4 py-2 rounded-tl">Discord ID</th>
+                <th className="px-4 py-2">MC UUID</th>
+                <th className="px-4 py-2">Reason</th>
+                <th className="px-4 py-2">Date</th>
+                <th className="px-4 py-2 text-right rounded-tr">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {sanctions.map((s) => (
+                <tr key={s.id} className="hover:bg-white/5">
+                  <td className="px-4 py-3 font-mono text-xs">{s.discordId || 'N/A'}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{s.mcUuid || 'N/A'}</td>
+                  <td className="px-4 py-3 text-white/80">{s.reason}</td>
+                  <td className="px-4 py-3 text-white/50 text-xs">{new Date(s.createdAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => handleDelete(s.id)} className="text-red-400 hover:underline text-xs">Revoke</button>
+                  </td>
+                </tr>
+              ))}
+              {sanctions.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-4 text-center text-white/50">No global sanctions issued.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#12121a] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
+            <h4 className="text-base font-bold text-white">Issue Global Sanction</h4>
+            <form onSubmit={handleCreate} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Discord ID</label>
+                <input type="text" value={formData.discordId} onChange={e => setFormData({...formData, discordId: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. 123456789012345678" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Minecraft UUID</label>
+                <input type="text" value={formData.mcUuid} onChange={e => setFormData({...formData, mcUuid: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. ffffffff-ffff-ffff-ffff-ffffffffffff" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-white/70 mb-1">Reason</label>
+                <textarea required rows={3} value={formData.reason} onChange={e => setFormData({...formData, reason: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowModal(false)} className="px-3 py-1.5 text-xs text-white/60 hover:text-white">Cancel</button>
+                <button type="submit" className="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg font-medium">Issue Sanction</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function GlobalClearinghousePanel() {
+  const [balances, setBalances] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchBalances();
+  }, []);
+
+  const fetchBalances = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/global/clearinghouse");
+      if (res.ok) {
+        setBalances(await res.json());
+      }
+    } catch(e) {}
+    setLoading(false);
+  };
+
+  return (
+    <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 mt-8">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2 text-lg font-semibold text-white">
+          <Globe className="text-indigo-400" size={20} />
+          Global Clearinghouse Balances
+        </div>
+        <button onClick={fetchBalances} className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded transition-colors">
+          Refresh Balances
+        </button>
+      </div>
+      
+      {loading ? (
+        <div className="text-white/50 text-sm animate-pulse">Loading clearinghouse...</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-white/5 text-white/50">
+              <tr>
+                <th className="px-4 py-2 rounded-tl">Bank ID</th>
+                <th className="px-4 py-2">Bank Name</th>
+                <th className="px-4 py-2 text-right rounded-tr">Onyx Clearinghouse Balance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {balances.map((b, idx) => (
+                <tr key={idx} className="hover:bg-white/5">
+                  <td className="px-4 py-3 font-mono text-xs">{b.bankId}</td>
+                  <td className="px-4 py-3 text-white/80">{b.bankName || 'Unknown Bank'}</td>
+                  <td className={`px-4 py-3 text-right font-mono font-medium ${b.balance < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {b.balance < 0 ? '-' : ''}${(Math.abs(b.balance) / 100).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+              {balances.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-4 py-4 text-center text-white/50">No clearinghouse balances exist yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Routes, Route, Link, Outlet, useLocation } from "react-router-dom";
 import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText, Percent, Layers } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
+import { ErrorBoundary } from "../ErrorBoundary";
 
 export function BankAdminLayout() {
   const { bankId } = useParams();
@@ -284,7 +285,7 @@ export function BankAdminLayout() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
-          <Outlet context={{ bank }} />
+          <ErrorBoundary><Outlet context={{ bank }} /></ErrorBoundary>
         </main>
       </div>
     </div>

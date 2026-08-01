@@ -438,12 +438,18 @@ export function BankAccounts() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 bg-[#09090d]">
-              {accounts.filter(acc => 
-                acc.accountName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                acc.ownerDiscordId.includes(searchTerm) ||
-                (acc.ownerMcUsername && acc.ownerMcUsername.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                acc.id.includes(searchTerm)
-              ).map(acc => (
+              {accounts.filter(acc => {
+                if (!acc) return false;
+                const accName = String(acc.accountName || "");
+                const ownerId = String(acc.ownerDiscordId || "");
+                const mcUser = String(acc.ownerMcUsername || "");
+                const accId = String(acc.id || "");
+                const s = searchTerm.toLowerCase();
+                return accName.toLowerCase().includes(s) ||
+                       ownerId.toLowerCase().includes(s) ||
+                       mcUser.toLowerCase().includes(s) ||
+                       accId.toLowerCase().includes(s);
+              }).map(acc => (
                 <tr key={acc.id} onClick={() => navigate(`/bank/${bank.id}/accounts/${acc.id}`)} className="hover:bg-white/[0.02] transition-colors cursor-pointer group">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-3">
@@ -464,6 +470,11 @@ export function BankAccounts() {
                       </div>
                     </div>
                   </td>
+                  {bank.settings?.enableAccountTiers && (
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-white/70 font-mono">
+                      {acc.tierId || "Default"}
+                    </td>
+                  )}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">
                       <User size={13} className="text-white/30" />

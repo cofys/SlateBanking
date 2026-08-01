@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { User, Users, Search, ShieldCheck, ShieldAlert, Shield, CheckCircle, XCircle } from "lucide-react";
-import { format } from "date-fns";
+import { safeFormatDate } from "../lib/utils";
 
 export function BankCustomers() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -24,7 +24,7 @@ export function BankCustomers() {
       fetch(`/api/banks/${bank.id}/customers`)
         .then(r => r.json())
         .then(data => {
-          setCustomers(data);
+          if (Array.isArray(data)) { setCustomers(data); } else { setCustomers([]); console.error(data); }
           setLoading(false);
         });
     }
@@ -120,35 +120,39 @@ export function BankCustomers() {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {customers.filter((c: any) => {
+                  if (!c) return false;
                   const searchLower = searchTerm.toLowerCase();
-                  const displayName = c.discordId === "imported" 
+                  const discordIdStr = String(c.discordId || "");
+                  const mcUsernameStr = String(c.mcUsername || "");
+                  const displayName = discordIdStr === "imported" 
                     ? "Legacy Imported Accounts"
-                    : c.discordId.startsWith("unassigned_")
-                      ? `Unassigned (${c.discordId.replace("unassigned_", "").replace(/_/g, " ")})`
-                      : (c.mcUsername ? `${c.mcUsername} (${c.discordId})` : c.discordId);
+                    : discordIdStr.startsWith("unassigned_")
+                      ? `Unassigned (${discordIdStr.replace("unassigned_", "").replace(/_/g, " ")})`
+                      : (mcUsernameStr ? `${mcUsernameStr} (${discordIdStr})` : (discordIdStr || "Unknown"));
                   
-                  const matchesSearch = displayName.toLowerCase().includes(searchLower) || c.discordId.toLowerCase().includes(searchLower);
+                  const matchesSearch = displayName.toLowerCase().includes(searchLower) || discordIdStr.toLowerCase().includes(searchLower);
                   const matchesKyc = kycFilter === "all" || (c.kycStatus || 'pending') === kycFilter;
                   return matchesSearch && matchesKyc;
                 }).map((c: any) => {
                   const status = c.kycStatus || 'pending';
-                  const isUnassigned = c.discordId.startsWith("unassigned_") || c.discordId === "imported";
+                  const discordIdStr = String(c.discordId || "");
+                  const isUnassigned = discordIdStr.startsWith("unassigned_") || discordIdStr === "imported";
                   return (
-                    <tr key={c.discordId} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => !isUnassigned && navigate(`/bank/${bank.id}/customers/${c.discordId}`)}>
+                    <tr key={discordIdStr} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => !isUnassigned && navigate(`/bank/${bank.id}/customers/${discordIdStr}`)}>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
                             <User size={14} className="text-white/50" />
                           </div>
                           <div>
-                             {c.discordId === "imported" ? (
+                             {discordIdStr === "imported" ? (
                                <div className="font-medium text-white/60">Legacy Imported Accounts</div>
-                             ) : c.discordId.startsWith("unassigned_") ? (
-                               <div className="font-medium text-white/50">Unassigned <span className="text-xs">({c.discordId.replace("unassigned_", "").replace(/_/g, " ")})</span></div>
+                             ) : discordIdStr.startsWith("unassigned_") ? (
+                               <div className="font-medium text-white/50">Unassigned <span className="text-xs">({discordIdStr.replace("unassigned_", "").replace(/_/g, " ")})</span></div>
                              ) : (
                                <>
                                  <div className="font-medium text-white">{c.mcUsername || "Citizen"}</div>
-                                 <div className="text-xs text-white/40 font-mono mt-0.5">{c.discordId}</div>
+                                 <div className="text-xs text-white/40 font-mono mt-0.5">{discordIdStr}</div>
                                </>
                              )}
                           </div>
@@ -170,12 +174,12 @@ export function BankCustomers() {
                          )}
                       </td>
                       )}
-                      <td className="px-6 py-4 text-white/70">{c.accountCount}</td>
+                      <td className="px-6 py-4 text-white/70">{c.accountCount || 0}</td>
                       <td className="px-6 py-4 font-mono font-medium text-emerald-400">
-                        {(c.totalBalance / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}
+                        {((c.totalBalance || 0) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}
                       </td>
                       <td className="px-6 py-4 text-white/50 text-xs">
-                         {c.firstJoined ? format(new Date(c.firstJoined), "MMM d, yyyy") : "-"}
+                         {safeFormatDate(c.firstJoined, "MMM d, yyyy", "-")}
                       </td>
                       <td className="px-6 py-4 text-right">
                          {!isUnassigned && (

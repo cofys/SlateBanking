@@ -84,9 +84,27 @@ export function BankSettings() {
 
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in duration-500">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold tracking-tight">Configuration Settings</h2>
-        <p className="text-white/60 text-sm mt-1">Manage platform behavior, branding, and rules.</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Configuration Settings</h2>
+          <p className="text-white/60 text-sm mt-1">Manage platform behavior, branding, and rules.</p>
+        </div>
+        <button 
+          type="button" 
+          onClick={() => {
+            const link = document.createElement("a");
+            link.href = `/api/banks/${bank.id}/snapshot`;
+            link.target = "_blank";
+            link.download = `snapshot_${bank.name}_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }}
+          className="bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+        >
+          <Settings size={16} />
+          Download Data Snapshot
+        </button>
       </div>
 
       <form onSubmit={handleSave} className="space-y-8">

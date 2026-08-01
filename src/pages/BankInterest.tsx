@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Percent, Save, Play, Loader2, AlertCircle, Calendar, Clock, Banknote, Users } from "lucide-react";
-import { format } from "date-fns";
+import { safeFormatDate } from "../lib/utils";
 
 export function BankInterest() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -267,7 +267,7 @@ export function BankInterest() {
             <div className="mt-6 pt-4 border-t border-white/10">
               <div className="flex items-center gap-3 text-sm text-white/50">
                 <Calendar size={16} />
-                <span>Last Run: {settings?.lastInterestAccrualAt ? format(new Date(settings.lastInterestAccrualAt), 'MMM d, yyyy h:mm a') : 'Never'}</span>
+                <span>Last Run: {safeFormatDate(settings?.lastInterestAccrualAt, 'MMM d, yyyy h:mm a', 'Never')}</span>
               </div>
             </div>
           </div>

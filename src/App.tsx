@@ -88,7 +88,6 @@ function App() {
             <Route path="accounts/:accountId" element={<BankAccountDetail />} />
             <Route path="transactions" element={<BankTransactions />} />
             <Route path="compliance" element={<BankCompliance />} />
-          <Route path="interest" element={<BankInterest />} />
             <Route path="interest" element={<BankInterest />} />
             <Route path="mea-report" element={<BankMEAReport />} />
             <Route path="loans" element={<BankLoans />} />
@@ -98,7 +97,6 @@ function App() {
             <Route path="subscriptions" element={<BankSubscriptions />} />
             <Route path="escrow" element={<BankEscrow />} />
             <Route path="treasury" element={<BankTreasury />} />
-          <Route path="tiers" element={<BankTiers />} />
             <Route path="tiers" element={<BankTiers />} />
             <Route path="invoices" element={<BankInvoices />} />
             <Route path="clearinghouse" element={<BankClearinghouse />} />
@@ -142,6 +140,7 @@ function App() {
           <Route path="accounts/:accountId" element={<BankAccountDetail />} />
           <Route path="transactions" element={<BankTransactions />} />
           <Route path="compliance" element={<BankCompliance />} />
+          <Route path="interest" element={<BankInterest />} />
           <Route path="mea-report" element={<BankMEAReport />} />
           <Route path="loans" element={<BankLoans />} />
           <Route path="vaults" element={<BankVaults />} />
@@ -150,6 +149,7 @@ function App() {
           <Route path="subscriptions" element={<BankSubscriptions />} />
           <Route path="escrow" element={<BankEscrow />} />
           <Route path="treasury" element={<BankTreasury />} />
+          <Route path="tiers" element={<BankTiers />} />
           <Route path="invoices" element={<BankInvoices />} />
           <Route path="clearinghouse" element={<BankClearinghouse />} />
           <Route path="audit" element={<BankAuditLog />} />

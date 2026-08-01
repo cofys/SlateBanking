@@ -1,3 +1,4 @@
+import { bankSnapshotRouter } from "./routes/bankSnapshot.js";
 import express from "express";
 import { v1Router } from "./routes/v1.js";
 import { banksRouter } from "./routes/banks.js";
@@ -17,4 +18,5 @@ export function registerAllRoutes(app: express.Express, ctx?: any) {
     app.use('/', onyxRouter);
     app.use('/', botRouter);
     app.use('/', webhooksRouter);
+    app.use('/', bankSnapshotRouter);
 }

@@ -733,3 +733,17 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 - **Extreme Optimization**: API request telemetry and event logs are handled asynchronously via the `GlobalAuditManager` (`src/server/globalAudit.ts`). To prevent I/O blocking during API requests, logs are held in-memory and flushed in batches (bulk inserts) to the SQLite `global_audit_logs` table every 2 seconds or when the queue hits 500 entries. 
 - **Global Middleware**: Attached directly to the root Express app in `server.ts`, logging API paths, status codes, actor Discord IDs (pulled from JWTs), execution latency (ms), and IP addresses. 
 - **Global Admin Access Only**: The real-time viewer interface for these telemetry points is secured at `/eye-of-god` within the Global Admin Dashboard.
+
+## Data Snapshots (Downloads)
+As of the latest update, both Global Admins (via the Banks list) and Bank Admins (via Bank Settings) can download a full snapshot of a bank's data.
+- The snapshot endpoint is `GET /api/banks/:id/snapshot`.
+- It returns a JSON dump encompassing the entire bank's data, accounts, transactions, and customers, which serves as a highly portable backup or audit log.
+
+## Global Sanctions and Announcements
+*Schema structures for \`global_sanctions\` and \`global_announcements\` have been added to the database to support upcoming system-wide enforcement and broadcast tools.*
+
+## Bot Fleet Management
+Global Admins have access to the Bot Fleet Management panel in Global Settings to monitor the connection status of all provisioned Discord bots across the network.
+
+## Clearinghouse Global Views
+A Global Clearinghouse Balances panel has been added to Global Settings, allowing Global Admins to view all Onyx Clearinghouse balances centrally without navigating to each bank's portal.

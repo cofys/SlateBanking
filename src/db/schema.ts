@@ -524,3 +524,22 @@ export const globalAuditLogs = sqliteTable("global_audit_logs", {
   latencyMs: integer("latency_ms"),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
 });
+
+export const globalSanctions = sqliteTable("global_sanctions", {
+  id: text("id").primaryKey(),
+  discordId: text("discord_id"),
+  mcUuid: text("mc_uuid"),
+  reason: text("reason"),
+  createdBy: text("created_by"), // Discord ID of the global admin
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const globalAnnouncements = sqliteTable("global_announcements", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  type: text("type").notNull().default('info'), // info, warning, alert
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  createdBy: text("created_by"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});

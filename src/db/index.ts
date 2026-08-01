@@ -138,6 +138,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_customers", "linked_discord_id", "TEXT");
   checkAndAddColumn("bank_customers", "city_corp_token", "TEXT");
   checkAndAddColumn("bank_customers", "notes", "TEXT");
+  checkAndAddColumn("bank_customers", "first_joined", "INTEGER");
 
   // Bank Settings table
   checkAndAddColumn("bank_settings", "withdraw_fee_percent", "INTEGER DEFAULT 0");
