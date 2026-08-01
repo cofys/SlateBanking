@@ -252,7 +252,7 @@ try {
 try {
   const migrationsFolder = path.resolve(process.cwd(), "drizzle");
   if (fs.existsSync(migrationsFolder)) {
-    migrate(db, { migrationsFolder });
+    // migrate(db, { migrationsFolder });
   }
 } catch (err) {
   console.error("Migration error on startup:", err);
