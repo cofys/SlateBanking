@@ -3,14 +3,15 @@ const path = require('path');
 const file = path.join(__dirname, 'src', 'components', 'layout', 'BankAdminLayout.tsx');
 let content = fs.readFileSync(file, 'utf8');
 
-if (!content.includes('import { Layers,')) {
-    content = content.replace('import { Landmark,', 'import { Landmark, Layers,');
-}
+content = content.replace(
+  'import { Percent,  useEffect, useState } from "react";',
+  'import { useEffect, useState } from "react";'
+);
 
 content = content.replace(
-  'settings?.enableTreasury !== false && { name: "Treasury", path: `/bank/${bankId}/treasury`, icon: BarChart3 },',
-  'settings?.enableTreasury !== false && { name: "Treasury", path: `/bank/${bankId}/treasury`, icon: BarChart3 },\n        settings?.enableAccountTiers !== false && { name: "Account Tiers", path: `/bank/${bankId}/tiers`, icon: Layers },'
+  'import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText } from "lucide-react";',
+  'import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText, Percent, Layers } from "lucide-react";'
 );
 
 fs.writeFileSync(file, content);
-console.log("Patched successfully");
+console.log("Patched imports");

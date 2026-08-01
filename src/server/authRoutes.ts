@@ -54,7 +54,7 @@ export function registerAuthRoutes(app: express.Express) {
     const hasCityCorpEnv = Boolean(process.env.CITYRP_APP_ID && (process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET));
 
     if (provider === 'citycorp' || (!provider && ((bank && (bank.cityCorpAppId || bank.cityCorpAuthUrl)) || hasCityCorpEnv))) {
-      if (!bank || (!bank.cityCorpAppId && !bank.cityCorpAuthUrl)) {
+      if (!bank || (!bank?.cityCorpAppId && !bank?.cityCorpAuthUrl)) {
         try {
           const allBanks = await db.select().from(banks).all();
           const configuredBank = allBanks.find((b: any) => b.cityCorpAppId || b.cityCorpAuthUrl);
@@ -439,11 +439,12 @@ export function registerAuthRoutes(app: express.Express) {
        }
     }
     
-    const isCustomDomain = bankToUse && bankToUse.customDomain && hostname && hostname.includes(bankToUse.customDomain);
-    if (isCustomDomain && bankToUse.discordClientId && bankToUse.discordClientSecret) {
+    const isCustomDomain = bankToUse && bankToUse.customDomain && hostname && hostname.includes(bankToUse.customDomain as string);
+    if (bankToUse && isCustomDomain && bankToUse.discordClientId && bankToUse.discordClientSecret) {
        clientId = bankToUse.discordClientId;
        clientSecret = bankToUse.discordClientSecret;
     }
+    
 
     const redirectUri = await getRedirectUri(req);
 

@@ -14,14 +14,14 @@ export function registerInterestRoutes(app: express.Express) {
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
       
       res.json({
-        savingsApyPercent: bank.savingsApyPercent,
-        interestPaymentSchedule: bank.interestPaymentSchedule,
-        interestNextPaymentAt: bank.interestNextPaymentAt,
-        interestTargetAccounts: bank.interestTargetAccounts,
-        interestMinBalance: bank.interestMinBalance,
-        interestMaxAccountBalance: bank.interestMaxAccountBalance,
-        interestRequiresActivityDays: bank.interestRequiresActivityDays,
-        lastInterestAccrualAt: bank.lastInterestAccrualAt
+        savingsApyPercent: settings?.savingsApyPercent,
+        interestPaymentSchedule: settings?.interestPaymentSchedule,
+        interestNextPaymentAt: settings?.interestNextPaymentAt,
+        interestTargetAccounts: settings?.interestTargetAccounts,
+        interestMinBalance: settings?.interestMinBalance,
+        interestMaxAccountBalance: settings?.interestMaxAccountBalance,
+        interestRequiresActivityDays: settings?.interestRequiresActivityDays,
+        lastInterestAccrualAt: settings?.lastInterestAccrualAt
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -45,16 +45,14 @@ export function registerInterestRoutes(app: express.Express) {
          return res.status(403).json({ error: "Only Managers and Admins can configure interest settings." });
       }
 
-      await db.update(banks)
-        .set({
+      await db.update(bankSettings).set({
           savingsApyPercent,
           interestPaymentSchedule,
           interestTargetAccounts,
           interestMinBalance,
           interestMaxAccountBalance,
           interestRequiresActivityDays
-        })
-        .where(eq(banks.id, bankId));
+        }).where(eq(bankSettings.bankId, bankId));
 
       const updated = await db.select().from(banks).where(eq(banks.id, bankId)).get();
       res.json(updated);
@@ -65,6 +63,7 @@ export function registerInterestRoutes(app: express.Express) {
 
   app.post("/api/banks/:bankId/interest-run", requireBankStaff, async (req, res) => {
     const { bankId } = req.params;
+
     try {
       const staffRole = (req as any).staffRole;
       if (staffRole !== "admin" && staffRole !== "manager") {
@@ -73,9 +72,10 @@ export function registerInterestRoutes(app: express.Express) {
 
       const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
       if (!bank) return res.status(404).json({ error: "Bank not found" });
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
 
       let targetAccountTypes: string[] = [];
-      if (bank.interestTargetAccounts === "savings_only") {
+      if (settings?.interestTargetAccounts === "savings_only") {
          targetAccountTypes = ["personal", "business"]; // We'll filter by name later, wait, what's a savings account?
       }
       
@@ -89,21 +89,21 @@ export function registerInterestRoutes(app: express.Express) {
 
       let eligibleAccounts = accounts;
 
-      if (bank.interestTargetAccounts === "savings_only") {
+      if (settings?.interestTargetAccounts === "savings_only") {
         eligibleAccounts = eligibleAccounts.filter(a => a.accountName.toLowerCase().includes("saving"));
-      } else if (bank.interestTargetAccounts === "personal_only") {
+      } else if (settings?.interestTargetAccounts === "personal_only") {
         eligibleAccounts = eligibleAccounts.filter(a => a.accountType === "personal");
-      } else if (bank.interestTargetAccounts === "business_only") {
+      } else if (settings?.interestTargetAccounts === "business_only") {
         eligibleAccounts = eligibleAccounts.filter(a => a.accountType === "business");
       }
 
-      if (bank.interestMinBalance > 0) {
-        eligibleAccounts = eligibleAccounts.filter(a => a.balance >= (bank.interestMinBalance || 0));
+      if (settings?.interestMinBalance && settings.interestMinBalance > 0) {
+        eligibleAccounts = eligibleAccounts.filter(a => a.balance >= (settings.interestMinBalance || 0));
       }
 
-      if (bank.interestRequiresActivityDays) {
+      if (settings?.interestRequiresActivityDays) {
         const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - bank.interestRequiresActivityDays);
+        cutoff.setDate(cutoff.getDate() - settings.interestRequiresActivityDays);
         eligibleAccounts = eligibleAccounts.filter(a => {
            if (!a.lastSyncedAt) return false;
            return new Date(a.lastSyncedAt) >= cutoff;
@@ -120,22 +120,24 @@ export function registerInterestRoutes(app: express.Express) {
       // So if schedule is monthly, 3% / 12 = 0.25% per month.
       // Let's calculate the divisor based on schedule.
       let divisor = 12; // default monthly
-      if (bank.interestPaymentSchedule === "daily") divisor = 365;
-      if (bank.interestPaymentSchedule === "weekly") divisor = 52;
+      if (settings?.interestPaymentSchedule === "daily") divisor = 365;
+      if (settings?.interestPaymentSchedule === "weekly") divisor = 52;
       
       // Process in a transaction? SQLite can handle it.
+      
       for (const account of eligibleAccounts) {
         let tierApy = null;
         if (settings && settings.enableAccountTiers && account.tierId && settings.accountTiers) {
-          const t = settings.accountTiers.find((x:any) => x.id === account.tierId);
+          const t = (settings.accountTiers as any[]).find((x:any) => x.id === account.tierId);
           if (t && t.apyPercent !== null) tierApy = t.apyPercent;
         }
-        const apyToUse = account.customApyPercent !== null ? account.customApyPercent : (tierApy !== null ? tierApy : bank.savingsApyPercent);
+
+        const apyToUse = account.customApyPercent !== null ? account.customApyPercent : (tierApy !== null ? tierApy : settings?.savingsApyPercent);
         if (!apyToUse || apyToUse <= 0) continue;
 
         let principal = account.balance;
-        if (bank.interestMaxAccountBalance && principal > bank.interestMaxAccountBalance) {
-          principal = bank.interestMaxAccountBalance;
+        if (settings?.interestMaxAccountBalance && principal > settings.interestMaxAccountBalance) {
+          principal = settings.interestMaxAccountBalance;
         }
 
         // apyToUse is basis points. 300 = 3% = 0.03.
@@ -163,9 +165,7 @@ export function registerInterestRoutes(app: express.Express) {
         }
       }
 
-      await db.update(banks)
-        .set({ lastInterestAccrualAt: new Date() })
-        .where(eq(banks.id, bank.id));
+      await db.update(bankSettings).set({ lastInterestAccrualAt: new Date() }).where(eq(bankSettings.bankId, bank.id));
 
       res.json({ count, totalAmount });
     } catch (e: any) {

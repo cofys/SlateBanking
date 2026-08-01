@@ -728,3 +728,8 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 ### Environment & Domain Configuration
 - **Root Domain Bypass**: The primary platform application bypasses custom domain routing for `localhost`, `127.0.0.1`, Google Cloud Run URLs (`*.run.app`), and specifically the platform roots `sb.azisle.com`, `azisle.com`, and `www.azisle.com`.
 - **Database Migrations**: In production environments without explicit `npm run db:push` usage, the platform relies on `src/db/index.ts` executing automatic structural checks (`ensureDatabaseSchemaSynced`). Whenever new columns are added to `src/db/schema.ts`, they MUST be registered inside `ensureDatabaseSchemaSynced` or else DrizzleORM will throw exceptions when querying.
+
+### Global Audit System (Eye of God)
+- **Extreme Optimization**: API request telemetry and event logs are handled asynchronously via the `GlobalAuditManager` (`src/server/globalAudit.ts`). To prevent I/O blocking during API requests, logs are held in-memory and flushed in batches (bulk inserts) to the SQLite `global_audit_logs` table every 2 seconds or when the queue hits 500 entries. 
+- **Global Middleware**: Attached directly to the root Express app in `server.ts`, logging API paths, status codes, actor Discord IDs (pulled from JWTs), execution latency (ms), and IP addresses. 
+- **Global Admin Access Only**: The real-time viewer interface for these telemetry points is secured at `/eye-of-god` within the Global Admin Dashboard.

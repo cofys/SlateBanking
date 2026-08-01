@@ -1,3 +1,6 @@
+import { db } from '../../db/index.js';
+import { bankSettings, banks, bankAccounts, transactions, escrows, bankStaff, supportTickets, auditLogs, loans, creditApplications, vaultDeposits, cards, payrollJobs, subscriptions, clearinghouseBalances, cityCorpLogs, invoices, bankCustomers, loanProducts, creditProducts, saasInvoices, discordWebhooks, onyxMerchants, accountMembers, savingsGoals, paymentLinks, recurringTransfers, clearinghouseSettlements, interBankTransfers } from '../../db/schema.js';
+import { eq, or } from 'drizzle-orm';
 import express from 'express';
 import { requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET, getRedirectUri } from "../middleware.js";
 import { botManager } from "../../lib/bot_manager.js";

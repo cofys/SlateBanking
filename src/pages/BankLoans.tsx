@@ -64,13 +64,13 @@ export function BankLoans() {
       setLoans(l);
       setAccounts(a);
       setLoading(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       setLoading(false);
     }
   };
 
-  const handleUpdateLoan = async (statusOverride) => {
+  const handleUpdateLoan = async (statusOverride: any) => {
     try {
       const updates = {
         interestRate: parseFloat(editInterestRate) * 100,

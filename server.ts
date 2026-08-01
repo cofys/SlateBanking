@@ -1,3 +1,4 @@
+import { globalAudit } from './src/server/globalAudit.js';
 import express from "express";
 import { randomInt } from "crypto";
 import path from "path";
@@ -26,6 +27,57 @@ async function startServer() {
   }));
   app.use(express.json({ limit: "50mb" }));
   app.use(cookieParser());
+
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const token = req.cookies.session;
+      const latency = Date.now() - start;
+      const path = req.originalUrl || req.url;
+      
+      // Do not log static assets or frequent polls unless needed.
+      if (path.startsWith('/api/')) {
+        let discordId: string | null = null;
+        let bankId = req.params?.bankId || req.body?.bankId || req.query?.bankId || null;
+        
+        // Try to grab from user if set by requireAuth
+        if (req.user && req.user.discordId) {
+          discordId = req.user.discordId;
+        } else if (req.cookies && req.cookies.auth_token) {
+          try {
+            const decoded = jwt.decode(req.cookies.auth_token);
+            if (decoded && decoded.discordId) discordId = (decoded as any).discordId;
+          } catch(e) {}
+        }
+        
+        // Simple details payload
+        const details = {
+          status: res.statusCode,
+          method: req.method,
+          query: req.query,
+          // limit body logging to safe fields or just flag if present
+          bodySize: req.body ? JSON.stringify(req.body).length : 0
+        };
+
+        let action = "api_request";
+        if (path.includes("/auth/")) action = "auth";
+        if (path.includes("/transfer")) action = "transfer";
+
+        globalAudit.log({
+          discordId,
+          action,
+          details: JSON.stringify(details),
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+          route: path,
+          method: req.method,
+          bankId,
+          latencyMs: latency
+        });
+      }
+    });
+    next();
+  });
+
     app.use(cors({
     origin: async (origin, callback) => {
       if (!origin) return callback(null, true);

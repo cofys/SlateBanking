@@ -85,6 +85,7 @@ function ensureDatabaseSchemaSynced() {
   createTableIfNotExists("onyx_merchant_products", "id TEXT PRIMARY KEY NOT NULL, merchant_id TEXT NOT NULL, name TEXT NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("onyx_quotes", "id TEXT PRIMARY KEY NOT NULL, merchant_id TEXT NOT NULL, created_by_discord_id TEXT NOT NULL, amount INTEGER NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("discord_webhooks", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, events TEXT NOT NULL, created_at INTEGER NOT NULL");
+  createTableIfNotExists("global_audit_logs", "id TEXT PRIMARY KEY NOT NULL, discord_id TEXT, action TEXT NOT NULL, details TEXT, ip_address TEXT, route TEXT, method TEXT, bank_id TEXT, latency_ms INTEGER, timestamp INTEGER NOT NULL");
 
   // Check and add missing columns to banks
   checkAndAddColumn("banks", "discord_client_id", "TEXT");

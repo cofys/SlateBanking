@@ -206,3 +206,17 @@ globalRouter.put("/api/admin/saas-invoices/:id", requireGlobalAdmin, async (req:
       res.status(500).json({ error: "Internal error" });
     }
 });
+
+globalRouter.get("/api/global/audit", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { globalAuditLogs } = await import("../../db/schema.js");
+  const { desc } = await import("drizzle-orm");
+  try {
+    const logs = await db.select().from(globalAuditLogs)
+      .orderBy(desc(globalAuditLogs.timestamp))
+      .limit(150);
+    res.json(logs);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});

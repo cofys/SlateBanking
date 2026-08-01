@@ -3,21 +3,33 @@ const path = require('path');
 const file = path.join(__dirname, 'src', 'server', 'interestRoutes.ts');
 let content = fs.readFileSync(file, 'utf8');
 
-// Add bankSettings to imports
+// Replace bank. with settings. for all these properties
+const propsToReplace = [
+  'savingsApyPercent',
+  'interestPaymentSchedule',
+  'interestNextPaymentAt',
+  'interestTargetAccounts',
+  'interestMinBalance',
+  'interestMaxAccountBalance',
+  'interestRequiresActivityDays',
+  'lastInterestAccrualAt'
+];
+
+propsToReplace.forEach(prop => {
+  content = content.replace(new RegExp(`bank\\.${prop}`, 'g'), `settings?.${prop}`);
+  content = content.replace(new RegExp(`bank\\.${prop}`, 'g'), `settings?.${prop}`); // Run twice just in case
+});
+
+// Fix object literal assignments in db.update(banks) vs db.update(bankSettings)
 content = content.replace(
-  'import { banks, bankAccounts, transactions } from "../db/schema.js";',
-  'import { banks, bankAccounts, transactions, bankSettings } from "../db/schema.js";'
+  'await db.update(banks).set({ savingsApyPercent, interestPaymentSchedule, interestNextPaymentAt, interestTargetAccounts, interestMinBalance, interestMaxAccountBalance, interestRequiresActivityDays }).where(eq(banks.id, bankId));',
+  'await db.update(bankSettings).set({ savingsApyPercent, interestPaymentSchedule, interestNextPaymentAt: interestNextPaymentAt ? new Date(interestNextPaymentAt) : null, interestTargetAccounts, interestMinBalance, interestMaxAccountBalance, interestRequiresActivityDays }).where(eq(bankSettings.bankId, bankId));'
 );
 
 content = content.replace(
-  'const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();\n      if (!bank) return res.status(404).json({ error: "Bank not found" });',
-  'const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();\n      if (!bank) return res.status(404).json({ error: "Bank not found" });\n      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();'
-);
-
-content = content.replace(
-  'const apyToUse = account.customApyPercent !== null ? account.customApyPercent : bank.savingsApyPercent;',
-  'let tierApy = null;\n        if (settings && settings.enableAccountTiers && account.tierId && settings.accountTiers) {\n          const t = settings.accountTiers.find((x:any) => x.id === account.tierId);\n          if (t && t.apyPercent !== null) tierApy = t.apyPercent;\n        }\n        const apyToUse = account.customApyPercent !== null ? account.customApyPercent : (tierApy !== null ? tierApy : bank.savingsApyPercent);'
+  'await db.update(banks).set({ lastInterestAccrualAt: new Date() }).where(eq(banks.id, bankId));',
+  'await db.update(bankSettings).set({ lastInterestAccrualAt: new Date() }).where(eq(bankSettings.bankId, bankId));'
 );
 
 fs.writeFileSync(file, content);
-console.log("Patched successfully");
+console.log("Patched interestRoutes.ts");

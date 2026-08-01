@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { Building2, Activity, Shield, Settings, Menu, X, LogIn } from "lucide-react";
+import { Building2, Activity, Shield, Settings, Menu, X, LogIn, Eye } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 
 export function DashboardLayout() {
@@ -40,6 +40,7 @@ export function DashboardLayout() {
     { name: "Global Transactions", path: "/transactions", icon: Activity },
     { name: "Onyx Network (PSP)", path: "/onyx", icon: Shield },
     { name: "CityCorp Network", path: "/citycorp", icon: Settings },
+    { name: "Eye of God", path: "/eye-of-god", icon: Eye },
   ];
 
   if (isLoading) {

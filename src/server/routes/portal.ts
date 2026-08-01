@@ -199,7 +199,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
       };
 
       res.json({ ...safeBank, settings });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Internal error", stack: e.stack });
     }
