@@ -196,7 +196,7 @@ The platform relies on a SQLite database configured via `drizzle.config.ts` and 
 
 - **`users`**: Global identity mapping table linking Discord IDs to Minecraft UUIDs and Usernames.
 - **`banks`**: The foundational tenant row. Contains `discordToken`, `status`, `brandingColor`, etc.
-- **`bank_accounts`**: The core ledger holding entity. Links to `banks` via foreign key. Houses the core integer `balance`.
+- **`bank_accounts`**: The core ledger holding entity. Links to `banks` via foreign key. Houses the core integer `balance`, fee overrides (`customTransferFeePercent`, `customDepositFeePercent`, `customWithdrawFeePercent`), custom yield overrides (`customApyPercent`), and system metadata (`isSystem`, `systemCategory`, `tierId`).
 - **`transactions`**: Absolute source-of-truth for money layout. Connects optional `fromAccountId` and `toAccountId` for atomic transfers.
 - **`onyx_merchants`**: API Gateway configurations routing external keys to specific `destinationAccount` strings.
 - **`bank_settings`**: Toggles and fee assignments tied cleanly inside a 1-to-1 relationship with `banks.id`.

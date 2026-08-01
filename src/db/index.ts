@@ -126,6 +126,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_accounts", "custom_transfer_fee_percent", "INTEGER");
   checkAndAddColumn("bank_accounts", "custom_deposit_fee_percent", "INTEGER");
   checkAndAddColumn("bank_accounts", "custom_withdraw_fee_percent", "INTEGER");
+  checkAndAddColumn("bank_accounts", "custom_apy_percent", "INTEGER");
   checkAndAddColumn("bank_accounts", "exists_in_game", "INTEGER DEFAULT 1");
   checkAndAddColumn("bank_accounts", "last_synced_at", "INTEGER");
   checkAndAddColumn("bank_accounts", "sync_error", "TEXT");
