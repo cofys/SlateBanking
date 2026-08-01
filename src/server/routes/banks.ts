@@ -72,9 +72,9 @@ banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Reques
       
       await db.update(banks).set(updateData).where(eq(banks.id, req.params.id));
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message || "Internal error", stack: e.stack });
     }
   });
 
@@ -161,7 +161,7 @@ banksRouter.get("/api/banks/corp-finder", requireAuth, async (req: express.Reque
                       if (dataApi && dataApi.totalPages && page >= dataApi.totalPages) break;
                       
                       page++;
-                   } catch (e) {
+                   } catch (e: any) {
                       console.error("[CorpFinder] Error fetching from citycorp/corp/list:", e);
                       break;
                    }
@@ -203,7 +203,7 @@ banksRouter.post("/api/banks/maintenance-all", requireGlobalAdmin, async (req: e
         if (bank.discordToken) {
           try {
             await botManager.provisionBankBot(bank.id, bank.discordToken);
-          } catch (e) {
+          } catch (e: any) {
             // Bot already provisioned or offline
           }
           await botManager.updateBankBotPresence(bank.id, maintenanceMode);
@@ -211,7 +211,7 @@ banksRouter.post("/api/banks/maintenance-all", requireGlobalAdmin, async (req: e
       }
 
       res.json({ success: true, maintenanceMode, totalBanks: allBanks.length });
-    } catch (e) {
+    } catch (e: any) {
       console.error("[MaintenanceAll] Error updating maintenance mode for all banks:", e);
       res.status(500).json({ error: "Failed to update global bank maintenance mode" });
     }
@@ -236,14 +236,14 @@ banksRouter.post("/api/banks/:bankId/maintenance", requireBankStaff, async (req:
         const { botManager } = await import("../../lib/bot_manager");
         try {
           await botManager.provisionBankBot(bId, bank.discordToken);
-        } catch (e) {
+        } catch (e: any) {
           // Bot already provisioned or offline
         }
         await botManager.updateBankBotPresence(bId, maintenanceMode);
       }
 
       res.json({ success: true, bankId: bId, maintenanceMode });
-    } catch (e) {
+    } catch (e: any) {
       console.error("[BankMaintenance] Error updating bank maintenance mode:", e);
       res.status(500).json({ error: "Failed to update bank maintenance mode" });
     }
@@ -378,7 +378,7 @@ banksRouter.get("/api/admin/banks/:id/calculate-billing", requireGlobalAdmin, as
       });
     } catch(e) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -663,7 +663,7 @@ banksRouter.post("/api/banks/:id/bot-status", requireGlobalAdmin, async (req: ex
       }
     } catch(e) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -710,9 +710,9 @@ banksRouter.get("/api/banks", requireAuth, async (req: express.Request, res: exp
         }
       });
       res.json(enrichedBanks);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -777,9 +777,9 @@ banksRouter.post("/api/banks", requireGlobalAdmin, async (req: express.Request, 
       }
       
       res.json(newBank);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -790,9 +790,9 @@ banksRouter.get("/api/banks/:bankId/invoices", requireBankStaff, async (req: exp
     try {
       const data = await db.select().from(invoices).where(eq(invoices.bankId, req.params.bankId)).orderBy(desc(invoices.createdAt));
       res.json(data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -840,9 +840,9 @@ banksRouter.put("/api/banks/:bankId/invoices/:invoiceId/status", requireBankStaf
         and(eq(invoices.id, req.params.invoiceId), eq(invoices.bankId, req.params.bankId))
       );
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -953,9 +953,9 @@ banksRouter.get("/api/banks/:bankId/audit", requireBankStaff, async (req: expres
         .limit(limit)
         .offset(offset);
       res.json(logs);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -983,9 +983,9 @@ banksRouter.get("/api/banks/:bankId/customers", requireBankStaff, async (req: ex
       }
       
       res.json(Array.from(customerMap.values()));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -996,9 +996,9 @@ banksRouter.get("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owne
     try {
       const staff = await db.select().from(bankStaff).where(eq(bankStaff.bankId, req.params.bankId));
       res.json(staff);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -1016,9 +1016,9 @@ banksRouter.post("/api/banks/:bankId/team", [requireBankStaff, requireRole(["own
       };
       await db.insert(bankStaff).values(newStaff);
       res.json(newStaff);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -1029,9 +1029,9 @@ banksRouter.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requir
     try {
       await db.delete(bankStaff).where(and(eq(bankStaff.id, req.params.staffId), eq(bankStaff.bankId, req.params.bankId)));
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -1073,9 +1073,9 @@ banksRouter.get("/api/banks/:bankId/customers/:discordId", requireBankStaff, asy
         notes: customerRecord[0]?.notes || "",
         kycStatus: customerRecord[0]?.kycStatus || "pending"
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -1150,9 +1150,9 @@ banksRouter.get("/api/banks/:bankId/accounts/:accountId", requireBankStaff, asyn
         account,
         transactions: txList
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -1303,9 +1303,9 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
         hasCityCorpAppSecret: !!bank?.cityCorpAppSecret,
         maintenanceMode: bank?.maintenanceMode || false
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -1339,7 +1339,7 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
          if (bank && bank.discordToken) {
             try {
               await botManager.provisionBankBot(bId, bank.discordToken);
-            } catch (e) {
+            } catch (e: any) {
               // Bot already provisioned or running
             }
             await botManager.updateBankBotPresence(bId, req.body.maintenanceMode);
@@ -1421,9 +1421,9 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
       }
 
       res.json(data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -1491,7 +1491,7 @@ banksRouter.post("/api/banks/:bankId/accrue-interest", requireBankStaff, async (
         apyBasisPoints,
         accrualTimestamp: new Date()
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error("[InterestAccrualError]:", e);
       res.status(500).json({ error: "Failed to accrue interest" });
     }
@@ -1603,9 +1603,9 @@ banksRouter.get("/api/banks/:bankId/accounts", requireBankStaff, async (req: exp
       });
 
       res.json(enrichedAccounts);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -1644,7 +1644,7 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
               if (mojangData.name) resolvedMcUsername = mojangData.name;
             }
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error("Mojang API error", e);
         }
       }
@@ -2070,7 +2070,7 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/provision-game", requir
         if (customer && customer.mcUuid) {
           try {
             await client.addSubuser(account.accountName, customer.mcUuid);
-          } catch (e) {
+          } catch (e: any) {
             console.error("Non-fatal subuser add error during provision:", e);
           }
         }
@@ -2179,9 +2179,9 @@ banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, a
       });
 
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2228,9 +2228,9 @@ banksRouter.get("/api/banks/:bankId/analytics", requireBankStaff, async (req: ex
       }
       
       res.json(Object.values(grouped));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2281,9 +2281,9 @@ banksRouter.get("/api/banks/:bankId/clearinghouse", requireBankStaff, async (req
         settlements,
         wires
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2324,9 +2324,9 @@ banksRouter.post("/api/banks/:bankId/clearinghouse/settle", requireBankStaff, as
       `);
 
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2465,9 +2465,9 @@ banksRouter.post("/api/banks/:bankId/wire", requireBankStaff, async (req: expres
       sendWebhook(toBankId, `🌐 **Wire Transfer Received**: $${(amount/100).toFixed(2)} received into ${toAccountName}.`);
 
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2499,9 +2499,9 @@ banksRouter.get("/api/banks/:bankId/subscriptions", requireBankStaff, async (req
       .where(eq(subscriptions.bankId, req.params.bankId));
 
       res.json(subs);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2536,9 +2536,9 @@ banksRouter.post("/api/banks/:bankId/subscriptions", requireBankStaff, async (re
       }).returning().get();
 
       res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2553,9 +2553,9 @@ banksRouter.patch("/api/banks/:bankId/subscriptions/:subId", requireBankStaff, a
         .where(and(eq(subscriptions.id, req.params.subId), eq(subscriptions.bankId, req.params.bankId)))
         .returning().get();
       res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2601,9 +2601,9 @@ banksRouter.post("/api/banks/:bankId/subscriptions/:subId/charge", requireBankSt
       await db.update(subscriptions).set({ nextRun }).where(eq(subscriptions.id, sub.id));
 
       res.json({ success: true, nextRun });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2634,9 +2634,9 @@ banksRouter.get("/api/banks/:bankId/payroll", requireBankStaff, async (req: expr
       .where(eq(payrollJobs.bankId, req.params.bankId));
 
       res.json(jobs);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2670,9 +2670,9 @@ banksRouter.post("/api/banks/:bankId/payroll", requireBankStaff, async (req: exp
       }).returning().get();
 
       res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2687,9 +2687,9 @@ banksRouter.patch("/api/banks/:bankId/payroll/:jobId", requireBankStaff, async (
         .where(and(eq(payrollJobs.id, req.params.jobId), eq(payrollJobs.bankId, req.params.bankId)))
         .returning().get();
       res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2736,9 +2736,9 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
       await db.update(payrollJobs).set({ nextRun }).where(eq(payrollJobs.id, job.id));
 
       res.json({ success: true, nextRun });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2815,9 +2815,9 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
         dailyVolume,
         reserveRatio: totalDeposits > 0 ? (totalDeposits - totalLoans) / totalDeposits : 1, 
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2851,9 +2851,9 @@ banksRouter.get("/api/banks/:bankId/escrows", requireBankStaff, async (req: expr
       .where(eq(escrows.bankId, req.params.bankId));
 
       res.json(dbEscrows);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2905,9 +2905,9 @@ banksRouter.post("/api/banks/:bankId/escrows", requireBankStaff, async (req: exp
       }).returning().get();
 
       res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2940,9 +2940,9 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, 
       });
 
       res.json({ success: true, status: "funded" });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -2973,9 +2973,9 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/release", requireBankStaf
       });
 
       res.json({ success: true, status: "released" });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3006,9 +3006,9 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/refund", requireBankStaff
       });
 
       res.json({ success: true, status: "refunded" });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3044,9 +3044,9 @@ banksRouter.get("/api/banks/:bankId/loans", requireBankStaff, async (req: expres
       .leftJoin(bankCustomers, and(eq(loans.discordId, bankCustomers.discordId), eq(loans.bankId, bankCustomers.bankId)))
       .where(eq(loans.bankId, req.params.bankId));
       res.json(bankLoans);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3127,9 +3127,9 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
       }).returning().get();
 
       res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3287,7 +3287,7 @@ banksRouter.get("/api/banks/:bankId/credit-applications", requireBankStaff, asyn
       res.json(enrichedApps);
     } catch(e) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3395,9 +3395,9 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
       }).where(eq(loans.id, loan.id));
 
       res.json({ success: true, newRemaining, isPaid });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3421,9 +3421,9 @@ banksRouter.get("/api/banks/:bankId/vaults", requireBankStaff, async (req: expre
       .where(eq(vaultDeposits.bankId, req.params.bankId));
 
       res.json(vaults);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3474,9 +3474,9 @@ banksRouter.post("/api/banks/:bankId/vaults", requireBankStaff, async (req: expr
       }).returning().get();
 
       res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3519,9 +3519,9 @@ banksRouter.post("/api/banks/:bankId/vaults/:vaultId/release", requireBankStaff,
       });
 
       res.json({ success: true, payout, isEarly });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3563,9 +3563,9 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
        });
 
        res.json(enrichedCards);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3602,9 +3602,9 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
        }).returning().get();
 
        res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3616,9 +3616,9 @@ banksRouter.delete("/api/banks/:bankId/cards/:cardId", requireBankStaff, async (
        await db.delete(cards)
          .where(and(eq(cards.id, req.params.cardId), eq(cards.bankId, req.params.bankId)));
        res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3636,9 +3636,9 @@ banksRouter.patch("/api/banks/:bankId/cards/:cardId", requireBankStaff, async (r
          .returning().get();
 
        res.json(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3657,9 +3657,9 @@ banksRouter.get("/api/banks/:bankId/developer", [requireBankStaff, requireRole([
       }
 
       res.json({ apiKey: bank.apiKey, webhookSecret: bank.webhookSecret });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3694,9 +3694,9 @@ banksRouter.post("/api/banks/:bankId/developer/roll", [requireBankStaff, require
          .returning().get();
        if (!bank) return res.status(404).json({ error: "Bank not found" });
        res.json({ apiKey: bank.apiKey, webhookSecret: bank.webhookSecret });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -3756,9 +3756,9 @@ banksRouter.get("/api/banks/:bankId/transactions", requireBankStaff, async (req:
        .limit(limit)
        .offset(offset);
        res.json(bankTxs);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -4750,9 +4750,9 @@ banksRouter.get("/api/banks/:bankId/compliance/flagged", requireBankStaff, async
     try {
       const data = await db.select().from(transactions).where(and(eq(transactions.bankId, req.params.bankId), eq(transactions.isFlagged, true)));
       res.json(data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -4763,9 +4763,9 @@ banksRouter.post("/api/banks/:bankId/compliance/flagged/:txId/resolve", requireB
     try {
       await db.update(transactions).set({ isFlagged: false }).where(eq(transactions.id, req.params.txId));
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -4776,9 +4776,9 @@ banksRouter.get("/api/banks/:bankId/compliance/frozen", requireBankStaff, async 
     try {
       const data = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, req.params.bankId), eq(bankAccounts.isFrozen, true)));
       res.json(data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });
 
@@ -4789,8 +4789,8 @@ banksRouter.post("/api/banks/:bankId/compliance/frozen/:accId/unfreeze", require
     try {
       await db.update(bankAccounts).set({ isFrozen: false }).where(eq(bankAccounts.id, req.params.accId));
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: e.message, stack: e.stack });
     }
   });

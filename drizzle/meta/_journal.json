@@ -36,6 +36,13 @@
       "when": 1784765589664,
       "tag": "0004_silent_nuke",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1785548871955,
+      "tag": "0005_outstanding_red_hulk",
+      "breakpoints": true
     }
   ]
 }
