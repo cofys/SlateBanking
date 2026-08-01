@@ -85,7 +85,7 @@ export function BankCustomerDetail() {
             </div>
             <div>
               <div className="flex items-center gap-3">
-                <h2 className="text-3xl font-bold tracking-tight text-white">{isUnassigned ? "Unassigned Customer" : discordId}</h2>
+                <h2 className="text-3xl font-bold tracking-tight text-white">{isUnassigned ? "Unassigned Customer" : (data?.mcUsername || discordId)}</h2>
                 <button 
                   onClick={async () => {
                     const newId = prompt("Enter Username or Discord ID to merge this customer into:", discordId);

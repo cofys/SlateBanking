@@ -110,7 +110,7 @@ export function BankCustomers() {
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-[#1a1a24] text-white/50 border-b border-white/10">
                 <tr>
-                  <th className="px-6 py-4 font-medium">Customer (Discord ID)</th>
+                  <th className="px-6 py-4 font-medium">Customer / Account Holder</th>
                   {settings?.requireKyc && <th className="px-6 py-4 font-medium">KYC Status</th>}
                   <th className="px-6 py-4 font-medium">Accounts Held</th>
                   <th className="px-6 py-4 font-medium">Total Balance</th>
@@ -124,19 +124,41 @@ export function BankCustomers() {
                   const searchLower = searchTerm.toLowerCase();
                   const discordIdStr = String(c.discordId || "");
                   const mcUsernameStr = String(c.mcUsername || "");
-                  const displayName = discordIdStr === "imported" 
-                    ? "Legacy Imported Accounts"
-                    : discordIdStr.startsWith("unassigned_")
-                      ? `Unassigned (${discordIdStr.replace("unassigned_", "").replace(/_/g, " ")})`
-                      : (mcUsernameStr ? `${mcUsernameStr} (${discordIdStr})` : (discordIdStr || "Unknown"));
+                  const linkedDiscordStr = String(c.linkedDiscordId || "");
                   
-                  const matchesSearch = displayName.toLowerCase().includes(searchLower) || discordIdStr.toLowerCase().includes(searchLower);
+                  const matchesSearch = mcUsernameStr.toLowerCase().includes(searchLower) ||
+                                        discordIdStr.toLowerCase().includes(searchLower) ||
+                                        linkedDiscordStr.toLowerCase().includes(searchLower);
                   const matchesKyc = kycFilter === "all" || (c.kycStatus || 'pending') === kycFilter;
                   return matchesSearch && matchesKyc;
                 }).map((c: any) => {
                   const status = c.kycStatus || 'pending';
                   const discordIdStr = String(c.discordId || "");
+                  const linkedDiscordStr = String(c.linkedDiscordId || "");
+                  const mcUsernameStr = String(c.mcUsername || "");
+                  const isNumericDiscord = /^\d{17,20}$/.test(discordIdStr);
                   const isUnassigned = discordIdStr.startsWith("unassigned_") || discordIdStr === "imported";
+
+                  let primaryName = mcUsernameStr || (isNumericDiscord ? "Citizen" : discordIdStr);
+                  if (discordIdStr === "SYSTEM") primaryName = "SYSTEM";
+                  if (discordIdStr === "imported") primaryName = "Legacy Imported Accounts";
+                  if (discordIdStr.startsWith("unassigned_")) primaryName = `Unassigned (${discordIdStr.replace("unassigned_", "").replace(/_/g, " ")})`;
+
+                  let subtext = "";
+                  if (discordIdStr === "imported") {
+                    subtext = "Batch Import";
+                  } else if (discordIdStr === "SYSTEM") {
+                    subtext = "System Account";
+                  } else if (discordIdStr.startsWith("unassigned_")) {
+                    subtext = "Unassigned";
+                  } else if (linkedDiscordStr) {
+                    subtext = `Discord: ${linkedDiscordStr}`;
+                  } else if (isNumericDiscord) {
+                    subtext = `Discord: ${discordIdStr}`;
+                  } else {
+                    subtext = "In-Game Customer";
+                  }
+
                   return (
                     <tr key={discordIdStr} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => !isUnassigned && navigate(`/bank/${bank.id}/customers/${discordIdStr}`)}>
                       <td className="px-6 py-4">
@@ -145,16 +167,8 @@ export function BankCustomers() {
                             <User size={14} className="text-white/50" />
                           </div>
                           <div>
-                             {discordIdStr === "imported" ? (
-                               <div className="font-medium text-white/60">Legacy Imported Accounts</div>
-                             ) : discordIdStr.startsWith("unassigned_") ? (
-                               <div className="font-medium text-white/50">Unassigned <span className="text-xs">({discordIdStr.replace("unassigned_", "").replace(/_/g, " ")})</span></div>
-                             ) : (
-                               <>
-                                 <div className="font-medium text-white">{c.mcUsername || "Citizen"}</div>
-                                 <div className="text-xs text-white/40 font-mono mt-0.5">{discordIdStr}</div>
-                               </>
-                             )}
+                            <div className="font-medium text-white">{primaryName}</div>
+                            <div className="text-xs text-white/40 font-mono mt-0.5">{subtext}</div>
                           </div>
                         </div>
                       </td>

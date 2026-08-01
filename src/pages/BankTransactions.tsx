@@ -200,7 +200,9 @@ export function BankTransactions() {
               {transactions.filter(tx => 
                 (tx.description || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
                 tx.id.includes(searchTerm) ||
-                tx.type.includes(searchTerm.toLowerCase())
+                tx.type.includes(searchTerm.toLowerCase()) ||
+                (tx.fromUsername || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (tx.toUsername || "").toLowerCase().includes(searchTerm.toLowerCase())
               ).map(tx => {
                 // Determine display formatting based on exact transaction type
                 let Icon = ArrowUpRight;
@@ -214,6 +216,12 @@ export function BankTransactions() {
                   colorClass = "text-pink-400";
                 }
 
+                const partyLabel = tx.type === 'transfer' && (tx.fromUsername || tx.toUsername)
+                  ? `${tx.fromUsername || 'Account'} → ${tx.toUsername || 'Account'}`
+                  : (tx.fromUsername || tx.toUsername || null);
+
+                const accountLabel = tx.fromAccountName || tx.toAccountName || null;
+
                 return (
                   <tr key={tx.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -225,11 +233,17 @@ export function BankTransactions() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-white max-w-[300px] truncate" title={tx.description || '-'}>
+                      <div className="text-white max-w-[320px] truncate font-medium" title={tx.description || '-'}>
                         {tx.description || '-'}
                       </div>
-                      <div className="text-xs text-white/40 font-mono mt-1 w-full max-w-[300px] truncate">
-                        ID: {tx.id}
+                      <div className="text-xs text-white/50 mt-1 w-full max-w-[320px] truncate">
+                        {partyLabel ? (
+                          <span className="text-indigo-300 font-medium">
+                            {partyLabel} {accountLabel ? <span className="text-white/40">({accountLabel})</span> : ''}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-white/40">Ref: {tx.id.slice(0, 8)}</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-white/60">

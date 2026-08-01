@@ -747,3 +747,21 @@ Global Admins have access to the Bot Fleet Management panel in Global Settings t
 
 ## Clearinghouse Global Views
 A Global Clearinghouse Balances panel has been added to Global Settings, allowing Global Admins to view all Onyx Clearinghouse balances centrally without navigating to each bank's portal.
+
+## Customer Directory Resolution & Account Imports (Jul 31 2026)
+- **Account Import Schema Migration (`custom_apy_percent`)**: Registered `custom_apy_percent` in `src/db/index.ts` (`ensureDatabaseSchemaSynced`) so imported account records with account-level APY overrides run smoothly without SQLite column errors.
+- **Customer Identity Resolution (`/api/banks/:bankId/customers`, `BankCustomers.tsx`, `BankCustomerDetail.tsx`)**:
+  - Automatically resolves player identifiers across `bankAccounts`, `bankCustomers`, and `users` tables.
+  - When account owners are imported from in-game (where `ownerDiscordId` stores the player's Minecraft username, e.g., `Nopuu`, `SaintSoren`, `Jani_54_`), the system resolves the Minecraft username as the primary display name (**Nopuu**).
+  - Displays secondary metadata (e.g. `Discord: <id>` or `In-Game Customer`) below the primary name, resolving the earlier inverted label layout.
+  - Updated individual customer detail view (`BankCustomerDetail.tsx`) header title to display the resolved Minecraft username.
+
+## Ledger & Invoices Username Resolution (Jul 31 2026)
+- **Resolved Username Pipeline (`resolveAccountAndUser` in `banks.ts`)**:
+  - Updated `/api/banks/:bankId/transactions` and `/api/banks/:bankId/invoices` endpoints to resolve account IDs (`fromAccountId`, `toAccountId`, `billerAccountId`, `customerAccountId`) to actual player Minecraft / Discord usernames and account names.
+  - **Ledger & History View (`BankTransactions.tsx`)**: Replaced raw transaction/account UUID strings (`ID: 661677b1...`) with clear player usernames and account types (e.g., `Nopuu (Checking)` or `Cofys → Jani_54_`).
+  - **Invoices View (`BankInvoices.tsx`)**: Replaced truncated account ID snippets (`acc_12345...`) in the Biller and Customer columns with resolved player usernames and account labels.
+  - **Draft New Invoice Form (`BankInvoices.tsx`)**: Replaced manual UUID text input fields with intuitive account selectors listing player usernames, account names, and available balances.
+  - **PDF Printable Invoice**: Updated biller and customer addresses in printable PDF documents to output resolved usernames and account names instead of generic account ID placeholders.
+
+

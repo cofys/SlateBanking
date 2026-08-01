@@ -7,6 +7,7 @@ import { formatMoney } from "../lib/utils";
 export function BankInvoices() {
   const { bank } = useOutletContext<{ bank: any }>();
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -22,8 +23,19 @@ export function BankInvoices() {
       });
   };
 
+  const fetchAccounts = () => {
+    fetch(`/api/banks/${bank.id}/accounts`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setAccounts(data);
+      }).catch(() => {});
+  };
+
   useEffect(() => {
-    if (bank?.id) fetchInvoices();
+    if (bank?.id) {
+      fetchInvoices();
+      fetchAccounts();
+    }
   }, [bank]);
 
   const handleCreate = (e: React.FormEvent) => {
@@ -84,12 +96,34 @@ export function BankInvoices() {
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="flex gap-4">
                <div className="flex-1">
-                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Biller Account ID (Receives Funds)</label>
-                 <input required name="billerAccountId" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" placeholder="acc-uuid" />
+                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Biller Account (Receives Funds)</label>
+                 {accounts.length > 0 ? (
+                   <select required name="billerAccountId" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                     <option value="">Select Biller...</option>
+                     {accounts.map(acc => (
+                       <option key={acc.id} value={acc.id}>
+                         {acc.ownerMcUsername || acc.ownerDiscordId} - {acc.accountName} (${(acc.balance / 100).toFixed(2)})
+                       </option>
+                     ))}
+                   </select>
+                 ) : (
+                   <input required name="billerAccountId" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="Username or Account ID" />
+                 )}
                </div>
                <div className="flex-1">
-                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Customer Account ID (Pays Funds)</label>
-                 <input required name="customerAccountId" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" placeholder="acc-uuid" />
+                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Customer Account (Pays Funds)</label>
+                 {accounts.length > 0 ? (
+                   <select required name="customerAccountId" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                     <option value="">Select Customer...</option>
+                     {accounts.map(acc => (
+                       <option key={acc.id} value={acc.id}>
+                         {acc.ownerMcUsername || acc.ownerDiscordId} - {acc.accountName} (${(acc.balance / 100).toFixed(2)})
+                       </option>
+                     ))}
+                   </select>
+                 ) : (
+                   <input required name="customerAccountId" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="Username or Account ID" />
+                 )}
                </div>
             </div>
             
@@ -149,11 +183,13 @@ export function BankInvoices() {
                       <div className="font-medium text-white/90">{inv.description}</div>
                       <div className="text-xs text-white/40 font-mono mt-1 w-32 truncate" title={inv.id}>{inv.id}</div>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs text-white/60">
-                      {inv.billerAccountId.split('-')[0]}...
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-white/90">{inv.billerUsername || inv.billerAccountId}</div>
+                      <div className="text-xs text-white/40 font-mono mt-0.5">{inv.billerAccountName || inv.billerAccountId.split('-')[0]}</div>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs text-white/60">
-                      {inv.customerAccountId.split('-')[0]}...
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-white/90">{inv.customerUsername || inv.customerAccountId}</div>
+                      <div className="text-xs text-white/40 font-mono mt-0.5">{inv.customerAccountName || inv.customerAccountId.split('-')[0]}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-semibold font-mono text-white/90">{formatMoney(inv.amount)}</div>
@@ -278,13 +314,17 @@ export function BankInvoices() {
                 <div className="grid grid-cols-2 gap-8 mb-10 text-sm">
                   <div>
                     <h3 className="text-xs font-mono uppercase text-indigo-900 tracking-wider mb-2 font-bold">Biller (Receiver)</h3>
-                    <p className="font-bold text-slate-900">{bank.name} Operator Ledger</p>
-                    <p className="font-mono text-xs text-slate-500 mt-1">Account ID: {selectedInvoiceForPrint.billerAccountId}</p>
+                    <p className="font-bold text-slate-900">{selectedInvoiceForPrint.billerUsername || bank.name}</p>
+                    <p className="font-mono text-xs text-slate-500 mt-1">
+                      Account: {selectedInvoiceForPrint.billerAccountName ? `${selectedInvoiceForPrint.billerAccountName} (${selectedInvoiceForPrint.billerAccountId})` : selectedInvoiceForPrint.billerAccountId}
+                    </p>
                   </div>
                   <div>
                     <h3 className="text-xs font-mono uppercase text-indigo-900 tracking-wider mb-2 font-bold">Customer (Billed Party)</h3>
-                    <p className="font-bold text-slate-900">Registered Client Member Account</p>
-                    <p className="font-mono text-xs text-slate-500 mt-1">Account ID: {selectedInvoiceForPrint.customerAccountId}</p>
+                    <p className="font-bold text-slate-900">{selectedInvoiceForPrint.customerUsername || "Registered Client"}</p>
+                    <p className="font-mono text-xs text-slate-500 mt-1">
+                      Account: {selectedInvoiceForPrint.customerAccountName ? `${selectedInvoiceForPrint.customerAccountName} (${selectedInvoiceForPrint.customerAccountId})` : selectedInvoiceForPrint.customerAccountId}
+                    </p>
                   </div>
                 </div>
 

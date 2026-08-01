@@ -783,13 +783,85 @@ banksRouter.post("/api/banks", requireGlobalAdmin, async (req: express.Request, 
     }
   });
 
+async function resolveAccountAndUser(db: any, bankId: string, accIdOrName: string | null, cache?: { accounts?: any[], customers?: any[], users?: any[] }) {
+  if (!accIdOrName) return null;
+  const { bankAccounts, bankCustomers, users } = await import("../../db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  if (!cache?.accounts) {
+    cache = cache || {};
+    cache.accounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId));
+    cache.customers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, bankId));
+    try { cache.users = await db.select().from(users); } catch (e) { cache.users = []; }
+  }
+
+  const accounts = cache.accounts || [];
+  const customers = cache.customers || [];
+  const globalUsers = cache.users || [];
+
+  const acc = accounts.find((a: any) => a.id === accIdOrName || a.accountName === accIdOrName);
+  const ownerKey = acc ? acc.ownerDiscordId : accIdOrName;
+
+  const cust = customers.find((c: any) => c.discordId === ownerKey || c.mcUsername === ownerKey || c.linkedDiscordId === ownerKey);
+  const gUser = globalUsers.find((u: any) => u.discordId === ownerKey || u.mcUsername === ownerKey);
+
+  const isNumericDiscord = /^\d{17,20}$/.test(ownerKey);
+
+  let username = cust?.mcUsername || gUser?.mcUsername;
+  if (!username) {
+    if (!isNumericDiscord && ownerKey !== "imported" && ownerKey !== "SYSTEM" && !ownerKey.startsWith("unassigned_")) {
+      username = ownerKey;
+    } else if (cust?.linkedDiscordId || gUser?.discordId) {
+      username = cust?.linkedDiscordId || gUser?.discordId;
+    } else if (ownerKey === "SYSTEM") {
+      username = "SYSTEM";
+    } else if (ownerKey === "imported") {
+      username = "Legacy Imported";
+    } else if (ownerKey.startsWith("unassigned_")) {
+      username = `Unassigned (${ownerKey.replace("unassigned_", "").replace(/_/g, " ")})`;
+    } else {
+      username = isNumericDiscord ? "Citizen" : ownerKey;
+    }
+  }
+
+  const accountName = acc ? acc.accountName : null;
+  return {
+    accountId: acc ? acc.id : accIdOrName,
+    accountName,
+    username,
+    displayName: accountName ? `${username} (${accountName})` : username
+  };
+}
+
 banksRouter.get("/api/banks/:bankId/invoices", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { invoices } = await import("../../db/schema");
+    const { invoices, bankAccounts, bankCustomers, users } = await import("../../db/schema");
     const { eq, desc } = await import("drizzle-orm");
     try {
       const data = await db.select().from(invoices).where(eq(invoices.bankId, req.params.bankId)).orderBy(desc(invoices.createdAt));
-      res.json(data);
+      const accounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
+      const customers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
+      let globalUsers: any[] = [];
+      try { globalUsers = await db.select().from(users); } catch (e) {}
+
+      const cache = { accounts, customers, users: globalUsers };
+
+      const enrichedInvoices = await Promise.all(data.map(async (inv) => {
+        const billerInfo = await resolveAccountAndUser(db, req.params.bankId, inv.billerAccountId, cache);
+        const customerInfo = await resolveAccountAndUser(db, req.params.bankId, inv.customerAccountId, cache);
+
+        return {
+          ...inv,
+          billerUsername: billerInfo?.username || inv.billerAccountId,
+          billerAccountName: billerInfo?.accountName || null,
+          billerDisplayName: billerInfo?.displayName || inv.billerAccountId,
+          customerUsername: customerInfo?.username || inv.customerAccountId,
+          customerAccountName: customerInfo?.accountName || null,
+          customerDisplayName: customerInfo?.displayName || inv.customerAccountId
+        };
+      }));
+
+      res.json(enrichedInvoices);
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
@@ -799,14 +871,19 @@ banksRouter.get("/api/banks/:bankId/invoices", requireBankStaff, async (req: exp
 banksRouter.post("/api/banks/:bankId/invoices", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { invoices, bankAccounts } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     
     try {
       const { billerAccountId, customerAccountId, amount, description, dueDateDays } = req.body;
       
-      const bAcc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, billerAccountId), eq(bankAccounts.bankId, req.params.bankId))).get();
+      const bAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
+      
+      const bAcc = bAccounts.find(a => a.id === billerAccountId || a.accountName === billerAccountId || a.ownerDiscordId === billerAccountId);
       if (!bAcc) return res.status(400).json({ error: "Biller account not found" });
+
+      const cAcc = bAccounts.find(a => a.id === customerAccountId || a.accountName === customerAccountId || a.ownerDiscordId === customerAccountId);
+      if (!cAcc) return res.status(400).json({ error: "Customer account not found" });
 
       const due = new Date();
       due.setDate(due.getDate() + (dueDateDays || 7));
@@ -814,8 +891,8 @@ banksRouter.post("/api/banks/:bankId/invoices", requireBankStaff, async (req: ex
       const newInv = {
          id: uuidv4(),
          bankId: req.params.bankId,
-         billerAccountId,
-         customerAccountId,
+         billerAccountId: bAcc.id,
+         customerAccountId: cAcc.id,
          amount,
          description: description || "Invoice",
          dueDate: due,
@@ -961,18 +1038,41 @@ banksRouter.get("/api/banks/:bankId/audit", requireBankStaff, async (req: expres
 
 banksRouter.get("/api/banks/:bankId/customers", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, bankCustomers } = await import("../../db/schema");
-    const { eq, sum, count, min } = await import("drizzle-orm");
+    const { bankAccounts, bankCustomers, users } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
     try {
       const dbAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
       const localCustomers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
-      
+      let globalUsers: any[] = [];
+      try {
+        globalUsers = await db.select().from(users);
+      } catch (e) {}
+
       const customerMap = new Map<string, any>();
       for (const account of dbAccounts) {
-        const dId = account.ownerDiscordId;
+        const dId = account.ownerDiscordId || "Unknown";
         if (!customerMap.has(dId)) {
-          const profile = localCustomers.find(c => c.discordId === dId);
-          customerMap.set(dId, { discordId: dId, mcUsername: profile?.mcUsername || null, kycStatus: profile?.kycStatus || "pending", accountCount: 0, totalBalance: 0, firstJoined: account.createdAt });
+          const profile = localCustomers.find(c => c.discordId === dId || c.mcUsername === dId || c.linkedDiscordId === dId);
+          const gUser = globalUsers.find(u => u.discordId === dId || u.mcUsername === dId);
+          
+          const isNumericDiscord = /^\d{17,20}$/.test(dId);
+          
+          let mcUsername = profile?.mcUsername || gUser?.mcUsername;
+          if (!mcUsername && !isNumericDiscord && dId !== "imported" && !dId.startsWith("unassigned_")) {
+            mcUsername = dId;
+          }
+
+          let linkedDiscordId = profile?.linkedDiscordId || gUser?.discordId || (isNumericDiscord ? dId : null);
+
+          customerMap.set(dId, {
+            discordId: dId,
+            mcUsername: mcUsername || null,
+            linkedDiscordId: linkedDiscordId || null,
+            kycStatus: profile?.kycStatus || "pending",
+            accountCount: 0,
+            totalBalance: 0,
+            firstJoined: account.createdAt
+          });
         }
         const c = customerMap.get(dId);
         c.accountCount += 1;
@@ -1037,35 +1137,47 @@ banksRouter.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requir
 
 banksRouter.get("/api/banks/:bankId/customers/:discordId", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, transactions, bankCustomers } = await import("../../db/schema");
+    const { bankAccounts, transactions, bankCustomers, users } = await import("../../db/schema");
     const { eq, or, inArray, desc, and } = await import("drizzle-orm");
     try {
+      const dIdParam = req.params.discordId;
       const dbAccounts = await db.select().from(bankAccounts).where(
-        and(eq(bankAccounts.bankId, req.params.bankId), eq(bankAccounts.ownerDiscordId, req.params.discordId))
+        and(eq(bankAccounts.bankId, req.params.bankId), eq(bankAccounts.ownerDiscordId, dIdParam))
       );
       
       const accountIds = dbAccounts.map(a => a.id);
-      const accountNames = dbAccounts.map(a => a.accountName);
 
       let txList: any[] = [];
-      if (accountIds.length > 0 && accountNames.length > 0) {
+      if (accountIds.length > 0) {
         txList = await db.select().from(transactions).where(
           and(
             eq(transactions.bankId, req.params.bankId),
             or(
               inArray(transactions.fromAccountId, accountIds),
-              inArray(transactions.toAccountId, accountNames)
+              inArray(transactions.toAccountId, accountIds)
             )
           )
         ).orderBy(desc(transactions.timestamp)).limit(50);
       }
       
       const customerRecord = await db.select().from(bankCustomers).where(
-        and(eq(bankCustomers.bankId, req.params.bankId), eq(bankCustomers.discordId, req.params.discordId))
+        and(eq(bankCustomers.bankId, req.params.bankId), eq(bankCustomers.discordId, dIdParam))
       ).limit(1);
-      
+
+      let gUser: any = null;
+      try {
+        const uRes = await db.select().from(users).where(or(eq(users.discordId, dIdParam), eq(users.mcUsername, dIdParam))).limit(1);
+        gUser = uRes[0] || null;
+      } catch (e) {}
+
+      const isNumericDiscord = /^\d{17,20}$/.test(dIdParam);
+      const mcUsername = customerRecord[0]?.mcUsername || gUser?.mcUsername || (!isNumericDiscord && dIdParam !== "imported" && !dIdParam.startsWith("unassigned_") ? dIdParam : "");
+      const linkedDiscordId = customerRecord[0]?.linkedDiscordId || gUser?.discordId || (isNumericDiscord ? dIdParam : "");
+
       res.json({
-        discordId: req.params.discordId,
+        discordId: dIdParam,
+        mcUsername,
+        linkedDiscordId,
         accounts: dbAccounts,
         transactions: txList,
         totalBalance: dbAccounts.reduce((sum, a) => sum + a.balance, 0),
@@ -3733,7 +3845,7 @@ banksRouter.get("/api/banks/:bankId/sync-job/:jobId", requireBankStaff, async (r
 
 banksRouter.get("/api/banks/:bankId/transactions", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { transactions } = await import("../../db/schema");
+    const { transactions, bankAccounts, bankCustomers, users } = await import("../../db/schema");
     const { eq, desc } = await import("drizzle-orm");
     try {
        const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
@@ -3755,7 +3867,30 @@ banksRouter.get("/api/banks/:bankId/transactions", requireBankStaff, async (req:
        .orderBy(desc(transactions.timestamp))
        .limit(limit)
        .offset(offset);
-       res.json(bankTxs);
+
+       const accounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
+       const customers = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, req.params.bankId));
+       let globalUsers: any[] = [];
+       try { globalUsers = await db.select().from(users); } catch (e) {}
+
+       const cache = { accounts, customers, users: globalUsers };
+
+       const enrichedTxs = await Promise.all(bankTxs.map(async (tx) => {
+         const fromInfo = await resolveAccountAndUser(db, req.params.bankId, tx.fromAccountId, cache);
+         const toInfo = await resolveAccountAndUser(db, req.params.bankId, tx.toAccountId, cache);
+
+         return {
+           ...tx,
+           fromUsername: fromInfo?.username || null,
+           fromAccountName: fromInfo?.accountName || null,
+           fromDisplayName: fromInfo?.displayName || null,
+           toUsername: toInfo?.username || null,
+           toAccountName: toInfo?.accountName || null,
+           toDisplayName: toInfo?.displayName || null
+         };
+       }));
+
+       res.json(enrichedTxs);
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
