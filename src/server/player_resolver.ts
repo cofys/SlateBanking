@@ -37,7 +37,7 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
 
   // 2. CityCorp API player endpoint
   try {
-    const cityCorpPlayerRes = await fetch(`https://api.cityrp.org/player?uuid=${uuid}`);
+    const cityCorpPlayerRes = await fetch(`https://api.cityrp.org/player?uuid=${uuid}`, { signal: AbortSignal.timeout(3500) });
     if (cityCorpPlayerRes.ok) {
       const pData = await cityCorpPlayerRes.json();
       const name = pData?.username || pData?.name || pData?.player?.name || pData?.player_name;
@@ -52,7 +52,7 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
 
   // 3. Mojang SessionServer API
   try {
-    const mojangRes = await fetch(`https://sessionserver.mojang.com/session/minecraft/profile/${cleanUuid}`);
+    const mojangRes = await fetch(`https://sessionserver.mojang.com/session/minecraft/profile/${cleanUuid}`, { signal: AbortSignal.timeout(3500) });
     if (mojangRes.ok) {
       const mData = await mojangRes.json();
       if (mData?.name) {
@@ -66,7 +66,7 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
 
   // 4. Ashcon Mojang API
   try {
-    const ashconRes = await fetch(`https://api.ashcon.app/mojang/v2/user/${uuid}`);
+    const ashconRes = await fetch(`https://api.ashcon.app/mojang/v2/user/${uuid}`, { signal: AbortSignal.timeout(3500) });
     if (ashconRes.ok) {
       const aData = await ashconRes.json();
       if (aData?.username) {
@@ -80,7 +80,7 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
 
   // 5. PlayerDB API
   try {
-    const playerDbRes = await fetch(`https://playerdb.co/api/player/minecraft/${uuid}`);
+    const playerDbRes = await fetch(`https://playerdb.co/api/player/minecraft/${uuid}`, { signal: AbortSignal.timeout(3500) });
     if (playerDbRes.ok) {
       const pdbData = await playerDbRes.json();
       if (pdbData?.data?.player?.username) {

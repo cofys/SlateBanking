@@ -27,6 +27,14 @@ function ensureDatabaseSchemaSynced() {
     }
   };
 
+  const createIndexIfNotExists = (indexName: string, tableName: string, columns: string) => {
+    try {
+      sqlite.prepare(`CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName} (${columns})`).run();
+    } catch (err) {
+      console.error(`[DB Auto-Migrate Error] Failed to ensure index ${indexName}:`, err);
+    }
+  };
+
   const checkAndAddColumn = (tableName: string, columnName: string, columnDef: string) => {
     try {
       const tableInfo = sqlite.pragma(`table_info(${tableName})`) as any[];
@@ -242,6 +250,39 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("onyx_settings", "bot_token", "TEXT");
   checkAndAddColumn("onyx_settings", "gui_channel_id", "TEXT");
   checkAndAddColumn("onyx_settings", "gui_message_id", "TEXT");
+
+  // Ensure high-performance indexes exist
+  createIndexIfNotExists("idx_bank_accounts_bank_id", "bank_accounts", "bank_id");
+  createIndexIfNotExists("idx_bank_accounts_owner_discord_id", "bank_accounts", "owner_discord_id");
+  createIndexIfNotExists("idx_transactions_bank_id", "transactions", "bank_id");
+  createIndexIfNotExists("idx_transactions_from_acc", "transactions", "from_account_id");
+  createIndexIfNotExists("idx_transactions_to_acc", "transactions", "to_account_id");
+  createIndexIfNotExists("idx_transactions_ts", "transactions", "timestamp");
+  createIndexIfNotExists("idx_bank_customers_bank_id", "bank_customers", "bank_id");
+  createIndexIfNotExists("idx_bank_customers_discord_id", "bank_customers", "discord_id");
+  createIndexIfNotExists("idx_bank_customers_mc_uuid", "bank_customers", "mc_uuid");
+  createIndexIfNotExists("idx_account_members_account_id", "account_members", "account_id");
+  createIndexIfNotExists("idx_account_members_discord_id", "account_members", "discord_id");
+  createIndexIfNotExists("idx_invoices_bank_id", "invoices", "bank_id");
+  createIndexIfNotExists("idx_invoices_customer_acc", "invoices", "customer_account_id");
+  createIndexIfNotExists("idx_invoices_biller_acc", "invoices", "biller_account_id");
+  createIndexIfNotExists("idx_cards_bank_id", "cards", "bank_id");
+  createIndexIfNotExists("idx_cards_account_id", "cards", "account_id");
+  createIndexIfNotExists("idx_vault_deposits_bank_id", "vault_deposits", "bank_id");
+  createIndexIfNotExists("idx_vault_deposits_account_id", "vault_deposits", "account_id");
+  createIndexIfNotExists("idx_payroll_bank_id", "payroll_jobs", "bank_id");
+  createIndexIfNotExists("idx_payroll_employer_acc", "payroll_jobs", "employer_account_id");
+  createIndexIfNotExists("idx_subs_bank_id", "subscriptions", "bank_id");
+  createIndexIfNotExists("idx_subs_customer_acc", "subscriptions", "customer_account_id");
+  createIndexIfNotExists("idx_global_audit_ts", "global_audit_logs", "timestamp");
+  createIndexIfNotExists("idx_global_audit_bank_id", "global_audit_logs", "bank_id");
+  createIndexIfNotExists("idx_global_admins_discord_id", "global_admins", "discord_id");
+  createIndexIfNotExists("idx_address_book_owner", "address_book", "owner_discord_id");
+  createIndexIfNotExists("idx_recurring_transfers_owner", "recurring_transfers", "owner_discord_id");
+  createIndexIfNotExists("idx_savings_goals_owner", "savings_goals", "owner_discord_id");
+  createIndexIfNotExists("idx_payment_links_owner", "payment_links", "owner_discord_id");
+  createIndexIfNotExists("idx_interbank_from_bank", "inter_bank_transfers", "from_bank_id");
+  createIndexIfNotExists("idx_interbank_to_bank", "inter_bank_transfers", "to_bank_id");
 }
 
 try {

@@ -103,10 +103,18 @@ Instead of simple passwords, the platform supports Discord and CityCorp OAuth au
 - Tokens are set to expire in 7 days.
 - In addition to standard JWT cookie setting, postMessage broadcasts `{ type: 'OAUTH_AUTH_SUCCESS', user, token, uuid, minecraft_uuid }` to support popup login windows across custom applications and clients.
 
-### Middlewares
-1. **`authenticateApiRequest`**: Standard API key checking for external plugin connections, ensuring `x-api-key` header matches a valid `banks` or `onyxMerchants` API key.
-2. **`requireGlobalAdmin`**: Decodes the JWT and asserts that the `isGlobalAdmin` flag is true (tied to core dev/owner accounts).
-3. **`requireBankStaff`**: Decodes the JWT, checks global admin fallback, and alternatively queries the `bank_staff` table to ensure the logged-in Discord ID holds authority in the specifically requested `:bankId`.
+### Middlewares & Identity Resolution
+1. **`authenticateApiRequest`**: Standard API key checking for external plugin connections, ensuring `x-api-key` or `Authorization: Bearer <token>` header matches a valid `banks` or `onyxMerchants` API key.
+2. **`requireGlobalAdmin`**: Decodes the JWT and verifies Global Admin privileges across multiple layers:
+   - Direct JWT `isGlobalAdmin` flag assertion.
+   - Environment variables: `GLOBAL_ADMIN_DISCORD_IDS`, `ADMIN_DISCORD_IDS`, `DISCORD_ADMIN_IDS`, `ADMIN_IDS`, `GLOBAL_ADMIN_IDS`, and `DISCORD_BOT_OWNER_ID`.
+   - SQLite `global_admins` database table.
+   - Automatic first-user elevation if the `global_admins` table is empty upon initial login.
+3. **`requireBankStaff`**: Decodes the JWT, resolves all candidate identities, checks global admin fallback (which grants full owner privileges across all tenants), and queries the `bank_staff` table for tenant-specific role authorization.
+4. **`getUserCandidateIdentifiers` (Transitive Identity Engine)**:
+   - Eliminates account visibility discrepancies across authentication methods (CityCorp OAuth, Discord OAuth, legacy database imports).
+   - Generates normalized permutations for UUIDs (32-character undashed, 36-character standard dashed, and `mc_` prefixed variants) and usernames (case-insensitive, `@` prefixes).
+   - Performs a 3-pass transitive closure query linking entries in `bank_customers` across all banks and `users` tables, guaranteeing that accounts created under Discord IDs, Minecraft UUIDs, or player usernames are correctly linked and displayed in client portals and citizen gateways.
 
 ### Protection Layers
 - **Helmet**: Enforces core header securities while selectively disabling `contentSecurityPolicy` and `crossOriginEmbedderPolicy` to allow relaxed iframe cross-embeds for Pterodactyl dashboards.
@@ -763,5 +771,28 @@ A Global Clearinghouse Balances panel has been added to Global Settings, allowin
   - **Invoices View (`BankInvoices.tsx`)**: Replaced truncated account ID snippets (`acc_12345...`) in the Biller and Customer columns with resolved player usernames and account labels.
   - **Draft New Invoice Form (`BankInvoices.tsx`)**: Replaced manual UUID text input fields with intuitive account selectors listing player usernames, account names, and available balances.
   - **PDF Printable Invoice**: Updated biller and customer addresses in printable PDF documents to output resolved usernames and account names instead of generic account ID placeholders.
+
+## Bank Portal & Citizen Lookup Identity Resolution (Jul 31 2026)
+- **Central User Resolver (`src/server/userResolver.ts`)**:
+  - Implemented `getUserCandidateIdentifiers(req, bankId?)` to resolve all candidate identity strings associated with an authenticated session user.
+  - Candidate sets seamlessly blend `req.user.discordId`, `req.user.username`, stripped Minecraft UUIDs (`mc_<uuid>` -> `<uuid>`), linked Discord IDs, Minecraft usernames (`mcUsername`), and Minecraft UUIDs (`mcUuid`) queried from `bankCustomers` and global `users` tables.
+- **Multi-Identity Portal Lookup (`/api/portal/:bankId/lookup` and `/api/citizen/lookup`)**:
+  - Updated both bank-specific portal lookup (`portal.ts`) and global citizen lookup (`citizen.ts`) to query accounts using `inArray(bankAccounts.ownerDiscordId, candidateIds)` instead of matching strictly `req.user.discordId`.
+  - Joint and business accounts where the user is listed in `accountMembers` are fetched and merged into the user's accounts list without duplicates.
+  - Enables players logged into their bank portal or citizen gateway to immediately view all accounts, cards, pending invoices, recent transactions, and active loans, whether their accounts were registered under a Discord ID or Minecraft username.
+- **Authorized Ownership & Member Checks (`isUserAccountOwnerOrMember`)**:
+  - Secured portal actions (`pay-invoice`, `transfer`, `lock card`, `request-loan`, `repay-loan`, `issue-card`, and `accounts/register`) using candidate identity matching and `accountMembers` verification, preventing false 404/403 authorization failures for valid account owners and members.
+
+## Unified Global Admin & Operator Dashboard Access Resolution (Jul 31 2026)
+- **Central Global Admin Verification (`checkUserIsGlobalAdmin` in `src/server/userResolver.ts`)**:
+  - Automatically queries the `globalAdmins` table against all candidate identity keys for the user (including raw Discord IDs, usernames, `@username` tags, and `mc_` prefixed/unprefixed variants).
+  - Provides reliable verification across all middleware endpoints (`requireAuth`, `requireGlobalAdmin`, `/api/auth/me`).
+- **Global Admin Whitelabel Dashboard Impersonation & Direct Access (`isUserStaffOrGlobalAdmin` in `src/server/userResolver.ts`)**:
+  - Upgraded `requireBankStaff` and `requireRole` middleware in `src/server/middleware.ts` to grant root operator privileges (`role: 'owner'`) to Global Admins across all tenant banks automatically.
+  - Allows Global Admins to seamlessly click **"Login to Whitelabeled Operator Dashboard"** (`/bank/:bankId`) from the Global Admin Bank Instances table and inspect/manage bank settings, customer profiles, staff rosters, interest accrual, and ledgers without requiring manual addition to each individual bank's `bank_staff` table.
+- **Dynamic `/api/auth/me` & Quick Elevation Synchronization**:
+  - `/api/auth/me` dynamically calculates `isGlobalAdmin` on each session check against the database, preventing stale token states when admin privileges are assigned or verified.
+  - Operator Quick Access (`/api/auth/demo-admin-login`) guarantees registration of the active user session ID directly into `globalAdmins`.
+
 
 

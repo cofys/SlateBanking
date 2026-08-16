@@ -1,5 +1,6 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import { checkUserIsGlobalAdmin, isUserStaffOrGlobalAdmin } from "./userResolver.js";
 
 export const JWT_SECRET = process.env.JWT_SECRET as string;
 
@@ -8,16 +9,9 @@ export const requireAuth = async (req: express.Request, res: express.Response, n
   if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
-    if (decoded.isGlobalAdmin) {
-        const { db } = await import("../db/index.js");
-        const { globalAdmins } = await import("../db/schema.js");
-        const { eq } = await import("drizzle-orm");
-        const stillAdmin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, decoded.discordId)).get();
-        if (!stillAdmin) {
-            decoded.isGlobalAdmin = false;
-        }
-    }
     (req as any).user = decoded;
+    const isGlobal = await checkUserIsGlobalAdmin(req);
+    (req as any).user.isGlobalAdmin = isGlobal;
     next();
   } catch(e) {
     res.status(401).json({ error: "Invalid token" });
@@ -29,23 +23,12 @@ export const requireGlobalAdmin = async (req: express.Request, res: express.Resp
   if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
-    const { db } = await import("../db/index.js");
-    const { globalAdmins } = await import("../db/schema.js");
-    const { eq, or } = await import("drizzle-orm");
-    const admin = await db.select().from(globalAdmins).where(
-      or(
-        eq(globalAdmins.discordId, decoded.discordId),
-        eq(globalAdmins.discordId, decoded.discordId.replace(/^mc_/, "")),
-        eq(globalAdmins.discordId, "mc_" + decoded.discordId.replace(/^mc_/, "")),
-        ...(decoded.username ? [
-          eq(globalAdmins.discordId, decoded.username),
-          eq(globalAdmins.discordId, `@${decoded.username}`)
-        ] : [])
-      )
-    ).get();
-    if (!admin) return res.status(403).json({ error: "Forbidden - Not a Global Admin" });
-    decoded.isGlobalAdmin = true;
     (req as any).user = decoded;
+    const isGlobal = await checkUserIsGlobalAdmin(req);
+    if (!isGlobal) {
+      return res.status(403).json({ error: "Forbidden - Not a Global Admin" });
+    }
+    (req as any).user.isGlobalAdmin = true;
     next();
   } catch(e) {
     res.status(401).json({ error: "Invalid token" });
@@ -58,39 +41,14 @@ export const requireBankStaff = async (req: express.Request, res: express.Respon
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     (req as any).user = decoded;
-    const { db } = await import("../db/index.js");
-    const { bankStaff, globalAdmins } = await import("../db/schema.js");
-    const { eq, and, or } = await import("drizzle-orm");
-    if (decoded.isGlobalAdmin) {
-        const stillAdmin = await db.select().from(globalAdmins).where(
-          or(
-            eq(globalAdmins.discordId, decoded.discordId),
-            eq(globalAdmins.discordId, decoded.discordId.replace(/^mc_/, "")),
-            eq(globalAdmins.discordId, "mc_" + decoded.discordId.replace(/^mc_/, ""))
-          )
-        ).get();
-        if (stillAdmin) return next();
-    }
     const bankId = req.params.bankId || req.params.id;
     if (!bankId) return res.status(400).json({ error: "Bank ID missing" });
-    const cleanId = decoded.discordId.replace(/^mc_/, "");
-    const staff = await db.select()
-       .from(bankStaff)
-       .where(and(
-         eq(bankStaff.bankId, bankId), 
-         or(
-           eq(bankStaff.discordId, decoded.discordId),
-           eq(bankStaff.discordId, cleanId),
-           eq(bankStaff.discordId, "mc_" + cleanId),
-           ...(decoded.username ? [
-             eq(bankStaff.discordId, decoded.username),
-             eq(bankStaff.discordId, `@${decoded.username}`)
-           ] : [])
-         )
-       ))
-       .get();
-    if (!staff) return res.status(403).json({ error: "Forbidden - Not bank staff" });
-    (req as any).staffRole = staff.role;
+
+    const { isStaff, role } = await isUserStaffOrGlobalAdmin(req, bankId);
+    if (!isStaff) {
+      return res.status(403).json({ error: "Forbidden - Not bank staff" });
+    }
+    (req as any).staffRole = role || 'owner';
     next();
   } catch(e) {
     res.status(401).json({ error: "Invalid token" });
@@ -103,10 +61,10 @@ export const requireRole = (allowedRoles: string[]) => {
     if (user && user.isGlobalAdmin) return next();
     const role = (req as any).staffRole;
     if (!role) return res.status(403).json({ error: "Forbidden - No role assigned" });
-    if (!allowedRoles.includes(role)) {
-       return res.status(403).json({ error: `Forbidden - Requires one of roles: ${allowedRoles.join(', ')}` });
+    if (role === 'owner' || allowedRoles.includes(role)) {
+       return next();
     }
-    next();
+    return res.status(403).json({ error: `Forbidden - Requires one of roles: ${allowedRoles.join(', ')}` });
   };
 };
 

@@ -1,37 +1,14 @@
 import express from "express";
-import { requireBankStaff } from "../middleware.js";
+import { requireBankStaff, requireRole } from "../middleware.js";
 
 export const bankSnapshotRouter = express.Router();
 
-bankSnapshotRouter.get("/api/banks/:id/snapshot", requireBankStaff, async (req: express.Request, res: express.Response) => {
+bankSnapshotRouter.get("/api/banks/:id/snapshot", [requireBankStaff, requireRole(["owner", "admin"])], async (req: express.Request, res: express.Response) => {
     try {
         const bankId = req.params.id;
         const { db } = await import("../../db/index.js");
         const schema = await import("../../db/schema.js");
         const { eq, or, inArray } = await import("drizzle-orm");
-
-        // Verify staff role
-        const user = (req as any).user;
-        let isAdmin = !!user.isGlobalAdmin;
-        
-        if (!isAdmin) {
-            const cleanId = user.discordId.replace(/^mc_/, "");
-            const staff = await db.select().from(schema.bankStaff).where(
-                or(
-                    eq(schema.bankStaff.bankId, bankId),
-                    eq(schema.bankStaff.discordId, user.discordId),
-                    eq(schema.bankStaff.discordId, cleanId),
-                    eq(schema.bankStaff.discordId, "mc_" + cleanId)
-                )
-            ).get();
-            if (staff && staff.role === 'admin') {
-                isAdmin = true;
-            }
-        }
-
-        if (!isAdmin) {
-            return res.status(403).json({ error: "Only bank admins can download snapshots" });
-        }
 
         const snapshot: any = {};
         

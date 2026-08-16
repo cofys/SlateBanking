@@ -595,11 +595,15 @@ export function registerAuthRoutes(app: express.Express) {
     }
   });
 
-  app.get('/api/auth/me', (req, res) => {
+  app.get('/api/auth/me', async (req, res) => {
     const token = req.cookies.auth_token;
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      (req as any).user = decoded;
+      const { checkUserIsGlobalAdmin } = await import("./userResolver.js");
+      const isGlobal = await checkUserIsGlobalAdmin(req);
+      decoded.isGlobalAdmin = isGlobal;
       res.json(decoded);
     } catch(e) {
       res.status(401).json({ error: "Invalid token" });
@@ -622,11 +626,22 @@ export function registerAuthRoutes(app: express.Express) {
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const username = req.body?.username || "GlobalOperator";
-      const discordId = req.body?.discordId || "operator_admin_001";
+      let existingDiscordId: string | null = null;
+      let existingUsername: string | null = null;
+      const currentCookie = req.cookies.auth_token;
+      if (currentCookie) {
+        try {
+          const currentDecoded: any = jwt.verify(currentCookie, JWT_SECRET);
+          existingDiscordId = currentDecoded.discordId;
+          existingUsername = currentDecoded.username;
+        } catch (e) {}
+      }
 
-      let admin = await db.select().from(globalAdmins).limit(1).get();
-      if (!admin) {
+      const username = req.body?.username || existingUsername || "GlobalOperator";
+      const discordId = req.body?.discordId || existingDiscordId || "operator_admin_001";
+
+      const alreadyAdmin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, discordId)).get();
+      if (!alreadyAdmin) {
         await db.insert(globalAdmins).values({
           id: uuidv4(),
           discordId,
@@ -636,7 +651,7 @@ export function registerAuthRoutes(app: express.Express) {
       }
 
       const payload = {
-        discordId: admin ? admin.discordId : discordId,
+        discordId,
         username,
         avatarUrl: `https://mc-heads.net/avatar/${username}/64`,
         isGlobalAdmin: true

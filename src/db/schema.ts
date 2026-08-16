@@ -265,7 +265,10 @@ export const vaultDeposits = sqliteTable("vault_deposits", {
   interestRate: integer("interest_rate").notNull(), // percentage * 100
   status: text("status").default("locked"), // locked, released, early_withdrawn
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_vault_deposits_bank_id").on(table.bankId),
+  accountIdIdx: index("idx_vault_deposits_account_id").on(table.accountId),
+}));
 
 export const cards = sqliteTable("cards", {
   id: text("id").primaryKey(),
@@ -285,7 +288,10 @@ export const cards = sqliteTable("cards", {
   nextPaymentDate: integer("next_payment_date", { mode: "timestamp" }),
   
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_cards_bank_id").on(table.bankId),
+  accountIdIdx: index("idx_cards_account_id").on(table.accountId),
+}));
 
 export const payrollJobs = sqliteTable("payroll_jobs", {
   id: text("id").primaryKey(),
@@ -297,7 +303,11 @@ export const payrollJobs = sqliteTable("payroll_jobs", {
   nextRun: integer("next_run", { mode: "timestamp" }).notNull(),
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_payroll_bank_id").on(table.bankId),
+  employerAccIdx: index("idx_payroll_employer_acc").on(table.employerAccountId),
+  employeeAccIdx: index("idx_payroll_employee_acc").on(table.employeeAccountId),
+}));
 
 export const subscriptions = sqliteTable("subscriptions", {
   id: text("id").primaryKey(),
@@ -310,7 +320,11 @@ export const subscriptions = sqliteTable("subscriptions", {
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   description: text("description"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_subs_bank_id").on(table.bankId),
+  customerAccIdx: index("idx_subs_customer_acc").on(table.customerAccountId),
+  billerAccIdx: index("idx_subs_biller_acc").on(table.billerAccountId),
+}));
 
 export const clearinghouseBalances = sqliteTable("clearinghouse_balances", {
   bankId: text("bank_id").primaryKey().references(() => banks.id),
@@ -325,7 +339,10 @@ export const clearinghouseSettlements = sqliteTable("clearinghouse_settlements",
   amount: integer("amount").notNull(),
   status: text("status").default("pending"), // pending, paid
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  fromBankIdx: index("idx_settlements_from_bank").on(table.fromBankId),
+  toBankIdx: index("idx_settlements_to_bank").on(table.toBankId),
+}));
 
 export const interBankTransfers = sqliteTable("inter_bank_transfers", {
   id: text("id").primaryKey(),
@@ -337,7 +354,10 @@ export const interBankTransfers = sqliteTable("inter_bank_transfers", {
   status: text("status").default("pending_wire"), // pending_wire, completed, rejected
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   completedAt: integer("completed_at", { mode: "timestamp" }),
-});
+}, (table) => ({
+  fromBankIdx: index("idx_interbank_from_bank").on(table.fromBankId),
+  toBankIdx: index("idx_interbank_to_bank").on(table.toBankId),
+}));
 
 export const onyxSettings = sqliteTable("onyx_settings", {
   id: text("id").primaryKey(), // Using a single row 'global'
@@ -359,8 +379,10 @@ export const cityCorpLogs = sqliteTable("city_corp_logs", {
   errorMessage: text("error_message"),
   payload: text("payload"),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
-});
-
+}, (table) => ({
+  bankIdIdx: index("idx_citycorp_logs_bank_id").on(table.bankId),
+  timestampIdx: index("idx_citycorp_logs_ts").on(table.timestamp),
+}));
 
 export const invoices = sqliteTable("invoices", {
   id: text("id").primaryKey(),
@@ -372,7 +394,11 @@ export const invoices = sqliteTable("invoices", {
   dueDate: integer("due_date", { mode: "timestamp" }).notNull(),
   status: text("status").default("pending"), // pending, paid, overdue
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_invoices_bank_id").on(table.bankId),
+  customerAccIdx: index("idx_invoices_customer_acc").on(table.customerAccountId),
+  billerAccIdx: index("idx_invoices_biller_acc").on(table.billerAccountId),
+}));
 
 export const bankCustomers = sqliteTable("bank_customers", {
   id: text("id").primaryKey(),
@@ -385,7 +411,11 @@ export const bankCustomers = sqliteTable("bank_customers", {
   cityCorpToken: text("city_corp_token"),
   notes: text("notes"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_bank_customers_bank_id").on(table.bankId),
+  discordIdIdx: index("idx_bank_customers_discord_id").on(table.discordId),
+  mcUuidIdx: index("idx_bank_customers_mc_uuid").on(table.mcUuid),
+}));
 
 export const loanProducts = sqliteTable("loan_products", {
   id: text("id").primaryKey(),
@@ -414,7 +444,9 @@ export const globalAdmins = sqliteTable("global_admins", {
   discordId: text("discord_id").notNull().unique(),
   addedBy: text("added_by"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  discordIdIdx: index("idx_global_admins_discord_id").on(table.discordId),
+}));
 
 export const addressBook = sqliteTable("address_book", {
   id: text("id").primaryKey(),
@@ -422,7 +454,9 @@ export const addressBook = sqliteTable("address_book", {
   contactAccountId: text("contact_account_id").notNull(),
   nickname: text("nickname").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  ownerIdx: index("idx_address_book_owner").on(table.ownerDiscordId),
+}));
 
 export const recurringTransfers = sqliteTable("recurring_transfers", {
   id: text("id").primaryKey(),
@@ -435,7 +469,9 @@ export const recurringTransfers = sqliteTable("recurring_transfers", {
   description: text("description"),
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  ownerIdx: index("idx_recurring_transfers_owner").on(table.ownerDiscordId),
+}));
 
 export const savingsGoals = sqliteTable("savings_goals", {
   id: text("id").primaryKey(),
@@ -446,7 +482,10 @@ export const savingsGoals = sqliteTable("savings_goals", {
   currentAmount: integer("current_amount").default(0),
   deadline: integer("deadline", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  ownerIdx: index("idx_savings_goals_owner").on(table.ownerDiscordId),
+  accountIdx: index("idx_savings_goals_account").on(table.accountId),
+}));
 
 export const paymentLinks = sqliteTable("payment_links", {
   id: text("id").primaryKey(),
@@ -456,7 +495,10 @@ export const paymentLinks = sqliteTable("payment_links", {
   description: text("description"),
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  ownerIdx: index("idx_payment_links_owner").on(table.ownerDiscordId),
+  billerIdx: index("idx_payment_links_biller").on(table.billerAccountId),
+}));
 
 export const accountMembers = sqliteTable("account_members", {
   id: text("id").primaryKey(),
@@ -464,7 +506,10 @@ export const accountMembers = sqliteTable("account_members", {
   discordId: text("discord_id").notNull(),
   role: text("role").notNull().default("viewer"), // owner, manager, viewer
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  accountIdIdx: index("idx_account_members_account_id").on(table.accountId),
+  discordIdIdx: index("idx_account_members_discord_id").on(table.discordId),
+}));
 
 export const saasInvoices = sqliteTable("saas_invoices", {
   id: text("id").primaryKey(),
@@ -476,7 +521,9 @@ export const saasInvoices = sqliteTable("saas_invoices", {
   dueDate: integer("due_date", { mode: "timestamp" }).notNull(),
   status: text("status").default("pending"), // pending, paid, overdue
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_saas_invoices_bank_id").on(table.bankId),
+}));
 
 export const onyxMerchantProducts = sqliteTable("onyx_merchant_products", {
   id: text("id").primaryKey(),

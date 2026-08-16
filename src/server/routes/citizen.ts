@@ -1,6 +1,7 @@
 import express from 'express';
 import { requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET, getRedirectUri } from "../middleware.js";
 import { botManager } from "../../lib/bot_manager.js";
+import { getUserCandidateIdentifiers, isUserAccountOwnerOrMember } from "../userResolver.js";
 import * as crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { randomInt } from "crypto";
@@ -16,7 +17,8 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
     const { eq, or, inArray, desc } = await import("drizzle-orm");
 
     try {
-      const discordId = (req as any).user.discordId;
+      const candidateIds = await getUserCandidateIdentifiers(req);
+      if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
 
       // 1. Direct owned accounts
       const ownedAccounts = await db.select({
@@ -32,10 +34,10 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
       })
       .from(bankAccounts)
       .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
-      .where(eq(bankAccounts.ownerDiscordId, discordId));
+      .where(inArray(bankAccounts.ownerDiscordId, candidateIds));
 
       // 2. Member accounts (Joint / Corporate)
-      const memberships = await db.select().from(accountMembers).where(eq(accountMembers.discordId, discordId));
+      const memberships = await db.select().from(accountMembers).where(inArray(accountMembers.discordId, candidateIds));
       const memberAccountIds = memberships.map(m => m.accountId);
 
       let memberAccounts: any[] = [];
@@ -102,7 +104,10 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
         
       const userLoans = await db.select()
         .from(loans)
-        .where(eq(loans.discordId, discordId));
+        .where(or(
+          inArray(loans.discordId, candidateIds),
+          inArray(loans.accountId, accountIds)
+        ));
 
       const uniqueBankIds = [...new Set(userAccounts.map(a => a.bankId))];
       const settings = uniqueBankIds.length > 0 ? await db.select().from(bankSettings).where(inArray(bankSettings.bankId, uniqueBankIds)) : [];
@@ -399,28 +404,40 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
 
       if (fromAcc[0].balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
 
-      const theLoan = await db.select().from(loans).where(eq(loans.id, loanId));
-      if (!theLoan.length || theLoan[0].status !== 'active') return res.status(400).json({ error: "Invalid loan" });
+      const [sourceAccount] = fromAcc;
+      const [theLoan] = await db.select().from(loans).where(eq(loans.id, loanId));
+      if (!theLoan || theLoan.status !== 'active') return res.status(400).json({ error: "Invalid loan" });
 
-      // Deduct funds
-      await db.update(bankAccounts).set({ balance: fromAcc[0].balance - parsedAmount }).where(eq(bankAccounts.id, fromAccountId));
-      
-      const newRemaining = Math.max(0, theLoan[0].remainingAmount - parsedAmount);
+      let newRemaining = 0;
+      const { gte, sql } = await import("drizzle-orm");
+      await db.transaction(async (tx) => {
+        // Deduct funds atomically
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
+          .where(and(
+            eq(bankAccounts.id, fromAccountId),
+            gte(bankAccounts.balance, parsedAmount),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
+        
+        newRemaining = Math.max(0, theLoan.remainingAmount - parsedAmount);
 
-      await db.update(loans).set({ 
-        remainingAmount: newRemaining,
-        status: newRemaining <= 0 ? 'paid' : 'active'
-      }).where(eq(loans.id, loanId));
+        await tx.update(loans).set({ 
+          remainingAmount: newRemaining,
+          status: newRemaining <= 0 ? 'paid' : 'active'
+        }).where(eq(loans.id, loanId));
 
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: theLoan[0].bankId,
-        fromAccountId: fromAccountId,
-        toAccountId: null,
-        amount: parsedAmount,
-        type: 'transfer',
-        description: `Manual Loan Payment`,
-        timestamp: new Date()
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: theLoan.bankId,
+          fromAccountId: fromAccountId,
+          toAccountId: null,
+          amount: parsedAmount,
+          type: 'transfer',
+          description: `Manual Loan Payment`,
+          timestamp: new Date()
+        });
       });
 
       res.json({ success: true, remaining: newRemaining });
@@ -433,7 +450,7 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
 citizenRouter.post("/api/citizen/pay-invoice", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankAccounts, transactions, invoices } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, sql, gte } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
@@ -447,27 +464,43 @@ citizenRouter.post("/api/citizen/pay-invoice", requireAuth, async (req: express.
       );
 
       if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized to pay this invoice" });
-      if (sourceAccount.balance < inv.amount) return res.status(400).json({ error: `Insufficient funds. Balance: $${(sourceAccount.balance/100).toFixed(2)}, Due: $${(inv.amount/100).toFixed(2)}` });
+      if (sourceAccount.balance < inv.amount) return res.status(400).json({ error: `Insufficient funds. Balance: ${(sourceAccount.balance/100).toFixed(2)}, Due: ${(inv.amount/100).toFixed(2)}` });
 
       const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, inv.billerAccountId));
       if (!destAccount) return res.status(404).json({ error: "Destination biller account not found" });
 
-      // Execute payment
-      await db.update(bankAccounts).set({ balance: sourceAccount.balance - inv.amount }).where(eq(bankAccounts.id, sourceAccount.id));
-      await db.update(bankAccounts).set({ balance: destAccount.balance + inv.amount }).where(eq(bankAccounts.id, destAccount.id));
+      // Execute payment atomically
+      await db.transaction(async (tx) => {
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${inv.amount}` })
+          .where(and(
+            eq(bankAccounts.id, sourceAccount.id),
+            gte(bankAccounts.balance, inv.amount),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
 
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: sourceAccount.bankId,
-        fromAccountId: sourceAccount.id,
-        toAccountId: destAccount.id,
-        type: "transfer",
-        amount: inv.amount,
-        description: `Invoice Payment: ${inv.description || inv.id}`,
-        timestamp: new Date()
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} + ${inv.amount}` })
+          .where(and(
+            eq(bankAccounts.id, destAccount.id),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
+
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: sourceAccount.bankId,
+          fromAccountId: sourceAccount.id,
+          toAccountId: destAccount.id,
+          type: "transfer",
+          amount: inv.amount,
+          description: `Invoice Payment: ${inv.description || inv.id}`,
+          timestamp: new Date()
+        });
+
+        await tx.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
       });
-
-      await db.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
 
       res.json({ success: true });
     } catch (e) {
@@ -799,117 +832,159 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
       const totalRequired = parsedAmount + feeCents;
 
       if (sourceAccount.balance < totalRequired) {
-        return res.status(400).json({ error: `Insufficient funds. Transfer requires $${(parsedAmount/100).toFixed(2)} plus $${(feeCents/100).toFixed(2)} transfer fee.` });
+        return res.status(400).json({ error: `Insufficient funds. Transfer requires ${(parsedAmount/100).toFixed(2)} plus ${(feeCents/100).toFixed(2)} transfer fee.` });
       }
+
+      const { sql, gte } = await import("drizzle-orm");
 
       if (fromBank === toBank) {
         // Execute internal transfer atomically
-        await db.update(bankAccounts).set({ balance: sourceAccount.balance - totalRequired }).where(eq(bankAccounts.id, sourceAccount.id));
-        await db.update(bankAccounts).set({ balance: destAccount.balance + parsedAmount }).where(eq(bankAccounts.id, destAccount.id));
+        await db.transaction(async (tx) => {
+          await tx.update(bankAccounts)
+            .set({ balance: sql`${bankAccounts.balance} - ${totalRequired}` })
+            .where(and(
+              eq(bankAccounts.id, sourceAccount.id),
+              gte(bankAccounts.balance, totalRequired),
+              eq(bankAccounts.isActive, true),
+              eq(bankAccounts.isFrozen, false)
+            ));
 
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          bankId: sourceAccount.bankId,
-          fromAccountId: sourceAccount.id,
-          toAccountId: destAccount.id,
-          type: "transfer",
-          amount: parsedAmount,
-          description: feeCents > 0 ? `Transfer to ${destAccount.accountName} (Fee: $${(feeCents/100).toFixed(2)})` : `Transfer to ${destAccount.accountName}`,
-          timestamp: new Date()
-        });
+          await tx.update(bankAccounts)
+            .set({ balance: sql`${bankAccounts.balance} + ${parsedAmount}` })
+            .where(and(
+              eq(bankAccounts.id, destAccount.id),
+              eq(bankAccounts.isActive, true),
+              eq(bankAccounts.isFrozen, false)
+            ));
 
-        if (feeCents > 0) {
-          await db.insert(transactions).values({
+          await tx.insert(transactions).values({
             id: uuidv4(),
             bankId: sourceAccount.bankId,
             fromAccountId: sourceAccount.id,
-            toAccountId: null,
+            toAccountId: destAccount.id,
             type: "transfer",
-            amount: feeCents,
-            description: `Transfer Fee (${(transferFeeBps/100).toFixed(2)}%)`,
-            timestamp: new Date(),
-            category: "Fees"
+            amount: parsedAmount,
+            description: feeCents > 0 ? `Transfer to ${destAccount.accountName} (Fee: ${(feeCents/100).toFixed(2)})` : `Transfer to ${destAccount.accountName}`,
+            timestamp: new Date()
           });
-        }
+
+          if (feeCents > 0) {
+            await tx.insert(transactions).values({
+              id: uuidv4(),
+              bankId: sourceAccount.bankId,
+              fromAccountId: sourceAccount.id,
+              toAccountId: null,
+              type: "transfer",
+              amount: feeCents,
+              description: `Transfer Fee (${(transferFeeBps/100).toFixed(2)}%)`,
+              timestamp: new Date(),
+              category: "Fees"
+            });
+          }
+        });
 
         const { botManager } = await import("../../lib/bot_manager");
-        botManager.sendNotification(sourceAccount.bankId, `💸 **Citizen Transfer**: <@${discordId}> transferred $${(parsedAmount/100).toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}**${feeCents > 0 ? ` (Fee: $${(feeCents/100).toFixed(2)})` : ''}.`);
+        botManager.sendNotification(sourceAccount.bankId, `💸 **Citizen Transfer**: <@${discordId}> transferred ${(parsedAmount/100).toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}**${feeCents > 0 ? ` (Fee: ${(feeCents/100).toFixed(2)})` : ''}.`);
       } else {
          // Inter-bank transfer logic
          const tSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, toBank)).get();
          const wireThresh = tSettings?.interBankWireThreshold || 5000000;
 
          if (parsedAmount >= wireThresh) {
-            // Require direct wire transfer
-            await db.update(bankAccounts).set({ balance: sourceAccount.balance - parsedAmount }).where(eq(bankAccounts.id, sourceAccount.id));
-            
-            // Generate inter bank transfer record
+            // Require direct wire transfer atomically
             const transId = uuidv4();
-            await db.insert(interBankTransfers).values({
-               id: transId,
-               fromBankId: fromBank,
-               toBankId: toBank,
-               fromAccountId: sourceAccount.id,
-               toAccountId: destAccount.id,
-               amount: parsedAmount,
-               status: "pending_wire",
-               createdAt: new Date()
-            });
+            await db.transaction(async (tx) => {
+              await tx.update(bankAccounts)
+                .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
+                .where(and(
+                  eq(bankAccounts.id, sourceAccount.id),
+                  gte(bankAccounts.balance, parsedAmount),
+                  eq(bankAccounts.isActive, true),
+                  eq(bankAccounts.isFrozen, false)
+                ));
+              
+              await tx.insert(interBankTransfers).values({
+                 id: transId,
+                 fromBankId: fromBank,
+                 toBankId: toBank,
+                 fromAccountId: sourceAccount.id,
+                 toAccountId: destAccount.id,
+                 amount: parsedAmount,
+                 status: "pending_wire",
+                 createdAt: new Date()
+              });
 
-            await db.insert(transactions).values({
-               id: uuidv4(),
-               bankId: fromBank,
-               fromAccountId: sourceAccount.id,
-               toAccountId: null,
-               type: "transfer",
-               amount: parsedAmount,
-               description: `Pending Wire: Transfer to foreign bank account`,
-               timestamp: new Date()
+              await tx.insert(transactions).values({
+                 id: uuidv4(),
+                 bankId: fromBank,
+                 fromAccountId: sourceAccount.id,
+                 toAccountId: null,
+                 type: "transfer",
+                 amount: parsedAmount,
+                 description: `Pending Wire: Transfer to foreign bank account`,
+                 timestamp: new Date()
+              });
             });
             
             const { botManager } = await import("../../lib/bot_manager");
-            botManager.sendNotification(fromBank, `🏦 **Pending Outbound Wire**: <@${discordId}> initiated a $${(parsedAmount/100).toFixed(2)} wire transfer to a foreign bank. Please use in-game commands to securely wire this sum to the receiving bank's corp, then approve the wire in SaaS.`);
-            botManager.sendNotification(toBank, `🏦 **Pending Inbound Wire**: Expect an inbound wire transfer of $${(parsedAmount/100).toFixed(2)}. Once received in game, approve the transfer to deposit into the customer's account.`);
+            botManager.sendNotification(fromBank, `🏦 **Pending Outbound Wire**: <@${discordId}> initiated a ${(parsedAmount/100).toFixed(2)} wire transfer to a foreign bank. Please use in-game commands to securely wire this sum to the receiving bank's corp, then approve the wire in SaaS.`);
+            botManager.sendNotification(toBank, `🏦 **Pending Inbound Wire**: Expect an inbound wire transfer of ${(parsedAmount/100).toFixed(2)}. Once received in game, approve the transfer to deposit into the customer's account.`);
 
          } else {
-            // Under threshold - process through Onyx Clearinghouse
-            await db.update(bankAccounts).set({ balance: sourceAccount.balance - parsedAmount }).where(eq(bankAccounts.id, sourceAccount.id));
-            await db.update(bankAccounts).set({ balance: destAccount.balance + parsedAmount }).where(eq(bankAccounts.id, destAccount.id));
+            // Under threshold - process through Onyx Clearinghouse atomically
+            await db.transaction(async (tx) => {
+              await tx.update(bankAccounts)
+                .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
+                .where(and(
+                  eq(bankAccounts.id, sourceAccount.id),
+                  gte(bankAccounts.balance, parsedAmount),
+                  eq(bankAccounts.isActive, true),
+                  eq(bankAccounts.isFrozen, false)
+                ));
 
-            await db.insert(transactions).values({
-              id: uuidv4(),
-              bankId: fromBank,
-              fromAccountId: sourceAccount.id,
-              toAccountId: null,
-              type: "transfer",
-              amount: parsedAmount,
-              description: `Onyx Transfer to foreign bank`,
-              timestamp: new Date()
+              await tx.update(bankAccounts)
+                .set({ balance: sql`${bankAccounts.balance} + ${parsedAmount}` })
+                .where(and(
+                  eq(bankAccounts.id, destAccount.id),
+                  eq(bankAccounts.isActive, true),
+                  eq(bankAccounts.isFrozen, false)
+                ));
+
+              await tx.insert(transactions).values({
+                id: uuidv4(),
+                bankId: fromBank,
+                fromAccountId: sourceAccount.id,
+                toAccountId: null,
+                type: "transfer",
+                amount: parsedAmount,
+                description: `Onyx Transfer to foreign bank`,
+                timestamp: new Date()
+              });
+
+              await tx.insert(transactions).values({
+                id: uuidv4(),
+                bankId: toBank,
+                fromAccountId: null,
+                toAccountId: destAccount.id,
+                type: "deposit",
+                amount: parsedAmount,
+                description: `Onyx Transfer from external bank`,
+                timestamp: new Date()
+              });
+
+              // Update clearinghouse balances
+              const fBalance = await tx.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, fromBank)).get();
+              if(!fBalance) await tx.insert(clearinghouseBalances).values({ bankId: fromBank, balance: -parsedAmount });
+              else await tx.update(clearinghouseBalances).set({ balance: sql`${clearinghouseBalances.balance} - ${parsedAmount}` }).where(eq(clearinghouseBalances.bankId, fromBank));
+
+              const tBalance = await tx.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, toBank)).get();
+              if(!tBalance) await tx.insert(clearinghouseBalances).values({ bankId: toBank, balance: parsedAmount });
+              else await tx.update(clearinghouseBalances).set({ balance: sql`${clearinghouseBalances.balance} + ${parsedAmount}` }).where(eq(clearinghouseBalances.bankId, toBank));
             });
-
-            await db.insert(transactions).values({
-              id: uuidv4(),
-              bankId: toBank,
-              fromAccountId: null,
-              toAccountId: destAccount.id,
-              type: "deposit",
-              amount: parsedAmount,
-              description: `Onyx Transfer from external bank`,
-              timestamp: new Date()
-            });
-
-            // Update clearinghouse balances
-            const fBalance = await db.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, fromBank)).get();
-            if(!fBalance) await db.insert(clearinghouseBalances).values({ bankId: fromBank, balance: -parsedAmount });
-            else await db.update(clearinghouseBalances).set({ balance: fBalance.balance - parsedAmount }).where(eq(clearinghouseBalances.bankId, fromBank));
-
-            const tBalance = await db.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, toBank)).get();
-            if(!tBalance) await db.insert(clearinghouseBalances).values({ bankId: toBank, balance: parsedAmount });
-            else await db.update(clearinghouseBalances).set({ balance: tBalance.balance + parsedAmount }).where(eq(clearinghouseBalances.bankId, toBank));
 
             const { botManager } = await import("../../lib/bot_manager");
-            botManager.sendNotification(fromBank, `💸 **Onyx Transfer Out**: <@${discordId}> transferred $${(parsedAmount/100).toFixed(2)} to a foreign bank account.`);
-            botManager.sendNotification(toBank, `💸 **Onyx Transfer In**: Received $${(parsedAmount/100).toFixed(2)} via clearinghouse.`);
+            botManager.sendNotification(fromBank, `💸 **Onyx Transfer Out**: <@${discordId}> transferred ${(parsedAmount/100).toFixed(2)} to a foreign bank account.`);
+            botManager.sendNotification(toBank, `💸 **Onyx Transfer In**: Received ${(parsedAmount/100).toFixed(2)} via clearinghouse.`);
          }
       }
 
@@ -950,7 +1025,7 @@ citizenRouter.get("/api/citizen/vaults", requireAuth, async (req: express.Reques
 citizenRouter.post("/api/citizen/vaults", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
     const { vaultDeposits, bankAccounts, transactions, bankSettings } = await import("../../db/schema.js");
-    const { eq } = await import("drizzle-orm");
+    const { eq, and, sql, gte } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     
     const { accountId, amount, lockDays } = req.body;
@@ -978,21 +1053,9 @@ citizenRouter.post("/api/citizen/vaults", requireAuth, async (req: express.Reque
         const lockedUntil = new Date();
         lockedUntil.setDate(lockedUntil.getDate() + lockDays);
         
-        await db.update(bankAccounts).set({ balance: account.balance - parsedAmount }).where(eq(bankAccounts.id, account.id));
-        
-        await db.insert(transactions).values({
-            id: uuidv4(),
-            bankId: account.bankId,
-            fromAccountId: account.id,
-            toAccountId: null,
-            amount: parsedAmount,
-            type: 'deposit',
-            description: `Vault Deposit (${lockDays} Days)`,
-            timestamp: new Date()
-        });
-        
+        const vaultId = uuidv4();
         const vault = {
-            id: uuidv4(),
+            id: vaultId,
             bankId: account.bankId,
             accountId: account.id,
             amount: parsedAmount,
@@ -1001,8 +1064,30 @@ citizenRouter.post("/api/citizen/vaults", requireAuth, async (req: express.Reque
             status: 'locked',
             createdAt: new Date()
         };
-        
-        await db.insert(vaultDeposits).values(vault);
+
+        await db.transaction(async (tx) => {
+          await tx.update(bankAccounts)
+            .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
+            .where(and(
+              eq(bankAccounts.id, account.id),
+              gte(bankAccounts.balance, parsedAmount),
+              eq(bankAccounts.isActive, true),
+              eq(bankAccounts.isFrozen, false)
+            ));
+          
+          await tx.insert(transactions).values({
+              id: uuidv4(),
+              bankId: account.bankId,
+              fromAccountId: account.id,
+              toAccountId: null,
+              amount: parsedAmount,
+              type: 'deposit',
+              description: `Vault Deposit (${lockDays} Days)`,
+              timestamp: new Date()
+          });
+          
+          await tx.insert(vaultDeposits).values(vault);
+        });
         
         res.json({ success: true, vault });
     } catch (e) {
@@ -1014,7 +1099,7 @@ citizenRouter.post("/api/citizen/vaults", requireAuth, async (req: express.Reque
 citizenRouter.post("/api/citizen/vaults/:id/withdraw", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
     const { vaultDeposits, bankAccounts, transactions, bankSettings } = await import("../../db/schema.js");
-    const { eq } = await import("drizzle-orm");
+    const { eq, and, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     const discordId = (req as any).user.discordId;
     
@@ -1057,18 +1142,20 @@ citizenRouter.post("/api/citizen/vaults/:id/withdraw", requireAuth, async (req: 
             description = `Vault Maturity Withdrawal (+${(interest/100).toFixed(2)} Interest)`;
         }
         
-        await db.update(vaultDeposits).set({ status }).where(eq(vaultDeposits.id, vault.id));
-        await db.update(bankAccounts).set({ balance: account.balance + returnAmount }).where(eq(bankAccounts.id, account.id));
-        
-        await db.insert(transactions).values({
-            id: uuidv4(),
-            bankId: vault.bankId,
-            fromAccountId: null,
-            toAccountId: account.id,
-            amount: returnAmount,
-            type: 'deposit',
-            description,
-            timestamp: new Date()
+        await db.transaction(async (tx) => {
+          await tx.update(vaultDeposits).set({ status }).where(and(eq(vaultDeposits.id, vault.id), eq(vaultDeposits.status, 'locked')));
+          await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${returnAmount}` }).where(eq(bankAccounts.id, account.id));
+          
+          await tx.insert(transactions).values({
+              id: uuidv4(),
+              bankId: vault.bankId,
+              fromAccountId: null,
+              toAccountId: account.id,
+              amount: returnAmount,
+              type: 'deposit',
+              description,
+              timestamp: new Date()
+          });
         });
         
         res.json({ success: true, returnAmount, status });

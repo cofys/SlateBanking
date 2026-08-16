@@ -2465,38 +2465,46 @@ banksRouter.put("/api/banks/:bankId/clearinghouse/wires/:wireId", requireBankSta
           // Deposit money to destination account
           const da = await db.select().from(bankAccounts).where(eq(bankAccounts.id, wire.toAccountId)).get();
           if (da) {
-             await db.update(bankAccounts).set({ balance: da.balance + wire.amount }).where(eq(bankAccounts.id, da.id));
-             
-             await db.insert(transactions).values({
-               id: uuidv4(),
-               bankId: wire.toBankId,
-               fromAccountId: null,
-               toAccountId: da.id,
-               type: "deposit",
-               amount: wire.amount,
-               description: `Approved Inbound Wire Transfer`,
-               timestamp: new Date()
+             const { sql } = await import("drizzle-orm");
+             await db.transaction(async (tx) => {
+               await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${wire.amount}` }).where(eq(bankAccounts.id, da.id));
+               
+               await tx.insert(transactions).values({
+                 id: uuidv4(),
+                 bankId: wire.toBankId,
+                 fromAccountId: null,
+                 toAccountId: da.id,
+                 type: "deposit",
+                 amount: wire.amount,
+                 description: `Approved Inbound Wire Transfer`,
+                 timestamp: new Date()
+               });
+
+               await tx.update(interBankTransfers).set({ status: 'completed', completedAt: new Date() }).where(eq(interBankTransfers.id, wire.id));
              });
           }
-          await db.update(interBankTransfers).set({ status: 'completed', completedAt: new Date() }).where(eq(interBankTransfers.id, wire.id));
        } else if (action === 'reject') {
           // Refund source account
           const sa = await db.select().from(bankAccounts).where(eq(bankAccounts.id, wire.fromAccountId)).get();
           if (sa) {
-             await db.update(bankAccounts).set({ balance: sa.balance + wire.amount }).where(eq(bankAccounts.id, sa.id));
+             const { sql } = await import("drizzle-orm");
+             await db.transaction(async (tx) => {
+               await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${wire.amount}` }).where(eq(bankAccounts.id, sa.id));
 
-             await db.insert(transactions).values({
-               id: uuidv4(),
-               bankId: wire.fromBankId,
-               fromAccountId: null,
-               toAccountId: sa.id,
-               type: "deposit",
-               amount: wire.amount,
-               description: `Refund: Rejected Outbound Wire`,
-               timestamp: new Date()
+               await tx.insert(transactions).values({
+                 id: uuidv4(),
+                 bankId: wire.fromBankId,
+                 fromAccountId: null,
+                 toAccountId: sa.id,
+                 type: "deposit",
+                 amount: wire.amount,
+                 description: `Refund: Rejected Outbound Wire`,
+                 timestamp: new Date()
+               });
+
+               await tx.update(interBankTransfers).set({ status: 'rejected', completedAt: new Date() }).where(eq(interBankTransfers.id, wire.id));
              });
           }
-          await db.update(interBankTransfers).set({ status: 'rejected', completedAt: new Date() }).where(eq(interBankTransfers.id, wire.id));
        }
 
        res.json({ success: true });
@@ -2519,59 +2527,68 @@ banksRouter.post("/api/banks/:bankId/wire", requireBankStaff, async (req: expres
       if (!fromAccount) return res.status(404).json({ error: "Source account not found" });
       if (fromAccount.balance < amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      // 1. Deduct from sender
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${amount}` }).where(eq(bankAccounts.id, fromAccountId));
-      
-      // 2. Add to recipient (if we can find by name + bank ID)
-      // In a real network, toAccountName might just be text, but we can try to resolve it.
+      const { gte } = await import("drizzle-orm");
       let actualToAccountId = toAccountName; // fallback to string
       const toAccount = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, toBankId), eq(bankAccounts.accountName, toAccountName))).get();
       if (toAccount) {
          actualToAccountId = toAccount.id;
-         await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${amount}` }).where(eq(bankAccounts.id, toAccount.id));
       }
 
-      // 3. Update clearinghouse balances 
-      // From Bank sends money to To Bank. So From Bank owes To Bank.
-      // From Bank network balance -= amount
-      // To Bank network balance += amount
-      await db.run(sql`
-        INSERT INTO clearinghouse_balances (bank_id, balance, last_settled) 
-        VALUES (${req.params.bankId}, -${amount}, CURRENT_TIMESTAMP) 
-        ON CONFLICT(bank_id) DO UPDATE SET balance = balance - ${amount}, last_settled = CURRENT_TIMESTAMP
-      `);
-      
-      await db.run(sql`
-        INSERT INTO clearinghouse_balances (bank_id, balance, last_settled) 
-        VALUES (${toBankId}, ${amount}, CURRENT_TIMESTAMP) 
-        ON CONFLICT(bank_id) DO UPDATE SET balance = balance + ${amount}, last_settled = CURRENT_TIMESTAMP
-      `);
+      await db.transaction(async (tx) => {
+        // 1. Deduct from sender
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${amount}` })
+          .where(and(
+            eq(bankAccounts.id, fromAccountId),
+            gte(bankAccounts.balance, amount),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
+        
+        // 2. Add to recipient (if we can find by name + bank ID)
+        if (toAccount) {
+           await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${amount}` }).where(eq(bankAccounts.id, toAccount.id));
+        }
 
-      // 4. Record transactions
-      const ts = new Date();
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId,
-        toAccountId: `ext_${toBankId}`,
-        type: "wire_transfer",
-        amount,
-        description: description || `Wire to ${toAccountName}`,
-        timestamp: ts
-      });
+        // 3. Update clearinghouse balances 
+        await tx.run(sql`
+          INSERT INTO clearinghouse_balances (bank_id, balance, last_settled) 
+          VALUES (${req.params.bankId}, -${amount}, CURRENT_TIMESTAMP) 
+          ON CONFLICT(bank_id) DO UPDATE SET balance = balance - ${amount}, last_settled = CURRENT_TIMESTAMP
+        `);
+        
+        await tx.run(sql`
+          INSERT INTO clearinghouse_balances (bank_id, balance, last_settled) 
+          VALUES (${toBankId}, ${amount}, CURRENT_TIMESTAMP) 
+          ON CONFLICT(bank_id) DO UPDATE SET balance = balance + ${amount}, last_settled = CURRENT_TIMESTAMP
+        `);
 
-      if (toAccount) {
-        await db.insert(transactions).values({
+        // 4. Record transactions
+        const ts = new Date();
+        await tx.insert(transactions).values({
           id: uuidv4(),
-          bankId: toBankId,
-          fromAccountId: `ext_${req.params.bankId}`,
-          toAccountId: toAccount.id,
+          bankId: req.params.bankId,
+          fromAccountId,
+          toAccountId: `ext_${toBankId}`,
           type: "wire_transfer",
           amount,
-          description: description || `Wire from ${fromAccount.accountName}`,
+          description: description || `Wire to ${toAccountName}`,
           timestamp: ts
         });
-      }
+
+        if (toAccount) {
+          await tx.insert(transactions).values({
+            id: uuidv4(),
+            bankId: toBankId,
+            fromAccountId: `ext_${req.params.bankId}`,
+            toAccountId: toAccount.id,
+            type: "wire_transfer",
+            amount,
+            description: description || `Wire from ${fromAccount.accountName}`,
+            timestamp: ts
+          });
+        }
+      });
 
       sendWebhook(req.params.bankId, `🌐 **Wire Transfer Sent**: $${(amount/100).toFixed(2)} routed to ${toAccountName}.`);
       sendWebhook(toBankId, `🌐 **Wire Transfer Received**: $${(amount/100).toFixed(2)} received into ${toAccountName}.`);
@@ -2674,7 +2691,7 @@ banksRouter.patch("/api/banks/:bankId/subscriptions/:subId", requireBankStaff, a
 banksRouter.post("/api/banks/:bankId/subscriptions/:subId/charge", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { subscriptions, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
+    const { eq, and, sql, gte } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
       const sub = await db.select().from(subscriptions).where(and(eq(subscriptions.id, req.params.subId), eq(subscriptions.bankId, req.params.bankId))).get();
@@ -2686,31 +2703,40 @@ banksRouter.post("/api/banks/:bankId/subscriptions/:subId/charge", requireBankSt
       if (!biller || !customer) return res.status(400).json({ error: "Accounts invalid" });
       if (customer.balance < sub.amount) return res.status(400).json({ error: "Customer has insufficient funds" });
 
-      // Deduct customer
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${sub.amount}` }).where(eq(bankAccounts.id, customer.id));
-      
-      // Add biller
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${sub.amount}` }).where(eq(bankAccounts.id, biller.id));
-
-      const ts = new Date();
-      // Record transaction
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: customer.id,
-        toAccountId: biller.id,
-        type: "transfer",
-        amount: sub.amount,
-        description: `Subscription Charge: ${sub.description}`,
-        timestamp: ts
-      });
-
-      // Advance next run date
       const nextRun = new Date(sub.nextRun);
       if (sub.frequency === 'weekly') nextRun.setDate(nextRun.getDate() + 7);
       else if (sub.frequency === 'monthly') nextRun.setMonth(nextRun.getMonth() + 1);
 
-      await db.update(subscriptions).set({ nextRun }).where(eq(subscriptions.id, sub.id));
+      const ts = new Date();
+      await db.transaction(async (tx) => {
+        // Deduct customer
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${sub.amount}` })
+          .where(and(
+            eq(bankAccounts.id, customer.id),
+            gte(bankAccounts.balance, sub.amount),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
+        
+        // Add biller
+        await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${sub.amount}` }).where(eq(bankAccounts.id, biller.id));
+
+        // Record transaction
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          fromAccountId: customer.id,
+          toAccountId: biller.id,
+          type: "transfer",
+          amount: sub.amount,
+          description: `Subscription Charge: ${sub.description}`,
+          timestamp: ts
+        });
+
+        // Advance next run date
+        await tx.update(subscriptions).set({ nextRun }).where(eq(subscriptions.id, sub.id));
+      });
 
       res.json({ success: true, nextRun });
     } catch (e: any) {
@@ -2808,7 +2834,7 @@ banksRouter.patch("/api/banks/:bankId/payroll/:jobId", requireBankStaff, async (
 banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { payrollJobs, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
+    const { eq, and, sql, gte } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
       const job = await db.select().from(payrollJobs).where(and(eq(payrollJobs.id, req.params.jobId), eq(payrollJobs.bankId, req.params.bankId))).get();
@@ -2820,32 +2846,41 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
       if (!employer || !employee) return res.status(400).json({ error: "Accounts invalid" });
       if (employer.balance < job.amount) return res.status(400).json({ error: "Employer has insufficient funds to run payroll" });
 
-      // Deduct employer
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${job.amount}` }).where(eq(bankAccounts.id, employer.id));
-      
-      // Add employee
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${job.amount}` }).where(eq(bankAccounts.id, employee.id));
-
-      const ts = new Date();
-      // Record transaction
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: employer.id,
-        toAccountId: employee.id,
-        type: "transfer",
-        amount: job.amount,
-        description: `Automated Payroll Deposit`,
-        timestamp: ts
-      });
-
-      // Advance next run date
       const nextRun = new Date(job.nextRun);
       if (job.frequency === 'weekly') nextRun.setDate(nextRun.getDate() + 7);
       else if (job.frequency === 'biweekly') nextRun.setDate(nextRun.getDate() + 14);
       else if (job.frequency === 'monthly') nextRun.setMonth(nextRun.getMonth() + 1);
 
-      await db.update(payrollJobs).set({ nextRun }).where(eq(payrollJobs.id, job.id));
+      const ts = new Date();
+      await db.transaction(async (tx) => {
+        // Deduct employer
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${job.amount}` })
+          .where(and(
+            eq(bankAccounts.id, employer.id),
+            gte(bankAccounts.balance, job.amount),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
+        
+        // Add employee
+        await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${job.amount}` }).where(eq(bankAccounts.id, employee.id));
+
+        // Record transaction
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          fromAccountId: employer.id,
+          toAccountId: employee.id,
+          type: "transfer",
+          amount: job.amount,
+          description: `Automated Payroll Deposit`,
+          timestamp: ts
+        });
+
+        // Advance next run date
+        await tx.update(payrollJobs).set({ nextRun }).where(eq(payrollJobs.id, job.id));
+      });
 
       res.json({ success: true, nextRun });
     } catch (e: any) {
@@ -3026,7 +3061,7 @@ banksRouter.post("/api/banks/:bankId/escrows", requireBankStaff, async (req: exp
 banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { escrows, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
+    const { eq, and, sql, gte } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
       const escrow = await db.select().from(escrows).where(and(eq(escrows.id, req.params.escrowId), eq(escrows.bankId, req.params.bankId))).get();
@@ -3037,18 +3072,27 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, 
       if (!buyer) return res.status(404).json({ error: "Buyer account not found" });
       if (buyer.balance < escrow.amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${escrow.amount}` }).where(eq(bankAccounts.id, buyer.id));
-      await db.update(escrows).set({ status: "funded" }).where(eq(escrows.id, escrow.id));
+      await db.transaction(async (tx) => {
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${escrow.amount}` })
+          .where(and(
+            eq(bankAccounts.id, buyer.id),
+            gte(bankAccounts.balance, escrow.amount),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
+        await tx.update(escrows).set({ status: "funded" }).where(eq(escrows.id, escrow.id));
 
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: buyer.id,
-        toAccountId: null,
-        type: "withdraw",
-        amount: escrow.amount,
-        description: `Escrow Funded: ${escrow.description || escrow.id}`,
-        timestamp: new Date()
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          fromAccountId: buyer.id,
+          toAccountId: null,
+          type: "withdraw",
+          amount: escrow.amount,
+          description: `Escrow Funded: ${escrow.description || escrow.id}`,
+          timestamp: new Date()
+        });
       });
 
       res.json({ success: true, status: "funded" });
@@ -3069,19 +3113,22 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/release", requireBankStaf
       if (escrow.status !== "funded") return res.status(400).json({ error: "Escrow not funded" });
 
       const seller = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.sellerAccountId)).get();
-      
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${escrow.amount}` }).where(eq(bankAccounts.id, seller!.id));
-      await db.update(escrows).set({ status: "released" }).where(eq(escrows.id, escrow.id));
+      if (!seller) return res.status(404).json({ error: "Seller account not found" });
 
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: null,
-        toAccountId: seller!.id,
-        type: "deposit",
-        amount: escrow.amount,
-        description: `Escrow Released: ${escrow.description || escrow.id}`,
-        timestamp: new Date()
+      await db.transaction(async (tx) => {
+        await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${escrow.amount}` }).where(eq(bankAccounts.id, seller.id));
+        await tx.update(escrows).set({ status: "released" }).where(eq(escrows.id, escrow.id));
+
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          fromAccountId: null,
+          toAccountId: seller.id,
+          type: "deposit",
+          amount: escrow.amount,
+          description: `Escrow Released: ${escrow.description || escrow.id}`,
+          timestamp: new Date()
+        });
       });
 
       res.json({ success: true, status: "released" });
@@ -3102,19 +3149,22 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/refund", requireBankStaff
       if (escrow.status !== "funded") return res.status(400).json({ error: "Escrow not funded" });
 
       const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
-      
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${escrow.amount}` }).where(eq(bankAccounts.id, buyer!.id));
-      await db.update(escrows).set({ status: "refunded" }).where(eq(escrows.id, escrow.id));
+      if (!buyer) return res.status(404).json({ error: "Buyer account not found" });
 
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: null,
-        toAccountId: buyer!.id,
-        type: "deposit",
-        amount: escrow.amount,
-        description: `Escrow Refunded: ${escrow.description || escrow.id}`,
-        timestamp: new Date()
+      await db.transaction(async (tx) => {
+        await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${escrow.amount}` }).where(eq(bankAccounts.id, buyer.id));
+        await tx.update(escrows).set({ status: "refunded" }).where(eq(escrows.id, escrow.id));
+
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          fromAccountId: null,
+          toAccountId: buyer.id,
+          type: "deposit",
+          amount: escrow.amount,
+          description: `Escrow Refunded: ${escrow.description || escrow.id}`,
+          timestamp: new Date()
+        });
       });
 
       res.json({ success: true, status: "refunded" });

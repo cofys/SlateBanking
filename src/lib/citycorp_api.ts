@@ -116,6 +116,7 @@ export class CityCorpClient {
     const options: RequestInit = {
       method,
       headers: this.headers,
+      signal: AbortSignal.timeout(8000),
     };
 
     console.log(`Sending API request to ${endpoint} with url:`, url.toString());

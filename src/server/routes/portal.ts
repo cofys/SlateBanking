@@ -2,6 +2,7 @@ import express from 'express';
 import { requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET, getRedirectUri } from "../middleware.js";
 import { botManager } from "../../lib/bot_manager.js";
 import { buildCityCorpAuthUrl } from "../../lib/citycorp_api.js";
+import { getUserCandidateIdentifiers, isUserAccountOwnerOrMember, isUserStaffOrGlobalAdmin } from "../userResolver.js";
 import * as crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { randomInt } from "crypto";
@@ -10,18 +11,9 @@ const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
 export const portalRouter = express.Router();
 
-async function isUserStaffOrAdmin(bankId: string, discordId: string, isGlobalAdmin?: boolean): Promise<boolean> {
-  if (isGlobalAdmin) return true;
-  if (!discordId) return false;
-  const { db } = await import("../../db/index.js");
-  const { bankStaff, globalAdmins } = await import("../../db/schema.js");
-  const { eq, and } = await import("drizzle-orm");
-
-  const admin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, discordId)).get();
-  if (admin) return true;
-
-  const staff = await db.select().from(bankStaff).where(and(eq(bankStaff.bankId, bankId), eq(bankStaff.discordId, discordId))).get();
-  return !!staff;
+async function isUserStaffOrAdmin(req: express.Request, bankId: string): Promise<boolean> {
+  const result = await isUserStaffOrGlobalAdmin(req, bankId);
+  return result.isStaff;
 }
 
 portalRouter.get("/api/portal/:bankId/oauth/url", requireAuth, async (req: express.Request, res: express.Response) => {
@@ -207,35 +199,32 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
 
 portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans } = await import("../../db/schema");
+    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans, accountMembers } = await import("../../db/schema");
     const { eq, and, or, desc, inArray } = await import("drizzle-orm");
 
     try {
-      const discordId = (req as any).user.discordId;
       const bankId = req.params.bankId;
-      if (!discordId) return res.status(400).json({ error: "Missing discordId" });
+      const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+      if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
+
+      const primaryId = candidateIds[0];
 
       let customer = await db.select().from(bankCustomers).where(
         and(
           eq(bankCustomers.bankId, bankId),
           or(
-            eq(bankCustomers.discordId, discordId),
-            eq(bankCustomers.linkedDiscordId, discordId)
+            inArray(bankCustomers.discordId, candidateIds),
+            inArray(bankCustomers.linkedDiscordId, candidateIds),
+            inArray(bankCustomers.mcUsername, candidateIds)
           )
         )
       ).get();
 
-      if (!customer && discordId.startsWith("mc_")) {
-        const mcUuid = discordId.replace("mc_", "");
-        customer = await db.select().from(bankCustomers).where(
-          and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.mcUuid, mcUuid))
-        ).get();
-      }
-
       const decodedUser = (req as any).user;
-      const isStaff = await isUserStaffOrAdmin(bankId, discordId, decodedUser?.isGlobalAdmin);
+      const isStaff = await isUserStaffOrAdmin(req, bankId);
 
-      const userAccounts = await db.select({
+      // 1. Owned accounts
+      const ownedAccounts = await db.select({
         id: bankAccounts.id,
         bankId: bankAccounts.bankId,
         bankName: banks.name,
@@ -245,7 +234,34 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       })
       .from(bankAccounts)
       .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
-      .where(and(eq(bankAccounts.ownerDiscordId, discordId), eq(bankAccounts.bankId, bankId)));
+      .where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, candidateIds)));
+
+      // 2. Member accounts
+      let memberAccounts: any[] = [];
+      try {
+        const memberships = await db.select().from(accountMembers).where(inArray(accountMembers.discordId, candidateIds));
+        const memberAccountIds = memberships.map(m => m.accountId);
+        if (memberAccountIds.length > 0) {
+          memberAccounts = await db.select({
+            id: bankAccounts.id,
+            bankId: bankAccounts.bankId,
+            bankName: banks.name,
+            accountName: bankAccounts.accountName,
+            type: bankAccounts.accountType,
+            balance: bankAccounts.balance
+          })
+          .from(bankAccounts)
+          .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
+          .where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.id, memberAccountIds)));
+        }
+      } catch (e) {}
+
+      // Combine accounts without duplicates
+      const accountMap = new Map<string, any>();
+      ownedAccounts.forEach(a => accountMap.set(a.id, a));
+      memberAccounts.forEach(a => { if (!accountMap.has(a.id)) accountMap.set(a.id, a); });
+
+      const userAccounts = Array.from(accountMap.values());
 
       if (userAccounts.length === 0) {
          return res.json({ 
@@ -277,7 +293,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
 
       const mappedTxs = recentTxs.map(tx => ({
         ...tx,
-        toDiscordId: accountIds.includes(tx.toAccountId!) ? discordId : null
+        toDiscordId: accountIds.includes(tx.toAccountId!) ? primaryId : null
       }));
 
       // Map pending invoices
@@ -309,7 +325,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
          accountId: cards.accountId,
          accountName: bankAccounts.accountName,
          cardNumber: cards.cardNumber,
-                  expiryDate: cards.expiryDate,
+         expiryDate: cards.expiryDate,
          isLocked: cards.isLocked,
          type: cards.type
       })
@@ -321,7 +337,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       // Get user loans
       const userLoans = await db.select()
         .from(loans)
-        .where(and(eq(loans.discordId, discordId), eq(loans.bankId, bankId)));
+        .where(and(eq(loans.bankId, bankId), or(inArray(loans.discordId, candidateIds), inArray(loans.accountId, accountIds))));
 
       res.json({
         isStaff,
@@ -350,12 +366,13 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { invoiceId } = req.body; const discordId = (req as any).user.discordId;
+      const { invoiceId } = req.body;
       const bankId = req.params.bankId;
+      const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
       const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
       if (targetBank?.maintenanceMode) {
-        const isStaff = await isUserStaffOrAdmin(bankId, discordId, (req as any).user?.isGlobalAdmin);
+        const isStaff = await isUserStaffOrAdmin(req, bankId);
         if (!isStaff) {
           return res.status(503).json({ error: "This bank is currently in maintenance mode for system updates & staff testing. Portal transactions are temporarily suspended." });
         }
@@ -364,11 +381,11 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
       const [inv] = await db.select().from(invoices).where(and(eq(invoices.id, invoiceId), eq(invoices.bankId, bankId)));
       if (!inv || inv.status !== 'pending') return res.status(404).json({ error: "Invoice not found or already paid" });
 
-      const [sourceAccount] = await db.select().from(bankAccounts).where(
-        and(eq(bankAccounts.id, inv.customerAccountId), eq(bankAccounts.ownerDiscordId, discordId))
-      );
+      const [sourceAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, inv.customerAccountId));
+      if (!sourceAccount || !(await isUserAccountOwnerOrMember(sourceAccount, candidateIds))) {
+        return res.status(404).json({ error: "Source account not found or unauthorized to pay this invoice" });
+      }
 
-      if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized to pay this invoice" });
       if (sourceAccount.balance < inv.amount) return res.status(400).json({ error: `Insufficient funds. Balance: $${(sourceAccount.balance/100).toFixed(2)}, Due: $${(inv.amount/100).toFixed(2)}` });
 
       const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, inv.billerAccountId));
@@ -404,12 +421,13 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { fromAccountId, toAccountId, amount } = req.body; const discordId = (req as any).user.discordId;
+      const { fromAccountId, toAccountId, amount } = req.body;
       const bankId = req.params.bankId;
+      const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
       const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
       if (targetBank?.maintenanceMode) {
-        const isStaff = await isUserStaffOrAdmin(bankId, discordId, (req as any).user?.isGlobalAdmin);
+        const isStaff = await isUserStaffOrAdmin(req, bankId);
         if (!isStaff) {
           return res.status(503).json({ error: "This bank is currently in maintenance mode for system updates & staff testing. Portal transactions are temporarily suspended." });
         }
@@ -423,10 +441,13 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
       if (!Number.isFinite(amnt) || amnt <= 0) return res.status(400).json({ error: "Invalid amount" });
 
       const [sourceAccount] = await db.select().from(bankAccounts).where(
-        and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.ownerDiscordId, discordId), eq(bankAccounts.bankId, bankId))
+        and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bankId))
       );
 
-      if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized" });
+      if (!sourceAccount || !(await isUserAccountOwnerOrMember(sourceAccount, candidateIds))) {
+        return res.status(404).json({ error: "Source account not found or unauthorized" });
+      }
+
       if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
       if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
 
@@ -436,18 +457,36 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
       if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
-      await db.update(bankAccounts).set({ balance: sourceAccount.balance - amnt }).where(eq(bankAccounts.id, sourceAccount.id));
-      await db.update(bankAccounts).set({ balance: destAccount.balance + amnt }).where(eq(bankAccounts.id, destAccount.id));
+      const { sql, gte } = await import("drizzle-orm");
+      await db.transaction(async (tx) => {
+        // Atomic deduction with balance check constraint
+        const deductResult = await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${amnt}` })
+          .where(and(
+            eq(bankAccounts.id, sourceAccount.id),
+            gte(bankAccounts.balance, amnt),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
 
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: sourceAccount.bankId,
-        fromAccountId: sourceAccount.id,
-        toAccountId: destAccount.id,
-        type: "transfer",
-        amount: amnt,
-        description: `Citizen Portal Transfer to ${toAccountId.substring(0, 8)}`,
-        timestamp: new Date()
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} + ${amnt}` })
+          .where(and(
+            eq(bankAccounts.id, destAccount.id),
+            eq(bankAccounts.isActive, true),
+            eq(bankAccounts.isFrozen, false)
+          ));
+
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: sourceAccount.bankId,
+          fromAccountId: sourceAccount.id,
+          toAccountId: destAccount.id,
+          type: "transfer",
+          amount: amnt,
+          description: `Citizen Portal Transfer to ${toAccountId.substring(0, 8)}`,
+          timestamp: new Date()
+        });
       });
 
       res.json({ success: true });
@@ -463,13 +502,15 @@ portalRouter.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async 
     const { eq } = await import("drizzle-orm");
 
     try {
-      const { isLocked } = req.body; const discordId = (req as any).user.discordId;
+      const { isLocked } = req.body;
+      const bankId = req.params.bankId;
+      const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
       const [card] = await db.select().from(cards).where(eq(cards.id, req.params.cardId));
-      
-      if (!card || card.bankId !== req.params.bankId) return res.status(404).json({ error: "Card not found" });
+      if (!card || card.bankId !== bankId) return res.status(404).json({ error: "Card not found" });
 
       const [account] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId));
-      if (!account || account.ownerDiscordId !== discordId) {
+      if (!account || !(await isUserAccountOwnerOrMember(account, candidateIds))) {
          return res.status(403).json({ error: "Unauthorized" });
       }
 
@@ -484,15 +525,15 @@ portalRouter.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async 
 // Citizen Unified Lookup API across all banks
 portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
-  const { banks, bankAccounts, transactions, invoices, cards, loans, bankSettings } = await import("../../db/schema");
+  const { banks, bankAccounts, transactions, invoices, cards, loans, bankSettings, accountMembers } = await import("../../db/schema");
   const { eq, or, and, desc, inArray } = await import("drizzle-orm");
 
   try {
-    const discordId = (req as any).user.discordId;
-    if (!discordId) return res.status(400).json({ error: "Missing discordId" });
+    const candidateIds = await getUserCandidateIdentifiers(req);
+    if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
 
-    // Fetch user accounts across all banks
-    const userAccounts = await db.select({
+    // 1. Owned accounts across all banks
+    const ownedAccounts = await db.select({
       id: bankAccounts.id,
       bankId: bankAccounts.bankId,
       bankName: banks.name,
@@ -507,7 +548,39 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
     })
     .from(bankAccounts)
     .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
-    .where(eq(bankAccounts.ownerDiscordId, discordId));
+    .where(inArray(bankAccounts.ownerDiscordId, candidateIds));
+
+    // 2. Member accounts across all banks
+    let memberAccounts: any[] = [];
+    try {
+      const memberships = await db.select().from(accountMembers).where(inArray(accountMembers.discordId, candidateIds));
+      const memberAccountIds = memberships.map(m => m.accountId);
+      if (memberAccountIds.length > 0) {
+        memberAccounts = await db.select({
+          id: bankAccounts.id,
+          bankId: bankAccounts.bankId,
+          bankName: banks.name,
+          accountName: bankAccounts.accountName,
+          type: bankAccounts.accountType,
+          balance: bankAccounts.balance,
+          businessTaxId: bankAccounts.businessTaxId,
+          businessSector: bankAccounts.businessSector,
+          isActive: bankAccounts.isActive,
+          isFrozen: bankAccounts.isFrozen,
+          createdAt: bankAccounts.createdAt
+        })
+        .from(bankAccounts)
+        .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
+        .where(inArray(bankAccounts.id, memberAccountIds));
+      }
+    } catch (e) {}
+
+    // Combine accounts without duplicates
+    const accountMap = new Map<string, any>();
+    ownedAccounts.forEach(a => accountMap.set(a.id, a));
+    memberAccounts.forEach(a => { if (!accountMap.has(a.id)) accountMap.set(a.id, a); });
+
+    const userAccounts = Array.from(accountMap.values());
 
     const allBanks = await db.select({
       id: banks.id,
@@ -564,7 +637,12 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
       .orderBy(desc(invoices.createdAt));
     }
 
-    userLoans = await db.select().from(loans).where(eq(loans.discordId, discordId));
+    userLoans = await db.select()
+      .from(loans)
+      .where(or(
+        inArray(loans.discordId, candidateIds),
+        ...(accountIds.length > 0 ? [inArray(loans.accountId, accountIds)] : [])
+      ));
 
     res.json({
       accounts: userAccounts,
@@ -585,12 +663,15 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
 portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { bankAccounts, bankSettings, banks, onyxMerchants } = await import("../../db/schema");
-  const { eq, and } = await import("drizzle-orm");
+  const { eq, and, inArray } = await import("drizzle-orm");
   const { v4: uuidv4 } = await import("uuid");
   const { dispatchDiscordWebhook } = await import("../../lib/webhook_dispatcher");
 
   try {
-    const discordId = (req as any).user.discordId;
+    const candidateIds = await getUserCandidateIdentifiers(req, req.body.bankId);
+    if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
+    const primaryId = candidateIds[0];
+
     const { bankId, accountName, accountType, businessTaxId, businessSector } = req.body;
 
     if (!bankId || !accountName) {
@@ -613,7 +694,7 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
         .from(bankAccounts)
         .where(and(
           eq(bankAccounts.bankId, bankId),
-          eq(bankAccounts.ownerDiscordId, discordId),
+          inArray(bankAccounts.ownerDiscordId, candidateIds),
           eq(bankAccounts.accountType, "personal"),
           eq(bankAccounts.isActive, true)
         ));
@@ -630,7 +711,7 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
     await db.insert(bankAccounts).values({
       id,
       bankId,
-      ownerDiscordId: discordId,
+      ownerDiscordId: primaryId,
       accountName: accountName.trim(),
       accountType: type,
       businessTaxId: type === "business" ? (businessTaxId || `CORP-${uuidv4().substring(0, 6).toUpperCase()}`) : null,
@@ -666,7 +747,7 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       fields: [
         { name: "Account ID", value: `\`${id}\``, inline: true },
         { name: "Account Type", value: type.toUpperCase(), inline: true },
-        { name: "Owner Discord ID", value: `<@${discordId}>`, inline: true },
+        { name: "Owner Discord ID", value: `<@${primaryId}>`, inline: true },
         ...(type === "business" ? [
           { name: "In-Game Corp Name", value: `\`${businessTaxId || accountName.trim()}\``, inline: true },
           { name: "Merchant Terminal ID", value: `\`${merchantInfo?.merchantId}\``, inline: true }
@@ -703,21 +784,23 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
 
   try {
     const { accountId, amount, termMonths, purpose } = req.body;
-    const discordId = (req as any).user.discordId;
     const bankId = req.params.bankId;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
 
     const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
     if (!targetBank) return res.status(404).json({ error: "Bank not found" });
 
-    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.ownerDiscordId, discordId)));
-    if (!acc) return res.status(404).json({ error: "Destination deposit account not found" });
+    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId)));
+    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
+      return res.status(404).json({ error: "Destination deposit account not found or unauthorized" });
+    }
 
     const loanAmountCents = Math.round(parseFloat(amount) * 100);
     if (!loanAmountCents || loanAmountCents <= 0) return res.status(400).json({ error: "Invalid loan amount" });
 
     const term = parseInt(termMonths) || 12;
     const interestRate = 550; // 5.50% default
-    const monthlyPayment = Math.round((loanAmountCents * (1 + (interestRate / 10000))) / term);
 
     const loanId = `loan_${uuidv4().substring(0, 8)}`;
     const nextPaymentDate = new Date();
@@ -726,7 +809,7 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
     await db.insert(loans).values({
       id: loanId,
       bankId,
-      discordId,
+      discordId: candidateIds[0],
       accountId,
       principalAmount: loanAmountCents,
       remainingAmount: loanAmountCents,
@@ -763,14 +846,16 @@ portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: exp
 
   try {
     const { loanId, accountId, amount } = req.body;
-    const discordId = (req as any).user.discordId;
     const bankId = req.params.bankId;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
     const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId)));
     if (!loan) return res.status(404).json({ error: "Loan record not found" });
 
-    const [sourceAcc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.ownerDiscordId, discordId)));
-    if (!sourceAcc) return res.status(404).json({ error: "Payment account not found" });
+    const [sourceAcc] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId));
+    if (!sourceAcc || !(await isUserAccountOwnerOrMember(sourceAcc, candidateIds))) {
+      return res.status(404).json({ error: "Payment account not found or unauthorized" });
+    }
 
     const repayCents = Math.round(parseFloat(amount) * 100);
     if (!repayCents || repayCents <= 0) return res.status(400).json({ error: "Invalid repayment amount" });
@@ -809,11 +894,13 @@ portalRouter.post("/api/portal/:bankId/issue-card", requireAuth, async (req: exp
 
   try {
     const { accountId, cardType } = req.body;
-    const discordId = (req as any).user.discordId;
     const bankId = req.params.bankId;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
-    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.ownerDiscordId, discordId)));
-    if (!acc) return res.status(404).json({ error: "Linked account not found" });
+    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId)));
+    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
+      return res.status(404).json({ error: "Linked account not found or unauthorized" });
+    }
 
     const generateCardNum = () => "4" + Array.from({length: 15}, () => Math.floor(Math.random() * 10)).join("");
     const cardNum = generateCardNum();

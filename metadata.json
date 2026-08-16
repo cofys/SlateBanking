@@ -2,5 +2,7 @@
   "name": "Minecraft RP Bank Bot",
   "description": "Workbench for analyzing and potentially extending a Minecraft RP bank Discord bot.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
