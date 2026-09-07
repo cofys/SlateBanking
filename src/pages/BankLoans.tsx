@@ -9,6 +9,8 @@ export function BankLoans() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingCron, setProcessingCron] = useState(false);
+  const [filterTab, setFilterTab] = useState<"all" | "pending" | "active" | "delinquent" | "defaulted" | "paid">("all");
+  const [searchQuery, setSearchQuery] = useState("");
   
   const [selectedLoan, setSelectedLoan] = useState<any | null>(null);
 
@@ -33,7 +35,6 @@ export function BankLoans() {
   useEffect(() => {
     fetchData();
   }, [bankId]);
-
   
   const [editInterestRate, setEditInterestRate] = useState("");
   const [editPrincipal, setEditPrincipal] = useState("");
@@ -222,21 +223,48 @@ export function BankLoans() {
     );
   }
 
+  const filteredLoans = loans.filter(loan => {
+    // Tab filter
+    if (filterTab === "pending" && loan.status !== "pending" && loan.status !== "awaiting_signature") return false;
+    if (filterTab === "active" && (loan.status !== "active" || loan.isDelinquent)) return false;
+    if (filterTab === "delinquent" && !loan.isDelinquent && loan.status !== "defaulted") return false;
+    if (filterTab === "defaulted" && loan.status !== "defaulted") return false;
+    if (filterTab === "paid" && loan.status !== "paid" && loan.status !== "paid_off") return false;
+
+    // Search query
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchBorrower = loan.discordId?.toLowerCase().includes(q) || loan.mcUsername?.toLowerCase().includes(q);
+      const matchId = loan.id?.toLowerCase().includes(q);
+      const matchCollateral = loan.collateralDescription?.toLowerCase().includes(q);
+      return matchBorrower || matchId || matchCollateral;
+    }
+    return true;
+  });
+
+  const metrics = {
+    totalBook: loans.reduce((acc, l) => acc + (l.principalAmount || 0), 0),
+    activeOutstanding: loans.filter(l => l.status === "active").reduce((acc, l) => acc + (l.remainingAmount || 0), 0),
+    delinquentRisk: loans.filter(l => l.isDelinquent || l.status === "defaulted").reduce((acc, l) => acc + (l.remainingAmount || 0) + (l.lateFeeAmount || 0), 0),
+    totalCollateral: loans.filter(l => l.collateralStatus === "pledged" || l.collateralStatus === "seized").reduce((acc, l) => acc + (l.collateralValue || 0), 0),
+    pendingCount: loans.filter(l => l.status === "pending" || l.status === "awaiting_signature").length
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
             <Landmark className="text-emerald-400" />
-            Loan Center
+            Loan & Credit Underwriting
           </h1>
-          <p className="text-white/60">Issue & manage loans, collateral, interest & auto-debits</p>
+          <p className="text-white/60 text-sm">Issue, underwrite, collateralize, and automate debt collection across borrower accounts.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button 
             onClick={handleProcessDueLoans}
             disabled={processingCron}
-            className="flex items-center gap-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/30 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/30 px-3 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
             title="Run automated repayment debits across all active loans"
           >
             <Zap size={16} className="text-indigo-400" />
@@ -245,7 +273,7 @@ export function BankLoans() {
           <button 
             onClick={handleAccrueInterest}
             disabled={processingCron}
-            className="flex items-center gap-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 px-3 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
             title="Calculate and add daily interest compounding"
           >
             <Percent size={16} className="text-amber-400" />
@@ -253,7 +281,7 @@ export function BankLoans() {
           </button>
           <button 
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer"
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold transition-colors cursor-pointer shadow-lg shadow-emerald-600/20"
           >
             <Plus size={18} />
             Issue New Loan
@@ -261,38 +289,141 @@ export function BankLoans() {
         </div>
       </div>
 
+      {/* Underwriting KPI Metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-[#0b0b12] border border-white/10 p-4 rounded-2xl">
+          <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total Originated Book</p>
+          <p className="text-xl font-black text-white font-mono mt-1">
+            ${(metrics.totalBook / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-xs text-zinc-500 mt-0.5">{loans.length} total loans issued</p>
+        </div>
+
+        <div className="bg-[#0b0b12] border border-white/10 p-4 rounded-2xl">
+          <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Active Performing Balance</p>
+          <p className="text-xl font-black text-emerald-400 font-mono mt-1">
+            ${(metrics.activeOutstanding / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-xs text-emerald-500/80 mt-0.5">Generating continuous yield</p>
+        </div>
+
+        <div className="bg-[#0b0b12] border border-white/10 p-4 rounded-2xl">
+          <p className="text-[11px] font-bold text-rose-400 uppercase tracking-wider">Delinquency Exposure</p>
+          <p className="text-xl font-black text-rose-400 font-mono mt-1">
+            ${(metrics.delinquentRisk / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-xs text-rose-500/80 mt-0.5">Overdue & Defaulted</p>
+        </div>
+
+        <div className="bg-[#0b0b12] border border-white/10 p-4 rounded-2xl">
+          <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Collateral Pledged</p>
+          <p className="text-xl font-black text-amber-300 font-mono mt-1">
+            ${(metrics.totalCollateral / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-xs text-amber-500/80 mt-0.5">Secured asset value</p>
+        </div>
+      </div>
+
+      {/* Triage Tabs & Search Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0b0b12] border border-white/10 p-3 rounded-2xl">
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+          <button
+            onClick={() => setFilterTab("all")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${filterTab === "all" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white"}`}
+          >
+            All Loans ({loans.length})
+          </button>
+          <button
+            onClick={() => setFilterTab("pending")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${filterTab === "pending" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-zinc-400 hover:text-white"}`}
+          >
+            Pending Review {metrics.pendingCount > 0 && <span className="bg-blue-500 text-white text-[10px] px-1.5 py-0.2 rounded-full">{metrics.pendingCount}</span>}
+          </button>
+          <button
+            onClick={() => setFilterTab("active")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${filterTab === "active" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "text-zinc-400 hover:text-white"}`}
+          >
+            Active & Performing
+          </button>
+          <button
+            onClick={() => setFilterTab("delinquent")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${filterTab === "delinquent" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "text-zinc-400 hover:text-white"}`}
+          >
+            Overdue / Delinquent
+          </button>
+          <button
+            onClick={() => setFilterTab("defaulted")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${filterTab === "defaulted" ? "bg-rose-500/20 text-rose-300 border border-rose-500/30" : "text-zinc-400 hover:text-white"}`}
+          >
+            Defaulted
+          </button>
+          <button
+            onClick={() => setFilterTab("paid")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${filterTab === "paid" ? "bg-slate-700 text-white" : "text-zinc-400 hover:text-white"}`}
+          >
+            Paid Off
+          </button>
+        </div>
+
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search borrower or collateral..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="bg-black/40 border border-white/10 rounded-xl py-1.5 px-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 font-mono w-full sm:w-56"
+          />
+        </div>
+      </div>
+
       {loans.length === 0 ? (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-12 text-center">
+        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-12 text-center">
           <Landmark className="mx-auto h-12 w-12 text-white/20 mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">No active loans</h3>
+          <h3 className="text-lg font-medium text-white mb-2">No loans recorded</h3>
           <p className="text-white/60 max-w-sm mx-auto mb-6">
-            Issue loans to clients. Funds will be deposited directly to their account, and you can automate collections.
+            Issue loans to clients. Funds will be deposited directly to their account, and you can automate collections and accrue yield.
           </p>
           <button 
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer mx-auto"
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-medium transition-colors cursor-pointer mx-auto"
           >
             <Plus size={18} />
             Issue First Loan
           </button>
         </div>
+      ) : filteredLoans.length === 0 ? (
+        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-12 text-center text-zinc-400">
+          <AlertCircle size={36} className="mx-auto mb-2 opacity-30 text-white" />
+          <p className="text-sm font-semibold text-white">No loans match the active triage filter.</p>
+          <button 
+            onClick={() => { setFilterTab("all"); setSearchQuery(""); }}
+            className="mt-2 text-xs text-indigo-400 hover:text-indigo-300 font-bold"
+          >
+            Reset Filters
+          </button>
+        </div>
       ) : (
-        <div className="overflow-x-auto bg-slate-900 border border-white/10 rounded-2xl">
+        <div className="overflow-x-auto bg-[#0b0b12] border border-white/10 rounded-2xl shadow-2xl">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-white/10 text-xs uppercase tracking-wider text-white/50 bg-slate-800/50">
-                <th className="p-4 font-medium">Borrower</th>
-                <th className="p-4 font-medium">Principal</th>
-                <th className="p-4 font-medium">Remaining Bal</th>
-                <th className="p-4 font-medium">Collateral</th>
-                <th className="p-4 font-medium">APR</th>
-                <th className="p-4 font-medium">Next Due</th>
-                <th className="p-4 font-medium">Status</th>
-                <th className="p-4 font-medium w-32"></th>
+              <tr className="border-b border-white/10 text-xs uppercase tracking-wider text-zinc-400 bg-[#11111a]">
+                <th className="p-4 font-semibold">Borrower</th>
+                <th className="p-4 font-semibold">Principal</th>
+                <th className="p-4 font-semibold">Remaining Bal</th>
+                <th className="p-4 font-semibold">Collateral & Risk</th>
+                <th className="p-4 font-semibold">APR</th>
+                <th className="p-4 font-semibold">Next Due</th>
+                <th className="p-4 font-semibold">Status</th>
+                <th className="p-4 font-semibold text-right">Underwriting</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {loans.map(loan => (
+              {filteredLoans.map(loan => {
+                const collateralVal = loan.collateralValue || 0;
+                const remaining = loan.remainingAmount || 1;
+                const coveragePercent = Math.round((collateralVal / remaining) * 100);
+
+                return (
                 <tr 
                   key={loan.id} 
                   className={`hover:bg-white/5 transition-colors cursor-pointer ${loan.isDelinquent ? 'bg-rose-950/20' : ''}`}
@@ -300,18 +431,18 @@ export function BankLoans() {
                 >
                   <td className="p-4 text-sm font-medium text-white/90">
                     {loan.mcUsername ? (
-                      <span className="flex items-center gap-2">
-                        {loan.mcUsername}
-                        <span className="text-[10px] text-white/40 font-mono">({loan.discordId})</span>
-                      </span>
+                      <div>
+                        <span className="text-white font-bold">{loan.mcUsername}</span>
+                        <span className="block text-[10px] text-zinc-500 font-mono">{loan.discordId}</span>
+                      </div>
                     ) : (
-                      <span className="font-mono text-white/70">{loan.discordId}</span>
+                      <span className="font-mono text-white/80 font-semibold">{loan.discordId}</span>
                     )}
                   </td>
                   <td className="p-4 text-sm font-mono text-white/70">
                     ${(loan.principalAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="p-4 text-sm font-mono text-emerald-400 font-medium">
+                  <td className="p-4 text-sm font-mono text-emerald-400 font-bold">
                     ${(loan.remainingAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     {loan.lateFeeAmount > 0 && (
                       <span className="block text-[10px] text-rose-400 font-mono">
@@ -322,86 +453,96 @@ export function BankLoans() {
                   <td className="p-4 text-xs">
                     {loan.collateralDescription ? (
                       <div>
-                        <span className={`inline-flex items-center gap-1 font-medium px-2 py-0.5 rounded text-[11px] ${loan.collateralStatus === 'seized' ? 'bg-rose-500/20 text-rose-300' : loan.collateralStatus === 'released' ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}`}>
-                          <ShieldCheck size={12} />
-                          {loan.collateralStatus?.toUpperCase()}
-                        </span>
-                        <p className="text-white/60 text-[11px] truncate max-w-[140px] mt-0.5">{loan.collateralDescription}</p>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-full text-[10px] ${loan.collateralStatus === 'seized' ? 'bg-rose-500/20 text-rose-300' : loan.collateralStatus === 'released' ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                            <ShieldCheck size={11} />
+                            {loan.collateralStatus?.toUpperCase()}
+                          </span>
+                          {coveragePercent > 0 && (
+                            <span className={`text-[10px] font-mono font-bold ${coveragePercent >= 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                              {coveragePercent}% Cov
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-zinc-400 text-[11px] truncate max-w-[140px] mt-0.5 font-medium">{loan.collateralDescription}</p>
                       </div>
                     ) : (
-                      <span className="text-white/30 text-[11px]">Unsecured</span>
+                      <span className="text-zinc-500 text-[11px] font-medium bg-zinc-800/60 px-2 py-0.5 rounded-full">Unsecured</span>
                     )}
                   </td>
-                  <td className="p-4 text-sm text-white/70">
+                  <td className="p-4 text-sm font-mono text-white/80">
                     {(loan.interestRate / 100).toFixed(2)}%
                   </td>
-                  <td className="p-4 text-sm text-white/70">
+                  <td className="p-4 text-sm text-zinc-400">
                     {loan.status === 'paid' || loan.status === 'paid_off' ? '-' : new Date(loan.nextPaymentDate).toLocaleDateString()}
                   </td>
                   <td className="p-4 text-sm">
                     {loan.status === 'paid' || loan.status === 'paid_off' ? (
-                      <span className="bg-slate-700 text-slate-300 px-2 py-1 rounded text-xs font-semibold">PAID OFF</span>
+                      <span className="bg-slate-700 text-slate-300 px-2.5 py-1 rounded-full text-xs font-bold">PAID OFF</span>
                     ) : loan.status === 'defaulted' ? (
-                      <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded text-xs uppercase font-bold flex items-center gap-1">
+                      <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded-full text-xs uppercase font-bold flex items-center gap-1 w-fit">
                         <AlertTriangle size={12} /> DEFAULTED
                       </span>
                     ) : loan.isDelinquent ? (
-                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-1 rounded text-xs uppercase font-semibold flex items-center gap-1">
+                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-full text-xs uppercase font-bold flex items-center gap-1 w-fit">
                         <AlertCircle size={12} /> OVERDUE ({loan.missedPaymentsCount})
                       </span>
                     ) : loan.status === 'pending' ? (
-                      <span className="bg-blue-500/20 text-blue-300 px-2 py-1 rounded text-xs uppercase">PENDING</span>
+                      <span className="bg-blue-500/20 text-blue-300 px-2.5 py-1 rounded-full text-xs uppercase font-bold">PENDING</span>
                     ) : (
-                      <span className="bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded text-xs uppercase font-semibold">{loan.status}</span>
+                      <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full text-xs uppercase font-bold">{loan.status}</span>
                     )}
                   </td>
-                  <td className="p-4 text-right flex gap-2 justify-end items-center">
-                    {loan.contractUrl && (
-                      <a
-                        href={loan.contractUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 px-2.5 py-1.5 rounded transition-colors flex items-center gap-1 font-medium"
-                        title="Open Legal Contract Document"
-                      >
-                        Doc Contract <ArrowUpRight size={12} />
-                      </a>
-                    )}
-                    {loan.status === 'pending' && (
-                       <button
-                         title="Approve Loan (Funds will be sent)"
-                         onClick={async (e) => {
+                  <td className="p-4 text-right">
+                    <div className="flex gap-2 justify-end items-center">
+                      {loan.contractUrl && (
+                        <a
+                          href={loan.contractUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-semibold"
+                          title="Open Contract Document"
+                        >
+                          Contract <ArrowUpRight size={12} />
+                        </a>
+                      )}
+                      {loan.status === 'pending' && (
+                         <button
+                           title="Approve Loan (Funds will be sent)"
+                           onClick={async (e) => {
+                               e.stopPropagation();
+                               if(!confirm("Approve this loan? Funds will instantly be disbursed.")) return;
+                               try {
+                                 const res = await fetch(`/api/banks/${bankId}/loans/${loan.id}/status`, {
+                                    method: "PUT",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ status: "approved" })
+                                 });
+                                 if(res.ok) fetchData(); else alert("Error");
+                               } catch(e) {}
+                           }}
+                           className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg transition-colors"
+                         >
+                           Approve
+                         </button>
+                      )}
+                      {loan.status !== 'paid' && loan.status !== 'paid_off' && loan.status !== 'pending' && (
+                         <button
+                           onClick={(e) => {
                              e.stopPropagation();
-                             if(!confirm("Approve this loan? Funds will instantly be disbursed.")) return;
-                             try {
-                               const res = await fetch(`/api/banks/${bankId}/loans/${loan.id}/status`, {
-                                  method: "PUT",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ status: "approved" })
-                               });
-                               if(res.ok) fetchData(); else alert("Error");
-                             } catch(e) {}
-                         }}
-                         className="text-xs bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 px-3 py-1.5 rounded transition-colors"
-                       >
-                         Approve
-                       </button>
-                    )}
-                    {loan.status !== 'paid' && loan.status !== 'paid_off' && loan.status !== 'pending' && (
-                       <button
-                         onClick={(e) => {
-                           e.stopPropagation();
-                           setPayLoanId(loan.id);
-                           setShowPayModal(true);
-                         }}
-                         className="text-xs bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 px-3 py-1.5 rounded transition-colors"
-                       >
-                         Make Payment
-                       </button>
-                    )}
+                             setPayLoanId(loan.id);
+                             setShowPayModal(true);
+                           }}
+                           className="text-xs bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 border border-indigo-500/30 px-3 py-1.5 rounded-lg font-semibold transition-colors"
+                         >
+                           Payment
+                         </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>

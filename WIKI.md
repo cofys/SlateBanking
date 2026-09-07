@@ -42,14 +42,37 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
   - **Google Docs Contract Integration**: Configurable Google Docs legal agreement templates for loans, credit applications, and escrow agreements. When enabled, the system auto-generates or attaches dynamic Google Docs contract links populated with variable tags (`{BANK_NAME}`, `{CLIENT_DISCORD}`, `{AMOUNT}`, `{INTEREST_RATE}`, `{CONTRACT_ID}`, `{DATE}`) and provides direct document links in the staff portal and citizen gateway (`contractUrl`).
 - **Cards**: Generated debit and credit card objects (Card Number, CVV, Expiry, Locked state) tied directly to a bank account. Lock states toggle true/false.
 
-### 3. Business & B2B
-- **Payroll**: Automated, recurring employee compensation workflows (`weekly`, `biweekly`, `monthly`). Operates cron-like checks against active jobs.
-- **Subscriptions**: Recurring billing mechanisms allowing businesses and individuals to charge customer accounts automatically.
-- **Invoices**: Pending payment requests issued by a merchant or bank staff to a customer (`pending`, `paid`, `overdue`). Contains due dates and strict relationships to biller and customer accounts.
-- **Escrow Services**: Safe transaction locking mechanism allowing funds to be held neutrally until a specific fulfillment trigger (`pending`, `funded`, `released`, `refunded`). Auto-attaches Google Docs legal contract templates when enabled in settings.
+### 3. Business & B2B Suite
+- **Invoices & Receivable Payment Demands**:
+  - **Comprehensive Ledger Oversight**: Staff and commercial entities track accounts receivable and payable across client accounts with real-time KPI metrics: Total Billed, Outstanding (Pending), Collected (Settled), and Delinquent (Overdue).
+  - **Multi-State Filtering & Search**: Interactive filtering by claim status (`pending`, `paid`, `overdue`, `cancelled`) with instant search across descriptions, counterparty usernames, account names, and UUID references.
+  - **Dynamic Schedule Tracking**: Real-time relative schedule calculation indicating exact days remaining until due date, flags overdue receivables with visual urgency indicators, and calculates interest/late liability.
+  - **Printable Institutional PDF Generation**: Native PDF invoice preview with print-specific media queries (`@media print`). Features bank letterhead, Onyx clearinghouse membership stamps, itemized services breakdown, currency formatting, and automated subtotal/fee reconciliations.
+  - **Reconciliation Controls**: Manual staff reconciliation ("Mark Paid") for external settlements and voiding/cancellation controls.
+- **Subscriptions & Direct Debit Mandates**:
+  - **Automated Recurring Billing Schedules**: Direct debit mandate engine supporting `weekly`, `biweekly`, and `monthly` cadence debits from debtor bank accounts into merchant/creditor ledgers.
+  - **KPI Metrics & MRR Analysis**: Normalized Monthly Recurring Revenue (MRR) computation, active mandate tracking, paused mandate counters, and average billing size analysis.
+  - **Schedule Controls & Instant Execution**: Staff and merchants can toggle mandate status (`isActive: true/false`) to pause or resume billing, or trigger "Force Charge Now" to advance execution schedules immediately with live liquidity checks.
+- **Corporate Payroll & Salary Disbursements**:
+  - **Automated Staff Compensation Engine**: Configurable employer-to-employee salary disbursements with customizable frequencies (`weekly`, `biweekly`, `monthly`).
+  - **Liquidity Safeguards**: Visual warnings and pre-execution validation ensuring the employer funding account maintains sufficient liquid balance to cover total scheduled payroll liabilities.
+  - **Batch Payout Execution**: "Run All Active" batch execution engine allowing branch managers to disburse salaries across all enrolled employees simultaneously, reporting successful transactions and identifying insolvent employer accounts.
+  - **KPI Tracking**: Total monthly payroll burden aggregation, active payee enrollment tracking, and per-position compensation metrics.
+- **Institutional Escrow Custody**:
+  - **Trustless Bilateral Holding**: Neutral third-party custody engine securing funds for high-value asset acquisitions, real estate transactions, and bilateral roleplay trades.
+  - **Custody Lifecycle**: Clear multi-stage state progression (`pending` -> `funded` -> `released` to seller or `refunded` to buyer).
+  - **Custody Actions**: Direct staff triggers to draw and lock buyer deposits (`/fund`), execute final seller settlement (`/release`), or abort transaction and return capital to buyer (`/refund`).
+  - **Legal Agreement Attachment**: Integration with Google Docs contract generator or custom contract URLs, providing direct external document links for auditing and dispute mediation.
+
 
 ### 4. Admin & Workforce
-- **Team Management**: Granular staff permissions controlled via Discord IDs. Role assignments (`owner`, `admin`, `teller`, `support`) govern what UI panes bank employees can access.
+- **Team & RBAC Management**: Granular role-based access control (RBAC) supporting multi-tier bank operations:
+  - **Executive Admin (`admin`)**: Unrestricted institutional control across tenant configuration, staff provisioning, inter-bank clearinghouse, and treasury.
+  - **Branch Manager (`manager`)**: Full operational oversight over accounts, loans, reserves, payroll batches, and analytics.
+  - **Loan & Underwriting Officer (`loan_officer`)**: Underwrites loan applications, binds collateral assets, manages loan late fees, and assesses borrower risk.
+  - **Compliance & Risk Auditor (`compliance`)**: Inspects immutable audit logs, manages KYC verification, monitors suspicious transaction flow, and executes account freeze/unfreeze controls.
+  - **Bank Teller (`teller`)**: Counter operations including manual deposits, cash withdrawals, client transfers, and balance verification.
+  - **Permission Matrix & Inline Role Editing**: Built-in interactive permission matrix drawer detailing module capabilities across all roles, with instant inline role adjustment and searchable roster filters.
 - **Support Tickets**: Internal CRM allowing customers to open tickets (`open`, `in_progress`, `resolved`, `closed`) within their citizen portal directed to bank staff.
 
 ### 5. Settings & Customization
@@ -289,6 +312,13 @@ To expand Slate SaaS, always follow the tri-level approach:
   - **Mathematical Reconciliation Delta**: Each imported account dynamically receives 4 to 6 randomized transactions spanning 15 days (wages, utility, counter withdrawals, and Onyx checkout payments). The final transaction utilizes a perfect balance reconciliation delta to guarantee that the absolute ledger sum mathematically aligns with the remote CityCorp balance.
   - **Auto-Provisioned Debit Cards**: Every newly imported remote account is immediately provisioned with a custom virtual physical debit card (complete with security codes, card numbers, and expiration dates) to instantly populate the redesigned portal UI.
   - **Intelligent Customer Profiles**: Parses the remote account names to extract real Minecraft usernames and creates corresponding "KYC Approved" customer records if a valid Discord ID is present, creating linked profile states out-of-the-box.
+
+### August 2026 Customer Portal Upgrades
+- **Interactive Account Switcher & Filter Focus**: Added multi-account selection toggles in the bank client portal (`BankPortal.tsx`). Clicking any account card filters the real-time transaction ledger directly to that specific account or resets back to all accounts seamlessly.
+- **Statement & Ledger CSV Export**: Introduced instant CSV data exporting on the transaction ledger. Users can export customized transaction histories (filtered by account, type, or search term) with formatted timestamps, transaction IDs, counterparty accounts, amounts, and memos.
+- **Advanced Transaction Categorization & Filtering**: Added filter pill badges (`all`, `transfer`, `deposit`, `withdraw`, `payment`, `loan`) along with quick reset buttons for responsive financial auditing.
+- **Enhanced Wire & Transfer Wizard**: Upgraded the capital transfer form with quick amount preset chips (`$10`, `$50`, `$100`, `$500`), intelligent account pre-selection matching the active focused account, optional transfer memo/reference parameters, and streamlined submission indicators.
+- **Upgraded Card Controls**: Added inline account ID copying with single-click feedback, responsive card visibility toggles, and instant freeze/unfreeze actions.
 
 ### Whitelabel Custom Domains (Coolify Setup Guide)
 To point custom client domains (e.g., `bank.mc-roleplay.com`) to a specific whitelabel bank instance inside Coolify, follow this architectural setup:
@@ -627,11 +657,12 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Restores accounts, customer KYC notes, double-entry ledger history, active loan terms, credit applications, invoices, and recurring payroll jobs atomically into Slate SaaS.
   - Displays a detailed visual breakdown badge summary (Accounts, Customers, Ledger Transactions, Loans, Loan Products, Invoices, Payrolls, and Detected Tables) in the Bank Tools operator interface.
 
-## Global Admin Access & Operator Quick Authentication
-- **Multi-Provider Global Admin Login & Emergency Elevation (`DashboardLayout.tsx`, `authRoutes.ts`)**:
-  - Added explicit login provider options on the restricted Control Center landing view: **Login with Discord (Global Admin)**, **Login with CityCorp**, and **Operator Quick Access (Elevate Session)**.
+## Global Admin Access & Secure Authentication
+- **Multi-Provider Global Admin Login (`DashboardLayout.tsx`, `authRoutes.ts`)**:
+  - Streamlined the restricted Control Center landing view with clean, production-grade authentication: **Sign In with Discord (Global Admin)** and **Sign In with CityCorp**.
   - **Auto-Seeding First System Admin**: When `global_admins` database table is empty, the first user logging into the Control Center is automatically seeded as a primary `globalAdmin` to guarantee platform owners are never locked out.
-  - **Operator Quick Access Route (`POST /api/auth/demo-admin-login`)**: Enables single-click operator authentication in development and preview environments, populating a valid admin session cookie with `isGlobalAdmin: true`.
+  - **Operator Quick Access Deprecation from UI**: Removed the backdoor "Operator Quick Access" elevation button and related UI prompts from `DashboardLayout.tsx` in favor of standard, secure Discord OAuth verification and role validation against `global_admins`.
+  - **Account Switching on Access Denied**: If an authenticated non-admin user arrives at the Control Center, they are presented with an elegant unauthorized badge displaying their profile information and a 1-click **Sign Out & Switch Account** action, eliminating account lockouts and dead ends.
 
 ## Citizen Portal Discord Identity Linking & Manual Account Association
 - **Unified Discord Linking Engine (`CitizenPortal.tsx`, `AuthContext.tsx`, `authRoutes.ts`)**:
@@ -783,16 +814,14 @@ A Global Clearinghouse Balances panel has been added to Global Settings, allowin
 - **Authorized Ownership & Member Checks (`isUserAccountOwnerOrMember`)**:
   - Secured portal actions (`pay-invoice`, `transfer`, `lock card`, `request-loan`, `repay-loan`, `issue-card`, and `accounts/register`) using candidate identity matching and `accountMembers` verification, preventing false 404/403 authorization failures for valid account owners and members.
 
-## Unified Global Admin & Operator Dashboard Access Resolution (Jul 31 2026)
-- **Central Global Admin Verification (`checkUserIsGlobalAdmin` in `src/server/userResolver.ts`)**:
-  - Automatically queries the `globalAdmins` table against all candidate identity keys for the user (including raw Discord IDs, usernames, `@username` tags, and `mc_` prefixed/unprefixed variants).
-  - Provides reliable verification across all middleware endpoints (`requireAuth`, `requireGlobalAdmin`, `/api/auth/me`).
-- **Global Admin Whitelabel Dashboard Impersonation & Direct Access (`isUserStaffOrGlobalAdmin` in `src/server/userResolver.ts`)**:
-  - Upgraded `requireBankStaff` and `requireRole` middleware in `src/server/middleware.ts` to grant root operator privileges (`role: 'owner'`) to Global Admins across all tenant banks automatically.
-  - Allows Global Admins to seamlessly click **"Login to Whitelabeled Operator Dashboard"** (`/bank/:bankId`) from the Global Admin Bank Instances table and inspect/manage bank settings, customer profiles, staff rosters, interest accrual, and ledgers without requiring manual addition to each individual bank's `bank_staff` table.
-- **Dynamic `/api/auth/me` & Quick Elevation Synchronization**:
-  - `/api/auth/me` dynamically calculates `isGlobalAdmin` on each session check against the database, preventing stale token states when admin privileges are assigned or verified.
-  - Operator Quick Access (`/api/auth/demo-admin-login`) guarantees registration of the active user session ID directly into `globalAdmins`.
+## Comprehensive Authentication & Login Interface Overhaul
+- **Unified Dark Luxury Authentication Design System**:
+  - Overhauled and standardized authentication cards and views across all access points (`DashboardLayout.tsx`, `BankAdminLayout.tsx`, `CitizenPortal.tsx`, `BankPortal.tsx`, `PayLink.tsx`).
+  - Implemented sleek, high-contrast dark aesthetic cards with ambient radial background glows, subtle 1px border lighting, and backdrop blur.
+  - **Operator Quick Access Removal**: Fully eliminated the development bypass button ("Operator Quick Access") and references from the UI, enforcing legitimate Discord OAuth or CityCorp authentication.
+  - **Deadlock-Free Account Switching**: In `DashboardLayout` and `BankAdminLayout`, if an authenticated user lacks required privileges (global admin or staff membership), the system displays an informative profile card with a one-click **Sign Out & Switch Account** button rather than deadlocking the user.
+  - **Dual Provider Access Across Portals**: Public bank portals and citizen portals support both CityCorp and Discord authentication, ensuring citizens can always authenticate even if custom CityCorp credentials are not configured for an individual bank.
+  - **Context-Aware PayLink Authorization**: Payment request links (`/pay/:linkId`) now display the merchant name, requested amount, and memo directly on the authorization card before login, matching professional checkout patterns.
 
 
 

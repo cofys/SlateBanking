@@ -49,30 +49,65 @@ export function PayLink() {
   );
 
   if (!user) return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-8">
-        <div className="bg-[#12121a] border border-white/5 p-12 rounded-2xl max-w-md w-full text-center shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
-          <ShieldCheck className="w-16 h-16 text-indigo-400 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(99,102,241,0.3)]" />
-          <h1 className="text-3xl font-black text-white tracking-tight mb-3">Login to Pay</h1>
-          <p className="text-slate-400 text-sm mb-6">You need to log in to complete this payment.</p>
-          
-          <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-slate-400 hover:text-slate-200 mb-6 select-none transition-colors">
-            <input 
-              type="checkbox" 
-              checked={rememberMe} 
-              onChange={(e) => setRememberMe(e.target.checked)} 
-              className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-blue-500 focus:ring-offset-slate-900 cursor-pointer"
-            />
-            <span>Remember me on this device</span>
-          </label>
+      <div className="min-h-screen bg-[#07070a] flex items-center justify-center p-4 relative overflow-hidden selection:bg-indigo-500/30">
+        {/* Subtle Ambient Glow */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
 
-          <button 
-            onClick={() => login(undefined, 'citycorp')}
-            className="w-full bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors"
-          >
-            <LogIn size={20} />
-            Authenticate via CityCorp
-          </button>
+        <div className="bg-[#0e0e15]/95 border border-white/10 p-8 sm:p-10 rounded-2xl max-w-md w-full text-center shadow-2xl relative z-10 backdrop-blur-xl space-y-6">
+          <div className="relative mx-auto w-16 h-16">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-500/20 text-white">
+              <ShieldCheck size={32} />
+            </div>
+          </div>
+
+          <div>
+            <h1 className="text-2xl font-black text-white tracking-tight">Payment Authorization</h1>
+            <p className="text-zinc-400 text-xs mt-1.5 leading-relaxed font-medium">
+              Authenticate your identity to complete payment to <strong className="text-zinc-200">{linkData.accountName}</strong> ({linkData.bankName}).
+            </p>
+          </div>
+
+          <div className="bg-black/40 border border-white/5 rounded-xl p-4 text-center">
+            <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Amount Due</div>
+            <div className="text-2xl font-black text-white mt-0.5">{formatMoney(linkData.amount)}</div>
+            {linkData.description && (
+              <p className="text-xs text-zinc-400 mt-1 italic">"{linkData.description}"</p>
+            )}
+          </div>
+          
+          <div className="space-y-4 pt-1">
+            <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 select-none transition-colors">
+              <input 
+                type="checkbox" 
+                checked={rememberMe} 
+                onChange={(e) => setRememberMe(e.target.checked)} 
+                className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 cursor-pointer"
+              />
+              <span>Remember me on this device</span>
+            </label>
+
+            <div className="space-y-2.5">
+              <button 
+                onClick={() => login(undefined, 'citycorp')}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.99] text-sm cursor-pointer"
+              >
+                <LogIn size={18} />
+                Continue with CityCorp
+              </button>
+
+              <button 
+                onClick={() => login(undefined, 'discord')}
+                className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-[#5865F2]/20 hover:shadow-[#5865F2]/30 active:scale-[0.99] text-sm cursor-pointer"
+              >
+                <LogIn size={18} />
+                Continue with Discord
+              </button>
+            </div>
+
+            <p className="text-[11px] text-zinc-500 leading-relaxed pt-1">
+              Secured under Onyx PSP instant settlement protocol.
+            </p>
+          </div>
         </div>
       </div>
   );

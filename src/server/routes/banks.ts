@@ -1122,7 +1122,24 @@ banksRouter.post("/api/banks/:bankId/team", [requireBankStaff, requireRole(["own
     }
   });
 
-banksRouter.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requireRole(["owner"])], async (req: any, res: any) => {
+banksRouter.put("/api/banks/:bankId/team/:staffId", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
+    const { db } = await import("../../db/index");
+    const { bankStaff } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    try {
+      const { role } = req.body;
+      if (!role) return res.status(400).json({ error: "Role is required" });
+      await db.update(bankStaff)
+        .set({ role })
+        .where(and(eq(bankStaff.id, req.params.staffId), eq(bankStaff.bankId, req.params.bankId)));
+      res.json({ success: true, role });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+    }
+  });
+
+banksRouter.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("../../db/index");
     const { bankStaff } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");

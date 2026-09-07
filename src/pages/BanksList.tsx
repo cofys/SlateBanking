@@ -753,7 +753,7 @@ export function BanksList() {
                     to={`/bank/${selectedBank.id}`} 
                     className="flex items-center gap-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-4 py-2 rounded-lg font-medium transition-colors text-sm"
                   >
-                    Login to Whitelabeled Operator Dashboard <ArrowUpRight size={16} />
+                    Open Staff Management Dashboard <ArrowUpRight size={16} />
                   </Link>
                </div>
                

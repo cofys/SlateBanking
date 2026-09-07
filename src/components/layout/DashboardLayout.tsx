@@ -1,34 +1,12 @@
 import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { Building2, Activity, Shield, Settings, Menu, X, LogIn, Eye } from "lucide-react";
+import { Building2, Activity, Shield, Settings, Menu, X, LogIn, Eye, ShieldAlert, LogOut, ArrowRight, UserCheck } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 
 export function DashboardLayout() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, login, logout, isLoading, checkSession, rememberMe, setRememberMe } = useAuth();
-  const [loggingIn, setLoggingIn] = useState(false);
-
-  const handleDemoAdminLogin = async () => {
-    setLoggingIn(true);
-    try {
-      const res = await fetch('/api/auth/demo-admin-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user?.username || "GlobalOperator", rememberMe })
-      });
-      if (res.ok) {
-        await checkSession();
-      } else {
-        alert("Failed to initialize Operator session.");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Error logging in as Operator.");
-    } finally {
-      setLoggingIn(false);
-    }
-  };
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -49,61 +27,106 @@ export function DashboardLayout() {
 
   if (!user || !user.isGlobalAdmin) {
     return (
-      <div className="h-screen bg-[#0a0a0c] flex items-center justify-center p-4">
-        <div className="max-w-md w-full border border-white/10 bg-[#0d0d12] rounded-xl p-8 text-center space-y-6 shadow-2xl">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-3xl mx-auto shadow-lg shadow-indigo-500/20 text-white">
-            S
+      <div className="min-h-screen bg-[#07070a] flex items-center justify-center p-4 relative overflow-hidden selection:bg-indigo-500/30">
+        {/* Subtle Ambient Radial Backdrops */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-10 right-10 w-72 h-72 bg-purple-600/5 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="max-w-md w-full border border-white/10 bg-[#0e0e15]/95 backdrop-blur-xl rounded-2xl p-8 text-center space-y-6 shadow-2xl relative z-10">
+          {/* Logo Mark */}
+          <div className="relative mx-auto w-16 h-16">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-black text-2xl text-white shadow-xl shadow-indigo-500/25">
+              S
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-[#0e0e15] border border-white/10 flex items-center justify-center text-indigo-400">
+              <Shield size={12} />
+            </div>
           </div>
+
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Slate Control Center</h1>
-            <p className="text-white/50 mt-2 text-sm">Global Administration Access Restricted</p>
-          </div>
-
-          <div className="space-y-3 pt-2">
-            <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 py-1 select-none transition-colors">
-              <input 
-                type="checkbox" 
-                checked={rememberMe} 
-                onChange={(e) => setRememberMe(e.target.checked)} 
-                className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 cursor-pointer"
-              />
-              <span>Remember me on this device</span>
-            </label>
-
-            <button
-              onClick={() => login(undefined, 'discord')}
-              className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#5865F2]/20 text-sm"
-            >
-              <LogIn size={18} />
-              Login with Discord (Global Admin)
-            </button>
-
-            <button
-              onClick={() => login(undefined, 'citycorp')}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/20 text-sm"
-            >
-              <LogIn size={18} />
-              Login with CityCorp
-            </button>
-
-            <button
-              onClick={handleDemoAdminLogin}
-              disabled={loggingIn}
-              className="w-full bg-white/5 hover:bg-white/10 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/50 py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all text-xs"
-            >
-              <Shield size={14} />
-              {loggingIn ? "Authorizing Operator..." : "Operator Quick Access (Elevate Session)"}
-            </button>
-          </div>
-          
-          {user && !user.isGlobalAdmin && (
-            <p className="text-red-400 text-xs mt-4 bg-red-400/10 p-3 rounded-xl border border-red-400/20 text-left">
-              <strong>Access Denied:</strong> Your active profile (<span className="font-mono">@{user.username}</span>) is not listed in the global_admins table. Use Operator Quick Access to elevate your session or log in with a registered Discord account.
+            <h1 className="text-2xl font-black text-white tracking-tight">Slate Control Center</h1>
+            <p className="text-zinc-400 mt-1.5 text-xs font-medium">
+              Global Platform & Clearinghouse Administration
             </p>
+          </div>
+
+          {!user ? (
+            <div className="space-y-4 pt-1">
+              <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 select-none transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={rememberMe} 
+                  onChange={(e) => setRememberMe(e.target.checked)} 
+                  className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 cursor-pointer"
+                />
+                <span>Remember me on this device</span>
+              </label>
+
+              <div className="space-y-2.5">
+                <button
+                  onClick={() => login(undefined, 'discord')}
+                  className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-[#5865F2]/20 hover:shadow-[#5865F2]/30 active:scale-[0.99] cursor-pointer"
+                >
+                  <LogIn size={18} />
+                  Sign In with Discord
+                </button>
+
+                <button
+                  onClick={() => login(undefined, 'citycorp')}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.99] cursor-pointer"
+                >
+                  <LogIn size={18} />
+                  Sign In with CityCorp
+                </button>
+              </div>
+
+              <p className="text-[11px] text-zinc-500 leading-relaxed pt-1">
+                Restricted access. Only registered global administrators may access clearinghouse controls.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-5 pt-1 text-left">
+              <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2 text-rose-400 font-bold text-xs uppercase tracking-wider">
+                  <ShieldAlert size={16} />
+                  Access Denied
+                </div>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  Your signed-in account is not listed in the global administrators registry.
+                </p>
+                <div className="bg-black/30 border border-white/5 rounded-lg p-2.5 flex items-center gap-2.5 mt-2">
+                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 font-bold text-xs shrink-0">
+                    {user.username?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-white truncate">@{user.username}</p>
+                    <p className="text-[11px] font-mono text-zinc-500 truncate">{user.discordId}</p>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 shrink-0">
+                    Non-Admin
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  onClick={logout}
+                  className="w-full bg-white/10 hover:bg-white/15 text-white py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all border border-white/10 cursor-pointer"
+                >
+                  <LogOut size={15} />
+                  Sign Out & Switch Account
+                </button>
+              </div>
+            </div>
           )}
 
-          <div className="pt-6 border-t border-white/10">
-             <Link to="/portal" className="text-sm text-indigo-400 hover:text-indigo-300 font-medium">Return to Citizen Gateway &rarr;</Link>
+          <div className="pt-4 border-t border-white/10 flex items-center justify-center">
+            <Link 
+              to="/portal" 
+              className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1.5 transition-colors"
+            >
+              Return to Citizen Gateway <ArrowRight size={13} />
+            </Link>
           </div>
         </div>
       </div>

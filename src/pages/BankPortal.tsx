@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { 
@@ -6,7 +6,8 @@ import {
   Lock, Unlock, Loader2, Link2, LogIn, LogOut, Sparkles, CheckCircle2, 
   AlertTriangle, ArrowUpRight, ArrowDownRight, Send, DollarSign, Activity,
   FileText, Landmark, UserCheck, Plus, X, Copy, Check, Layers, PieChart,
-  ChevronRight, Building2, HelpCircle
+  ChevronRight, Building2, HelpCircle, Download, Filter, RefreshCw,
+  SlidersHorizontal, CheckSquare, BarChart2
 } from "lucide-react";
 import { format } from "date-fns";
 import { formatMoney } from "../lib/utils";
@@ -110,6 +111,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   // Tab Selection: "transfer" | "onyx" | "invoices" | "loans" | "cards"
   const [activeTab, setActiveTab] = useState<"transfer" | "onyx" | "invoices" | "loans" | "cards">("transfer");
   
+  // Selected account for filtering & focused actions
+  const [selectedAccountId, setSelectedAccountId] = useState<string | "all">("all");
+  const [txTypeFilter, setTxTypeFilter] = useState<string>("all");
+
   // Ledger search & filters
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTx, setSelectedTx] = useState<any | null>(null);
@@ -213,15 +218,54 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const netWorthCents = userData?.accounts?.reduce((sum: number, acc: any) => sum + (acc.balance || 0), 0) || 0;
 
   // Filter local recent transactions client-side
-  const filteredTx = userData?.recentTx?.filter((tx: any) => {
-    const term = searchTerm.toLowerCase();
-    return (
-      (tx.description || "").toLowerCase().includes(term) ||
-      (tx.type || "").toLowerCase().includes(term) ||
-      (tx.fromAccountId || "").toLowerCase().includes(term) ||
-      (tx.toAccountId || "").toLowerCase().includes(term)
-    );
-  }) || [];
+  const filteredTx = useMemo(() => {
+    if (!userData?.recentTx) return [];
+    return userData.recentTx.filter((tx: any) => {
+      const term = searchTerm.toLowerCase();
+      const matchesSearch = !term || (
+        (tx.description || "").toLowerCase().includes(term) ||
+        (tx.type || "").toLowerCase().includes(term) ||
+        (tx.fromAccountId || "").toLowerCase().includes(term) ||
+        (tx.toAccountId || "").toLowerCase().includes(term) ||
+        (tx.id || "").toLowerCase().includes(term)
+      );
+
+      const matchesAccount = selectedAccountId === "all" || 
+        tx.fromAccountId === selectedAccountId || 
+        tx.toAccountId === selectedAccountId;
+
+      const matchesType = txTypeFilter === "all" || tx.type === txTypeFilter;
+
+      return matchesSearch && matchesAccount && matchesType;
+    });
+  }, [userData?.recentTx, searchTerm, selectedAccountId, txTypeFilter]);
+
+  // Export transaction ledger to CSV
+  const exportLedgerCSV = () => {
+    if (!filteredTx || filteredTx.length === 0) {
+      alert("No transaction records to export.");
+      return;
+    }
+    const headers = ["Transaction ID", "Date", "Type", "From Account", "To Account", "Amount ($)", "Memo / Description"];
+    const rows = filteredTx.map((tx: any) => [
+      `"${tx.id || ''}"`,
+      `"${format(new Date(tx.timestamp), "yyyy-MM-dd HH:mm:ss")}"`,
+      `"${tx.type || 'transfer'}"`,
+      `"${tx.fromAccountId || 'External'}"`,
+      `"${tx.toAccountId || 'External'}"`,
+      `"${(tx.amount / 100).toFixed(2)}"`,
+      `"${(tx.description || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e: string[]) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `slate_ledger_${bankId}_${format(new Date(), "yyyyMMdd_HHmm")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   if (bankNotFound || !bankId) {
     return (
@@ -371,20 +415,20 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-gradient-to-b from-[#111118] to-[#0a0a0d] border border-white/10 rounded-3xl p-8 shadow-2xl text-center space-y-6 relative overflow-hidden"
+            className="bg-[#0e0e15]/95 border border-white/10 rounded-2xl p-8 sm:p-9 shadow-2xl text-center space-y-6 relative overflow-hidden backdrop-blur-xl"
           >
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-xl">
-              <Lock size={28} />
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-xl shadow-indigo-500/10">
+              <Lock size={26} />
             </div>
             <div>
               <h2 className="text-xl font-black text-white tracking-tight">Identity Authentication Required</h2>
-              <p className="text-zinc-400 text-xs mt-2 leading-relaxed px-2">
-                Log in to authenticate your account identity and access your accounts, credit lines, cards, and transaction records.
+              <p className="text-zinc-400 text-xs mt-1.5 leading-relaxed">
+                Log in to authenticate your citizen profile and access accounts, debit cards, loans, and transaction history with {bank.name}.
               </p>
             </div>
 
-            <div className="space-y-3">
-              <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 py-1 select-none transition-colors">
+            <div className="space-y-4 pt-1">
+              <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 select-none transition-colors">
                 <input 
                   type="checkbox" 
                   checked={rememberMe} 
@@ -394,18 +438,27 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 <span>Remember me on this device</span>
               </label>
 
-              {bank.cityCorpAppId ? (
+              <div className="space-y-2.5">
+                {bank.cityCorpAppId && (
+                  <button 
+                    onClick={() => login(bankId, 'citycorp')}
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.99] flex items-center justify-center gap-2.5 cursor-pointer"
+                  >
+                    <LogIn size={18} /> Continue with CityCorp
+                  </button>
+                )}
+
                 <button 
-                  onClick={() => login(bankId, 'citycorp')}
-                  className={`w-full ${theme.bg} hover:brightness-110 text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-xl flex items-center justify-center gap-2`}
+                  onClick={() => login(bankId, 'discord')}
+                  className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-[#5865F2]/20 hover:shadow-[#5865F2]/30 active:scale-[0.99] flex items-center justify-center gap-2.5 cursor-pointer"
                 >
-                  <LogIn size={16} /> Authenticate via CityCorp
+                  <LogIn size={18} /> Continue with Discord
                 </button>
-              ) : (
-                <div className="text-center text-sm text-zinc-400">
-                  <p>Authentication is not currently configured for this bank.</p>
-                </div>
-              )}
+              </div>
+
+              <p className="text-[11px] text-zinc-500 leading-relaxed">
+                Secure banking access encrypted under Onyx clearing protocols.
+              </p>
             </div>
 
             <div className="pt-4 border-t border-white/10 flex items-center justify-between text-xs text-zinc-400">
@@ -504,12 +557,22 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             {/* Left & Middle Column: Accounts & Tabs */}
             <div className="lg:col-span-2 space-y-8">
               
-              {/* Accounts Showcase */}
+              {/* Accounts Showcase with Interactive Switcher */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-zinc-300 tracking-wider uppercase flex items-center gap-2">
-                    <Wallet size={16} className={theme.textAccent} /> My Bank Accounts
-                  </h2>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-sm font-bold text-zinc-300 tracking-wider uppercase flex items-center gap-2">
+                      <Wallet size={16} className={theme.textAccent} /> My Bank Accounts
+                    </h2>
+                    {selectedAccountId !== "all" && (
+                      <button 
+                        onClick={() => setSelectedAccountId("all")}
+                        className="text-[10px] bg-white/10 hover:bg-white/15 text-zinc-300 px-2 py-0.5 rounded-full transition-colors font-medium"
+                      >
+                        Reset Filter
+                      </button>
+                    )}
+                  </div>
                   <button 
                     onClick={() => setShowOpenAccountModal(true)}
                     className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
@@ -529,16 +592,27 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     {userData.accounts.map((acc: any) => {
                       const isSavings = acc.type?.toLowerCase().includes("savings");
                       const isBusiness = acc.type?.toLowerCase().includes("business");
+                      const isSelected = selectedAccountId === acc.id;
                       
                       return (
                         <motion.div 
                           key={acc.id}
-                          whileHover={{ y: -2, borderColor: "rgba(255,255,255,0.2)" }}
-                          className="bg-gradient-to-b from-[#111118] to-[#0a0a0e] border border-white/10 rounded-2xl p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all"
+                          onClick={() => setSelectedAccountId(isSelected ? "all" : acc.id)}
+                          whileHover={{ y: -2 }}
+                          className={`rounded-2xl p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group cursor-pointer transition-all duration-200 border ${
+                            isSelected 
+                              ? "bg-gradient-to-b from-[#181824] to-[#0e0e14] border-indigo-500/60 ring-2 ring-indigo-500/20 shadow-indigo-500/10" 
+                              : "bg-gradient-to-b from-[#111118] to-[#0a0a0e] border-white/10 hover:border-white/20"
+                          }`}
                         >
                           <div className="flex justify-between items-start relative z-10">
                             <div>
-                              <h3 className="font-bold text-white text-base tracking-tight truncate max-w-[170px]">{acc.accountName}</h3>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-white text-base tracking-tight truncate max-w-[150px]">{acc.accountName}</h3>
+                                {isSelected && (
+                                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" title="Active Focus" />
+                                )}
+                              </div>
                               <span className={`inline-block mt-1 text-[9px] uppercase font-bold px-2 py-0.5 rounded-full 
                                 ${isSavings ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : 
                                  isBusiness ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" : 
@@ -548,7 +622,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 {acc.type} Account
                               </span>
                             </div>
-                            <div className="p-2 rounded-xl bg-white/5 text-zinc-400">
+                            <div className={`p-2 rounded-xl transition-colors ${isSelected ? "bg-indigo-500/20 text-indigo-300" : "bg-white/5 text-zinc-400"}`}>
                               {isSavings ? <Sparkles size={16} /> : isBusiness ? <Building2 size={16} /> : <CreditCard size={16} />}
                             </div>
                           </div>
@@ -561,10 +635,20 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           </div>
 
                           <div className="pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-zinc-500 mt-3 relative z-10">
-                            <span className="hover:text-zinc-300 transition-colors select-all cursor-pointer font-bold">
-                              ID: {acc.id}
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(acc.id);
+                                alert(`Copied Account ID ${acc.id}`);
+                              }}
+                              className="hover:text-zinc-300 transition-colors select-all cursor-pointer font-bold flex items-center gap-1"
+                              title="Click to copy account ID"
+                            >
+                              ID: {acc.id} <Copy size={10} />
                             </span>
-                            <span className="text-emerald-400 font-bold">Active</span>
+                            <span className={isSelected ? "text-indigo-400 font-bold" : "text-emerald-400 font-bold"}>
+                              {isSelected ? "Filtered Focus" : "Active"}
+                            </span>
                           </div>
                         </motion.div>
                       );
@@ -659,7 +743,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 discordId: user?.discordId,
                                 fromAccountId: form.fromAccountId.value,
                                 toAccountId: form.toAccountId.value,
-                                amount: form.amount.value
+                                amount: form.amount.value,
+                                description: form.description?.value || undefined
                               })
                             });
                             const d = await res.json();
@@ -682,6 +767,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               <select 
                                 required 
                                 name="fromAccountId" 
+                                defaultValue={selectedAccountId !== "all" ? selectedAccountId : userData.accounts[0]?.id}
                                 className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all"
                               >
                                 {userData.accounts.map((acc: any) => (
@@ -708,7 +794,24 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           </div>
 
                           <div>
-                            <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">Transfer Amount ($)</label>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide">Transfer Amount ($)</label>
+                              <div className="flex gap-1.5">
+                                {[10, 50, 100, 500].map((amt) => (
+                                  <button
+                                    key={amt}
+                                    type="button"
+                                    onClick={(e) => {
+                                      const input = (e.currentTarget.form as any)?.amount;
+                                      if (input) input.value = amt.toFixed(2);
+                                    }}
+                                    className="text-[10px] bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white px-2 py-0.5 rounded border border-white/5 font-mono"
+                                  >
+                                    ${amt}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                             <div className="relative">
                               <input 
                                 required 
@@ -721,6 +824,16 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               />
                               <DollarSign className="absolute left-3.5 top-3.5 text-zinc-500" size={14} />
                             </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">Transfer Memo / Reference (Optional)</label>
+                            <input 
+                              name="description" 
+                              type="text" 
+                              placeholder="e.g. Rent payment, vehicle purchase, split bill" 
+                              className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-2.5 px-4 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-all" 
+                            />
                           </div>
 
                           <button 
@@ -1002,23 +1115,74 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               {userData?.recentTx?.length > 0 && (
                 <div className="bg-[#0b0b10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
                   
-                  {/* Header */}
-                  <div className="p-6 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                      <Activity className={theme.textAccent} size={20} />
-                      <h3 className="font-bold text-white text-base">Real-Time Account Ledger</h3>
+                  {/* Header & Controls */}
+                  <div className="p-6 border-b border-white/10 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-2">
+                        <Activity className={theme.textAccent} size={20} />
+                        <div>
+                          <h3 className="font-bold text-white text-base">Real-Time Account Ledger</h3>
+                          <p className="text-[11px] text-zinc-400">
+                            {selectedAccountId === "all" ? "Showing activity across all accounts" : `Filtered to account ${selectedAccountId}`}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        {/* Live filter input */}
+                        <div className="relative flex-1 sm:flex-initial">
+                          <input 
+                            type="text" 
+                            placeholder="Search memo, ID..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="bg-black/40 border border-white/10 rounded-xl py-2 px-3 pl-9 text-xs text-white focus:outline-none focus:border-indigo-500 w-full sm:w-48 font-mono transition-all"
+                          />
+                          <Search className="absolute left-3 top-2.5 text-zinc-500" size={13} />
+                        </div>
+
+                        {/* Export CSV Button */}
+                        <button
+                          onClick={exportLedgerCSV}
+                          title="Export Filtered Ledger to CSV"
+                          className="bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 rounded-xl p-2 px-3 text-xs font-bold flex items-center gap-1.5 transition-all shrink-0"
+                        >
+                          <Download size={14} />
+                          <span className="hidden sm:inline">Export CSV</span>
+                        </button>
+                      </div>
                     </div>
-                    
-                    {/* Live filter input */}
-                    <div className="relative">
-                      <input 
-                        type="text" 
-                        placeholder="Search ledger..." 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="bg-black/40 border border-white/10 rounded-xl py-2 px-3 pl-9 text-xs text-white focus:outline-none focus:border-indigo-500 w-full sm:w-60 font-mono transition-all"
-                      />
-                      <Search className="absolute left-3 top-2.5 text-zinc-500" size={13} />
+
+                    {/* Filter Pills */}
+                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pt-1">
+                      <span className="text-[10px] uppercase font-bold text-zinc-500 flex items-center gap-1 shrink-0">
+                        <Filter size={11} /> Filter:
+                      </span>
+                      {["all", "transfer", "deposit", "withdraw", "payment", "loan"].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setTxTypeFilter(t)}
+                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg capitalize transition-all shrink-0 ${
+                            txTypeFilter === t
+                              ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                              : "bg-white/5 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                      {(selectedAccountId !== "all" || txTypeFilter !== "all" || searchTerm) && (
+                        <button
+                          onClick={() => {
+                            setSelectedAccountId("all");
+                            setTxTypeFilter("all");
+                            setSearchTerm("");
+                          }}
+                          className="text-[10px] text-rose-400 hover:text-rose-300 underline ml-auto shrink-0"
+                        >
+                          Clear Filters
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -1027,7 +1191,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <AnimatePresence>
                       {filteredTx.length > 0 ? (
                         filteredTx.map((tx: any, i: number) => {
-                          const isIncoming = tx.toDiscordId === user?.discordId;
+                          const isIncoming = tx.toDiscordId === user?.discordId || (selectedAccountId !== "all" && tx.toAccountId === selectedAccountId);
                           return (
                             <motion.div 
                               initial={{ opacity: 0 }}
@@ -1042,11 +1206,16 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                   {isIncoming ? <ArrowDownRight size={16} /> : <ArrowUpRight size={16} />}
                                 </div>
                                 <div className="text-left">
-                                  <p className="text-sm font-semibold text-white truncate max-w-[150px] sm:max-w-[280px]">
-                                    {tx.description || tx.type}
-                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-semibold text-white truncate max-w-[150px] sm:max-w-[260px]">
+                                      {tx.description || tx.type}
+                                    </p>
+                                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/5 text-zinc-400 border border-white/5">
+                                      {tx.type}
+                                    </span>
+                                  </div>
                                   <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
-                                    {format(new Date(tx.timestamp), "MMM d, h:mm a")} • {tx.type}
+                                    {format(new Date(tx.timestamp), "MMM d, h:mm a")} • {tx.fromAccountId ? `From: ${tx.fromAccountId.slice(0, 10)}` : 'System Deposit'}
                                   </p>
                                 </div>
                               </div>
@@ -1054,13 +1223,26 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 <span className={`font-mono text-sm font-black ${isIncoming ? 'text-emerald-400' : 'text-rose-400'}`}>
                                   {isIncoming ? '+' : '-'}{formatMoney(tx.amount)}
                                 </span>
+                                <span className="block text-[9px] text-zinc-600 font-mono mt-0.5">Click for receipt</span>
                               </div>
                             </motion.div>
                           );
                         })
                       ) : (
-                        <div className="text-center py-12 text-zinc-500 text-xs">
-                          No transaction records match search parameters.
+                        <div className="text-center py-12 text-zinc-500 text-xs space-y-1">
+                          <p>No transaction records match active parameters.</p>
+                          {(selectedAccountId !== "all" || txTypeFilter !== "all" || searchTerm) && (
+                            <button
+                              onClick={() => {
+                                setSelectedAccountId("all");
+                                setTxTypeFilter("all");
+                                setSearchTerm("");
+                              }}
+                              className="text-xs text-indigo-400 hover:text-indigo-300 font-bold"
+                            >
+                              Reset active filters
+                            </button>
+                          )}
                         </div>
                       )}
                     </AnimatePresence>

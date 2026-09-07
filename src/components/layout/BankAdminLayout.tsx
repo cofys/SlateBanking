@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Routes, Route, Link, Outlet, useLocation } from "react-router-dom";
-import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText, Percent, Layers } from "lucide-react";
+import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, Shield, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText, Percent, Layers } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { ErrorBoundary } from "../ErrorBoundary";
 
@@ -63,19 +63,28 @@ export function BankAdminLayout() {
 
   if (!user || accessDenied) {
     return (
-      <div className="h-screen bg-[#0a0a0c] flex items-center justify-center p-4 text-white">
-        <div className="max-w-md w-full border border-white/10 bg-[#0d0d12] rounded-2xl p-8 text-center space-y-6 shadow-2xl relative overflow-hidden">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-3xl mx-auto shadow-lg shadow-indigo-500/20">
-            {bank.name.charAt(0)}
+      <div className="min-h-screen bg-[#07070a] flex items-center justify-center p-4 text-white relative overflow-hidden selection:bg-indigo-500/30">
+        {/* Subtle Ambient Glow */}
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="max-w-md w-full border border-white/10 bg-[#0e0e15]/95 backdrop-blur-xl rounded-2xl p-8 text-center space-y-6 shadow-2xl relative z-10">
+          <div className="relative mx-auto w-16 h-16">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-black text-2xl shadow-xl shadow-indigo-500/20">
+              {bank.name.charAt(0)}
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-[#0e0e15] border border-white/10 flex items-center justify-center text-indigo-400">
+              <Shield size={12} />
+            </div>
           </div>
+
           <div>
             <h1 className="text-2xl font-black text-white tracking-tight">{bank.name} Staff Portal</h1>
-            <p className="text-white/50 mt-1.5 text-xs">Internal Bank Management System</p>
+            <p className="text-zinc-400 mt-1.5 text-xs font-medium">Internal Bank Management & Operations</p>
           </div>
 
           {!user ? (
-            <div className="space-y-3 pt-2">
-              <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 py-1 select-none transition-colors">
+            <div className="space-y-4 pt-1">
+              <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 select-none transition-colors">
                 <input 
                   type="checkbox" 
                   checked={rememberMe} 
@@ -84,56 +93,73 @@ export function BankAdminLayout() {
                 />
                 <span>Remember me on this device</span>
               </label>
-              {hasCityCorp && (
+
+              <div className="space-y-2.5">
                 <button
-                  onClick={() => login(bankId, 'citycorp')}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
+                  onClick={() => login(bankId, 'discord')}
+                  className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-[#5865F2]/20 hover:shadow-[#5865F2]/30 active:scale-[0.99] cursor-pointer"
                 >
                   <LogIn size={18} />
-                  Login with CityCorp
+                  Sign In with Discord
                 </button>
-              )}
-              <button
-                onClick={() => login(bankId, 'discord')}
-                className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#5865F2]/20"
-              >
-                <LogIn size={18} />
-                Login with Discord
-              </button>
-              <p className="text-[11px] text-zinc-500 mt-2">
-                Authenticate with the account registered in this bank's staff team list.
+
+                {hasCityCorp && (
+                  <button
+                    onClick={() => login(bankId, 'citycorp')}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/30 active:scale-[0.99] cursor-pointer"
+                  >
+                    <LogIn size={18} />
+                    Sign In with CityCorp
+                  </button>
+                )}
+              </div>
+
+              <p className="text-[11px] text-zinc-500 leading-relaxed pt-1">
+                Authenticate with the Discord account registered in this bank's staff team list.
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="text-rose-300 text-xs bg-rose-500/10 p-4 rounded-xl border border-rose-500/20 text-left space-y-1.5">
-                <p className="font-bold flex items-center gap-1.5 text-rose-400">
+            <div className="space-y-5 pt-1 text-left">
+              <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2 text-rose-400 font-bold text-xs uppercase tracking-wider">
                   <ShieldCheck size={16} /> Access Denied
+                </div>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  Your signed-in profile is not registered as an authorized staff member for <strong>{bank.name}</strong>.
                 </p>
-                <p>
-                  Your profile <strong>@{user.username}</strong> ({user.discordId}) is not registered as a staff member for {bank.name}.
-                </p>
+                <div className="bg-black/30 border border-white/5 rounded-lg p-2.5 flex items-center gap-2.5 mt-2">
+                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 font-bold text-xs shrink-0">
+                    {user.username?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-white truncate">@{user.username}</p>
+                    <p className="text-[11px] font-mono text-zinc-500 truncate">{user.discordId}</p>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-800 text-rose-400 shrink-0">
+                    Unauthorized
+                  </span>
+                </div>
                 <p className="text-zinc-400 text-[11px] pt-1 border-t border-rose-500/10">
-                  Ask the bank owner to add your Discord ID to the Staff Team list in Bank Settings.
+                  Contact the bank administrator to add your Discord ID to the Staff Team list.
                 </p>
               </div>
               
               <button
                 onClick={logout}
-                className="w-full bg-white/5 hover:bg-white/10 text-zinc-300 py-2.5 px-4 rounded-xl font-medium text-xs flex items-center justify-center gap-2 transition-colors border border-white/10"
+                className="w-full bg-white/10 hover:bg-white/15 text-white py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all border border-white/10 cursor-pointer"
               >
-                <LogOut size={16} />
-                Sign Out / Switch Account
+                <LogOut size={15} />
+                Sign Out & Switch Account
               </button>
             </div>
           )}
 
-          <div className="pt-6 border-t border-white/10 flex items-center justify-between text-xs text-zinc-400">
+          <div className="pt-4 border-t border-white/10 flex items-center justify-between text-xs text-zinc-400">
              <Link to={`/portal/${bankId}`} className="text-indigo-400 hover:text-indigo-300 font-medium">
-               &larr; Citizen Client Portal
+               &larr; Client Banking Portal
              </Link>
              <Link to="/portal" className="text-zinc-400 hover:text-white font-medium">
-               Citizen Gateway
+               Citizen Gateway &rarr;
              </Link>
           </div>
         </div>
