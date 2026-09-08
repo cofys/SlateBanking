@@ -25,7 +25,12 @@ export function BankAccountDetail() {
   const [customWithdrawFee, setCustomWithdrawFee] = useState<string>("");
   const [savingCustomFees, setSavingCustomFees] = useState<boolean>(false);
 
-  
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [closeAction, setCloseAction] = useState<'forfeit'|'return'>('forfeit');
+  const [closeFee, setCloseFee] = useState("0");
+  const [closeDestAccount, setCloseDestAccount] = useState("");
+  const [isClosing, setIsClosing] = useState(false);
+
   const fetchAcc = () => {
     // Fire off a background sync first, but don't block the initial load if it's slow
     fetch(`/api/banks/${bank.id}/accounts/${accountId}/sync`, { method: 'POST' })
@@ -244,6 +249,33 @@ export function BankAccountDetail() {
                   <Pencil size={14} />
                 </button>
               </div>
+              {bank.settings?.enableAccountTiers && (
+                <div className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors">
+                  Tier: <span className="capitalize">{account.tierId ? (bank.settings?.accountTiers?.find((t: any) => t.id === account.tierId)?.name || account.tierId) : "Default"}</span>
+                  <button
+                    onClick={async () => {
+                      const options = (bank.settings?.accountTiers || []).map((t: any) => `${t.id}: ${t.name} (${t.type})`).join("\n");
+                      const tierId = prompt(`Enter the new tier ID from the list below, or leave empty for Default:\n\n${options}`, account.tierId || "");
+                      if (tierId === null) return;
+                      const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/update-account`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ newDiscordId: account.ownerDiscordId, tierId: tierId.trim() || null })
+                      });
+                      if (res.ok) {
+                        fetchAcc();
+                      } else {
+                        const err = await res.json();
+                        alert(`Failed to update tier: ${err.error || 'Unknown error'}`);
+                      }
+                    }}
+                    className="text-white/40 hover:text-white transition-colors ml-1"
+                    title="Change Account Tier"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <div className="text-right flex flex-col items-end gap-2">
@@ -467,12 +499,7 @@ export function BankAccountDetail() {
                 Freeze Account
               </button>
               <button 
-                onClick={() => {
-                  if (confirm("Are you sure you want to permanently delete this account?")) {
-                    fetch(`/api/banks/${bank.id}/accounts/${account.id}`, { method: "DELETE" })
-                      .then(() => window.location.href = `/bank/${bank.id}/accounts`);
-                  }
-                }}
+                onClick={() => setShowCloseModal(true)}
                 className="w-full text-left px-4 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-sm transition-colors text-center font-medium"
               >
                 Delete Account
@@ -688,6 +715,139 @@ export function BankAccountDetail() {
           </div>
         </div>
       )}
+
+      {/* Account Deletion Modal */}
+      {showCloseModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-white/10 flex justify-between items-center bg-red-500/5">
+              <h2 className="text-lg font-bold text-red-400 flex items-center gap-2">
+                <Trash2 size={18} /> Close Account
+              </h2>
+              <button onClick={() => setShowCloseModal(false)} className="text-white/40 hover:text-white transition-colors">
+                <XCircle size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="bg-[#0f0f15] p-4 rounded-xl border border-white/5 text-center">
+                <p className="text-sm text-white/50 mb-1">Current Balance</p>
+                <p className="text-2xl font-mono font-bold text-white">{formatMoney(account.balance)}</p>
+              </div>
+
+              {account.balance > 0 ? (
+                <>
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium text-white/70 block mb-1">Action for Remaining Funds</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => setCloseAction('forfeit')}
+                        className={`py-3 px-4 rounded-xl border text-sm font-medium transition-all ${
+                          closeAction === 'forfeit' 
+                            ? 'bg-indigo-600 border-indigo-500 text-white' 
+                            : 'bg-[#0f0f15] border-white/10 text-white/50 hover:bg-white/5'
+                        }`}
+                      >
+                        Forfeit to Bank
+                      </button>
+                      <button
+                        onClick={() => setCloseAction('return')}
+                        className={`py-3 px-4 rounded-xl border text-sm font-medium transition-all ${
+                          closeAction === 'return' 
+                            ? 'bg-emerald-600 border-emerald-500 text-white' 
+                            : 'bg-[#0f0f15] border-white/10 text-white/50 hover:bg-white/5'
+                        }`}
+                      >
+                        Return to Owner
+                      </button>
+                    </div>
+                  </div>
+
+                  {closeAction === 'return' && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div>
+                        <label className="text-sm font-medium text-white/70 block mb-1">Destination Account Name</label>
+                        <input
+                          type="text"
+                          value={closeDestAccount}
+                          onChange={e => setCloseDestAccount(e.target.value)}
+                          placeholder={bank.corpId ? "Minecraft Username (e.g. Notch)" : "Account Name"}
+                          className="w-full bg-[#0f0f15] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 focus:outline-none focus:border-emerald-500 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-white/70 block mb-1">Closing Fee % (Optional)</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={closeFee}
+                            onChange={e => setCloseFee(e.target.value)}
+                            className="w-full bg-[#0f0f15] border border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-white focus:outline-none focus:border-emerald-500 transition-colors font-mono"
+                          />
+                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30">%</span>
+                        </div>
+                        <p className="text-xs text-white/40 mt-1.5">
+                          Amount to return: <span className="font-mono text-emerald-400">
+                            {formatMoney(Math.floor(account.balance * (1 - (parseFloat(closeFee || "0") / 100))))}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-white/50 text-center">
+                  Account has no balance. It will be permanently deleted.
+                </p>
+              )}
+            </div>
+            
+            <div className="p-6 border-t border-white/10 bg-white/5 flex gap-3">
+              <button 
+                onClick={() => setShowCloseModal(false)}
+                className="flex-1 px-4 py-2.5 bg-[#0f0f15] hover:bg-white/5 text-white/70 border border-white/10 rounded-lg font-medium transition-colors"
+                disabled={isClosing}
+              >
+                Cancel
+              </button>
+              <button 
+                disabled={isClosing || (closeAction === 'return' && account.balance > 0 && !closeDestAccount.trim())}
+                onClick={async () => {
+                  if (!confirm("Are you absolutely sure you want to permanently delete this account? This cannot be undone.")) return;
+                  setIsClosing(true);
+                  try {
+                    const res = await fetch(`/api/banks/${bank.id}/accounts/${account.id}`, {
+                      method: "DELETE",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: account.balance > 0 ? closeAction : 'forfeit',
+                        feePercent: closeFee,
+                        destAccount: closeDestAccount.trim()
+                      })
+                    });
+                    if (!res.ok) {
+                      const data = await res.json();
+                      alert(data.error || "Failed to close account");
+                      setIsClosing(false);
+                    } else {
+                      window.location.href = `/bank/${bank.id}/accounts`;
+                    }
+                  } catch (e) {
+                    alert("Network error while closing account");
+                    setIsClosing(false);
+                  }
+                }}
+                className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+              >
+                {isClosing ? <Loader2 size={16} className="animate-spin" /> : "Confirm Deletion"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

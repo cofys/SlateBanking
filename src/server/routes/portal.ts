@@ -539,6 +539,7 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
       bankName: banks.name,
       accountName: bankAccounts.accountName,
       type: bankAccounts.accountType,
+      tierId: bankAccounts.tierId,
       balance: bankAccounts.balance,
       businessTaxId: bankAccounts.businessTaxId,
       businessSector: bankAccounts.businessSector,
@@ -562,6 +563,7 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
           bankName: banks.name,
           accountName: bankAccounts.accountName,
           type: bankAccounts.accountType,
+          tierId: bankAccounts.tierId,
           balance: bankAccounts.balance,
           businessTaxId: bankAccounts.businessTaxId,
           businessSector: bankAccounts.businessSector,
@@ -672,7 +674,7 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
     if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
     const primaryId = candidateIds[0];
 
-    const { bankId, accountName, accountType, businessTaxId, businessSector } = req.body;
+    const { bankId, accountName, accountType, businessTaxId, businessSector, tierId: reqTierId } = req.body;
 
     if (!bankId || !accountName) {
       return res.status(400).json({ error: "Bank selection and Account Name are required." });
@@ -706,6 +708,27 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       }
     }
 
+    let finalTierId = null;
+    if (settings?.enableAccountTiers && settings?.accountTiers) {
+      if (reqTierId) {
+        const selectedTier = settings.accountTiers.find((t: any) => t.id === reqTierId && !t.isPrivate);
+        if (selectedTier) {
+          finalTierId = selectedTier.id;
+        } else {
+          return res.status(400).json({ error: "Invalid or private tier selected." });
+        }
+      } else {
+        const defaultTier = settings.accountTiers.find((t: any) => t.type === type && t.isDefault && !t.isPrivate);
+        if (defaultTier) {
+          finalTierId = defaultTier.id;
+        } else {
+           // Fallback to first non-private tier of the type
+           const fallbackTier = settings.accountTiers.find((t: any) => t.type === type && !t.isPrivate);
+           if (fallbackTier) finalTierId = fallbackTier.id;
+        }
+      }
+    }
+
     // 3. Create Account
     const id = `ACC-${uuidv4().substring(0, 8).toUpperCase()}`;
     await db.insert(bankAccounts).values({
@@ -714,6 +737,7 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       ownerDiscordId: primaryId,
       accountName: accountName.trim(),
       accountType: type,
+      tierId: finalTierId,
       businessTaxId: type === "business" ? (businessTaxId || `CORP-${uuidv4().substring(0, 6).toUpperCase()}`) : null,
       businessSector: type === "business" ? (businessSector || "General Commerce") : null,
       balance: 0,

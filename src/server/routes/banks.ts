@@ -1294,7 +1294,7 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/update-account", requir
     try {
       const bId = req.params.bankId;
       const accId = req.params.accountId;
-      const { newDiscordId, accountType } = req.body;
+      const { newDiscordId, accountType, tierId } = req.body;
 
       if (!newDiscordId || typeof newDiscordId !== 'string') {
         return res.status(400).json({ error: "Missing or invalid newDiscordId" });
@@ -1324,6 +1324,9 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/update-account", requir
       const updateData: any = { ownerDiscordId: finalOwner };
       if (accountType) {
         updateData.accountType = accountType;
+      }
+      if (tierId !== undefined) {
+        updateData.tierId = tierId || null;
       }
 
       await db.update(bankAccounts)
@@ -2277,21 +2280,78 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/adjust-balance", requir
 
 banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, banks, auditLogs } = await import("../../db/schema");
+    const { bankAccounts, banks, auditLogs, transactions } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
-      const accs = await db.select().from(bankAccounts).where(eq(bankAccounts.id, req.params.accountId));
-      const targetAcc = accs[0];
-      const accName = targetAcc ? targetAcc.accountName : "unknown";
+      const { action, feePercent, destAccount } = req.body || {};
 
-      if (targetAcc && targetAcc.existsInGame) {
-        const banksList = await db.select().from(banks).where(eq(banks.id, req.params.bankId));
-        const bank = banksList[0];
-        if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
-          const { CityCorpClient } = await import("../../lib/citycorp_api");
-          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-          await client.deleteAccount(targetAcc.accountName).catch(() => {});
+      const accs = await db.select().from(bankAccounts).where(eq(bankAccounts.id, req.params.accountId));
+      if (accs.length === 0) return res.status(404).json({ error: "Account not found" });
+      const targetAcc = accs[0];
+      const accName = targetAcc.accountName;
+      let balance = targetAcc.balance;
+
+      const banksList = await db.select().from(banks).where(eq(banks.id, req.params.bankId));
+      const bank = banksList[0];
+      const isCityCorp = targetAcc.existsInGame && bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey;
+
+      if (isCityCorp) {
+        const { CityCorpClient } = await import("../../lib/citycorp_api");
+        const client = new CityCorpClient(bank.corpId!, bank.corpApiUuid!, bank.corpApiKey!, bank.id);
+        
+        // Sync balance right before deletion just in case
+        const accountDetails = await client.getAccountDetails(accName);
+        if (accountDetails.success && accountDetails.balance !== undefined) {
+           balance = Math.floor(accountDetails.balance * 100);
+        }
+
+        if (balance > 0) {
+           // Withdraw to corporate pool before deleting so money isn't lost
+           await client.withdraw(accName, balance / 100);
+           
+           if (action === 'return' && destAccount) {
+              const fee = parseFloat(feePercent || "0");
+              const returnAmount = Math.floor(balance * (1 - (fee / 100)));
+              if (returnAmount > 0) {
+                  const depositRes = await client.deposit(destAccount, returnAmount / 100);
+                  if (!depositRes.success) {
+                     throw new Error(`Failed to return funds via CityCorp API: ${depositRes.message}`);
+                  }
+              }
+           }
+        }
+        await client.deleteAccount(accName).catch(() => {});
+      } else {
+        // Internal Bank
+        if (balance > 0 && action === 'return' && destAccount) {
+           const fee = parseFloat(feePercent || "0");
+           const returnAmount = Math.floor(balance * (1 - (fee / 100)));
+           
+           if (returnAmount > 0) {
+              // Find dest account
+              const destAccs = await db.select().from(bankAccounts).where(
+                 and(eq(bankAccounts.bankId, req.params.bankId), eq(bankAccounts.accountName, destAccount))
+              );
+              if (destAccs.length > 0) {
+                 await db.update(bankAccounts)
+                   .set({ balance: destAccs[0].balance + returnAmount })
+                   .where(eq(bankAccounts.id, destAccs[0].id));
+                 
+                 await db.insert(transactions).values({
+                    id: uuidv4(),
+                    bankId: req.params.bankId,
+                    fromAccountId: targetAcc.id,
+                    toAccountId: destAccs[0].id,
+                    type: 'transfer',
+                    amount: returnAmount,
+                    description: `Returned funds from closed account ${accName}`,
+                    timestamp: new Date()
+                 });
+              } else {
+                 throw new Error(`Destination account '${destAccount}' not found in this bank.`);
+              }
+           }
         }
       }
 
@@ -2302,9 +2362,9 @@ banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, a
       await db.insert(auditLogs).values({
         id: uuidv4(),
         bankId: req.params.bankId,
-        userDiscordId: 'Operator',
+        userDiscordId: (req as any).user?.discordId || 'Operator',
         action: 'delete_account',
-        details: `Deleted account: ${accName}`,
+        details: `Deleted account: ${accName}. Action: ${action || 'forfeit'}. Returned ${destAccount || 'N/A'}.`,
         timestamp: new Date()
       });
 

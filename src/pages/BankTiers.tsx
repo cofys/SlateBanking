@@ -40,6 +40,7 @@ export function BankTiers() {
         withdrawFeePercent: null,
         minBalance: 0,
         isDefault: tiers.length === 0, // First tier is default
+        isPrivate: false,
       },
     ]);
   };
@@ -181,15 +182,26 @@ export function BankTiers() {
                           <option value="business">Business</option>
                         </select>
                       </div>
-                      <label className="flex items-center gap-2 mt-4 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={tier.isDefault}
-                          onChange={(e) => updateTier(tier.id, "isDefault", e.target.checked)}
-                          className="rounded bg-[#1a1a24] border-white/10 text-indigo-500 focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-white/80">Default for {tier.type} accounts</span>
-                      </label>
+                      <div className="flex items-center gap-4 mt-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tier.isDefault}
+                            onChange={(e) => updateTier(tier.id, "isDefault", e.target.checked)}
+                            className="rounded bg-[#1a1a24] border-white/10 text-indigo-500 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-white/80">Default for {tier.type} accounts</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tier.isPrivate || false}
+                            onChange={(e) => updateTier(tier.id, "isPrivate", e.target.checked)}
+                            className="rounded bg-[#1a1a24] border-white/10 text-indigo-500 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-white/80" title="Hidden from customers. Staff must assign manually.">Private (Staff Only)</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
 

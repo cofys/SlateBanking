@@ -755,7 +755,11 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 ### Account Tiers System
 - **Tier Configuration**: Banks can toggle the "Custom Account Tiers" feature in the Settings page. This reveals the "Account Tiers" menu item under "Products & Services".
 - **Granular Rulesets**: Within the Account Tiers UI, bank staff can create tiers (e.g., Gold Savings, Premium Checking) customized with a monthly fee, minimum balance requirements, and custom APY/transfer/deposit/withdraw fee percentages.
+- **Private Tiers**: Tiers can be marked as "Private (Staff Only)". Private tiers are ignored by the automated tier assignment logic when citizens register new accounts, ensuring they are strictly handed out by bank staff.
+- **Dynamic Tier Registration**: If a bank has public tiers enabled, the citizen registration modal automatically replaces the static "Personal / Business" category buttons with a dynamic list of available public tiers, allowing users to choose an upgraded tier immediately upon opening an account.
+- **Customer Upgrades**: Citizens can upgrade their existing account's tier directly from their customer portal. An "Upgrade" button is displayed on eligible account cards, which opens a modal allowing them to select a new public tier of the same account type.
 - **Account Creation Support**: When creating or provisioning new bank accounts manually via the staff portal, the selected tier is seamlessly linked if Account Tiers are enabled.
+- **Tier Reassignment**: Staff can manually reassign an existing account's tier at any point directly from the account's details page by clicking the edit icon next to the tier name.
 - **Transaction Engine Integration**: The citizen transaction engine inherently supports these customized configurations. Transfer logic overrides the bank's default transfer fees with the tier's custom rates if assigned.
 
 ### Multi-Tenant Domain Routing (Subdomains)

@@ -142,7 +142,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   maxAutoApproveLoanAmount: integer("max_auto_approve_loan_amount").default(1000000), // 10,000.00
   vaultTiers: text("vault_tiers", { mode: "json" }).$type<{ lockDays: number; interestRate: number; penaltyPercent: number }[]>(),
   loginBgUrl: text("login_bg_url"),
-  accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean }[]>(),
+  accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean; isPrivate?: boolean }[]>(),
   savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
   interestPaymentSchedule: text("interest_payment_schedule").default("manual"), // manual, daily, weekly, monthly
   interestNextPaymentAt: integer("interest_next_payment_at", { mode: "timestamp" }),

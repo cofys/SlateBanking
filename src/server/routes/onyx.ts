@@ -249,11 +249,23 @@ onyxRouter.post("/api/onyx/refresh-bot-gui", requireGlobalAdmin, async (req: exp
     }
 });
 
-onyxRouter.get("/api/onyx/merchants", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
+onyxRouter.get("/api/onyx/merchants", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { onyxMerchants } = await import("../../db/schema");
+    const { onyxMerchants, banks } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
     try {
-      const merchants = await db.select().from(onyxMerchants);
+      const merchants = await db
+        .select({
+          id: onyxMerchants.id,
+          name: onyxMerchants.name,
+          apiKey: onyxMerchants.apiKey,
+          bankId: onyxMerchants.bankId,
+          destinationAccount: onyxMerchants.destinationAccount,
+          createdAt: onyxMerchants.createdAt,
+          bankName: banks.name
+        })
+        .from(onyxMerchants)
+        .leftJoin(banks, eq(onyxMerchants.bankId, banks.id));
       res.json(merchants);
     } catch (e) {
       console.error(e);

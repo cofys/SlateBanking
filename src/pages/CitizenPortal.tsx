@@ -716,11 +716,18 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
   const [regBankId, setRegBankId] = useState("");
   const [regAccountName, setRegAccountName] = useState("");
   const [regAccountType, setRegAccountType] = useState<"personal" | "business">("personal");
+  const [regTierId, setRegTierId] = useState("");
   const [regTaxId, setRegTaxId] = useState("");
   const [regSector, setRegSector] = useState("General Commerce");
   const [regSubmitting, setRegSubmitting] = useState(false);
   const [regError, setRegError] = useState("");
   const [regSuccess, setRegSuccess] = useState<any>(null);
+
+  // Upgrade Modal State
+  const [upgradeAccount, setUpgradeAccount] = useState<any>(null);
+  const [upgradeTierId, setUpgradeTierId] = useState("");
+  const [upgradeSubmitting, setUpgradeSubmitting] = useState(false);
+  const [upgradeError, setUpgradeError] = useState("");
 
   // Set default bank selection if available
   useEffect(() => {
@@ -728,6 +735,21 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
       setRegBankId(data.banks[0].id);
     }
   }, [data.banks]);
+
+  const currentSettings = data.settings?.find((s: any) => s.bankId === regBankId);
+  const hasCustomTiers = currentSettings?.enableAccountTiers && currentSettings.accountTiers;
+  const publicTiers = hasCustomTiers ? currentSettings.accountTiers.filter((t: any) => !t.isPrivate) : [];
+
+  useEffect(() => {
+    if (showRegisterModal) {
+      if (publicTiers.length > 0 && (!regTierId || !publicTiers.find((t: any) => t.id === regTierId))) {
+        setRegTierId(publicTiers[0].id);
+        setRegAccountType(publicTiers[0].type);
+      } else if (publicTiers.length === 0) {
+        setRegTierId("");
+      }
+    }
+  }, [regBankId, showRegisterModal]);
 
   const handleRegisterAccount = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -747,6 +769,7 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
           bankId: regBankId,
           accountName: regAccountName.trim(),
           accountType: regAccountType,
+          tierId: regTierId || undefined,
           businessTaxId: regTaxId.trim() || undefined,
           businessSector: regSector.trim() || undefined
         })
@@ -770,6 +793,32 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
       setRegError("Network error while registering account.");
     } finally {
       setRegSubmitting(false);
+    }
+  };
+
+  const handleUpgradeTier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!upgradeAccount || !upgradeTierId) return;
+    setUpgradeSubmitting(true);
+    setUpgradeError("");
+    try {
+       const res = await fetch(`/api/citizen/accounts/${upgradeAccount.id}/upgrade`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tierId: upgradeTierId })
+       });
+       const resData = await res.json();
+       if (res.ok) {
+          setUpgradeAccount(null);
+          refresh();
+       } else {
+          setUpgradeError(resData.error || "Failed to upgrade account tier.");
+       }
+    } catch (e: any) {
+       console.error(e);
+       setUpgradeError("Network error while upgrading account.");
+    } finally {
+       setUpgradeSubmitting(false);
     }
   };
 
@@ -891,14 +940,14 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-bold text-white text-lg">{acc.accountName}</h3>
                     
-                    {/* Account Type Badge */}
+                    {/* Account Type / Tier Badge */}
                     <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border flex items-center gap-1 ${
                       isBusiness 
                         ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' 
                         : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                     }`}>
                       {isBusiness ? <Building size={10}/> : <Users size={10}/>}
-                      {isBusiness ? "Business" : "Personal"}
+                      {data.settings?.find((s:any) => s.bankId === acc.bankId)?.accountTiers?.find((t:any) => t.id === acc.tierId)?.name || (isBusiness ? "Business" : "Personal")}
                     </span>
 
                     {/* Member Role Badge */}
@@ -941,6 +990,27 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
                 </div>
 
                 <div className="flex gap-2">
+                  {userRole === 'owner' && data.settings?.find((s:any) => s.bankId === acc.bankId)?.enableAccountTiers && (
+                    <button
+                      onClick={() => {
+                        const bankSettings = data.settings?.find((s:any) => s.bankId === acc.bankId);
+                        const accountTiers = bankSettings?.accountTiers || [];
+                        const validUpgrades = accountTiers.filter((t:any) => !t.isPrivate && t.type === acc.type && t.id !== acc.tierId);
+                        if (validUpgrades.length > 0) {
+                          setUpgradeAccount(acc);
+                          setUpgradeTierId(validUpgrades[0].id);
+                          setUpgradeError("");
+                        } else {
+                           alert("No other public tiers available for this account type.");
+                        }
+                      }}
+                      className="flex items-center gap-1 text-xs bg-white/5 hover:bg-white/10 text-white px-2.5 py-1.5 rounded-lg transition-colors border border-white/10 font-medium"
+                      title="Upgrade Account Tier"
+                    >
+                      <Sparkles size={13} />
+                      Upgrade
+                    </button>
+                  )}
                   <button
                     onClick={() => onOpenSyncModal?.(acc.id)}
                     className="flex items-center gap-1 text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-2.5 py-1.5 rounded-lg transition-colors border border-emerald-500/20 font-medium"
@@ -1041,40 +1111,77 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Account Category / Type</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setRegAccountType("personal")}
-                    className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 ${
-                      regAccountType === "personal"
-                        ? "bg-indigo-600/20 border-indigo-500 text-white"
-                        : "bg-[#1a1a24] border-white/10 text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    <Users size={18} className={regAccountType === "personal" ? "text-indigo-400" : "text-slate-500"} />
-                    <div>
-                      <div className="text-xs font-bold">Personal Account</div>
-                      <div className="text-[10px] text-slate-400">Individual Checking</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRegAccountType("business")}
-                    className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 ${
-                      regAccountType === "business"
-                        ? "bg-purple-600/20 border-purple-500 text-white"
-                        : "bg-[#1a1a24] border-white/10 text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    <Building size={18} className={regAccountType === "business" ? "text-purple-400" : "text-slate-500"} />
-                    <div>
-                      <div className="text-xs font-bold">Business Entity</div>
-                      <div className="text-[10px] text-slate-400">LLC / Corp / Merchant</div>
-                    </div>
-                  </button>
-                </div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Account Category / Tier</label>
+                {publicTiers.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    {publicTiers.map((tier: any) => (
+                      <button
+                        key={tier.id}
+                        type="button"
+                        onClick={() => {
+                          setRegTierId(tier.id);
+                          setRegAccountType(tier.type);
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                          regTierId === tier.id
+                            ? (tier.type === "personal" ? "bg-indigo-600/20 border-indigo-500 text-white" : "bg-purple-600/20 border-purple-500 text-white")
+                            : "bg-[#1a1a24] border-white/10 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {tier.type === "personal" 
+                            ? <Users size={18} className={regTierId === tier.id ? "text-indigo-400" : "text-slate-500"} />
+                            : <Building size={18} className={regTierId === tier.id ? "text-purple-400" : "text-slate-500"} />}
+                          <div>
+                            <div className="text-xs font-bold">{tier.name}</div>
+                            <div className="text-[10px] text-slate-400 capitalize">{tier.type} Account</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-semibold text-white/90">
+                            {tier.monthlyFee > 0 ? `$${(tier.monthlyFee / 100).toFixed(2)}/mo` : 'No Fee'}
+                          </div>
+                          <div className="text-[10px] text-emerald-400">
+                            {tier.apyPercent ? `${(tier.apyPercent / 100).toFixed(2)}% APY` : 'Standard APY'}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRegAccountType("personal")}
+                      className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 ${
+                        regAccountType === "personal"
+                          ? "bg-indigo-600/20 border-indigo-500 text-white"
+                          : "bg-[#1a1a24] border-white/10 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <Users size={18} className={regAccountType === "personal" ? "text-indigo-400" : "text-slate-500"} />
+                      <div>
+                        <div className="text-xs font-bold">Personal Account</div>
+                        <div className="text-[10px] text-slate-400">Individual Checking</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegAccountType("business")}
+                      className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 ${
+                        regAccountType === "business"
+                          ? "bg-purple-600/20 border-purple-500 text-white"
+                          : "bg-[#1a1a24] border-white/10 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <Building size={18} className={regAccountType === "business" ? "text-purple-400" : "text-slate-500"} />
+                      <div>
+                        <div className="text-xs font-bold">Business Entity</div>
+                        <div className="text-[10px] text-slate-400">LLC / Corp / Merchant</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1136,6 +1243,89 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
                   className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2"
                 >
                   {regSubmitting ? "Registering..." : "Submit Registration"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Upgrade Account Modal */}
+      {upgradeAccount && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setUpgradeAccount(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
+                <Sparkles size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">Change Account Tier</h3>
+                <p className="text-xs text-slate-400">{upgradeAccount.accountName}</p>
+              </div>
+            </div>
+
+            {upgradeError && (
+              <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-xl text-xs flex items-start gap-3">
+                <AlertCircle size={18} className="shrink-0 text-rose-400 mt-0.5" />
+                <div>{upgradeError}</div>
+              </div>
+            )}
+
+            <form onSubmit={handleUpgradeTier} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">Select New Tier</label>
+                <div className="flex flex-col gap-3">
+                  {data.settings?.find((s:any) => s.bankId === upgradeAccount.bankId)?.accountTiers
+                    ?.filter((t:any) => !t.isPrivate && t.type === upgradeAccount.type && t.id !== upgradeAccount.tierId)
+                    .map((tier: any) => (
+                      <button
+                        key={tier.id}
+                        type="button"
+                        onClick={() => setUpgradeTierId(tier.id)}
+                        className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                          upgradeTierId === tier.id
+                            ? (tier.type === "personal" ? "bg-indigo-600/20 border-indigo-500 text-white" : "bg-purple-600/20 border-purple-500 text-white")
+                            : "bg-[#1a1a24] border-white/10 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        <div>
+                          <div className="text-xs font-bold">{tier.name}</div>
+                          <div className="text-[10px] text-slate-400 capitalize">{tier.type} Account</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-semibold text-white/90">
+                            {tier.monthlyFee > 0 ? `$${(tier.monthlyFee / 100).toFixed(2)}/mo` : 'No Fee'}
+                          </div>
+                          <div className="text-[10px] text-emerald-400">
+                            {tier.apyPercent ? `${(tier.apyPercent / 100).toFixed(2)}% APY` : 'Standard APY'}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setUpgradeAccount(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={upgradeSubmitting}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2"
+                >
+                  {upgradeSubmitting ? "Processing..." : "Confirm Upgrade"}
                 </button>
               </div>
             </form>

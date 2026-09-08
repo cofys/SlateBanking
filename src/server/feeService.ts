@@ -649,7 +649,7 @@ export async function calculateTreasuryFees(db: any, bankId: string) {
       colorClass: FEE_TYPE_COLORS[type],
       amount: data.amount,
       count: data.count,
-      percentage: Number(percentage.toFixed(1))
+      percentOfTotal: percentage
     };
   });
 

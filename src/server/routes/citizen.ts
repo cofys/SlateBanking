@@ -72,8 +72,15 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
 
       const userAccounts = Array.from(allAccountsMap.values());
 
+      const allBanks = await db.select({
+        id: banks.id,
+        name: banks.name,
+        logoUrl: banks.logoUrl,
+      }).from(banks);
+      const allSettings = await db.select().from(bankSettings);
+
       if (userAccounts.length === 0) {
-         return res.json({ accounts: [], transactions: [], invoices: [], cards: [], loans: [], banksConfig: {} });
+         return res.json({ accounts: [], transactions: [], invoices: [], cards: [], loans: [], banksConfig: {}, banks: allBanks, settings: allSettings });
       }
 
       const accountIds = userAccounts.map(a => a.id);
@@ -121,6 +128,8 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
       }, {});
 
       res.json({
+        banks: allBanks,
+        settings: allSettings,
         banksConfig,
         accounts: userAccounts,
         transactions: recentTxs,
@@ -134,6 +143,46 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
     }
 });
 
+
+citizenRouter.post("/api/citizen/accounts/:id/upgrade", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index.js");
+    const { bankAccounts, bankSettings } = await import("../../db/schema.js");
+    const { eq, and, inArray } = await import("drizzle-orm");
+    const { getUserCandidateIdentifiers } = await import("../userResolver.js");
+
+    try {
+        const candidateIds = await getUserCandidateIdentifiers(req);
+        if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
+
+        const { tierId } = req.body;
+        if (!tierId) return res.status(400).json({ error: "Missing tierId" });
+
+        const account = await db.select().from(bankAccounts).where(
+          and(
+            eq(bankAccounts.id, req.params.id),
+            inArray(bankAccounts.ownerDiscordId, candidateIds)
+          )
+        ).get();
+
+        if (!account) return res.status(404).json({ error: "Account not found or unauthorized." });
+
+        const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, account.bankId)).get();
+        if (!settings?.enableAccountTiers || !settings.accountTiers) {
+            return res.status(400).json({ error: "Tiers are not enabled for this bank." });
+        }
+
+        const selectedTier = settings.accountTiers.find((t: any) => t.id === tierId && !t.isPrivate && t.type === account.accountType);
+        if (!selectedTier) {
+            return res.status(400).json({ error: "Invalid tier selection." });
+        }
+
+        await db.update(bankAccounts).set({ tierId }).where(eq(bankAccounts.id, account.id));
+        res.json({ success: true });
+    } catch (e: any) {
+        console.error(e);
+        res.status(500).json({ error: "Internal error" });
+    }
+});
 
 citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
