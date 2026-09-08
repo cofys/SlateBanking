@@ -40,14 +40,42 @@ export async function processDueLoanRepayments(targetBankId?: string) {
 
     if (account && account.balance >= installment) {
       // SUCCESSFUL AUTOMATED DEBIT
+      const { getOrCreateBankCorpAccount } = await import("./feeService");
+      const corpAcc = await getOrCreateBankCorpAccount(db, loan.bankId);
+
       const newAccountBalance = account.balance - installment;
       const newRemainingLoan = loan.remainingAmount - installment;
       const isPaidOff = newRemainingLoan <= 0;
 
-      // Update account balance
+      // Deduct from customer account
       await db.update(bankAccounts)
         .set({ balance: newAccountBalance })
         .where(eq(bankAccounts.id, account.id));
+
+      // Credit Bank Corporate Revenue Account
+      await db.update(bankAccounts)
+        .set({ balance: sql`${bankAccounts.balance} + ${installment}` })
+        .where(eq(bankAccounts.id, corpAcc.id));
+
+      // Check for late fee settlement
+      const currentLateFee = loan.lateFeeAmount || 0;
+      const lateFeeSettled = Math.min(installment, currentLateFee);
+      const newLateFeeAmount = Math.max(0, currentLateFee - lateFeeSettled);
+
+      if (lateFeeSettled > 0) {
+        await db.insert(transactions).values({
+          id: uuidv4(),
+          bankId: loan.bankId,
+          fromAccountId: account.id,
+          toAccountId: corpAcc.id,
+          type: "fee",
+          feeType: "late_fee",
+          amount: lateFeeSettled,
+          description: `Loan Late Fee Settlement (Loan #${loan.id.substring(0, 8)})`,
+          category: "Fee Income",
+          timestamp: now
+        });
+      }
 
       // Calculate next payment date (+30 days)
       const nextDate = new Date(loan.nextPaymentDate);
@@ -57,26 +85,27 @@ export async function processDueLoanRepayments(targetBankId?: string) {
       await db.update(loans)
         .set({
           remainingAmount: isPaidOff ? 0 : newRemainingLoan,
+          lateFeeAmount: newLateFeeAmount,
           status: isPaidOff ? "paid_off" : "active",
-          isDelinquent: false,
-          missedPaymentsCount: 0,
+          isDelinquent: newLateFeeAmount > 0,
+          missedPaymentsCount: newLateFeeAmount > 0 ? loan.missedPaymentsCount : 0,
           collateralStatus: isPaidOff ? (loan.collateralStatus === "pledged" ? "released" : loan.collateralStatus) : loan.collateralStatus,
           nextPaymentDate: isPaidOff ? loan.nextPaymentDate : nextDate,
           lastPaymentAttemptAt: now
         })
         .where(eq(loans.id, loan.id));
 
-      // Insert transaction record
+      // Insert transaction record into bank corporate ledger
       await db.insert(transactions).values({
         id: uuidv4(),
         bankId: loan.bankId,
         fromAccountId: account.id,
-        toAccountId: null,
-        type: "transfer",
+        toAccountId: corpAcc.id,
+        type: "loan_payment",
         amount: installment,
         description: isPaidOff ? `Loan Final Repayment (Loan #${loan.id.substring(0, 8)})` : `Automated Monthly Loan Debit (Loan #${loan.id.substring(0, 8)})`,
         timestamp: now,
-        category: "Loans"
+        category: "Loan Repayment"
       });
 
       // Insert audit log

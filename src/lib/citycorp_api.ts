@@ -362,6 +362,105 @@ export class CityCorpClient {
     return allTxs;
   }
 
+  async getCorpTransactions(page: number = 1) {
+    const url = new URL(`${this.baseUrl}/transactions/list`);
+    url.searchParams.append("corp_id", this.corpId.toString());
+    url.searchParams.append("page", page.toString());
+
+    const startTime = Date.now();
+    try {
+      const res = await fetch(url.toString(), { headers: this.headers });
+      const latencyMs = Date.now() - startTime;
+
+      if (res.ok) {
+        const data = await res.json();
+        await this.logApiResult("/transactions/list", { page }, latencyMs, res.status, true);
+        return data;
+      }
+
+      // Fallback: legacy /transactions
+      const fallbackUrl = new URL(`${this.baseUrl}/transactions`);
+      fallbackUrl.searchParams.append("corp_id", this.corpId.toString());
+      fallbackUrl.searchParams.append("page", page.toString());
+      const fallbackRes = await fetch(fallbackUrl.toString(), { headers: this.headers });
+      if (fallbackRes.ok) {
+        const data = await fallbackRes.json();
+        await this.logApiResult("/transactions", { page }, latencyMs, fallbackRes.status, true);
+        return data;
+      }
+
+      let errMsg = await res.text();
+      await this.logApiResult("/transactions/list", { page }, latencyMs, res.status, false, errMsg);
+      return null;
+    } catch (e: any) {
+      const latencyMs = Date.now() - startTime;
+      await this.logApiResult("/transactions/list", { page }, latencyMs, 0, false, e.message);
+      return null;
+    }
+  }
+
+  async fetchInGameCorpTransactions(accountName?: string, maxPages: number = 15) {
+    const allTxs: any[] = [];
+    const seenTxKeys = new Set<string>();
+
+    const addUniqueTx = (tx: any, origin: string) => {
+      if (!tx) return;
+      const key = tx.id ? String(tx.id) : `${tx.timestamp || tx.date || tx.created_at}_${tx.amount || tx.value}_${tx.description || tx.memo || tx.type}`;
+      if (!seenTxKeys.has(key)) {
+        seenTxKeys.add(key);
+        allTxs.push({
+          ...tx,
+          _origin: origin,
+          _accountName: accountName || tx.account_name || tx.account || null
+        });
+      }
+    };
+
+    // 1. Fetch from specific in-game default corp account
+    if (accountName) {
+      for (let p = 1; p <= maxPages; p++) {
+        const res = await this.getAccountTransactions(accountName, p);
+        if (!res) break;
+
+        let txList: any[] = [];
+        if (Array.isArray(res.transactions)) txList = res.transactions;
+        else if (Array.isArray(res.data)) txList = res.data;
+        else if (Array.isArray(res.results)) txList = res.results;
+        else if (Array.isArray(res)) txList = res;
+
+        if (txList.length === 0) break;
+        for (const tx of txList) {
+          addUniqueTx(tx, "account_transactions");
+        }
+
+        const totalPages = res.totalPages || res.total_pages || 1;
+        if (p >= totalPages) break;
+      }
+    }
+
+    // 2. Also query corp-wide transactions endpoint
+    for (let p = 1; p <= maxPages; p++) {
+      const res = await this.getCorpTransactions(p);
+      if (!res) break;
+
+      let txList: any[] = [];
+      if (Array.isArray(res.transactions)) txList = res.transactions;
+      else if (Array.isArray(res.data)) txList = res.data;
+      else if (Array.isArray(res.results)) txList = res.results;
+      else if (Array.isArray(res)) txList = res;
+
+      if (txList.length === 0) break;
+      for (const tx of txList) {
+        addUniqueTx(tx, "corp_transactions");
+      }
+
+      const totalPages = res.totalPages || res.total_pages || 1;
+      if (p >= totalPages) break;
+    }
+
+    return allTxs;
+  }
+
   async listAccounts(page: number = 1) {
     const url = new URL(`${this.baseUrl}/accounts/list`);
     url.searchParams.append("corp_id", this.corpId.toString());

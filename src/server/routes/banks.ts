@@ -1515,7 +1515,8 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         googleDocsCreditTemplateUrl: req.body.googleDocsCreditTemplateUrl,
         googleDocsEscrowTemplateUrl: req.body.googleDocsEscrowTemplateUrl,
         googleDocsFolderUrl: req.body.googleDocsFolderUrl,
-        googleDocsAutoGenerate: req.body.googleDocsAutoGenerate
+        googleDocsAutoGenerate: req.body.googleDocsAutoGenerate,
+        defaultCorpAccount: req.body.defaultCorpAccount
       };
 
       const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId));
@@ -2908,49 +2909,95 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
 
 banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, vaultDeposits, loans, transactions } = await import("../../db/schema");
-    const { eq, sum, and, desc, sql } = await import("drizzle-orm");
+    const { bankAccounts, vaultDeposits, loans, transactions, payrollJobs } = await import("../../db/schema");
+    const { eq, sum, and, desc, sql, or, ne, like } = await import("drizzle-orm");
+    const { getOrCreateBankCorpAccount, calculateTreasuryFees, FEE_TYPE_LABELS } = await import("../feeService");
 
     try {
       const bId = req.params.bankId;
 
-      // 1. Total Liabilities (Customer Deposits)
-      // Base account deposits
-      const accountSum = await db.select({ total: sum(bankAccounts.balance) })
-        .from(bankAccounts).where(eq(bankAccounts.bankId, bId)).get();
-      const totalAccountBalances = Number(accountSum?.total || 0);
+      // Ensure bank default corporate account exists & is resolved
+      const corpAccount = await getOrCreateBankCorpAccount(db, bId);
 
-      // Vault deposits
+      // 1. Reserves & Bank System Assets
+      const systemAccounts = await db.select().from(bankAccounts).where(
+        and(
+          eq(bankAccounts.bankId, bId),
+          or(eq(bankAccounts.isSystem, true), eq(bankAccounts.ownerDiscordId, "SYSTEM"))
+        )
+      );
+
+      const vaultCash = systemAccounts.find(a => a.systemCategory === "vault_cash")?.balance || 0;
+      const corpAccountReserves = corpAccount.balance || 0;
+      const interestRevenueReserves = systemAccounts.find(a => a.systemCategory === "interest_revenue")?.balance || 0;
+      const otherReserves = systemAccounts
+        .filter(a => a.id !== corpAccount.id && a.systemCategory !== "vault_cash" && a.systemCategory !== "interest_revenue")
+        .reduce((sum, a) => sum + (a.balance || 0), 0);
+
+      const cashReserves = vaultCash + corpAccountReserves + interestRevenueReserves + otherReserves;
+
+      // 2. Customer Liabilities (Non-system accounts + Locked savings vaults)
+      const custSum = await db.select({ total: sum(bankAccounts.balance) })
+        .from(bankAccounts)
+        .where(
+          and(
+            eq(bankAccounts.bankId, bId),
+            eq(bankAccounts.isSystem, false),
+            ne(bankAccounts.ownerDiscordId, "SYSTEM")
+          )
+        ).get();
+      const customerDeposits = Number(custSum?.total || 0);
+
       const vaultSum = await db.select({ total: sum(vaultDeposits.amount) })
         .from(vaultDeposits).where(eq(vaultDeposits.bankId, bId)).get();
       const totalVaultBalances = Number(vaultSum?.total || 0);
 
-      const totalDeposits = totalAccountBalances + totalVaultBalances;
+      const totalLiabilities = customerDeposits + totalVaultBalances;
 
-      // 2. Total Assets (Active Loans outstanding)
+      // 3. Loan Book (Outstanding Principal on Active Loans)
       const loanSum = await db.select({ total: sum(loans.remainingAmount) })
         .from(loans).where(and(eq(loans.bankId, bId), eq(loans.status, "active"))).get();
       const totalLoans = Number(loanSum?.total || 0);
 
-      // 3. P&L / Revenue (sum of fees collected, interest collected)
-      // Usually represented by withdraw/transfer fees where toAccountId is null and type="fee"
-      // or "interest"
-      const revenueSum = await db.select({ total: sum(transactions.amount) })
+      // Total Assets = Cash Reserves + Active Loans
+      const totalAssets = cashReserves + totalLoans;
+      const equity = totalAssets - totalLiabilities;
+      const reserveRatio = totalLiabilities > 0 ? (cashReserves / totalLiabilities) : 1;
+
+      // 4. Accurate Corporate Fee Revenue & Breakdown from In-Game Corp Transactions
+      const { totalFeesCollected, totalFeeCount, feeBreakdown, recentTransactions } = await calculateTreasuryFees(db, bId);
+
+      // 5. Interest Earned
+      const interestSum = await db.select({ total: sum(transactions.amount) })
         .from(transactions).where(
           and(
             eq(transactions.bankId, bId),
-            sql`(${transactions.type} = 'fee' OR ${transactions.type} = 'interest_payment' OR ${transactions.type} = 'loan_payment')`,
-            sql`${transactions.toAccountId} IS NULL`
+            or(
+              eq(transactions.type, "interest_payment"),
+              like(transactions.category, "%Interest%"),
+              like(transactions.description, "%Interest%")
+            )
           )
         ).get();
-      const rawRevenue = Number(revenueSum?.total || 0);
+      const totalInterestCollected = Number(interestSum?.total || 0);
 
-      // Daily balances over last 7 days? Here we can just send the recent transactions to build a chart
+      // 6. Operating Expenses
+      const payrollSum = await db.select({ total: sum(payrollJobs.amount) })
+        .from(payrollJobs)
+        .where(and(eq(payrollJobs.bankId, bId), eq(payrollJobs.isActive, true)))
+        .get();
+      const estimatedExpenses = Number(payrollSum?.total || 0);
+
+      // Operational P&L
+      const grossRevenue = totalFeesCollected + totalInterestCollected;
+      const netIncome = grossRevenue - estimatedExpenses;
+
+      // 7. Daily Flow Volume over 7 days
       const recentTxs = await db.select()
         .from(transactions)
         .where(eq(transactions.bankId, bId))
         .orderBy(desc(transactions.timestamp))
-        .limit(100);
+        .limit(150);
 
       const dailyVolume = Array.from({ length: 7 }).map((_, i) => {
         const d = new Date();
@@ -2967,21 +3014,83 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
         const dStr = new Date(tx.timestamp).toISOString().split('T')[0];
         const day = dailyVolume.find(dv => dv.date === dStr);
         if (day) {
-          if (tx.type === 'deposit') day.inflow += tx.amount;
-          if (tx.type === 'withdraw' || tx.type === 'transfer') day.outflow += tx.amount;
+          if (tx.type === 'deposit' || tx.type === 'fee' || tx.type === 'interest_payment' || tx.type === 'loan_payment') {
+            day.inflow += tx.amount;
+          }
+          if (tx.type === 'withdraw' || tx.type === 'transfer') {
+            day.outflow += tx.amount;
+          }
         }
       }
 
       res.json({
-        totalDeposits,
+        bankCorpAccount: {
+          id: corpAccount.id,
+          name: corpAccount.accountName,
+          balance: corpAccount.balance,
+          category: corpAccount.systemCategory,
+          existsInGame: corpAccount.existsInGame,
+          lastSyncedAt: corpAccount.lastSyncedAt
+        },
+        // Balance sheet
+        totalAssets,
+        totalLiabilities,
+        equity,
+        cashReserves,
+        vaultCash,
+        feeRevenueReserves: corpAccountReserves,
+        interestRevenueReserves,
+        otherReserves,
         totalLoans,
-        estimatedRevenue: rawRevenue,
+        customerDeposits,
+        vaultDeposits: totalVaultBalances,
+        totalDeposits: totalLiabilities,
+        reserveRatio,
+        targetReserveRatio: 0.15,
+
+        // P&L
+        grossRevenue,
+        estimatedRevenue: grossRevenue,
+        totalFeesCollected,
+        totalFeeCount,
+        totalInterestCollected,
+        totalExpenses: estimatedExpenses,
+        netIncome,
+        feeBreakdown,
+        recentTransactions,
+
+        // Flow
         dailyVolume,
-        reserveRatio: totalDeposits > 0 ? (totalDeposits - totalLoans) / totalDeposits : 1, 
       });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/treasury/sync-corp-transactions", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { syncInGameCorpTransactions } = await import("../feeService");
+    try {
+      const bId = req.params.bankId;
+      const result = await syncInGameCorpTransactions(db, bId);
+      res.json(result);
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: (e as any).message });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/treasury/recalculate", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { syncInGameCorpTransactions } = await import("../feeService");
+    try {
+      const bId = req.params.bankId;
+      const report = await syncInGameCorpTransactions(db, bId);
+      res.json({ success: true, report });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3203,6 +3312,9 @@ banksRouter.get("/api/banks/:bankId/loans", requireBankStaff, async (req: expres
         accountId: loans.accountId,
         principalAmount: loans.principalAmount,
         remainingAmount: loans.remainingAmount,
+        initialPaidAmount: loans.initialPaidAmount,
+        isOffSystem: loans.isOffSystem,
+        offSystemReference: loans.offSystemReference,
         interestRate: loans.interestRate,
         nextPaymentDate: loans.nextPaymentDate,
         purpose: loans.purpose,
@@ -3235,37 +3347,77 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
     const { eq, and, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
-      const { discordId, principalAmount, interestRate, depositAccountId, collateralDescription, collateralValue } = req.body;
+      const { 
+        discordId, 
+        principalAmount, 
+        interestRate, 
+        depositAccountId, 
+        collateralDescription, 
+        collateralValue,
+        isOffSystem = false,
+        initialPaidAmount = 0,
+        remainingAmount: reqRemainingAmount,
+        offSystemReference = null,
+        purpose = null,
+        nextPaymentDate: customDueDate
+      } = req.body;
+
       if (!discordId || !principalAmount || interestRate === undefined || !depositAccountId) {
         return res.status(400).json({ error: "Missing fields" });
       }
 
-      // Find the account to deposit the loan into
+      // Find the account to link or deposit the loan into
       const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, depositAccountId), eq(bankAccounts.bankId, req.params.bankId))).get();
       if (!acc) return res.status(404).json({ error: "Deposit account not found" });
 
-      const nextPaymentDate = new Date();
-      nextPaymentDate.setDate(nextPaymentDate.getDate() + 30); // First payment in 30 days
+      const nextPaymentDate = customDueDate ? new Date(customDueDate) : new Date();
+      if (!customDueDate) {
+        nextPaymentDate.setDate(nextPaymentDate.getDate() + 30); // First payment in 30 days
+      }
 
       const ts = new Date();
-
-      // Give money
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${principalAmount}` }).where(eq(bankAccounts.id, depositAccountId));
-
-      // Record transaction
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: null,
-        toAccountId: depositAccountId,
-        type: "deposit",
-        amount: principalAmount,
-        description: `Loan Disbursement (Principal: $${(principalAmount/100).toFixed(2)})`,
-        timestamp: ts
-      });
-
-      // Create loan
       const newLoanId = uuidv4();
+
+      const parsedPrincipal = Number(principalAmount);
+      const parsedPaid = Number(initialPaidAmount || 0);
+      const calculatedRemaining = reqRemainingAmount !== undefined && reqRemainingAmount !== null 
+        ? Number(reqRemainingAmount) 
+        : Math.max(0, parsedPrincipal - parsedPaid);
+
+      if (isOffSystem) {
+        // Off-system loan: Funds were ALREADY disbursed externally in the past!
+        // DO NOT add funds into the customer's account now.
+        // Record audit/onboarding transaction for full ledger transparency
+        await db.insert(transactions).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          fromAccountId: null,
+          toAccountId: depositAccountId,
+          type: "deposit",
+          amount: calculatedRemaining,
+          description: `Off-System Historical Loan Onboarded (Orig. Principal: $${(parsedPrincipal/100).toFixed(2)}, Prior Off-System Payments: $${(parsedPaid/100).toFixed(2)}, Remaining Balance: $${(calculatedRemaining/100).toFixed(2)})`,
+          category: "Loans",
+          timestamp: ts
+        });
+      } else {
+        // Native on-platform loan: Disburse funds directly to the customer's account
+        await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${parsedPrincipal}` }).where(eq(bankAccounts.id, depositAccountId));
+
+        // Record disbursement transaction
+        await db.insert(transactions).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          fromAccountId: null,
+          toAccountId: depositAccountId,
+          type: "deposit",
+          amount: parsedPrincipal,
+          description: `Loan Disbursement (Principal: $${(parsedPrincipal/100).toFixed(2)})`,
+          category: "Loans",
+          timestamp: ts
+        });
+      }
+
+      // Handle contract URL if enabled
       const { bankSettings, banks } = await import("../../db/schema");
       const bSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, req.params.bankId)).get();
       const bRecord = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
@@ -3278,7 +3430,7 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
           clientDiscordId: discordId,
           contractType: 'loan',
           contractId: newLoanId,
-          amount: principalAmount,
+          amount: parsedPrincipal,
           interestRate,
           termDays: 30
         });
@@ -3292,15 +3444,18 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         bankId: req.params.bankId,
         discordId,
         accountId: depositAccountId,
-        principalAmount,
-        remainingAmount: principalAmount,
+        principalAmount: parsedPrincipal,
+        remainingAmount: calculatedRemaining,
+        initialPaidAmount: parsedPaid,
+        isOffSystem: Boolean(isOffSystem),
+        offSystemReference: offSystemReference || (isOffSystem ? `Off-system import: ${parsedPaid > 0 ? `$${(parsedPaid/100).toFixed(2)} paid prior` : 'manual entry'}` : null),
         interestRate,
         nextPaymentDate,
-        purpose: req.body.purpose || null,
+        purpose: purpose || (isOffSystem ? "Existing off-system loan record" : null),
         collateralDescription: collateralDescription || null,
         collateralValue: colVal,
         collateralStatus: colStatus,
-        status: "active",
+        status: calculatedRemaining <= 0 ? "paid_off" : "active",
         contractUrl,
         createdAt: ts
       }).returning().get();
@@ -3535,42 +3690,77 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
     const { loans, bankAccounts, transactions } = await import("../../db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
+    const { getOrCreateBankCorpAccount } = await import("../feeService");
+
     try {
       const { accountId, amount } = req.body;
       if (!accountId || !amount) return res.status(400).json({ error: "Missing fields" });
 
       const loan = await db.select().from(loans).where(and(eq(loans.id, req.params.loanId), eq(loans.bankId, req.params.bankId))).get();
       if (!loan) return res.status(404).json({ error: "Loan not found" });
-      if (loan.status === "paid") return res.status(400).json({ error: "Loan already paid off" });
+      if (loan.status === "paid" || loan.status === "paid_off") return res.status(400).json({ error: "Loan already paid off" });
 
       const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, req.params.bankId))).get();
       if (!acc) return res.status(404).json({ error: "Account not found" });
       if (acc.balance < amount) return res.status(400).json({ error: "Insufficient funds" });
 
+      const corpAcc = await getOrCreateBankCorpAccount(db, req.params.bankId);
+
       const newRemaining = Math.max(0, loan.remainingAmount - amount);
       const isPaid = newRemaining === 0;
 
-      // Deduct from account
+      // Deduct from borrower's account
       await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${amount}` }).where(eq(bankAccounts.id, accountId));
 
-      // Record transaction
+      // Credit the Bank's Corporate Revenue Account
+      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${amount}` }).where(eq(bankAccounts.id, corpAcc.id));
+
       const ts = new Date();
+
+      // Check for late fee settlement
+      const currentLateFee = loan.lateFeeAmount || 0;
+      const lateFeeSettled = Math.min(amount, currentLateFee);
+      const newLateFeeAmount = Math.max(0, currentLateFee - lateFeeSettled);
+
+      if (lateFeeSettled > 0) {
+        await db.insert(transactions).values({
+          id: uuidv4(),
+          bankId: req.params.bankId,
+          fromAccountId: accountId,
+          toAccountId: corpAcc.id,
+          type: "fee",
+          feeType: "late_fee",
+          amount: lateFeeSettled,
+          description: `Loan Late Fee Settlement (Loan #${loan.id.slice(0, 8)})`,
+          category: "Fee Income",
+          timestamp: ts
+        });
+      }
+
+      // Record loan repayment transaction into bank corp ledger
       await db.insert(transactions).values({
         id: uuidv4(),
         bankId: req.params.bankId,
         fromAccountId: accountId,
-        toAccountId: null,
-        type: "withdraw",
+        toAccountId: corpAcc.id,
+        type: "loan_payment",
         amount,
-        description: `Loan Payment${isPaid ? ' (Final}' : ''}`,
+        description: `Loan Repayment${isPaid ? ' (Final Payoff)' : ''} (Loan #${loan.id.slice(0, 8)})`,
+        category: "Loan Repayment",
         timestamp: ts
       });
 
-      // Update loan
+      // Update loan state
+      const nextDate = new Date();
+      nextDate.setDate(nextDate.getDate() + 30);
+
       await db.update(loans).set({ 
         remainingAmount: newRemaining,
-        status: isPaid ? "paid" : "active",
-        nextPaymentDate: isPaid ? loan.nextPaymentDate : sql`datetime(${loan.nextPaymentDate.toISOString()}, '+30 days')` // simplified, push back next payment by 30 days
+        lateFeeAmount: newLateFeeAmount,
+        isDelinquent: newLateFeeAmount > 0,
+        missedPaymentsCount: newLateFeeAmount > 0 ? loan.missedPaymentsCount : 0,
+        status: isPaid ? "paid_off" : "active",
+        nextPaymentDate: isPaid ? loan.nextPaymentDate : nextDate
       }).where(eq(loans.id, loan.id));
 
       res.json({ success: true, newRemaining, isPaid });

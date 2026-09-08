@@ -15,6 +15,11 @@ export function BankLoans() {
   const [selectedLoan, setSelectedLoan] = useState<any | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isOffSystem, setIsOffSystem] = useState(false);
+  const [initialPaidAmount, setInitialPaidAmount] = useState("");
+  const [offSystemReference, setOffSystemReference] = useState("");
+  const [customRemainingAmount, setCustomRemainingAmount] = useState("");
+  const [customNextDueDate, setCustomNextDueDate] = useState("");
   const [discordId, setCityCorpId] = useState("");
   const [principalAmount, setPrincipalAmount] = useState("");
   const [interestRate, setInterestRate] = useState("10.0"); 
@@ -144,28 +149,51 @@ export function BankLoans() {
     if (!discordId || !principalAmount || !interestRate || !depositAccountId) return;
     
     try {
+      const payload: any = { 
+        discordId,
+        depositAccountId,
+        principalAmount: Math.round(parseFloat(principalAmount) * 100), 
+        interestRate: Math.round(parseFloat(interestRate) * 100),
+        collateralDescription,
+        collateralValue,
+        isOffSystem
+      };
+
+      if (isOffSystem) {
+        payload.initialPaidAmount = Math.round(parseFloat(initialPaidAmount || "0") * 100);
+        payload.offSystemReference = offSystemReference || null;
+        if (customRemainingAmount) {
+          payload.remainingAmount = Math.round(parseFloat(customRemainingAmount) * 100);
+        }
+        if (customNextDueDate) {
+          payload.nextPaymentDate = customNextDueDate;
+        }
+      }
+
       const res = await fetch(`/api/banks/${bankId}/loans`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          discordId,
-          depositAccountId,
-          principalAmount: Math.round(parseFloat(principalAmount) * 100), 
-          interestRate: Math.round(parseFloat(interestRate) * 100),
-          collateralDescription,
-          collateralValue
-        })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         setShowAddModal(false);
+        setIsOffSystem(false);
+        setInitialPaidAmount("");
+        setOffSystemReference("");
+        setCustomRemainingAmount("");
+        setCustomNextDueDate("");
         setCityCorpId("");
         setPrincipalAmount("");
         setCollateralDescription("");
         setCollateralValue("");
         fetchData();
+      } else {
+        const err = await res.json();
+        alert("Error creating loan: " + (err.error || "Unknown error"));
       }
     } catch (e: any) {
       console.error(e);
+      alert("Error: " + e.message);
     }
   };
 
@@ -430,17 +458,29 @@ export function BankLoans() {
                   onClick={() => setSelectedLoan(loan)}
                 >
                   <td className="p-4 text-sm font-medium text-white/90">
-                    {loan.mcUsername ? (
-                      <div>
-                        <span className="text-white font-bold">{loan.mcUsername}</span>
-                        <span className="block text-[10px] text-zinc-500 font-mono">{loan.discordId}</span>
-                      </div>
-                    ) : (
-                      <span className="font-mono text-white/80 font-semibold">{loan.discordId}</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {loan.mcUsername ? (
+                        <div>
+                          <span className="text-white font-bold">{loan.mcUsername}</span>
+                          <span className="block text-[10px] text-zinc-500 font-mono">{loan.discordId}</span>
+                        </div>
+                      ) : (
+                        <span className="font-mono text-white/80 font-semibold">{loan.discordId}</span>
+                      )}
+                      {loan.isOffSystem && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                          Off-System
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="p-4 text-sm font-mono text-white/70">
                     ${(loan.principalAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {loan.isOffSystem && loan.initialPaidAmount > 0 && (
+                      <span className="block text-[10px] text-purple-400 font-mono">
+                        -${(loan.initialPaidAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} paid off-sys
+                      </span>
+                    )}
                   </td>
                   <td className="p-4 text-sm font-mono text-emerald-400 font-bold">
                     ${(loan.remainingAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -559,11 +599,63 @@ export function BankLoans() {
               className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
             >
               <div className="p-6 border-b border-white/5">
-                <h2 className="text-xl font-semibold text-white">Issue Loan</h2>
-                <p className="text-sm text-white/60 mt-1">Disburse funds & establish a payment plan</p>
+                <div className="flex justify-between items-center mb-2">
+                  <h2 className="text-xl font-semibold text-white">
+                    {isOffSystem ? "Import Off-System Loan" : "Issue New Loan"}
+                  </h2>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowAddModal(false)}
+                    className="text-white/40 hover:text-white"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <p className="text-sm text-white/60">
+                  {isOffSystem 
+                    ? "Record historical off-system loan and collect remaining balance on-platform" 
+                    : "Disburse bank funds & establish automated repayment schedule"}
+                </p>
+
+                {/* Mode Selector */}
+                <div className="grid grid-cols-2 gap-2 mt-4 bg-slate-950/60 p-1.5 rounded-xl border border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setIsOffSystem(false)}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      !isOffSystem 
+                        ? "bg-emerald-600 text-white shadow-md" 
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    <Banknote size={14} /> New Disbursed Loan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsOffSystem(true)}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      isOffSystem 
+                        ? "bg-purple-600 text-white shadow-md" 
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    <FileText size={14} /> Import Off-System Loan
+                  </button>
+                </div>
               </div>
 
-              <form onSubmit={handleCreateLoan} className="p-6 space-y-4">
+              <form onSubmit={handleCreateLoan} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+                {isOffSystem && (
+                  <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3.5 text-xs text-purple-200 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5 text-purple-300">
+                      <ShieldAlert size={15} /> Off-System Loan Onboarding
+                    </p>
+                    <p className="text-purple-300/80 leading-relaxed">
+                      This record documents a loan originated outside Slate (e.g. Discord contracts). <strong>No bank reserve funds are disbursed now.</strong> The remaining balance will be serviced on Slate, and all future payments flow directly to your bank corporate fee account.
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-white/80 mb-1.5">Borrower Discord ID</label>
                   <input
@@ -577,14 +669,16 @@ export function BankLoans() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-white/80 mb-1.5">Deposit To Account</label>
+                  <label className="block text-sm font-medium text-white/80 mb-1.5">
+                    {isOffSystem ? "Linked Customer Account (For Repayments)" : "Deposit To Account"}
+                  </label>
                   <select 
                     value={depositAccountId}
                     onChange={(e) => setDepositAccountId(e.target.value)}
                     className="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     required
                   >
-                    <option value="">Select receiving account...</option>
+                    <option value="">Select account...</option>
                     {accounts.filter(a => a.ownerDiscordId === discordId).length > 0 
                       ? accounts.filter(a => a.ownerDiscordId === discordId).map(acc => (
                          <option key={acc.id} value={acc.id}>{acc.accountName}</option>
@@ -598,7 +692,9 @@ export function BankLoans() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-white/80 mb-1.5">Principal Amount</label>
+                    <label className="block text-sm font-medium text-white/80 mb-1.5">
+                      {isOffSystem ? "Original Principal ($)" : "Principal Amount"}
+                    </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/50">$</div>
                       <input
@@ -606,8 +702,17 @@ export function BankLoans() {
                         step="0.01"
                         min="0.01"
                         value={principalAmount}
-                        onChange={(e) => setPrincipalAmount(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPrincipalAmount(val);
+                          if (isOffSystem) {
+                            const p = parseFloat(val) || 0;
+                            const paid = parseFloat(initialPaidAmount) || 0;
+                            setCustomRemainingAmount(Math.max(0, p - paid).toString());
+                          }
+                        }}
                         className="w-full bg-slate-800 border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="100000.00"
                         required
                       />
                     </div>
@@ -625,6 +730,75 @@ export function BankLoans() {
                     />
                   </div>
                 </div>
+
+                {isOffSystem && (
+                  <div className="grid grid-cols-2 gap-4 pt-1">
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1.5">
+                        Prior Paid Off-System ($)
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/50">$</div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={initialPaidAmount}
+                          onChange={(e) => {
+                            const paidVal = e.target.value;
+                            setInitialPaidAmount(paidVal);
+                            const p = parseFloat(principalAmount) || 0;
+                            const paid = parseFloat(paidVal) || 0;
+                            setCustomRemainingAmount(Math.max(0, p - paid).toString());
+                          }}
+                          placeholder="10000.00"
+                          className="w-full bg-slate-800 border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1.5">
+                        Remaining Balance Due ($)
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/50">$</div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={customRemainingAmount}
+                          onChange={(e) => setCustomRemainingAmount(e.target.value)}
+                          placeholder="90000.00"
+                          className="w-full bg-slate-800 border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isOffSystem && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-white/70 mb-1">Off-System Ref / Contract Note</label>
+                      <input
+                        type="text"
+                        value={offSystemReference}
+                        onChange={(e) => setOffSystemReference(e.target.value)}
+                        placeholder="e.g. Discord #849 / Paid 10k in Gold"
+                        className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-white/70 mb-1">Next Payment Due Date</label>
+                      <input
+                        type="date"
+                        value={customNextDueDate}
+                        onChange={(e) => setCustomNextDueDate(e.target.value)}
+                        className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="border-t border-white/10 pt-4 space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Collateral Binding (Optional)</p>
@@ -662,9 +836,13 @@ export function BankLoans() {
                   <button
                     type="submit"
                     disabled={!discordId || !principalAmount || !depositAccountId}
-                    className="flex-1 px-4 py-2.5 rounded-lg font-medium bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 text-white transition-colors"
+                    className={`flex-1 px-4 py-2.5 rounded-lg font-medium text-white transition-colors ${
+                      isOffSystem 
+                        ? "bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50" 
+                        : "bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50"
+                    }`}
                   >
-                    Issue Loan
+                    {isOffSystem ? "Record Off-System Loan" : "Issue Loan"}
                   </button>
                 </div>
               </form>
@@ -828,6 +1006,25 @@ export function BankLoans() {
                       <p className="font-mono text-white/80 text-xl">${(selectedLoan.principalAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
                   </div>
+
+                  {selectedLoan.isOffSystem && (
+                    <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-xl space-y-2">
+                      <div className="flex justify-between items-center text-xs font-semibold text-purple-300">
+                        <span className="flex items-center gap-1.5"><FileText size={14} /> Off-System Agreement</span>
+                        <span className="bg-purple-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Manual Record</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                        <div>
+                          <span className="text-white/50 block text-[11px]">Prior Paid Off-System</span>
+                          <span className="text-purple-200 font-mono font-bold">${((selectedLoan.initialPaidAmount || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/50 block text-[11px]">External Reference</span>
+                          <span className="text-white font-medium">{selectedLoan.offSystemReference || "None recorded"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Collateral Binding Box */}
                   <div className="bg-slate-800/40 border border-white/10 p-4 rounded-xl space-y-3">

@@ -89,7 +89,8 @@ export const transactions = sqliteTable("transactions", {
   fromAccountId: text("from_account_id").references(() => bankAccounts.id), // nullable for deposits from game
   toAccountId: text("to_account_id").references(() => bankAccounts.id), // nullable for withdrawals to game
   amount: integer("amount").notNull(),
-  type: text("type").notNull(), // "transfer", "deposit", "withdraw", "onyx_payment"
+  type: text("type").notNull(), // "transfer", "deposit", "withdraw", "onyx_payment", "fee"
+  feeType: text("fee_type"), // "transfer_fee", "deposit_fee", "withdraw_fee", "wire_fee", "late_fee", "origination_fee", "service_fee"
   description: text("description"),
   isFlagged: integer("is_flagged", { mode: "boolean" }).default(false),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
@@ -158,6 +159,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   googleDocsEscrowTemplateUrl: text("google_docs_escrow_template_url"),
   googleDocsFolderUrl: text("google_docs_folder_url"),
   googleDocsAutoGenerate: integer("google_docs_auto_generate", { mode: "boolean" }).default(false),
+  defaultCorpAccount: text("default_corp_account"),
 });
 
 export const escrows = sqliteTable("escrows", {
@@ -234,6 +236,11 @@ export const loans = sqliteTable("loans", {
   missedPaymentsCount: integer("missed_payments_count").default(0),
   lastInterestAccrualAt: integer("last_interest_accrual_at", { mode: "timestamp" }),
   lastPaymentAttemptAt: integer("last_payment_attempt_at", { mode: "timestamp" }),
+
+  // Off-system / Manual Historical Loan Import
+  initialPaidAmount: integer("initial_paid_amount").default(0), // Amount paid off-system prior to onboarding (in cents)
+  isOffSystem: integer("is_off_system", { mode: "boolean" }).default(false), // True if originated externally/off-system
+  offSystemReference: text("off_system_reference"), // External contract reference or notes
 
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({

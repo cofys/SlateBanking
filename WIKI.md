@@ -823,5 +823,46 @@ A Global Clearinghouse Balances panel has been added to Global Settings, allowin
   - **Dual Provider Access Across Portals**: Public bank portals and citizen portals support both CityCorp and Discord authentication, ensuring citizens can always authenticate even if custom CityCorp credentials are not configured for an individual bank.
   - **Context-Aware PayLink Authorization**: Payment request links (`/pay/:linkId`) now display the merchant name, requested amount, and memo directly on the authorization card before login, matching professional checkout patterns.
 
+## In-Game Corporate Fee Accounting Engine & CityCorp Plugin Architecture
+- **In-Game Corporate Account Integration (`src/server/feeService.ts` & `src/lib/citycorp_api.ts`)**:
+  - Eliminates separate artificial local fee accounts. Instead, fee revenue flows directly into the bank's default corporate account within the **CityCorp Minecraft/economy plugin**.
+  - Automatically identifies and synchronizes the bank's primary corporate account (configurable via `defaultCorpAccount` in Bank Settings, defaulting to `Main` or the first corporate account fetched from CityCorp).
+  - Queries the CityCorp plugin endpoint via `getCorpTransactions` (`fetchInGameCorpTransactions`) using the bank's unified CityCorp App Token and Application credentials.
+  - Dynamically syncs live in-game corporate balances and historical in-game transaction ledgers.
+- **Empirically Verified CityCorp Plugin Transaction Models (Corp VH / Vance & Hamilton)**:
+  - Validated via live API testing across all 76 pages (754 total corporate transactions) against Corp 325 (`https://api.cityrp.org/citycorp/corp/transactions/list?corp_id=325`):
+    - **`CorpAccountFeeTransaction`**: Inflow into the corporation treasury from in-game citizen transactions. Contains `feeType` (`"WITHDRAW"` or `"DEPOSIT"`), `accountName` (source citizen account), `staff` (Minecraft UUID of initiating player), `amount` (exact fee assessed), `afterBalance` (treasury balance after fee credit), `timestamp` (epoch ms), and `id`. Mapped to `withdraw_fee` or `deposit_fee`.
+    - **`BankPoolTransaction`**: Transfers between the corporation account and the bank pool. Contains `deposit` (boolean: true for capital inflow, false for withdrawal), `executor` (Minecraft UUID), `amount`, `afterBalance`, `timestamp`, and `id`. Mapped to liquidity pool movements.
+    - **`PayTransaction`**: Direct citizen or player payments to the bank corporation via `/corp/pay`. Contains `executor` (payer UUID), `amount`, `afterBalance`, `timestamp`, and `id`. Mapped to `service_fee` / corporate revenue.
+    - **`SendTransaction`**: Corporation treasury disbursements sent out by staff. Contains `staff` (sender UUID), `recipient` (destination UUID), `amount`, `afterBalance`, `timestamp`, and `id`. Mapped to corporate outflows.
+    - **`AccountTransaction`**: Individual citizen account-level transactions queried via `/corp/accounts/transactions/list`. Contains `deposit` (boolean: true for credit, false for debit), `subuser` (initiating UUID), `amount`, `afterBalance`, `timestamp`, and `id`. Corresponds to the underlying citizen transaction that generates a `CorpAccountFeeTransaction` on the bank's default corporate account.
+
+- **Deduplication & Ledger Synchronization (`syncInGameCorpTransactions`)**:
+  - Live synchronization endpoint (`POST /api/banks/:bankId/treasury/sync-corp-transactions` and `POST /api/banks/:bankId/treasury/recalculate`).
+  - Fetches the in-game account's live balance and in-game transactions from CityCorp.
+  - Matches and deduplicates remote records against local transaction rows to prevent double-counting.
+  - Inserts missing corporate records with normalized `feeType`, timestamp, and metadata.
+  - Synchronously updates the bank's corporate account balance in the database.
+- **Overhauled Treasury & Corporate Ledger Dashboard (`src/pages/BankTreasury.tsx`)**:
+  - **CityCorp In-Game Account Overview**: Displays the bank's live default corporate account name, in-game balance, and live synchronization status.
+  - **Institutional Balance Sheet & Capital Reserves**: Live breakdown of Liquid Cash Reserves, Vault Physical Cash, In-Game Corporate GL, Active Loan Book, and Depositor Liabilities with target reserve ratio compliance indicators (15.0%).
+  - **Granular Fee Register by Type**: Card grid displaying every fee classification with dollar volume, transaction counts, and percentage share.
+  - **In-Game Corporate Transaction History**: Filterable, searchable data table displaying recent in-game corporate transactions with color-coded classification badges, timestamp, and memos.
+  - **One-Click Sync**: "Sync In-Game Corp Transactions" action triggers live CityCorp API retrieval, parsing, and recalculation in real time.
+
+## Manual Off-System Loan Origination & Debt Servicing Engine
+- **Off-System Lending Onboarding (`src/pages/BankLoans.tsx` & `src/server/routes/banks.ts`)**:
+  - Allows bank staff to manually import and onboard loans negotiated outside Slate (e.g. Discord contracts, verbal agreements, or offline cash debts).
+  - Modal toggle provides two distinct creation workflows: **New Disbursed Loan** (standard bank disbursement) and **Import Off-System Loan** (manual recording).
+  - **Liquidity Safeguard**: When `isOffSystem: true`, the system **does not disburse funds from bank reserves**, preventing false liquidity drains.
+  - **Prior Payment Tracking**: Staff can record `initialPaidAmount` (e.g. $10,000 already paid off on a $100,000 loan), an external agreement reference (`offSystemReference`, e.g. "Discord Agreement #104"), and the exact remaining balance due ($90,000).
+- **Automated & Manual Debt Servicing**:
+  - Once imported, off-system loans are fully integrated into Slate's repayment and delinquency engine (`loan_processor.ts`).
+  - Automated recurring debits and manual installments paid through the Citizen Portal or Bank Portal automatically service the remaining balance.
+  - **Priority Fee Allocation**: Loan repayments prioritize outstanding late fees first before amortizing remaining principal.
+  - **In-Game Corporate Revenue Crediting**: All loan repayments and late fees credit directly into the bank's default CityCorp corporate account.
+- **Visibility Across Portals**:
+  - Both staff in `BankLoans.tsx` and borrowers in `CitizenPortal.tsx` see distinct **Off-System** badges, prior off-system paid amounts, and contract notes alongside their repayment progress and due dates.
+
 
 

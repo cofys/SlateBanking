@@ -14,6 +14,8 @@ const dbPath = path.join(dataDir, "slate_saas.db");
 const sqlite = new Database(dbPath);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('synchronous = NORMAL');
+sqlite.pragma('busy_timeout = 5000');
+sqlite.pragma('foreign_keys = ON');
 
 export const db = drizzle(sqlite, { schema });
 
@@ -194,6 +196,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "interest_min_balance", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "interest_max_account_balance", "INTEGER");
   checkAndAddColumn("bank_settings", "interest_requires_activity_days", "INTEGER");
+  checkAndAddColumn("bank_settings", "default_corp_account", "TEXT");
 
   // Transactions table
   checkAndAddColumn("transactions", "from_account_id", "TEXT");
@@ -201,6 +204,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("transactions", "description", "TEXT");
   checkAndAddColumn("transactions", "is_flagged", "INTEGER DEFAULT 0");
   checkAndAddColumn("transactions", "category", "TEXT");
+  checkAndAddColumn("transactions", "fee_type", "TEXT");
 
   // Loans table
   checkAndAddColumn("loans", "purpose", "TEXT");
@@ -214,6 +218,9 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("loans", "missed_payments_count", "INTEGER DEFAULT 0");
   checkAndAddColumn("loans", "last_interest_accrual_at", "INTEGER");
   checkAndAddColumn("loans", "last_payment_attempt_at", "INTEGER");
+  checkAndAddColumn("loans", "initial_paid_amount", "INTEGER DEFAULT 0");
+  checkAndAddColumn("loans", "is_off_system", "INTEGER DEFAULT 0");
+  checkAndAddColumn("loans", "off_system_reference", "TEXT");
 
   // Escrows table
   checkAndAddColumn("escrows", "description", "TEXT");

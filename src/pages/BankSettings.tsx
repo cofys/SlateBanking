@@ -65,7 +65,8 @@ export function BankSettings() {
       discordClientSecret: formData.get("discordClientSecret"),
       cityCorpAppId: formData.get("cityCorpAppId"),
       cityCorpAppSecret: formData.get("cityCorpAppSecret"),
-      cityCorpAuthUrl: formData.get("cityCorpAuthUrl")
+      cityCorpAuthUrl: formData.get("cityCorpAuthUrl"),
+      defaultCorpAccount: formData.get("defaultCorpAccount")
     };
 
     fetch(`/api/banks/${bank.id}/settings`, {
@@ -564,6 +565,21 @@ export function BankSettings() {
               />
               <p className="text-xs text-white/40 mt-1.5">
                 If provided, this exact URL will be used for logging in users via CityCorp.
+              </p>
+            </div>
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide flex items-center gap-2">
+                Default Corp Account Name (CityCorp Plugin)
+              </label>
+              <input 
+                name="defaultCorpAccount" 
+                type="text" 
+                placeholder="e.g. Main"
+                defaultValue={settings?.defaultCorpAccount || ""} 
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+              />
+              <p className="text-xs text-white/40 mt-1.5">
+                The bank's default corporate account from the CityCorp plugin where fees and corporate inflows are deposited.
               </p>
             </div>
 

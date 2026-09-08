@@ -406,12 +406,16 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
 
       const [sourceAccount] = fromAcc;
       const [theLoan] = await db.select().from(loans).where(eq(loans.id, loanId));
-      if (!theLoan || theLoan.status !== 'active') return res.status(400).json({ error: "Invalid loan" });
+      if (!theLoan || (theLoan.status !== 'active' && theLoan.status !== 'delinquent')) return res.status(400).json({ error: "Invalid loan" });
 
       let newRemaining = 0;
       const { gte, sql } = await import("drizzle-orm");
+      const { getOrCreateBankCorpAccount } = await import("../feeService");
+
       await db.transaction(async (tx) => {
-        // Deduct funds atomically
+        const corpAcc = await getOrCreateBankCorpAccount(tx, theLoan.bankId);
+
+        // Deduct funds atomically from borrower
         await tx.update(bankAccounts)
           .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
           .where(and(
@@ -421,21 +425,56 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
             eq(bankAccounts.isFrozen, false)
           ));
         
+        // Credit the Bank's Corporate Revenue Account
+        await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} + ${parsedAmount}` })
+          .where(eq(bankAccounts.id, corpAcc.id));
+
         newRemaining = Math.max(0, theLoan.remainingAmount - parsedAmount);
+        const isPaidOff = newRemaining <= 0;
+
+        // Check for late fee settlement
+        const currentLateFee = theLoan.lateFeeAmount || 0;
+        const lateFeeSettled = Math.min(parsedAmount, currentLateFee);
+        const newLateFeeAmount = Math.max(0, currentLateFee - lateFeeSettled);
+
+        if (lateFeeSettled > 0) {
+          await tx.insert(transactions).values({
+            id: uuidv4(),
+            bankId: theLoan.bankId,
+            fromAccountId: fromAccountId,
+            toAccountId: corpAcc.id,
+            type: "fee",
+            feeType: "late_fee",
+            amount: lateFeeSettled,
+            description: `Loan Late Fee Settlement (Loan #${theLoan.id.slice(0, 8)})`,
+            category: "Fee Income",
+            timestamp: new Date()
+          });
+        }
+
+        // Push next payment date if partially paid
+        const nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + 30);
 
         await tx.update(loans).set({ 
           remainingAmount: newRemaining,
-          status: newRemaining <= 0 ? 'paid' : 'active'
+          lateFeeAmount: newLateFeeAmount,
+          isDelinquent: newLateFeeAmount > 0,
+          missedPaymentsCount: newLateFeeAmount > 0 ? theLoan.missedPaymentsCount : 0,
+          status: isPaidOff ? 'paid_off' : 'active',
+          nextPaymentDate: isPaidOff ? theLoan.nextPaymentDate : nextDate
         }).where(eq(loans.id, loanId));
 
         await tx.insert(transactions).values({
           id: uuidv4(),
           bankId: theLoan.bankId,
           fromAccountId: fromAccountId,
-          toAccountId: null,
+          toAccountId: corpAcc.id,
           amount: parsedAmount,
-          type: 'transfer',
-          description: `Manual Loan Payment`,
+          type: 'loan_payment',
+          description: `Loan Repayment${isPaidOff ? ' (Final Payoff)' : ''} (Loan #${theLoan.id.slice(0, 8)})`,
+          category: 'Loan Repayment',
           timestamp: new Date()
         });
       });
@@ -869,16 +908,14 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
           });
 
           if (feeCents > 0) {
-            await tx.insert(transactions).values({
-              id: uuidv4(),
+            const { recordBankFee } = await import("../feeService");
+            await recordBankFee(tx, {
               bankId: sourceAccount.bankId,
               fromAccountId: sourceAccount.id,
-              toAccountId: null,
-              type: "transfer",
-              amount: feeCents,
+              amountCents: feeCents,
+              feeType: "transfer_fee",
               description: `Transfer Fee (${(transferFeeBps/100).toFixed(2)}%)`,
-              timestamp: new Date(),
-              category: "Fees"
+              category: "Fee Income"
             });
           }
         });
