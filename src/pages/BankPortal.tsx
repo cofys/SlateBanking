@@ -507,16 +507,16 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                  </div>
                </div>
                
-               <div className="flex flex-wrap items-center gap-4 md:gap-8">
-                  <div className="text-right">
+               <div className="grid grid-cols-3 md:flex md:items-center gap-4 md:gap-8 w-full md:w-auto border-t border-white/10 md:border-t-0 pt-4 md:pt-0">
+                  <div className="text-center md:text-right">
                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Accounts</span>
                      <span className="font-mono font-bold text-lg text-white">{userData?.accounts?.length || 0}</span>
                   </div>
-                  <div className="text-right">
+                  <div className="text-center md:text-right">
                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Cards</span>
                      <span className="font-mono font-bold text-lg text-white">{userData?.cards?.length || 0}</span>
                   </div>
-                  <div className="text-right">
+                  <div className="text-center md:text-right">
                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Loans</span>
                      <span className="font-mono font-bold text-lg text-white">{userData?.loans?.length || 0}</span>
                   </div>
@@ -640,7 +640,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     </div>
 
                     {/* Filter Pills */}
-                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pt-1">
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
                       <span className="text-[10px] uppercase font-bold text-zinc-500 flex items-center gap-1 shrink-0">
                         <Filter size={11} /> Filter:
                       </span>
@@ -746,7 +746,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 <div className="bg-[#0b0b0f] border border-white/5 rounded-2xl overflow-hidden shadow-lg">
                   
                   {/* Elevated Glass Tabs */}
-                  <div className="flex border-b border-white/10 bg-black/40 p-3 gap-2 overflow-x-auto scrollbar-hide snap-x">
+                  <div className="flex flex-wrap border-b border-white/10 bg-black/40 p-3 gap-2">
                     {[
                       { id: "transfer", label: "Wire Transfer", icon: Send },
                       { id: "onyx", label: "Onyx Pay", icon: Activity },
@@ -757,10 +757,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`flex-1 min-w-[140px] py-3 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all snap-start relative
+                        className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all relative
                           ${activeTab === tab.id 
-                            ? `${theme.bg} text-white shadow-lg ${theme.glow} ring-1 ring-white/20` 
-                            : `text-zinc-400 hover:text-white ${theme.bgLight} hover:bg-white/10 ring-1 ring-white/5`
+                            ? `${theme.bg} text-white shadow-md ring-1 ring-white/20` 
+                            : `text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/5`
                           }`}
                       >
                         <tab.icon size={16} className={activeTab === tab.id ? 'text-white' : theme.textAccent} />
