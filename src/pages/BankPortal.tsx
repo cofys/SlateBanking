@@ -287,7 +287,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-8 mb-24">
+    <div className="min-h-screen bg-[#060609] text-slate-300 font-sans selection:bg-indigo-500/30 relative overflow-hidden">
+      {/* Ambient background glows */}
+      <div className={`absolute top-0 left-1/4 w-[500px] h-[500px] ${theme.bgLight} rounded-full blur-[120px] pointer-events-none opacity-50`} />
+      <div className={`absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-indigo-600/5 rounded-full blur-[150px] pointer-events-none opacity-50`} />
+      
+      <div className="max-w-6xl mx-auto px-4 py-8 space-y-8 mb-24 relative z-10">
       
       {/* Top Bank Header Banner */}
       <div className="bg-gradient-to-r from-[#0d0d14] via-[#0b0b10] to-[#0e0e16] border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
@@ -598,57 +603,67 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         <motion.div 
                           key={acc.id}
                           onClick={() => setSelectedAccountId(isSelected ? "all" : acc.id)}
-                          whileHover={{ y: -2 }}
-                          className={`rounded-2xl p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group cursor-pointer transition-all duration-200 border ${
+                          whileHover={{ scale: 1.02 }}
+                          className={`relative h-48 rounded-3xl p-6 overflow-hidden cursor-pointer shadow-2xl transition-all duration-500 border ${
                             isSelected 
-                              ? "bg-gradient-to-b from-[#181824] to-[#0e0e14] border-indigo-500/60 ring-2 ring-indigo-500/20 shadow-indigo-500/10" 
-                              : "bg-gradient-to-b from-[#111118] to-[#0a0a0e] border-white/10 hover:border-white/20"
+                              ? `border-white/30 ring-4 ring-white/10 ${theme.glow}` 
+                              : "border-white/5 hover:border-white/20"
                           }`}
                         >
-                          <div className="flex justify-between items-start relative z-10">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-white text-base tracking-tight truncate max-w-[150px]">{acc.accountName}</h3>
+                          {/* Physical Card Backgrounds */}
+                          <div className={`absolute inset-0 ${
+                            isBusiness 
+                              ? `bg-gradient-to-br ${theme.fromGradient} via-slate-900 to-black` 
+                              : isSavings 
+                                ? 'bg-gradient-to-br from-amber-900 via-amber-950 to-black' 
+                                : 'bg-gradient-to-br from-slate-800 via-slate-900 to-black'
+                          } z-0`} />
+                          
+                          {/* Ambient Glows */}
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 blur-[40px] rounded-full translate-x-1/4 -translate-y-1/4 z-0" />
+                          <div className={`absolute bottom-0 left-0 w-40 h-40 ${isSelected ? theme.bgLight : 'bg-black/20'} blur-[50px] rounded-full -translate-x-1/4 translate-y-1/4 z-0 transition-colors duration-500`} />
+                          
+                          <div className="relative z-10 h-full flex flex-col justify-between">
+                            <div className="flex justify-between items-start">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-bold text-white text-base tracking-widest uppercase drop-shadow-md">{acc.accountName}</h3>
+                                  {isSelected && (
+                                    <span className="w-2 h-2 rounded-full bg-white animate-pulse" title="Active Focus" />
+                                  )}
+                                </div>
+                                <span className={`inline-block text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 rounded border backdrop-blur-md w-max
+                                  ${isSavings ? "bg-amber-500/20 text-amber-200 border-amber-500/30" : 
+                                   isBusiness ? "bg-white/10 text-white border-white/20" : 
+                                   "bg-zinc-500/20 text-zinc-300 border-zinc-500/30"
+                                  }`}
+                                >
+                                  {acc.type}
+                                </span>
+                              </div>
+                              <Wallet className={isSelected ? 'text-white' : 'text-white/40'} size={24} />
+                            </div>
+
+                            <div className="space-y-3">
+                              {/* EMV Chip placeholder */}
+                              <div className="w-10 h-7 rounded bg-gradient-to-br from-yellow-200 to-yellow-500/50 opacity-80 shadow-inner" />
+                              
+                              <div className="flex items-center justify-between gap-4">
+                                <p className="font-mono text-2xl font-bold tracking-tight text-white drop-shadow-lg">
+                                  {formatMoney(acc.balance)}
+                                </p>
+                              </div>
+                              
+                              <div className="flex justify-between items-end text-[10px] font-mono text-white/60 uppercase tracking-widest">
+                                <div className="flex flex-col">
+                                  <span className="opacity-50">Acc ID</span>
+                                  <span className="truncate max-w-[120px] font-bold text-white/80">{acc.id}</span>
+                                </div>
                                 {isSelected && (
-                                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" title="Active Focus" />
+                                  <span className="font-bold text-white animate-pulse">Focused</span>
                                 )}
                               </div>
-                              <span className={`inline-block mt-1 text-[9px] uppercase font-bold px-2 py-0.5 rounded-full 
-                                ${isSavings ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : 
-                                 isBusiness ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" : 
-                                 "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
-                                }`}
-                              >
-                                {acc.type} Account
-                              </span>
                             </div>
-                            <div className={`p-2 rounded-xl transition-colors ${isSelected ? "bg-indigo-500/20 text-indigo-300" : "bg-white/5 text-zinc-400"}`}>
-                              {isSavings ? <Sparkles size={16} /> : isBusiness ? <Building2 size={16} /> : <CreditCard size={16} />}
-                            </div>
-                          </div>
-
-                          <div className="mt-4 relative z-10">
-                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Available Balance</p>
-                            <p className="text-2xl font-black font-mono text-white mt-0.5">
-                              {formatMoney(acc.balance)}
-                            </p>
-                          </div>
-
-                          <div className="pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-zinc-500 mt-3 relative z-10">
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigator.clipboard.writeText(acc.id);
-                                alert(`Copied Account ID ${acc.id}`);
-                              }}
-                              className="hover:text-zinc-300 transition-colors select-all cursor-pointer font-bold flex items-center gap-1"
-                              title="Click to copy account ID"
-                            >
-                              ID: {acc.id} <Copy size={10} />
-                            </span>
-                            <span className={isSelected ? "text-indigo-400 font-bold" : "text-emerald-400 font-bold"}>
-                              {isSelected ? "Filtered Focus" : "Active"}
-                            </span>
                           </div>
                         </motion.div>
                       );
@@ -1687,6 +1702,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         )}
       </AnimatePresence>
 
+    </div>
     </div>
   );
 }
