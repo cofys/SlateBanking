@@ -478,231 +478,126 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
           <div className="space-y-8">
             {/* Authenticated Client Dashboard */}
           
-          {/* HERO SECTION: Identity & Metrics Bento Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-               
-               {/* Primary Identity Card (Takes up 1/3) */}
-               <div className={`col-span-1 p-6 md:p-8 rounded-3xl bg-gradient-to-br ${theme.fromGradient} via-slate-900 to-black border border-white/10 relative overflow-hidden shadow-2xl flex flex-col justify-between`}>
-                 <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full blur-[50px] -mr-10 -mt-10 pointer-events-none" />
-                 <div className={`absolute bottom-0 left-0 w-48 h-48 ${theme.bgLight} rounded-full blur-[60px] -ml-10 -mb-10 pointer-events-none`} />
-                 
-                 <div className="flex items-start justify-between relative z-10">
-                   <div className="flex items-center gap-4">
-                     {userData?.customer?.mcUuid ? (
-                       <div className="relative group shrink-0">
-                         <img 
-                            src={`https://mc-heads.net/avatar/${userData.customer.mcUsername || userData.customer.mcUuid}/64`} 
-                            alt="MC Head" 
-                            className="w-16 h-16 rounded-2xl border border-white/20 shadow-2xl bg-black p-0.5 object-contain"
-                            onError={(e: any) => {
-                              e.target.onerror = null;
-                              e.target.src = `https://minotar.net/helm/${userData.customer.mcUsername || userData.customer.mcUuid}/64.png`;
-                            }}
-                         />
-                         <span className="absolute -bottom-1 -right-1 bg-emerald-500 border-2 border-black p-1 rounded-full text-white shadow-xl" title="Verified Customer">
-                           <ShieldCheck size={10} />
-                         </span>
-                       </div>
-                     ) : (
-                       <div className="w-16 h-16 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-white backdrop-blur-md shrink-0 shadow-2xl">
-                         <UserCheck size={28} />
-                       </div>
-                     )}
-                     <div className="space-y-1">
-                       <h3 className="font-bold text-white text-xl tracking-tight">
-                         {userData?.customer?.mcUsername || user.username || "Citizen"}
-                       </h3>
-                       <span className="inline-block text-[9px] bg-white/10 text-white font-bold px-2.5 py-0.5 rounded-full border border-white/20 uppercase tracking-widest shadow-sm">
-                         Verified Customer
-                       </span>
-                     </div>
+          {/* Clean Header Section */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-[#0a0a0f] border border-white/5 rounded-2xl p-6 shadow-xl">
+               <div className="flex items-center gap-4">
+                 {userData?.customer?.mcUuid ? (
+                   <div className="relative group shrink-0">
+                     <img 
+                        src={`https://mc-heads.net/avatar/${userData.customer.mcUsername || userData.customer.mcUuid}/64`} 
+                        alt="MC Head" 
+                        className="w-14 h-14 rounded-xl border border-white/10 shadow-lg bg-black object-contain"
+                        onError={(e: any) => {
+                          e.target.onerror = null;
+                          e.target.src = `https://minotar.net/helm/${userData.customer.mcUsername || userData.customer.mcUuid}/64.png`;
+                        }}
+                     />
                    </div>
-                 </div>
-
-                 <div className="mt-8 relative z-10">
-                   <p className="text-white/70 text-xs mb-1 uppercase tracking-widest font-bold">Total Net Worth</p>
-                   <p className="text-4xl md:text-5xl font-black text-white drop-shadow-md tracking-tight">{formatMoney(netWorthCents)}</p>
-                   {userData?.customer?.mcUuid && (
-                      <p className="text-[10px] text-white/50 font-mono mt-2 select-all uppercase tracking-widest">ID: {userData.customer.mcUuid}</p>
-                   )}
+                 ) : (
+                   <div className="w-14 h-14 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white shrink-0">
+                     <UserCheck size={24} />
+                   </div>
+                 )}
+                 <div>
+                   <div className="flex items-center gap-2">
+                     <h2 className="font-bold text-white text-xl">{userData?.customer?.mcUsername || user.username || "Citizen"}</h2>
+                     <span className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md ${theme.bgLight} ${theme.textAccent}`}>Verified</span>
+                   </div>
+                   <p className="text-sm text-zinc-400 mt-1">Total Net Worth: <span className="font-mono text-white">{formatMoney(netWorthCents)}</span></p>
                  </div>
                </div>
-
-               {/* Metrics Bento Row (Takes up 2/3) */}
-               <div className="col-span-1 lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-6">
-                  {/* Active Accounts */}
-                  <div className="bg-[#0e0e15] border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between relative overflow-hidden group hover:border-emerald-500/30 transition-all duration-500">
-                     <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-[40px] translate-y-1/2 translate-x-1/2 transition-colors pointer-events-none" />
-                     <div className="flex justify-between items-start">
-                       <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400">
-                         <Wallet size={24} />
-                       </div>
-                     </div>
-                     <div className="mt-8">
-                       <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest block mb-1">Active Accounts</p>
-                       <p className="text-4xl font-black font-mono text-white">{userData?.accounts?.length || 0}</p>
-                     </div>
+               
+               <div className="flex flex-wrap items-center gap-4 md:gap-8">
+                  <div className="text-right">
+                     <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Accounts</span>
+                     <span className="font-mono font-bold text-lg text-white">{userData?.accounts?.length || 0}</span>
                   </div>
-                  
-                  {/* Cards Issued */}
-                  <div className={`bg-[#0e0e15] border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between relative overflow-hidden group hover:border-${theme.primary}/30 transition-all duration-500`}>
-                     <div className={`absolute bottom-0 right-0 w-32 h-32 ${theme.bgLight} rounded-full blur-[40px] translate-y-1/2 translate-x-1/2 transition-colors pointer-events-none`} />
-                     <div className="flex justify-between items-start">
-                       <div className={`p-3 ${theme.bgLight} rounded-2xl ${theme.textAccent}`}>
-                         <CreditCard size={24} />
-                       </div>
-                     </div>
-                     <div className="mt-8">
-                       <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest block mb-1">Cards Issued</p>
-                       <p className="text-4xl font-black font-mono text-white">{userData?.cards?.length || 0}</p>
-                     </div>
+                  <div className="text-right">
+                     <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Cards</span>
+                     <span className="font-mono font-bold text-lg text-white">{userData?.cards?.length || 0}</span>
                   </div>
-
-                  {/* Active Loans */}
-                  <div className="bg-[#0e0e15] border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between relative overflow-hidden group hover:border-amber-500/30 transition-all duration-500">
-                     <div className="absolute bottom-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-[40px] translate-y-1/2 translate-x-1/2 transition-colors pointer-events-none" />
-                     <div className="flex justify-between items-start">
-                       <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-400">
-                         <Landmark size={24} />
-                       </div>
-                     </div>
-                     <div className="mt-8">
-                       <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest block mb-1">Active Loans</p>
-                       <p className="text-4xl font-black font-mono text-white">{userData?.loans?.length || 0}</p>
-                     </div>
+                  <div className="text-right">
+                     <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Loans</span>
+                     <span className="font-mono font-bold text-lg text-white">{userData?.loans?.length || 0}</span>
                   </div>
                </div>
             </div>
-            
-            {/* Main Content Layout */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-            
-            {/* Left & Middle Column: Accounts & Tabs */}
-            <div className="xl:col-span-7 space-y-8">
-              
-              {/* Accounts Showcase with Interactive Switcher */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* LEFT COLUMN */}
+              <div className="lg:col-span-2 space-y-8">
+                
+                {/* Accounts Showcase */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-2">
                     <h2 className="text-sm font-bold text-zinc-300 tracking-wider uppercase flex items-center gap-2">
-                      <Wallet size={16} className={theme.textAccent} /> My Bank Accounts
+                      <Wallet size={16} className={theme.textAccent} /> My Accounts
                     </h2>
-                    {selectedAccountId !== "all" && (
-                      <button 
-                        onClick={() => setSelectedAccountId("all")}
-                        className="text-[10px] bg-white/10 hover:bg-white/15 text-zinc-300 px-2 py-0.5 rounded-full transition-colors font-medium"
-                      >
-                        Reset Filter
-                      </button>
-                    )}
-                  </div>
-                  <button 
-                    onClick={() => setShowOpenAccountModal(true)}
-                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
-                  >
-                    <Plus size={14} /> New Account
-                  </button>
-                </div>
-
-                {loading ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {[1, 2].map(i => (
-                      <div key={i} className="bg-white/5 border border-white/5 rounded-2xl h-36 animate-pulse" />
-                    ))}
-                  </div>
-                ) : userData?.accounts?.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {userData.accounts.map((acc: any) => {
-                      const isSavings = acc.type?.toLowerCase().includes("savings");
-                      const isBusiness = acc.type?.toLowerCase().includes("business");
-                      const isSelected = selectedAccountId === acc.id;
-                      
-                      return (
-                        <motion.div 
-                          key={acc.id}
-                          onClick={() => setSelectedAccountId(isSelected ? "all" : acc.id)}
-                          whileHover={{ scale: 1.02 }}
-                          className={`relative h-48 rounded-3xl p-6 overflow-hidden cursor-pointer shadow-2xl transition-all duration-500 border ${
-                            isSelected 
-                              ? `border-white/30 ring-4 ring-white/10 ${theme.glow}` 
-                              : "border-white/5 hover:border-white/20"
-                          }`}
-                        >
-                          {/* Physical Card Backgrounds */}
-                          <div className={`absolute inset-0 ${
-                            isBusiness 
-                              ? `bg-gradient-to-br ${theme.fromGradient} via-slate-900 to-black` 
-                              : isSavings 
-                                ? 'bg-gradient-to-br from-amber-900 via-amber-950 to-black' 
-                                : 'bg-gradient-to-br from-slate-800 via-slate-900 to-black'
-                          } z-0`} />
-                          
-                          {/* Ambient Glows */}
-                          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 blur-[40px] rounded-full translate-x-1/4 -translate-y-1/4 z-0" />
-                          <div className={`absolute bottom-0 left-0 w-40 h-40 ${isSelected ? theme.bgLight : 'bg-black/20'} blur-[50px] rounded-full -translate-x-1/4 translate-y-1/4 z-0 transition-colors duration-500`} />
-                          
-                          <div className="relative z-10 h-full flex flex-col justify-between">
-                            <div className="flex justify-between items-start">
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
-                                  <h3 className="font-bold text-white text-base tracking-widest uppercase drop-shadow-md">{acc.accountName}</h3>
-                                  {isSelected && (
-                                    <span className="w-2 h-2 rounded-full bg-white animate-pulse" title="Active Focus" />
-                                  )}
-                                </div>
-                                <span className={`inline-block text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 rounded border backdrop-blur-md w-max
-                                  ${isSavings ? "bg-amber-500/20 text-amber-200 border-amber-500/30" : 
-                                   isBusiness ? "bg-white/10 text-white border-white/20" : 
-                                   "bg-zinc-500/20 text-zinc-300 border-zinc-500/30"
-                                  }`}
-                                >
-                                  {acc.type}
-                                </span>
-                              </div>
-                              <Wallet className={isSelected ? 'text-white' : 'text-white/40'} size={24} />
-                            </div>
-
-                            <div className="space-y-3">
-                              {/* EMV Chip placeholder */}
-                              <div className="w-10 h-7 rounded bg-gradient-to-br from-yellow-200 to-yellow-500/50 opacity-80 shadow-inner" />
-                              
-                              <div className="flex items-center justify-between gap-4">
-                                <p className="font-mono text-2xl font-bold tracking-tight text-white drop-shadow-lg">
-                                  {formatMoney(acc.balance)}
-                                </p>
-                              </div>
-                              
-                              <div className="flex justify-between items-end text-[10px] font-mono text-white/60 uppercase tracking-widest">
-                                <div className="flex flex-col">
-                                  <span className="opacity-50">Acc ID</span>
-                                  <span className="truncate max-w-[120px] font-bold text-white/80">{acc.id}</span>
-                                </div>
-                                {isSelected && (
-                                  <span className="font-bold text-white animate-pulse">Focused</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-              ) : (
-                <div className="bg-[#0b0b0f] border border-white/10 rounded-2xl p-8 text-center space-y-3">
-                    <Wallet className="mx-auto text-zinc-600" size={32} />
-                    <p className="text-sm font-bold text-white">No Active Accounts</p>
-                    <p className="text-xs text-zinc-400">Open a checking or savings account with {bank.name} to start managing your capital.</p>
                     <button 
                       onClick={() => setShowOpenAccountModal(true)}
-                      className={`mx-auto ${theme.bg} hover:brightness-110 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-lg flex items-center gap-2`}
+                      className="text-xs font-bold text-zinc-400 hover:text-white flex items-center gap-1 transition-colors"
                     >
-                      <Plus size={14} /> Open Account Now
+                      <Plus size={14} /> New Account
                     </button>
                   </div>
-                )}
-              </div>
 
-              {/* ACCOUNT LEDGER HISTORY */}
+                  {loading ? (
+                    <div className="space-y-3">
+                      {[1, 2].map(i => (
+                        <div key={i} className="bg-white/5 border border-white/5 rounded-xl h-24 animate-pulse" />
+                      ))}
+                    </div>
+                  ) : userData?.accounts?.length > 0 ? (
+                    <div className="space-y-3">
+                      {userData.accounts.map((acc: any) => {
+                        const isSelected = selectedAccountId === acc.id;
+                        return (
+                          <motion.div 
+                            key={acc.id}
+                            onClick={() => setSelectedAccountId(isSelected ? "all" : acc.id)}
+                            whileHover={{ x: 4 }}
+                            className={`p-4 rounded-xl cursor-pointer transition-all border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                              isSelected 
+                                ? `bg-white/10 border-white/20 shadow-lg ${theme.glow}`
+                                : "bg-[#0b0b0f] border-white/5 hover:border-white/10 hover:bg-white/[0.02]"
+                            }`}
+                          >
+                            <div className="flex items-center gap-4">
+                               <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${isSelected ? theme.bg : 'bg-white/5'}`}>
+                                  <Wallet size={18} className={isSelected ? 'text-white' : 'text-zinc-400'} />
+                               </div>
+                               <div>
+                                  <div className="flex items-center gap-2">
+                                     <h3 className="font-bold text-white text-base">{acc.accountName}</h3>
+                                     {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                                  </div>
+                                  <p className="text-xs text-zinc-500 font-mono mt-0.5">ID: {acc.id.slice(0, 10)} • {acc.type.toUpperCase()}</p>
+                               </div>
+                            </div>
+                            <div className="sm:text-right">
+                               <p className="font-mono text-xl font-bold text-white">{formatMoney(acc.balance)}</p>
+                               <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Available Balance</p>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="bg-[#0b0b0f] border border-white/5 rounded-xl p-8 text-center space-y-3">
+                      <Wallet className="mx-auto text-zinc-600" size={32} />
+                      <p className="text-sm font-bold text-white">No Active Accounts</p>
+                      <button 
+                        onClick={() => setShowOpenAccountModal(true)}
+                        className={`mx-auto ${theme.bg} hover:brightness-110 text-white text-xs font-bold py-2 px-4 rounded-lg transition-all shadow-lg flex items-center gap-2`}
+                      >
+                        <Plus size={14} /> Open Account Now
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* ACCOUNT LEDGER HISTORY */}
+{/* ACCOUNT LEDGER HISTORY */}
               {userData?.recentTx?.length > 0 && (
                 <div className="bg-[#0b0b10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
                   
@@ -845,10 +740,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             </div>
 
             {/* RIGHT COLUMN */}
-            <div className="xl:col-span-5 space-y-8">
+              <div className="space-y-8 lg:col-span-1">
               {/* Action Hub Tabs */}
               {userData?.accounts?.length > 0 && (
-                <div className="bg-gradient-to-b from-[#111118] to-[#0a0a0d] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+                <div className="bg-[#0b0b0f] border border-white/5 rounded-2xl overflow-hidden shadow-lg">
                   
                   {/* Elevated Glass Tabs */}
                   <div className="flex border-b border-white/10 bg-black/40 p-3 gap-2 overflow-x-auto scrollbar-hide snap-x">
@@ -1291,125 +1186,74 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               {userData?.cards?.length > 0 && (
                 <div className="space-y-6">
                   {userData.cards.map((card: any) => {
-                    const isCardLocked = card.isLocked;
+                    const isCardLocked = card.status === 'frozen';
                     const isCredit = card.type === 'credit';
                     const isVisible = visibleCardIds[card.id] || false;
 
                     return (
-                      <div key={card.id} className="space-y-3">
-                        
-                        {/* Card Visual */}
-                        <motion.div 
-                          whileHover={{ scale: 1.01 }}
-                          className={`relative rounded-3xl p-6 shadow-2xl border flex flex-col justify-between aspect-[1.586/1] overflow-hidden transition-all duration-300 select-none
-                            ${isCardLocked 
-                              ? "bg-gradient-to-br from-zinc-900 to-zinc-950 border-white/5 opacity-60 grayscale" 
-                              : isCredit
-                                ? `bg-gradient-to-br ${theme.fromGradient} to-black border-white/20`
-                                : "bg-gradient-to-br from-[#1b1b26] to-[#0a0a0f] border-white/10"
-                            }`}
-                        >
-                          <div className="absolute right-6 top-6 w-8 h-6 rounded bg-gradient-to-br from-zinc-300 to-zinc-500 opacity-80 shadow-inner" />
-
-                          <div className="flex justify-between items-start relative z-10">
-                            <div>
-                              <div className="text-base font-black italic tracking-wider text-white">
-                                SLATE
-                              </div>
-                              <span className="text-[8px] text-zinc-400 uppercase tracking-widest block">{bank.name}</span>
-                            </div>
-                            <span className="text-[9px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-md bg-white/10 text-white/90">
+                      <div key={card.id} className={`p-5 rounded-2xl border transition-all ${isCardLocked ? 'bg-zinc-900 border-white/5 opacity-75' : 'bg-[#0b0b0f] border-white/10 hover:bg-white/5'}`}>
+                        <div className="flex justify-between items-center mb-4">
+                           <div className="flex items-center gap-2">
+                             <CreditCard size={18} className={isCardLocked ? "text-zinc-500" : (isCredit ? "text-amber-400" : "text-white")} />
+                             <span className="font-bold text-white text-sm">{card.accountName || "Checking"}</span>
+                           </div>
+                           <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${isCredit ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-white/10 text-white/80'} border`}>
                               {card.type}
+                           </span>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                            <span className="font-mono text-lg tracking-widest text-white select-all">
+                              {formatCardNumber(card.cardNumber, isVisible)}
                             </span>
                           </div>
-
-                          <div className="my-4 relative z-10">
-                            <div className="font-mono text-lg sm:text-xl tracking-widest text-white font-semibold flex items-center justify-between drop-shadow select-all">
-                              {formatCardNumber(card.cardNumber, isVisible)}
-                            </div>
+                          
+                          <div className="flex justify-between items-end text-xs text-zinc-400">
+                             <div>
+                               <span className="block text-[9px] uppercase tracking-widest mb-0.5">Exp</span>
+                               <span className="font-mono text-white">{card.expiryDate}</span>
+                             </div>
+                             <div>
+                               <span className="block text-[9px] uppercase tracking-widest mb-0.5">CVV</span>
+                               <span className="font-mono text-white">{isVisible ? card.cvv : "•••"}</span>
+                             </div>
                           </div>
+                        </div>
 
-                          <div className="flex justify-between items-end relative z-10 mt-auto pt-2 border-t border-white/10">
-                            <div className="text-left">
-                              <span className="text-[8px] text-zinc-400 uppercase tracking-widest block">Holder Account</span>
-                              <span className="text-xs font-bold text-white block truncate max-w-[130px]">{card.accountName || "Checking Account"}</span>
-                            </div>
-                            <div className="flex gap-3">
-                              <div>
-                                <span className="text-[8px] text-zinc-400 uppercase tracking-widest block">Exp</span>
-                                <span className="font-mono text-xs text-white block">{card.expiryDate}</span>
-                              </div>
-                              <div>
-                                <span className="text-[8px] text-zinc-400 uppercase tracking-widest block">CVV</span>
-                                <span className="font-mono text-xs text-white block">
-                                  {isVisible ? card.cvv : "•••"}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {isCardLocked && (
-                            <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-1.5 z-20 backdrop-blur-xs">
-                              <Lock className="text-rose-400" size={24} />
-                              <span className="text-[10px] tracking-widest uppercase font-bold text-rose-300">Card Frozen</span>
-                            </div>
-                          )}
-                        </motion.div>
-
-                        {/* Card Controls */}
-                        <div className="flex gap-2">
-                          <button 
-                            disabled={lockingCardId === card.id}
-                            onClick={async () => {
-                              setLockingCardId(card.id);
-                              try {
-                                const res = await fetch(`/api/portal/${bankId}/cards/${card.id}/lock`, {
-                                  method: 'PATCH',
-                                  headers: {'Content-Type': 'application/json'},
-                                  body: JSON.stringify({ discordId: user?.discordId, isLocked: !isCardLocked })
-                                });
-                                if (res.ok) handleSearch();
-                                else alert("Failed to update card status.");
-                              } catch (err) {
-                                console.error(err);
-                              } finally {
-                                setLockingCardId(null);
-                              }
-                            }}
-                            className={`flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold transition-all border 
-                              ${isCardLocked 
-                                ? `${theme.bg} text-white border-transparent` 
-                                : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/20"
-                              }`}
+                        <div className="mt-4 pt-4 border-t border-white/10 flex gap-2">
+                          <button
+                            onClick={() => toggleCardState(card.id, isCardLocked ? 'active' : 'frozen')}
+                            className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold transition-all border ${
+                              isCardLocked 
+                                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20' 
+                                : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/20'
+                            }`}
                           >
-                            {lockingCardId === card.id ? <Loader2 className="animate-spin" size={13} /> : isCardLocked ? <Unlock size={13} /> : <Lock size={13} />}
-                            {lockingCardId === card.id ? "Updating..." : isCardLocked ? "Unfreeze Card" : "Freeze Card"}
+                            {isCardLocked ? <Unlock size={14} /> : <Lock size={14} />}
+                            {isCardLocked ? "Unfreeze" : "Freeze"}
                           </button>
                           
-                          <button 
+                          <button
                             onClick={() => toggleCardVisibility(card.id)}
-                            className="py-2.5 px-4 rounded-xl flex items-center justify-center text-xs font-bold bg-white/5 hover:bg-white/10 text-white/90 border border-white/10 transition-all"
+                            className="py-2 px-3 rounded-lg flex items-center justify-center text-xs font-bold bg-white/5 hover:bg-white/10 text-white/90 border border-white/10 transition-all"
                             title="Toggle Number Visibility"
                           >
                             {isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
                           </button>
                         </div>
-
                       </div>
                     );
                   })}
                 </div>
-              
-                
-              )}</div>
+              )}
             </div>
-
+            </div>
           </div>
-
         </div>
       )}
-
-      {/* OPEN ACCOUNT MODAL */}
+      
+{/* OPEN ACCOUNT MODAL */}
       <AnimatePresence>
         {showOpenAccountModal && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
