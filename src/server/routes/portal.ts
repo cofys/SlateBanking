@@ -199,7 +199,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
 
 portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans, accountMembers } = await import("../../db/schema");
+    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans, accountMembers, subscriptions } = await import("../../db/schema");
     const { eq, and, or, desc, inArray } = await import("drizzle-orm");
 
     try {
@@ -335,6 +335,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       .where(and(inArray(cards.accountId, accountIds), eq(cards.bankId, bankId)));
 
       // Get user loans
+      const userSubscriptions = await db.select().from(subscriptions).where(and(eq(subscriptions.bankId, bankId), or(inArray(subscriptions.customerAccountId, accountIds), inArray(subscriptions.billerAccountId, accountIds))));
       const userLoans = await db.select()
         .from(loans)
         .where(and(eq(loans.bankId, bankId), or(inArray(loans.discordId, candidateIds), inArray(loans.accountId, accountIds))));
@@ -346,6 +347,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         pendingInvoices: userInvoices,
         cards: userCards,
         loans: userLoans,
+        subscriptions: userSubscriptions,
         customer: customer ? {
           kycStatus: customer.kycStatus,
           mcUsername: customer.mcUsername,
@@ -745,6 +747,37 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       createdAt: new Date()
     });
 
+    // 3.5. Auto-Provision Credit Card if Tier specifies a Credit Limit
+    let provisionedCardInfo: any = null;
+    if (finalTierId && settings?.accountTiers) {
+      const assignedTier = settings.accountTiers.find((t: any) => t.id === finalTierId);
+      if (assignedTier && assignedTier.creditLimit && assignedTier.creditLimit > 0) {
+        const { cards } = await import("../../db/schema");
+        const generateCardNum = () => "4" + Array.from({length: 15}, () => Math.floor(Math.random() * 10)).join("");
+        const cardNum = generateCardNum();
+        const cvv = Math.floor(100 + Math.random() * 900).toString();
+        const expMonth = ("0" + (Math.floor(Math.random() * 12) + 1)).slice(-2);
+        const expYear = (new Date().getFullYear() + 3).toString().slice(-2);
+        
+        const cardId = `crd_${uuidv4().substring(0, 8)}`;
+        await db.insert(cards).values({
+          id: cardId,
+          bankId,
+          accountId: id,
+          cardNumber: cardNum,
+          cvv,
+          expiryDate: `${expMonth}/${expYear}`,
+          isLocked: false,
+          type: "credit",
+          creditLimit: assignedTier.creditLimit,
+          creditUsed: 0,
+          apr: assignedTier.creditApr || 1999,
+          createdAt: new Date()
+        });
+        provisionedCardInfo = { cardId, creditLimit: assignedTier.creditLimit };
+      }
+    }
+
     // 4. Business Account Special Integration: Auto-provision Onyx Merchant Storefront
     let merchantInfo: any = null;
     if (type === "business") {
@@ -876,27 +909,28 @@ portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: exp
     const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId)));
     if (!loan) return res.status(404).json({ error: "Loan record not found" });
 
-    const [sourceAcc] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId));
-    if (!sourceAcc || !(await isUserAccountOwnerOrMember(sourceAcc, candidateIds))) {
-      return res.status(404).json({ error: "Payment account not found or unauthorized" });
-    }
+    const amountCents = Math.round(parseFloat(amount) * 100);
+    if (amountCents <= 0) return res.status(400).json({ error: "Invalid amount" });
 
-    const repayCents = Math.round(parseFloat(amount) * 100);
-    if (!repayCents || repayCents <= 0) return res.status(400).json({ error: "Invalid repayment amount" });
-    if (sourceAcc.balance < repayCents) return res.status(400).json({ error: "Insufficient account balance for repayment" });
+    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId)));
+    if (!acc || acc.balance < amountCents) return res.status(400).json({ error: "Linked account not found or insufficient funds" });
+    
+    // Check if authorized
+    const isAuthorized = await isUserAccountOwnerOrMember(acc, candidateIds);
+    if (!isAuthorized) return res.status(403).json({ error: "Unauthorized" });
 
-    const newRemaining = Math.max(0, loan.remainingAmount - repayCents);
-    const newStatus = newRemaining === 0 ? "paid_off" : loan.status;
+    const newRemaining = Math.max(0, loan.remainingBalance - amountCents);
+    const newStatus = newRemaining === 0 ? "paid" : loan.status;
 
-    await db.update(bankAccounts).set({ balance: sourceAcc.balance - repayCents }).where(eq(bankAccounts.id, sourceAcc.id));
-    await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus }).where(eq(loans.id, loan.id));
+    await db.update(bankAccounts).set({ balance: acc.balance - amountCents }).where(eq(bankAccounts.id, acc.id));
+    await db.update(loans).set({ remainingBalance: newRemaining, status: newStatus as any }).where(eq(loans.id, loanId));
 
     await db.insert(transactions).values({
       id: uuidv4(),
       bankId,
-      fromAccountId: sourceAcc.id,
+      fromAccountId: acc.id,
       toAccountId: null,
-      amount: repayCents,
+      amount: amountCents,
       type: "transfer",
       description: `Loan Repayment (${loanId})`,
       timestamp: new Date()
@@ -906,49 +940,5 @@ portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: exp
   } catch (e: any) {
     console.error("[LoanRepayAPI] Error:", e);
     res.status(500).json({ error: e.message || "Failed to process loan repayment" });
-  }
-});
-
-// Portal Card Issue API
-portalRouter.post("/api/portal/:bankId/issue-card", requireAuth, async (req: express.Request, res: express.Response) => {
-  const { db } = await import("../../db/index");
-  const { cards, bankAccounts } = await import("../../db/schema");
-  const { eq, and } = await import("drizzle-orm");
-  const { v4: uuidv4 } = await import("uuid");
-
-  try {
-    const { accountId, cardType } = req.body;
-    const bankId = req.params.bankId;
-    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
-
-    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId)));
-    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
-      return res.status(404).json({ error: "Linked account not found or unauthorized" });
-    }
-
-    const generateCardNum = () => "4" + Array.from({length: 15}, () => Math.floor(Math.random() * 10)).join("");
-    const cardNum = generateCardNum();
-    const cvv = Math.floor(100 + Math.random() * 900).toString();
-    const expMonth = ("0" + (Math.floor(Math.random() * 12) + 1)).slice(-2);
-    const expYear = (new Date().getFullYear() + 3).toString().slice(-2);
-    const expiryDate = `${expMonth}/${expYear}`;
-
-    const cardId = `crd_${uuidv4().substring(0, 8)}`;
-    await db.insert(cards).values({
-      id: cardId,
-      bankId,
-      accountId,
-      cardNumber: cardNum,
-      expiryDate,
-      cvv,
-      isLocked: false,
-      type: cardType || "debit",
-      createdAt: new Date()
-    });
-
-    res.json({ success: true, card: { id: cardId, cardNumber: cardNum, expiryDate, type: cardType || "debit" } });
-  } catch (e: any) {
-    console.error("[CardIssueAPI] Error:", e);
-    res.status(500).json({ error: e.message || "Failed to issue card" });
   }
 });

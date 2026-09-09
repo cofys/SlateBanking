@@ -39,6 +39,8 @@ export function BankTiers() {
         depositFeePercent: null,
         withdrawFeePercent: null,
         minBalance: 0,
+        creditLimit: 0,
+        creditApr: 1999,
         isDefault: tiers.length === 0, // First tier is default
         isPrivate: false,
       },
@@ -238,6 +240,32 @@ export function BankTiers() {
                         value={tier.minBalance ? (tier.minBalance / 100) : 0}
                         onChange={(e) => updateTier(tier.id, "minBalance", Math.floor(parseFloat(e.target.value || "0") * 100))}
                         className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-emerald-400 mb-1">Included Credit Limit ($)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={tier.creditLimit ? (tier.creditLimit / 100) : 0}
+                        onChange={(e) => updateTier(tier.id, "creditLimit", Math.floor(parseFloat(e.target.value || "0") * 100))}
+                        className="w-full bg-[#1a1a24] border border-emerald-500/30 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                        placeholder="0 = No Credit Card"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-emerald-400 mb-1">Credit APR (%)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={tier.creditApr !== undefined && tier.creditApr !== null ? (tier.creditApr / 100) : 19.99}
+                        onChange={(e) => updateTier(tier.id, "creditApr", e.target.value ? Math.round(parseFloat(e.target.value) * 100) : 1999)}
+                        className="w-full bg-[#1a1a24] border border-emerald-500/30 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
                       />
                     </div>
                   </div>

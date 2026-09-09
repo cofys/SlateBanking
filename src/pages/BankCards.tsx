@@ -13,7 +13,9 @@ export function BankCards() {
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCardAccountId, setNewCardAccountId] = useState("");
-  const [newCardType, setNewCardType] = useState("debit");
+  const [newCardType, setNewCardType] = useState("credit");
+  const [newCardLimit, setNewCardLimit] = useState("10000");
+  const [newCardApr, setNewCardApr] = useState("19.99");
   
   const [visibleNumber, setVisibleNumber] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
@@ -77,7 +79,7 @@ export function BankCards() {
       const res = await fetch(`/api/banks/${bankId}/cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: newCardAccountId, type: newCardType })
+        body: JSON.stringify({ accountId: newCardAccountId, type: newCardType, creditLimit: Math.round(parseFloat(newCardLimit)*100), creditApr: Math.round(parseFloat(newCardApr)*100) })
       });
       if (res.ok) {
         setShowAddModal(false);
@@ -434,35 +436,14 @@ export function BankCards() {
                   </select>
                 </div>
                 
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">Card Type</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setNewCardType("debit")}
-                      className={`p-3 border rounded-xl text-sm font-bold flex flex-col items-center gap-2 transition-all ${
-                        newCardType === "debit" 
-                          ? "bg-indigo-500/10 border-indigo-500 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]" 
-                          : "bg-[#11111a] border-white/10 text-zinc-500 hover:border-white/20"
-                      }`}
-                    >
-                      <Wallet size={20} />
-                      Debit Card
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewCardType("credit")}
-                      disabled
-                      className={`p-3 border rounded-xl text-sm font-bold flex flex-col items-center gap-2 transition-all opacity-50 cursor-not-allowed ${
-                        newCardType === "credit" 
-                          ? "bg-amber-500/10 border-amber-500 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]" 
-                          : "bg-[#11111a] border-white/10 text-zinc-500 hover:border-white/20"
-                      }`}
-                    >
-                      <CreditCard size={20} />
-                      Credit Card
-                      <span className="text-[9px] uppercase font-bold text-zinc-600 mt-1 block">Coming Soon</span>
-                    </button>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">Credit Limit ($)</label>
+                    <input type="number" step="0.01" min="0" required value={newCardLimit} onChange={e => setNewCardLimit(e.target.value)} className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-colors font-medium" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">APR (%)</label>
+                    <input type="number" step="0.01" min="0" required value={newCardApr} onChange={e => setNewCardApr(e.target.value)} className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-colors font-medium" />
                   </div>
                 </div>
 

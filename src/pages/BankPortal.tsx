@@ -108,8 +108,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [oauthSuccess, setOauthSuccess] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState(false);
   
-  // Tab Selection: "transfer" | "onyx" | "invoices" | "loans" | "cards"
-  const [activeTab, setActiveTab] = useState<"transfer" | "onyx" | "invoices" | "loans" | "cards">("transfer");
+  // Tab Selection: "transfer" | "onyx" | "invoices" | "loans" | "cards" | "subscriptions"
+  const [activeTab, setActiveTab] = useState<"transfer" | "onyx" | "invoices" | "loans" | "cards" | "subscriptions">("transfer");
   
   // Selected account for filtering & focused actions
   const [selectedAccountId, setSelectedAccountId] = useState<string | "all">("all");
@@ -302,7 +302,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               referrerPolicy="no-referrer"
             />
           ) : (
-            <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${theme.fromGradient} to-black flex items-center justify-center font-bold text-2xl text-white shadow-xl ${theme.glow}`}>
+          <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${theme.fromGradient} to-black flex items-center justify-center font-bold text-2xl text-white shadow-xl ${theme.glow}`}>
               {bank.name.substring(0, 2).toUpperCase()}
             </div>
           )}
@@ -342,7 +342,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className={`w-9 h-9 rounded-xl ${theme.bgLight} ${theme.textAccent} flex items-center justify-center text-xs font-bold border ${theme.border}`}>
+                <div className={`w-9 h-9 rounded-xl ${theme.bgLight} ${theme.textAccent} flex items-center justify-center text-xs font-bold border ${theme.border}`}>
                     {user.username.substring(0, 2).toUpperCase()}
                   </div>
                 )}
@@ -383,8 +383,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             <p className="text-xs opacity-90 mt-0.5">
               {userData?.isStaff ? (
                 <>System undergoing updates. Staff privileges allow testing override across the portal.</>
-              ) : (
-                <>Transfers and bot commands are temporarily paused for maintenance.</>
+                ) : (
+                  <>Transfers and bot commands are temporarily paused for maintenance.</>
               )}
             </p>
           </div>
@@ -469,9 +469,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             </div>
           </motion.div>
         </div>
-      ) : (
-        /* Authenticated Client Dashboard */
-        <div className="space-y-8">
+        ) : (
+          <div className="space-y-8">
+            {/* Authenticated Client Dashboard */}
           
           {/* Identity & Link Status Badge Bar */}
           <motion.div 
@@ -654,8 +654,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       );
                     })}
                   </div>
-                ) : (
-                  <div className="bg-[#0b0b0f] border border-white/10 rounded-2xl p-8 text-center space-y-3">
+              ) : (
+                <div className="bg-[#0b0b0f] border border-white/10 rounded-2xl p-8 text-center space-y-3">
                     <Wallet className="mx-auto text-zinc-600" size={32} />
                     <p className="text-sm font-bold text-white">No Active Accounts</p>
                     <p className="text-xs text-zinc-400">Open a checking or savings account with {bank.name} to start managing your capital.</p>
@@ -673,51 +673,31 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               {userData?.accounts?.length > 0 && (
                 <div className="bg-gradient-to-b from-[#111118] to-[#0a0a0d] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
                   
-                  {/* Hub Tabs Header */}
-                  <div className="flex border-b border-white/10 bg-black/40 p-2 gap-1 overflow-x-auto scrollbar-none">
-                    <button
-                      onClick={() => setActiveTab("transfer")}
-                      className={`flex-1 min-w-[120px] py-3 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all
-                        ${activeTab === "transfer" 
-                          ? `${theme.bgLight} ${theme.textAccent} shadow-sm border border-white/10` 
-                          : "text-zinc-400 hover:text-white hover:bg-white/5"
-                        }`}
-                    >
-                      <Send size={14} /> Wire Transfer
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("onyx")}
-                      className={`flex-1 min-w-[120px] py-3 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all
-                        ${activeTab === "onyx" 
-                          ? `${theme.bgLight} ${theme.textAccent} shadow-sm border border-white/10` 
-                          : "text-zinc-400 hover:text-white hover:bg-white/5"
-                        }`}
-                    >
-                      <Activity size={14} /> Onyx Pay
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("invoices")}
-                      className={`flex-1 min-w-[120px] py-3 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all relative
-                        ${activeTab === "invoices" 
-                          ? `${theme.bgLight} ${theme.textAccent} shadow-sm border border-white/10` 
-                          : "text-zinc-400 hover:text-white hover:bg-white/5"
-                        }`}
-                    >
-                      <FileText size={14} /> Invoices
-                      {userData?.pendingInvoices?.length > 0 && (
-                        <span className="w-2 h-2 bg-rose-500 rounded-full animate-ping" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("loans")}
-                      className={`flex-1 min-w-[120px] py-3 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all relative
-                        ${activeTab === "loans" 
-                          ? `${theme.bgLight} ${theme.textAccent} shadow-sm border border-white/10` 
-                          : "text-zinc-400 hover:text-white hover:bg-white/5"
-                        }`}
-                    >
-                      <Landmark size={14} /> Credit & Loans
-                    </button>
+                  {/* Elevated Glass Tabs */}
+                  <div className="flex border-b border-white/10 bg-black/40 p-3 gap-2 overflow-x-auto scrollbar-hide snap-x">
+                    {[
+                      { id: "transfer", label: "Wire Transfer", icon: Send },
+                      { id: "onyx", label: "Onyx Pay", icon: Activity },
+                      { id: "invoices", label: "Invoices", icon: FileText, hasAlert: userData?.pendingInvoices?.length > 0 },
+                      { id: "loans", label: "Credit & Loans", icon: Landmark },
+                      { id: "subscriptions", label: "Subscriptions", icon: RefreshCw }
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={`flex-1 min-w-[140px] py-3 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all snap-start relative
+                          ${activeTab === tab.id 
+                            ? `${theme.bg} text-white shadow-lg ${theme.glow} ring-1 ring-white/20` 
+                            : `text-zinc-400 hover:text-white ${theme.bgLight} hover:bg-white/10 ring-1 ring-white/5`
+                          }`}
+                      >
+                        <tab.icon size={16} className={activeTab === tab.id ? 'text-white' : theme.textAccent} />
+                        {tab.label}
+                        {tab.hasAlert && (
+                           <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-pulse border-2 border-black" />
+                        )}
+                      </button>
+                    ))}
                   </div>
 
                   {/* Hub Body */}
@@ -1023,9 +1003,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               </div>
                             ))}
                           </div>
-                        ) : (
-                          <div className="text-center py-8">
-                            <CheckCircle2 className="mx-auto text-emerald-400/80 mb-2" size={32} />
+                          ) : (
+                            <div className="text-center py-8">
+                              <CheckCircle2 className="mx-auto text-emerald-400/80 mb-2" size={32} />
                             <p className="text-sm font-bold text-white">Accounts Fully Current</p>
                             <p className="text-xs text-zinc-400 mt-1">There are no outstanding invoices or pending bills associated with your accounts.</p>
                           </div>
@@ -1034,6 +1014,11 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     )}
 
                     {/* LOANS TAB */}
+                    
+{activeTab === "subscriptions" && (
+  <SubscriptionsTab data={userData} refresh={handleSearch} theme={theme} />
+)}
+
                     {activeTab === "loans" && (
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
@@ -1061,8 +1046,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               Apply for Loan
                             </button>
                           </div>
-                        ) : (
-                          <div className="space-y-3 pt-2">
+                          ) : (
+                            <div className="space-y-3 pt-2">
                             {userData.loans.map((loan: any) => (
                               <div key={loan.id} className="bg-[#0a0a0f] border border-white/10 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <div className="flex-1 space-y-1">
@@ -1228,8 +1213,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                             </motion.div>
                           );
                         })
-                      ) : (
-                        <div className="text-center py-12 text-zinc-500 text-xs space-y-1">
+                        ) : (
+                          <div className="text-center py-12 text-zinc-500 text-xs space-y-1">
                           <p>No transaction records match active parameters.</p>
                           {(selectedAccountId !== "all" || txTypeFilter !== "all" || searchTerm) && (
                             <button
@@ -1267,7 +1252,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </button>
               </div>
 
-              {userData?.cards?.length > 0 ? (
+              {userData?.cards?.length > 0 && (
                 <div className="space-y-6">
                   {userData.cards.map((card: any) => {
                     const isCardLocked = card.isLocked;
@@ -1380,18 +1365,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     );
                   })}
                 </div>
-              ) : (
-                <div className="bg-[#0b0b0f] border border-white/10 rounded-2xl p-6 text-center space-y-2">
-                  <CreditCard className="mx-auto text-zinc-600" size={28} />
-                  <p className="text-xs font-bold text-white">No Connected Cards</p>
-                  <p className="text-[11px] text-zinc-400">Request a virtual debit card linked to your account.</p>
-                  <button 
-                    onClick={() => setShowIssueCardModal(true)}
-                    className={`mx-auto ${theme.bg} hover:brightness-110 text-white text-xs font-bold py-2 px-3 rounded-xl transition-all mt-2`}
-                  >
-                    Issue Card
-                  </button>
-                </div>
+              
+                
               )}
             </div>
 
@@ -1561,79 +1536,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         )}
       </AnimatePresence>
 
-      {/* ISSUE CARD MODAL */}
-      <AnimatePresence>
-        {showIssueCardModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#111118] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5"
-            >
-              <div className="flex justify-between items-center pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <CreditCard size={18} className="text-indigo-400" /> Issue New Card
-                </h3>
-                <button onClick={() => setShowIssueCardModal(false)} className="text-zinc-400 hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target as any;
-                setActionPending(true);
-                try {
-                  const res = await fetch(`/api/portal/${bankId}/issue-card`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                      accountId: form.accountId.value,
-                      cardType: form.cardType.value
-                    })
-                  });
-                  const d = await res.json();
-                  if (!res.ok) alert(d.error || "Failed to issue card");
-                  else {
-                    alert("Virtual card issued successfully!");
-                    setShowIssueCardModal(false);
-                    handleSearch();
-                  }
-                } catch (err) {
-                  alert("Error issuing card.");
-                } finally {
-                  setActionPending(false);
-                }
-              }} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Linked Account</label>
-                  <select name="accountId" required className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    {userData?.accounts?.map((acc: any) => (
-                      <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.id})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Card Type</label>
-                  <select name="cardType" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    <option value="debit">Virtual Debit Card</option>
-                    <option value="credit">Personal Credit Card</option>
-                  </select>
-                </div>
-
-                <div className="pt-2 flex gap-3">
-                  <button type="button" onClick={() => setShowIssueCardModal(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-white text-xs font-bold py-3 rounded-xl">Cancel</button>
-                  <button type="submit" disabled={actionPending} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2">
-                    {actionPending ? <Loader2 className="animate-spin" size={14} /> : "Issue Card"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* ISSUE CARD MODAL REMOVED */}
 
       {/* REPAY LOAN MODAL */}
       <AnimatePresence>
@@ -1784,6 +1687,88 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         )}
       </AnimatePresence>
 
+    </div>
+  );
+}
+
+
+function SubscriptionsTab({ data, refresh, theme }: any) {
+  const [cancelling, setCancelling] = useState(false);
+  const mySubs = data?.subscriptions || [];
+  
+  const handleCancel = async (sub: any) => {
+     if (!confirm(`Are you sure you want to cancel the subscription: ${sub.description}?`)) return;
+     setCancelling(true);
+     try {
+       const res = await fetch(`/api/citizen/subscriptions/${sub.id}/cancel`, { method: "POST" });
+       if (res.ok) {
+          alert("Subscription cancelled successfully.");
+          refresh();
+       } else {
+          const err = await res.json();
+          alert(err.error || "Failed to cancel.");
+       }
+     } catch (e) {
+       alert("An error occurred.");
+     }
+     setCancelling(false);
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+          <RefreshCw className={theme.textAccent} size={20} /> My Subscriptions
+        </h3>
+      </div>
+      
+      {mySubs.length === 0 ? (
+        <div className="bg-black/20 border border-white/5 rounded-2xl p-12 text-center">
+           <RefreshCw size={32} className="mx-auto text-white/20 mb-3" />
+           <p className="text-white/50">You have no active subscriptions.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {mySubs.map((sub: any) => {
+             const isBiller = data?.accounts?.some((a: any) => a.id === sub.billerAccountId);
+             return (
+               <div key={sub.id} className={`bg-[#13131c] border ${sub.isActive ? 'border-white/10' : 'border-red-500/20 opacity-60'} rounded-xl p-5 hover:border-white/20 transition-all`}>
+                 <div className="flex justify-between items-start mb-3">
+                   <div className="text-sm font-semibold text-white/70 truncate flex-1 pr-2">{sub.description || "Recurring Payment"}</div>
+                   <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${sub.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                     {sub.isActive ? "Active" : "Cancelled"}
+                   </div>
+                 </div>
+                 
+                 <div className="text-3xl font-black text-white mb-4">
+                   {formatMoney(sub.amount)}<span className="text-sm font-medium text-white/40">/{sub.frequency === 'weekly' ? 'wk' : 'mo'}</span>
+                 </div>
+                 
+                 <div className="space-y-2 mb-5">
+                   <div className="flex justify-between text-xs">
+                     <span className="text-white/40">Role</span>
+                     <span className={isBiller ? "text-emerald-400 font-medium" : "text-white/80"}>{isBiller ? "Receiving (Biller)" : "Paying (Customer)"}</span>
+                   </div>
+                   <div className="flex justify-between text-xs">
+                     <span className="text-white/40">Next Billing</span>
+                     <span className="text-white/80">{sub.isActive ? format(new Date(sub.nextRun), "MMM d, yyyy") : "-"}</span>
+                   </div>
+                 </div>
+                 
+                 {sub.isActive && (
+                   <button 
+                     disabled={cancelling}
+                     onClick={() => handleCancel(sub)}
+                     className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50"
+                   >
+                     Cancel Subscription
+                   </button>
+                 )}
+               </div>
+             )
+          })}
+        </div>
+      )}
     </div>
   );
 }

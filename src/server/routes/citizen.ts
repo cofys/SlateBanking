@@ -13,7 +13,7 @@ export const citizenRouter = express.Router();
 
 citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
-    const { banks, bankAccounts, transactions, invoices, cards, loans, bankSettings, accountMembers } = await import("../../db/schema.js");
+    const { banks, bankAccounts, transactions, invoices, cards, loans, bankSettings, accountMembers, onyxMerchants, subscriptions } = await import("../../db/schema.js");
     const { eq, or, inArray, desc } = await import("drizzle-orm");
 
     try {
@@ -80,7 +80,7 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
       const allSettings = await db.select().from(bankSettings);
 
       if (userAccounts.length === 0) {
-         return res.json({ accounts: [], transactions: [], invoices: [], cards: [], loans: [], banksConfig: {}, banks: allBanks, settings: allSettings });
+         return res.json({ accounts: [], transactions: [], invoices: [], cards: [], loans: [], subscriptions: [], merchants: [], banksConfig: {}, banks: allBanks, settings: allSettings });
       }
 
       const accountIds = userAccounts.map(a => a.id);
@@ -109,12 +109,18 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
         .from(cards)
         .where(inArray(cards.accountId, accountIds));
         
+      const userSubscriptions = await db.select().from(subscriptions).where(or(inArray(subscriptions.customerAccountId, accountIds), inArray(subscriptions.billerAccountId, accountIds)));
       const userLoans = await db.select()
         .from(loans)
         .where(or(
           inArray(loans.discordId, candidateIds),
           inArray(loans.accountId, accountIds)
         ));
+
+      
+      const userMerchants = await db.select()
+        .from(onyxMerchants)
+        .where(inArray(onyxMerchants.destinationAccount, accountIds));
 
       const uniqueBankIds = [...new Set(userAccounts.map(a => a.bankId))];
       const settings = uniqueBankIds.length > 0 ? await db.select().from(bankSettings).where(inArray(bankSettings.bankId, uniqueBankIds)) : [];
@@ -135,7 +141,9 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
         transactions: recentTxs,
         invoices: userInvoices,
         cards: userCards,
-        loans: userLoans
+        loans: userLoans,
+        subscriptions: userSubscriptions,
+        merchants: userMerchants
       });
     } catch (e) {
       console.error(e);
@@ -177,6 +185,42 @@ citizenRouter.post("/api/citizen/accounts/:id/upgrade", requireAuth, async (req:
         }
 
         await db.update(bankAccounts).set({ tierId }).where(eq(bankAccounts.id, account.id));
+
+        // Auto-provision or update credit card if the new tier includes one
+        if (selectedTier.creditLimit && selectedTier.creditLimit > 0) {
+            const { cards } = await import("../../db/schema.js");
+            const existingCard = await db.select().from(cards).where(eq(cards.accountId, account.id)).get();
+            if (existingCard) {
+                // Update existing card limit and APR
+                await db.update(cards).set({
+                    creditLimit: selectedTier.creditLimit,
+                    apr: selectedTier.creditApr || 1999
+                }).where(eq(cards.id, existingCard.id));
+            } else {
+                const { v4: uuidv4 } = await import("uuid");
+                const generateCardNum = () => "4" + Array.from({length: 15}, () => Math.floor(Math.random() * 10)).join("");
+                const cardNum = generateCardNum();
+                const cvv = Math.floor(100 + Math.random() * 900).toString();
+                const expMonth = ("0" + (Math.floor(Math.random() * 12) + 1)).slice(-2);
+                const expYear = (new Date().getFullYear() + 3).toString().slice(-2);
+                const cardId = `crd_${uuidv4().substring(0, 8)}`;
+                await db.insert(cards).values({
+                    id: cardId,
+                    bankId: account.bankId,
+                    accountId: account.id,
+                    cardNumber: cardNum,
+                    cvv,
+                    expiryDate: `${expMonth}/${expYear}`,
+                    isLocked: false,
+                    type: "credit",
+                    creditLimit: selectedTier.creditLimit,
+                    creditUsed: 0,
+                    apr: selectedTier.creditApr || 1999,
+                    createdAt: new Date()
+                });
+            }
+        }
+
         res.json({ success: true });
     } catch (e: any) {
         console.error(e);
@@ -431,6 +475,76 @@ citizenRouter.post("/api/citizen/loans/:loanId/sign", requireAuth, async (req: e
 });
 
 
+citizenRouter.post("/api/citizen/pay-credit-card", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, transactions, cards } = await import("../../db/schema");
+    const { eq, and, sql, gte } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const { cardId, fromAccountId, amount } = req.body;
+      const discordId = (req as any).user.discordId;
+
+      if (!cardId || !fromAccountId || !amount) return res.status(400).json({ error: "Missing fields" });
+
+      const parsedAmount = Math.round(parseFloat(amount) * 100);
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        return res.status(400).json({ error: "Invalid payment amount" });
+      }
+
+      // Verify from account ownership
+      const [sourceAccount] = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.ownerDiscordId, discordId))
+      );
+      if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized" });
+      if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
+
+      // Verify card
+      const [theCard] = await db.select().from(cards).where(eq(cards.id, cardId));
+      if (!theCard || theCard.type !== "credit") return res.status(400).json({ error: "Invalid credit card" });
+
+      if ((theCard.creditUsed || 0) <= 0) {
+          return res.status(400).json({ error: "Credit card has no outstanding balance." });
+      }
+
+      // Ensure we don't overpay
+      const actualPayment = Math.min(parsedAmount, (theCard.creditUsed || 0));
+
+      await db.transaction(async (tx) => {
+          // Deduct from bank account
+          await tx.update(bankAccounts)
+            .set({ balance: sql`${bankAccounts.balance} - ${actualPayment}` })
+            .where(and(
+                eq(bankAccounts.id, fromAccountId),
+                gte(bankAccounts.balance, actualPayment)
+            ));
+
+          // Credit the card (reduce creditUsed)
+          await tx.update(cards)
+            .set({ creditUsed: sql`${cards.creditUsed} - ${actualPayment}` })
+            .where(eq(cards.id, cardId));
+            
+          // Add transaction log
+          await tx.insert(transactions).values({
+              id: uuidv4(),
+              bankId: theCard.bankId,
+              fromAccountId: sourceAccount.id,
+              toAccountId: theCard.accountId,
+              type: "transfer",
+              amount: actualPayment,
+              description: `Credit Card Payment (Card ending in ${theCard.cardNumber.slice(-4)})`,
+              category: "Credit Payment",
+              timestamp: new Date()
+          });
+      });
+
+      res.json({ success: true, actualPayment });
+    } catch(e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal Error" });
+    }
+});
+
 citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankAccounts, transactions, loans } = await import("../../db/schema");
@@ -542,31 +656,65 @@ citizenRouter.post("/api/citizen/pay-invoice", requireAuth, async (req: express.
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { invoiceId } = req.body; const discordId = (req as any).user.discordId;
+      const { invoiceId, fromAccountId } = req.body; const discordId = (req as any).user.discordId;
 
       const [inv] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
       if (!inv || inv.status !== 'pending') return res.status(404).json({ error: "Invoice not found or already paid" });
 
-      const [sourceAccount] = await db.select().from(bankAccounts).where(
-        and(eq(bankAccounts.id, inv.customerAccountId), eq(bankAccounts.ownerDiscordId, discordId))
-      );
+      let sourceAccount;
+      let sourceCard = null;
 
-      if (!sourceAccount) return res.status(404).json({ error: "Source account not found or unauthorized to pay this invoice" });
-      if (sourceAccount.balance < inv.amount) return res.status(400).json({ error: `Insufficient funds. Balance: ${(sourceAccount.balance/100).toFixed(2)}, Due: ${(inv.amount/100).toFixed(2)}` });
+      if (fromAccountId && fromAccountId.startsWith("crd_")) {
+          const { cards } = await import("../../db/schema");
+          const [sc] = await db.select().from(cards).where(eq(cards.id, fromAccountId));
+          if (!sc) return res.status(404).json({ error: "Source card not found" });
+          if (sc.isLocked) return res.status(400).json({ error: "Card is locked" });
+          sourceCard = sc;
+          
+          const [sa] = await db.select().from(bankAccounts).where(
+            and(eq(bankAccounts.id, sc.accountId), eq(bankAccounts.ownerDiscordId, discordId))
+          );
+          if (!sa) return res.status(404).json({ error: "Linked source account not found or unauthorized" });
+          sourceAccount = sa;
+      } else {
+          const accId = fromAccountId || inv.customerAccountId;
+          const [sa] = await db.select().from(bankAccounts).where(
+            and(eq(bankAccounts.id, accId), eq(bankAccounts.ownerDiscordId, discordId))
+          );
+          if (!sa) return res.status(404).json({ error: "Source account not found or unauthorized to pay this invoice" });
+          sourceAccount = sa;
+      }
+
+      if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
+
+      if (sourceCard) {
+          if ((sourceCard.creditUsed || 0) + inv.amount > (sourceCard.creditLimit || 0)) {
+              return res.status(400).json({ error: "Exceeds credit limit" });
+          }
+      } else {
+          if (sourceAccount.balance < inv.amount) return res.status(400).json({ error: `Insufficient funds. Balance: ${(sourceAccount.balance/100).toFixed(2)}, Due: ${(inv.amount/100).toFixed(2)}` });
+      }
 
       const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, inv.billerAccountId));
       if (!destAccount) return res.status(404).json({ error: "Destination biller account not found" });
 
       // Execute payment atomically
       await db.transaction(async (tx) => {
-        await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} - ${inv.amount}` })
-          .where(and(
-            eq(bankAccounts.id, sourceAccount.id),
-            gte(bankAccounts.balance, inv.amount),
-            eq(bankAccounts.isActive, true),
-            eq(bankAccounts.isFrozen, false)
-          ));
+        if (sourceCard) {
+            const { cards } = await import("../../db/schema");
+            await tx.update(cards)
+              .set({ creditUsed: sql`${cards.creditUsed} + ${inv.amount}` })
+              .where(eq(cards.id, sourceCard.id));
+        } else {
+            await tx.update(bankAccounts)
+              .set({ balance: sql`${bankAccounts.balance} - ${inv.amount}` })
+              .where(and(
+                eq(bankAccounts.id, sourceAccount.id),
+                gte(bankAccounts.balance, inv.amount),
+                eq(bankAccounts.isActive, true),
+                eq(bankAccounts.isFrozen, false)
+              ));
+        }
 
         await tx.update(bankAccounts)
           .set({ balance: sql`${bankAccounts.balance} + ${inv.amount}` })
@@ -872,7 +1020,7 @@ citizenRouter.delete("/api/citizen/accounts/:accountId/members/:memberId", requi
 citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankAccounts, transactions, bankSettings, interBankTransfers, clearinghouseBalances, addressBook, recurringTransfers, savingsGoals, paymentLinks, cards, loans } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, gte, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
@@ -884,18 +1032,38 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
       const parsedAmount = Math.round(parseFloat(amount) * 100);
       if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
 
-      const [sourceAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, fromAccountId));
+      let sourceAccount;
+      let sourceCard: any = null;
+
+      if (fromAccountId.startsWith("crd_")) {
+          sourceCard = await db.select().from(cards).where(eq(cards.id, fromAccountId)).get();
+          if (!sourceCard) return res.status(404).json({ error: "Source card not found" });
+          if (sourceCard.isLocked) return res.status(400).json({ error: "Card is locked" });
+          
+          sourceAccount = await db.select().from(bankAccounts).where(eq(bankAccounts.id, sourceCard.accountId)).get();
+      } else {
+          sourceAccount = await db.select().from(bankAccounts).where(eq(bankAccounts.id, fromAccountId)).get();
+      }
+
       if (!sourceAccount) return res.status(404).json({ error: "Source account not found" });
 
       if (sourceAccount.ownerDiscordId !== discordId) {
         const { accountMembers } = await import("../../db/schema.js");
-        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, fromAccountId), eq(accountMembers.discordId, discordId))).get();
+        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, sourceAccount.id), eq(accountMembers.discordId, discordId))).get();
         if (!membership || membership.role !== "manager") {
           return res.status(403).json({ error: "Unauthorized to transfer from this account" });
         }
       }
+      
       if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
-      if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
+      
+      if (sourceCard) {
+          if ((sourceCard.creditUsed || 0) + parsedAmount > (sourceCard.creditLimit || 0)) {
+              return res.status(400).json({ error: "Exceeds credit limit" });
+          }
+      } else {
+          if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
+      }
 
       const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId));
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
@@ -919,7 +1087,11 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
       const feeCents = transferFeeBps > 0 ? Math.round((parsedAmount * transferFeeBps) / 10000) : 0;
       const totalRequired = parsedAmount + feeCents;
 
-      if (sourceAccount.balance < totalRequired) {
+      if (sourceCard) {
+        if ((sourceCard.creditUsed || 0) + totalRequired > (sourceCard.creditLimit || 0)) {
+          return res.status(400).json({ error: `Exceeds credit limit. Transfer requires ${(parsedAmount/100).toFixed(2)} plus ${(feeCents/100).toFixed(2)} transfer fee.` });
+        }
+      } else if (sourceAccount.balance < totalRequired) {
         return res.status(400).json({ error: `Insufficient funds. Transfer requires ${(parsedAmount/100).toFixed(2)} plus ${(feeCents/100).toFixed(2)} transfer fee.` });
       }
 
@@ -928,14 +1100,20 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
       if (fromBank === toBank) {
         // Execute internal transfer atomically
         await db.transaction(async (tx) => {
-          await tx.update(bankAccounts)
-            .set({ balance: sql`${bankAccounts.balance} - ${totalRequired}` })
-            .where(and(
-              eq(bankAccounts.id, sourceAccount.id),
-              gte(bankAccounts.balance, totalRequired),
-              eq(bankAccounts.isActive, true),
-              eq(bankAccounts.isFrozen, false)
-            ));
+          if (sourceCard) {
+            await tx.update(cards)
+              .set({ creditUsed: sql`${cards.creditUsed} + ${totalRequired}` })
+              .where(eq(cards.id, sourceCard.id));
+          } else {
+            await tx.update(bankAccounts)
+              .set({ balance: sql`${bankAccounts.balance} - ${totalRequired}` })
+              .where(and(
+                eq(bankAccounts.id, sourceAccount.id),
+                gte(bankAccounts.balance, totalRequired),
+                eq(bankAccounts.isActive, true),
+                eq(bankAccounts.isFrozen, false)
+              ));
+          }
 
           await tx.update(bankAccounts)
             .set({ balance: sql`${bankAccounts.balance} + ${parsedAmount}` })
@@ -980,14 +1158,20 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
             // Require direct wire transfer atomically
             const transId = uuidv4();
             await db.transaction(async (tx) => {
-              await tx.update(bankAccounts)
-                .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
-                .where(and(
-                  eq(bankAccounts.id, sourceAccount.id),
-                  gte(bankAccounts.balance, parsedAmount),
-                  eq(bankAccounts.isActive, true),
-                  eq(bankAccounts.isFrozen, false)
-                ));
+              if (sourceCard) {
+                await tx.update(cards)
+                  .set({ creditUsed: sql`${cards.creditUsed} + ${totalRequired}` })
+                  .where(eq(cards.id, sourceCard.id));
+              } else {
+                await tx.update(bankAccounts)
+                  .set({ balance: sql`${bankAccounts.balance} - ${totalRequired}` })
+                  .where(and(
+                    eq(bankAccounts.id, sourceAccount.id),
+                    gte(bankAccounts.balance, totalRequired),
+                    eq(bankAccounts.isActive, true),
+                    eq(bankAccounts.isFrozen, false)
+                  ));
+              }
               
               await tx.insert(interBankTransfers).values({
                  id: transId,
@@ -1019,14 +1203,20 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
          } else {
             // Under threshold - process through Onyx Clearinghouse atomically
             await db.transaction(async (tx) => {
-              await tx.update(bankAccounts)
-                .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
-                .where(and(
-                  eq(bankAccounts.id, sourceAccount.id),
-                  gte(bankAccounts.balance, parsedAmount),
-                  eq(bankAccounts.isActive, true),
-                  eq(bankAccounts.isFrozen, false)
-                ));
+              if (sourceCard) {
+                await tx.update(cards)
+                  .set({ creditUsed: sql`${cards.creditUsed} + ${totalRequired}` })
+                  .where(eq(cards.id, sourceCard.id));
+              } else {
+                await tx.update(bankAccounts)
+                  .set({ balance: sql`${bankAccounts.balance} - ${totalRequired}` })
+                  .where(and(
+                    eq(bankAccounts.id, sourceAccount.id),
+                    gte(bankAccounts.balance, totalRequired),
+                    eq(bankAccounts.isActive, true),
+                    eq(bankAccounts.isFrozen, false)
+                  ));
+              }
 
               await tx.update(bankAccounts)
                 .set({ balance: sql`${bankAccounts.balance} + ${parsedAmount}` })
@@ -1338,4 +1528,31 @@ citizenRouter.post("/api/citizen/deposit-funds", requireAuth, async (req: expres
       console.error(e);
       res.status(500).json({ error: e.message || "Failed to deposit funds" });
     }
+});
+
+citizenRouter.post("/api/citizen/subscriptions/:id/cancel", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { subscriptions, bankAccounts } = await import("../../db/schema.js");
+  const { eq, and, inArray, or } = await import("drizzle-orm");
+  const { getUserCandidateIdentifiers } = await import("../userResolver.js");
+
+  try {
+    const candidateIds = await getUserCandidateIdentifiers(req);
+    const sub = await db.select().from(subscriptions).where(eq(subscriptions.id, req.params.id)).get();
+    if (!sub) return res.status(404).json({ error: "Subscription not found" });
+
+    // Check if user owns either the biller account or the customer account
+    const accounts = await db.select().from(bankAccounts).where(inArray(bankAccounts.ownerDiscordId, candidateIds));
+    const accountIds = accounts.map(a => a.id);
+    
+    if (!accountIds.includes(sub.customerAccountId) && !accountIds.includes(sub.billerAccountId)) {
+        return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    await db.update(subscriptions).set({ isActive: false }).where(eq(subscriptions.id, sub.id));
+    res.json({ success: true });
+  } catch(e) {
+    console.error(e);
+    res.status(500).json({ error: "Internal error" });
+  }
 });

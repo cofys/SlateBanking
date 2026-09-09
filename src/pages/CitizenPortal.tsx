@@ -15,7 +15,8 @@ export function CitizenPortal() {
   const { user, login, logout, isLoading, checkSession, rememberMe, setRememberMe } = useAuth();
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "assets" | "transfer" | "invoices" | "loans" | "analytics" | "vaults">("dashboard");
+  const myMerchants = userData?.merchants || [];
+  const [activeTab, setActiveTab] = useState<"dashboard" | "assets" | "transfer" | "invoices" | "loans" | "analytics" | "vaults" | "merchants" | "subscriptions">("dashboard");
   const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
   const [onyxMerchants, setOnyxMerchants] = useState<any[]>([]);
   const [showManualLinkModal, setShowManualLinkModal] = useState(false);
@@ -24,6 +25,9 @@ export function CitizenPortal() {
 
   // Sync & Deposit modal state
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [payCardId, setPayCardId] = useState<string | null>(null);
+  const [payCardAmount, setPayCardAmount] = useState("");
+  const [payCardSourceAcc, setPayCardSourceAcc] = useState("");
   const [syncingBalances, setSyncingBalances] = useState(false);
   const [citizenSyncProgress, setCitizenSyncProgress] = useState<{ total: number; processed: number; current?: string; syncedCount: number; flaggedCount: number } | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -263,8 +267,12 @@ export function CitizenPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-300 font-sans selection:bg-indigo-500/30">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div className="min-h-screen bg-[#060609] text-slate-300 font-sans selection:bg-indigo-500/30 relative overflow-hidden">
+      {/* Ambient background glows */}
+      <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-emerald-600/5 rounded-full blur-[150px] pointer-events-none" />
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 relative z-10">
         
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6">
@@ -350,7 +358,7 @@ export function CitizenPortal() {
             {/* Sidebar Navigation */}
             <div className="lg:col-span-3">
               <nav className="flex flex-col gap-2 sticky top-8">
-                {[
+                                {[
                   { id: "dashboard", label: "Dashboard", icon: Activity },
                   { id: "assets", label: "Accounts & Cards", icon: Wallet },
                   { id: "transfer", label: "Move Money", icon: Send },
@@ -358,6 +366,8 @@ export function CitizenPortal() {
                   { id: "invoices", label: "Invoices & Links", icon: Link2 },
                   { id: "analytics", label: "Analytics", icon: PieChartIcon },
                   { id: "vaults", label: "Savings Vaults", icon: Lock },
+                  ...(myMerchants.length > 0 ? [{ id: "merchants", label: "Onyx Storefront", icon: Store }] : []),
+                  { id: "subscriptions", label: "Subscriptions", icon: RefreshCw }
                 ].map(tab => (
                   <button
                     key={tab.id}
@@ -382,6 +392,80 @@ export function CitizenPortal() {
               {activeTab === "transfer" && <TransferTab data={userData} refresh={handleSearch} onyxMerchants={onyxMerchants} />}
               {activeTab === "loans" && <LoansTab data={userData} refresh={handleSearch} />}
               {activeTab === "invoices" && <InvoicesTab data={userData} refresh={handleSearch} />}
+              
+{activeTab === "merchants" && (
+  <div className="space-y-6 animate-in fade-in duration-300">
+     <div className="flex justify-between items-center mb-6">
+        <div>
+           <h2 className="text-xl font-bold text-white flex items-center gap-2">
+             <Store className="text-emerald-400" /> Onyx Merchant Storefronts
+           </h2>
+           <p className="text-white/50 text-sm">Manage API keys and payment links for your business accounts.</p>
+        </div>
+     </div>
+
+     {myMerchants.map((merchant: any) => {
+        const destAcc = userData?.accounts?.find((a: any) => a.id === merchant.destinationAccount);
+        return (
+          <div key={merchant.id} className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-6">
+             <div className="flex justify-between items-start">
+                <div>
+                   <h3 className="text-xl font-bold text-white mb-1">{merchant.name}</h3>
+                   <p className="text-sm text-white/50 flex items-center gap-1"><Building size={14}/> ID: {merchant.id}</p>
+                </div>
+                <div className="text-right">
+                   <div className="text-sm font-semibold text-white/50">Destination Account</div>
+                   <div className="text-emerald-400 font-medium">{destAcc?.accountName || merchant.destinationAccount}</div>
+                </div>
+             </div>
+
+             <div className="bg-black/30 rounded-lg p-4 border border-white/5">
+                <div className="text-sm text-white/50 mb-2 uppercase tracking-wider font-bold">API Integration Key</div>
+                <div className="flex gap-2">
+                   <input 
+                     type="password" 
+                     readOnly 
+                     value={merchant.apiKey} 
+                     className="bg-black/50 border border-white/10 rounded px-3 py-2 text-white/80 w-full font-mono text-sm"
+                     id={`api-key-${merchant.id}`}
+                   />
+                   <button 
+                     onClick={() => {
+                        const el = document.getElementById(`api-key-${merchant.id}`) as HTMLInputElement;
+                        if(el.type === 'password') el.type = 'text'; else el.type = 'password';
+                     }}
+                     className="bg-white/10 hover:bg-white/20 p-2 rounded text-white"
+                   >
+                     <Eye size={18} />
+                   </button>
+                   <button 
+                     onClick={() => {
+                        navigator.clipboard.writeText(merchant.apiKey);
+                        alert("API Key copied!");
+                     }}
+                     className="bg-emerald-600 hover:bg-emerald-500 p-2 rounded text-white flex items-center gap-2"
+                   >
+                     <Copy size={18} /> Copy
+                   </button>
+                </div>
+                <p className="text-xs text-amber-400/80 mt-2 flex items-center gap-1">
+                  <AlertCircle size={12} /> Keep this key secret. It grants access to create checkouts on behalf of this merchant.
+                </p>
+             </div>
+
+             <div className="bg-white/5 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-white mb-3">Checkout Integration Example</h4>
+                <div className="bg-black/50 p-4 rounded border border-white/5 overflow-x-auto text-sm text-white/70 font-mono">
+                  {`<!-- Redirect users to this URL to securely approve payments -->
+<a href="${window.location.origin}/onyx/checkout?merchantId=${merchant.id}&amount=5000&description=Order%20123&callbackUrl=https://yourwebsite.com/callback">Pay with Onyx</a>`}
+                </div>
+             </div>
+          </div>
+        );
+     })}
+  </div>
+)}
+
               {activeTab === "analytics" && <AnalyticsTab data={userData} />}
               {activeTab === "vaults" && <VaultsTab data={userData} />}
             </div>
@@ -611,41 +695,77 @@ function DashboardTab({ data, refresh }: { data: any, refresh: () => void }) {
   })).filter((a:any) => a.value > 0) || [];
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-[#12121a] p-6 rounded-2xl border border-white/5 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-10"><Activity size={64} /></div>
-          <p className="text-sm text-slate-500 font-medium mb-1">Total Net Worth</p>
-          <p className={`text-3xl font-black ${netWorth >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {formatMoney(netWorth)}
-          </p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* Bento Grid Top Row */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        
+        {/* Net Worth Card - Large */}
+        <div className="md:col-span-2 relative bg-gradient-to-br from-[#13131c] to-[#0a0a0f] p-8 rounded-3xl border border-white/5 overflow-hidden shadow-2xl group hover:border-indigo-500/30 transition-all duration-500">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-[80px] -mr-20 -mt-20 transition-all group-hover:bg-indigo-500/20" />
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-8">
+              <div className="p-3 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-md">
+                <Activity className="text-indigo-400" size={24} />
+              </div>
+              <p className="text-sm text-slate-400 uppercase tracking-widest font-bold">Total Net Worth</p>
+            </div>
+            <div className="flex items-end gap-4">
+              <p className={`text-6xl font-black tracking-tight ${netWorth >= 0 ? 'text-transparent bg-clip-text bg-gradient-to-br from-white to-slate-400' : 'text-red-400'}`}>
+                {formatMoney(netWorth)}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="bg-[#12121a] p-6 rounded-2xl border border-white/5 relative overflow-hidden">
-          <p className="text-sm text-slate-500 font-medium mb-1">Total Assets</p>
-          <p className="text-3xl font-black text-indigo-400">{formatMoney(totalAssets)}</p>
+
+        {/* Assets Card */}
+        <div className="bg-[#13131c]/80 backdrop-blur-xl p-6 rounded-3xl border border-white/5 relative overflow-hidden group hover:border-emerald-500/30 transition-all duration-500 flex flex-col justify-between">
+          <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-[60px] translate-y-1/2 translate-x-1/2" />
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-400">
+              <TrendingUp size={20} />
+            </div>
+            <p className="text-xs text-slate-400 uppercase tracking-widest font-bold">Total Assets</p>
+          </div>
+          <p className="text-3xl font-black text-white tracking-tight">{formatMoney(totalAssets)}</p>
         </div>
-        <div className="bg-[#12121a] p-6 rounded-2xl border border-white/5 relative overflow-hidden">
-          <p className="text-sm text-slate-500 font-medium mb-1">Total Debts</p>
-          <p className="text-3xl font-black text-rose-400">{formatMoney(totalDebts)}</p>
+
+        {/* Debts Card */}
+        <div className="bg-[#13131c]/80 backdrop-blur-xl p-6 rounded-3xl border border-white/5 relative overflow-hidden group hover:border-rose-500/30 transition-all duration-500 flex flex-col justify-between">
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-rose-500/10 rounded-full blur-[60px] translate-y-1/2 -translate-x-1/2" />
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2.5 bg-rose-500/10 rounded-xl text-rose-400">
+              <TrendingDown size={20} />
+            </div>
+            <p className="text-xs text-slate-400 uppercase tracking-widest font-bold">Total Debts</p>
+          </div>
+          <p className="text-3xl font-black text-white tracking-tight">{formatMoney(totalDebts)}</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-[#12121a] p-6 rounded-2xl border border-white/5">
-          <h3 className="text-lg font-bold text-white mb-6">Asset Distribution</h3>
+      {/* Bento Grid Bottom Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Asset Distribution */}
+        <div className="lg:col-span-2 bg-[#13131c]/80 backdrop-blur-xl p-8 rounded-3xl border border-white/5">
+          <div className="flex justify-between items-center mb-8">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <PieChartIcon className="text-indigo-400" size={20}/> Asset Distribution
+            </h3>
+          </div>
           {pieData.length > 0 ? (
-            <div className="h-[250px]">
+            <div className="h-[280px] w-full relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={pieData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
+                    innerRadius={70}
+                    outerRadius={100}
+                    paddingAngle={6}
                     dataKey="value"
                     stroke="none"
+                    cornerRadius={8}
                   >
                     {pieData.map((entry:any, index:number) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -653,47 +773,63 @@ function DashboardTab({ data, refresh }: { data: any, refresh: () => void }) {
                   </Pie>
                   <RechartsTooltip 
                     formatter={(value: any) => `$${value.toFixed(2)}`}
-                    contentStyle={{ backgroundColor: '#0a0a0f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    contentStyle={{ backgroundColor: 'rgba(10,10,15,0.9)', backdropFilter: 'blur(10px)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '16px', color: '#fff' }}
+                    itemStyle={{ color: '#fff' }}
                   />
-                  <Legend />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           ) : (
-             <div className="h-[250px] flex items-center justify-center text-slate-500">No assets available</div>
+             <div className="h-[280px] flex items-center justify-center text-slate-500">
+               <div className="text-center">
+                 <PieChartIcon size={48} className="mx-auto mb-4 opacity-20" />
+                 <p className="text-sm">No assets available to chart.</p>
+               </div>
+             </div>
           )}
         </div>
 
-        <div className="bg-[#12121a] p-6 rounded-2xl border border-white/5 flex flex-col">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2"><Target className="text-emerald-400" size={20}/> Savings Goals</h3>
-            <button className="text-xs bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"><Plus size={14}/> New</button>
+        {/* Savings Goals */}
+        <div className="bg-[#13131c]/80 backdrop-blur-xl p-8 rounded-3xl border border-white/5 flex flex-col relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-b from-emerald-500/5 to-transparent pointer-events-none" />
+          <div className="flex justify-between items-center mb-8 relative z-10">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Target className="text-emerald-400" size={20}/> Goals
+            </h3>
+            <button className="text-xs bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl transition-colors flex items-center gap-1 font-semibold text-white/80 hover:text-white">
+              <Plus size={14}/> New
+            </button>
           </div>
           
           {data.savingsGoals?.length > 0 ? (
-            <div className="space-y-6 overflow-y-auto pr-2 max-h-[250px]">
+            <div className="space-y-6 overflow-y-auto pr-2 max-h-[300px] relative z-10 custom-scrollbar">
               {data.savingsGoals.map((goal: any) => {
                 const progress = Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100));
                 return (
-                  <div key={goal.id} className="space-y-2">
+                  <div key={goal.id} className="space-y-3 p-4 rounded-2xl bg-black/40 border border-white/5 hover:border-white/10 transition-colors">
                     <div className="flex justify-between items-end">
                       <div>
-                        <p className="font-bold text-white text-sm">{goal.name}</p>
-                        <p className="text-xs text-slate-500">{formatMoney(goal.currentAmount)} of {formatMoney(goal.targetAmount)}</p>
+                        <p className="font-bold text-white text-sm mb-1">{goal.name}</p>
+                        <p className="text-[11px] font-medium text-slate-400">{formatMoney(goal.currentAmount)} / {formatMoney(goal.targetAmount)}</p>
                       </div>
-                      <span className="text-xs font-bold text-emerald-400">{progress}%</span>
+                      <div className="bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
+                         <span className="text-xs font-bold text-emerald-400">{progress}%</span>
+                      </div>
                     </div>
-                    <div className="h-2 w-full bg-black/50 rounded-full overflow-hidden border border-white/5">
-                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${progress}%` }}></div>
+                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 rounded-full relative" style={{ width: `${progress}%` }}>
+                         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/30" />
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
-              <Target size={32} className="opacity-20 mb-3" />
-              <p className="text-sm">No active savings goals.</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-500 relative z-10">
+              <Target size={48} className="opacity-10 mb-4" />
+              <p className="text-sm text-center px-4">You have no active savings goals.</p>
             </div>
           )}
         </div>
@@ -1394,6 +1530,17 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
                 >
                   {card.isLocked ? <><Unlock size={12}/> Unfreeze</> : <><Lock size={12}/> Freeze</>}
                 </button>
+                {card.type === 'credit' && !card.isLocked && (card.creditUsed || 0) > 0 && (
+                  <button 
+                    onClick={() => {
+                        setPayCardId(card.id);
+                        setPayCardAmount((card.creditUsed / 100).toFixed(2));
+                    }}
+                    className="px-3 py-1.5 rounded-full text-xs font-bold shadow-lg flex items-center gap-1 bg-emerald-500 text-white hover:bg-emerald-600"
+                  >
+                    <CreditCard size={12}/> Pay Card
+                  </button>
+                )}
             </div>
           </div>
         ))}
@@ -1403,6 +1550,55 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
           </div>
         )}
       </div>
+
+      {/* Pay Credit Card Modal */}
+      {payCardId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#12121a] border border-white/10 rounded-2xl p-6 max-w-lg w-full space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <CreditCard className="text-indigo-400" size={20} /> Pay Credit Card
+                </h3>
+              </div>
+              <button
+                onClick={() => setPayCardId(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={async (e) => {
+                e.preventDefault();
+                const res = await fetch(`/api/citizen/pay-credit-card`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cardId: payCardId, fromAccountId: payCardSourceAcc, amount: payCardAmount })
+                });
+                if(res.ok) {
+                    setPayCardId(null);
+                    refresh();
+                } else {
+                    const data = await res.json();
+                    alert(data.error || "Failed to pay credit card");
+                }
+            }} className="space-y-4">
+               <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">Funding Account</label>
+                  <select required value={payCardSourceAcc} onChange={e => setPayCardSourceAcc(e.target.value)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    <option value="">Select Account</option>
+                    {data.accounts?.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.accountName} ({formatMoney(acc.balance)})</option>)}
+                  </select>
+               </div>
+               <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">Amount ($)</label>
+                  <input required type="number" step="0.01" min="0.01" value={payCardAmount} onChange={e => setPayCardAmount(e.target.value)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+               </div>
+               <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 px-4 rounded-xl transition-colors">Submit Payment</button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Joint Account Members Modal */}
       {activeAccountForMembers && (
@@ -1583,6 +1779,7 @@ function TransferTab({ data, refresh, onyxMerchants }: any) {
                 <select required name="fromAccountId" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
                   <option value="">Select Account</option>
                   {data.accounts?.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.accountName} ({formatMoney(acc.balance)})</option>)}
+                  {data.cards?.filter((c:any) => c.type === 'credit' && !c.isLocked).map((c: any) => <option key={c.id} value={c.id}>Credit Card •••• {c.cardNumber.slice(-4)} ({formatMoney((c.creditLimit || 0) - (c.creditUsed || 0))} Avail)</option>)}
                 </select>
               </div>
               <div>
@@ -2015,6 +2212,7 @@ function InvoicesTab({ data, refresh }: any) {
                       <select required name="fromAccountId" className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
                         <option value="">Pay from account...</option>
                         {data.accounts?.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.accountName}</option>)}
+                        {data.cards?.filter((c:any) => c.type === 'credit' && !c.isLocked).map((c: any) => <option key={c.id} value={c.id}>Credit Card •••• {c.cardNumber.slice(-4)}</option>)}
                       </select>
                       <button type="submit" className="bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors">Pay</button>
                    </form>
@@ -2420,6 +2618,97 @@ function VaultsTab({ data }: any) {
           })
         )}
       </div>
+    </div>
+  );
+}
+
+
+function CitizenSubscriptionsTab({ data, refresh }: any) {
+  const [cancelling, setCancelling] = useState(false);
+  const mySubs = data?.subscriptions || [];
+  
+  const handleCancel = async (sub: any) => {
+     if (!confirm(`Are you sure you want to cancel the subscription: ${sub.description}?`)) return;
+     setCancelling(true);
+     try {
+       const res = await fetch(`/api/citizen/subscriptions/${sub.id}/cancel`, { method: "POST" });
+       if (res.ok) {
+          alert("Subscription cancelled successfully.");
+          refresh();
+       } else {
+          const err = await res.json();
+          alert(err.error || "Failed to cancel.");
+       }
+     } catch (e) {
+       alert("An error occurred.");
+     }
+     setCancelling(false);
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <RefreshCw className="text-indigo-400" size={24} /> My Subscriptions
+          </h2>
+          <p className="text-sm text-white/50">Manage your recurring payments and billings.</p>
+        </div>
+      </div>
+      
+      {mySubs.length === 0 ? (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center">
+           <RefreshCw size={32} className="mx-auto text-white/20 mb-3" />
+           <p className="text-white/50">You have no active subscriptions.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {mySubs.map((sub: any) => {
+             const isBiller = data?.accounts?.some((a: any) => a.id === sub.billerAccountId);
+             const myAccount = data?.accounts?.find((a: any) => a.id === (isBiller ? sub.billerAccountId : sub.customerAccountId));
+             
+             return (
+               <div key={sub.id} className={`bg-white/5 border ${sub.isActive ? 'border-white/10' : 'border-red-500/20 opacity-60'} rounded-2xl p-6 hover:border-white/20 transition-all`}>
+                 <div className="flex justify-between items-start mb-4">
+                   <div className="text-sm font-semibold text-white/80 truncate flex-1 pr-2">{sub.description || "Recurring Payment"}</div>
+                   <div className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${sub.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                     {sub.isActive ? "Active" : "Cancelled"}
+                   </div>
+                 </div>
+                 
+                 <div className="text-4xl font-black text-white mb-6">
+                   {formatMoney(sub.amount)}<span className="text-sm font-medium text-white/40">/{sub.frequency === 'weekly' ? 'wk' : 'mo'}</span>
+                 </div>
+                 
+                 <div className="space-y-3 mb-6 bg-black/20 rounded-xl p-4 border border-white/5">
+                   <div className="flex justify-between text-xs">
+                     <span className="text-white/40">Role</span>
+                     <span className={isBiller ? "text-emerald-400 font-medium" : "text-white/80"}>{isBiller ? "Receiving (Biller)" : "Paying (Customer)"}</span>
+                   </div>
+                   <div className="flex justify-between text-xs">
+                     <span className="text-white/40">Linked Account</span>
+                     <span className="text-white/80 truncate max-w-[120px]" title={myAccount?.accountName}>{myAccount?.accountName || "Unknown"}</span>
+                   </div>
+                   <div className="flex justify-between text-xs">
+                     <span className="text-white/40">Next Billing</span>
+                     <span className="text-white/80">{sub.isActive ? format(new Date(sub.nextRun), "MMM d, yyyy") : "-"}</span>
+                   </div>
+                 </div>
+                 
+                 {sub.isActive && (
+                   <button 
+                     disabled={cancelling}
+                     onClick={() => handleCancel(sub)}
+                     className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50"
+                   >
+                     Cancel Subscription
+                   </button>
+                 )}
+               </div>
+             )
+          })}
+        </div>
+      )}
     </div>
   );
 }

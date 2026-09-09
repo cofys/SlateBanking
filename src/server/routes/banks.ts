@@ -4003,16 +4003,17 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
     const { cards, bankAccounts } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
+    const { randomInt } = await import("crypto");
     try {
-       const { accountId, type } = req.body;
-       if (!accountId || !type) return res.status(400).json({ error: "Missing fields" });
+       const { accountId, creditLimit, creditApr } = req.body;
+       if (!accountId) return res.status(400).json({ error: "Missing fields" });
        
        // check account exists in bank
        const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, req.params.bankId))).get();
        if (!acc) return res.status(404).json({ error: "Account not found in bank" });
 
-              const cardNumber = Array.from({length: 16}, () => randomInt(0, 10)).join('');
-              const cvv = Array.from({length: 3}, () => randomInt(0, 10)).join('');
+       const cardNumber = Array.from({length: 16}, () => randomInt(0, 10)).join('');
+       const cvv = Array.from({length: 3}, () => randomInt(0, 10)).join('');
        
        const nextYear = new Date();
        nextYear.setFullYear(nextYear.getFullYear() + 4);
@@ -4025,7 +4026,10 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
          cardNumber,
          cvv,
          expiryDate,
-         type,
+         type: "credit",
+         creditLimit: creditLimit ? parseInt(creditLimit) : 1000000,
+         creditUsed: 0,
+         apr: creditApr ? parseInt(creditApr) : 1999,
          isLocked: false,
          createdAt: new Date(),
        }).returning().get();

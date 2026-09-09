@@ -6,6 +6,7 @@ import { BankAdminLayout } from "./components/layout/BankAdminLayout";
 import { Overview } from "./pages/Overview";
 import { BanksList } from "./pages/BanksList";
 import { OnyxSettings } from "./pages/OnyxSettings";
+import { OnyxCheckout } from "./pages/OnyxCheckout";
 import { CityCorpLogs } from "./pages/CityCorpLogs";
 import { TransactionsList } from "./pages/TransactionsList";
 import { CitizenPortal } from "./pages/CitizenPortal";
@@ -114,6 +115,7 @@ function App() {
           <Route path="/portal/:bankId" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal /></div>} />
           <Route path="/docs" element={<PublicDocs />} />
           <Route path="/pay/:linkId" element={<PayLink />} />
+        <Route path="/onyx/checkout" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><OnyxCheckout /></div>} />
           <Route path="/" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal overrideBankId={customBankId} /></div>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
@@ -129,6 +131,7 @@ function App() {
         <Route path="/portal" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><CitizenPortal /></div>} />
         <Route path="/portal/:bankId" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal /></div>} />
         <Route path="/pay/:linkId" element={<PayLink />} />
+        <Route path="/onyx/checkout" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><OnyxCheckout /></div>} />
         
         {/* Bank Context / Whitelabeled Admin */}
         <Route path="/bank/:bankId" element={<BankAdminLayout />}>

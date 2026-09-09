@@ -870,3 +870,20 @@ A Global Clearinghouse Balances panel has been added to Global Settings, allowin
 
 
 
+
+### Credit Cards Architecture
+As of the latest update, **Debit Cards are deprecated** and all new cards issued are **Credit Cards**.
+- **Issuance**: Credit cards are provisioned automatically when a Citizen account tier is upgraded to a tier with a configured credit limit. Bank Staff can also manually issue credit cards via the staff dashboard with custom Limits and APRs. Customers can no longer freely issue virtual cards.
+- **Spending**: Credit cards are fully integrated into **Transfers**, **Invoice Payments**, and **Onyx POS Payments**. Using a credit card draws from the `creditLimit` by incrementing `creditUsed`.
+- **Repayment**: Citizens can use the "Pay Card" interface on the Citizen Portal to transfer funds from a standard checking/savings account to pay off their accumulated `creditUsed` balance.
+
+### Onyx PSP Checkout Engine
+- **Checkout Approval UI (`/onyx/checkout`)**: A dedicated front-end page where customers are securely redirected by external merchants. Customers select their funding source (Bank Account or Credit Card) to approve the transaction amount.
+- **Tokenized Authorization (`/api/citizen/onyx-token`)**: Upon approval, the system signs a JWT (`paymentToken`) validating the customer's Discord ID and the approved `amount`. This token is passed back to the merchant's `callbackUrl`.
+- **Merchant Storefront Dashboard**: Business account owners can access a new "Storefront" tab on their Citizen Portal. This dashboard allows them to retrieve their secure `apiKey` and provides HTML snippet examples for redirecting customers into the Onyx Checkout flow.
+
+### Subscriptions (Customer View)
+Customers can view their active recurring payments (subscriptions) natively within their banking dashboards.
+- **Citizen Portal**: Features a dedicated "Subscriptions" tab listing all subscriptions across all their banks and accounts. Customers can see if they are the "Biller" or the "Customer", track the next billing date, and manually cancel active subscriptions to prevent further charges.
+- **Bank Portal**: Localized bank dashboards also feature a "Subscriptions" tab, filtering recurring payments only for the specific bank being viewed, allowing localized tracking and cancellation.
+- **API Flow**: A new cancellation endpoint (`/api/citizen/subscriptions/:id/cancel`) allows customers to safely terminate a subscription by setting `isActive: false` (as long as they own either the biller or the customer account).

@@ -9,6 +9,29 @@ const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
 export const onyxRouter = express.Router();
 
+onyxRouter.get("/api/onyx/merchant/:id", async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { onyxMerchants, banks } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+        const merchants = await db.select({
+            id: onyxMerchants.id,
+            name: onyxMerchants.name,
+            bankName: banks.name
+        })
+        .from(onyxMerchants)
+        .leftJoin(banks, eq(onyxMerchants.bankId, banks.id))
+        .where(eq(onyxMerchants.id, req.params.id));
+        
+        if (merchants.length === 0) return res.status(404).json({ error: "Merchant not found" });
+        res.json(merchants[0]);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: "Internal error" });
+    }
+});
+
+
 onyxRouter.get("/api/onyx/network-analytics", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
     const { banks, transactions, cityCorpLogs, onyxMerchants, saasInvoices } = await import("../../db/schema.js");
@@ -258,7 +281,7 @@ onyxRouter.get("/api/onyx/merchants", requireAuth, async (req: express.Request, 
         .select({
           id: onyxMerchants.id,
           name: onyxMerchants.name,
-          apiKey: onyxMerchants.apiKey,
+          
           bankId: onyxMerchants.bankId,
           destinationAccount: onyxMerchants.destinationAccount,
           createdAt: onyxMerchants.createdAt,
@@ -368,12 +391,27 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
 
       await db.transaction(async (tx: any) => {
         let userAccount;
+        let sourceCard = null;
         if (sourceAccountId) {
-           const matches = await tx.select().from(bankAccounts).where(
-             and(eq(bankAccounts.id, sourceAccountId), eq(bankAccounts.ownerDiscordId, userDiscordId))
-           );
-           if (matches.length === 0) throw new Error("Provided source account not found or unauthorized.");
-           userAccount = matches[0];
+           if (sourceAccountId.startsWith("crd_")) {
+             const { cards } = await import("../../db/schema");
+             const matches = await tx.select().from(cards).where(eq(cards.id, sourceAccountId));
+             if (matches.length === 0) throw new Error("Provided source card not found.");
+             sourceCard = matches[0];
+             if (sourceCard.isLocked) throw new Error("Source card is locked.");
+             
+             const accMatches = await tx.select().from(bankAccounts).where(
+               and(eq(bankAccounts.id, sourceCard.accountId), eq(bankAccounts.ownerDiscordId, userDiscordId))
+             );
+             if (accMatches.length === 0) throw new Error("Linked account not found or unauthorized.");
+             userAccount = accMatches[0];
+           } else {
+             const matches = await tx.select().from(bankAccounts).where(
+               and(eq(bankAccounts.id, sourceAccountId), eq(bankAccounts.ownerDiscordId, userDiscordId))
+             );
+             if (matches.length === 0) throw new Error("Provided source account not found or unauthorized.");
+             userAccount = matches[0];
+           }
         } else {
            // Fallback to finding an account in the routing bank
            const userAccounts = await tx.select().from(bankAccounts).where(
@@ -386,7 +424,11 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
            userAccount = userAccounts[0]; 
         }
 
-        if (userAccount.balance < amountCents) {
+        if (sourceCard) {
+            if ((sourceCard.creditUsed || 0) + amountCents > (sourceCard.creditLimit || 0)) {
+                throw new Error("Insufficient credit limit.");
+            }
+        } else if (userAccount.balance < amountCents) {
           throw new Error(`Insufficient funds. Customer balance is ${(userAccount.balance / 100).toFixed(2)}.`);
         }
 
@@ -438,9 +480,16 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
            const wRes = await client.withdraw(userAccount.accountName, amountCents / 100);
            if (!wRes.success) throw new Error(`Onyx CityCorp Withdrawal Failed: ${wRes.message}`);
         } else {
-           await tx.update(bankAccounts)
-             .set({ balance: userAccount.balance - amountCents })
-             .where(eq(bankAccounts.id, userAccount.id));
+           if (sourceCard) {
+               const { cards } = await import("../../db/schema");
+               await tx.update(cards)
+                 .set({ creditUsed: (sourceCard.creditUsed || 0) + amountCents })
+                 .where(eq(cards.id, sourceCard.id));
+           } else {
+               await tx.update(bankAccounts)
+                 .set({ balance: userAccount.balance - amountCents })
+                 .where(eq(bankAccounts.id, userAccount.id));
+           }
         }
 
         // Add to Destination CityCorp if needed
