@@ -196,6 +196,9 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "interest_min_balance", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "interest_max_account_balance", "INTEGER");
   checkAndAddColumn("bank_settings", "interest_requires_activity_days", "INTEGER");
+  checkAndAddColumn("bank_settings", "interest_min_account_age_days", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "interest_calculation_method", "TEXT DEFAULT 'current_balance'");
+  checkAndAddColumn("bank_settings", "interest_eligible_account_types", "TEXT");
   checkAndAddColumn("bank_settings", "default_corp_account", "TEXT");
 
   // Transactions table
