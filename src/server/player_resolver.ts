@@ -4,7 +4,22 @@ import { eq, or } from "drizzle-orm";
 import type { CityCorpClient } from "../lib/citycorp_api.js";
 
 // Cache for resolved UUID -> Username mapping to avoid repetitive external API calls
-const uuidToUsernameCache = new Map<string, string>();
+const uuidToUsernameCache = new Map<string, {name: string, ts: number}>();
+
+// Prevent unbounded growth of the cache
+setInterval(() => {
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  for (const [key, val] of uuidToUsernameCache.entries()) {
+    if (now - val.ts > ONE_DAY) {
+      uuidToUsernameCache.delete(key);
+    }
+  }
+  // Hard limit as a fallback
+  if (uuidToUsernameCache.size > 20000) {
+    uuidToUsernameCache.clear();
+  }
+}, 60 * 60 * 1000);
 
 /**
  * Resolves a Minecraft UUID to a Minecraft username using local DB first,
@@ -15,20 +30,20 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
   const cleanUuid = uuid.replace(/-/g, "").toLowerCase();
 
   if (uuidToUsernameCache.has(cleanUuid)) {
-    return uuidToUsernameCache.get(cleanUuid)!;
+    return uuidToUsernameCache.get(cleanUuid)!.name;
   }
 
   // 1. Check local DB (users & bankCustomers)
   try {
     const userRow = await db.select().from(users).where(or(eq(users.mcUuid, uuid), eq(users.mcUuid, cleanUuid))).get();
     if (userRow?.mcUsername) {
-      uuidToUsernameCache.set(cleanUuid, userRow.mcUsername);
+      uuidToUsernameCache.set(cleanUuid, {name: userRow.mcUsername, ts: Date.now()});
       return userRow.mcUsername;
     }
 
     const customerRow = await db.select().from(bankCustomers).where(or(eq(bankCustomers.mcUuid, uuid), eq(bankCustomers.mcUuid, cleanUuid))).get();
     if (customerRow?.mcUsername) {
-      uuidToUsernameCache.set(cleanUuid, customerRow.mcUsername);
+      uuidToUsernameCache.set(cleanUuid, {name: customerRow.mcUsername, ts: Date.now()});
       return customerRow.mcUsername;
     }
   } catch (e) {
@@ -42,7 +57,7 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
       const pData = await cityCorpPlayerRes.json();
       const name = pData?.username || pData?.name || pData?.player?.name || pData?.player_name;
       if (name && typeof name === "string" && name !== "Citizen") {
-        uuidToUsernameCache.set(cleanUuid, name);
+        uuidToUsernameCache.set(cleanUuid, {name, ts: Date.now()});
         return name;
       }
     }
@@ -56,7 +71,7 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
     if (mojangRes.ok) {
       const mData = await mojangRes.json();
       if (mData?.name) {
-        uuidToUsernameCache.set(cleanUuid, mData.name);
+        uuidToUsernameCache.set(cleanUuid, {name: mData.name, ts: Date.now()});
         return mData.name;
       }
     }
@@ -70,7 +85,7 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
     if (ashconRes.ok) {
       const aData = await ashconRes.json();
       if (aData?.username) {
-        uuidToUsernameCache.set(cleanUuid, aData.username);
+        uuidToUsernameCache.set(cleanUuid, {name: aData.username, ts: Date.now()});
         return aData.username;
       }
     }
@@ -85,7 +100,7 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
       const pdbData = await playerDbRes.json();
       if (pdbData?.data?.player?.username) {
         const username = pdbData.data.player.username;
-        uuidToUsernameCache.set(cleanUuid, username);
+        uuidToUsernameCache.set(cleanUuid, {name: username, ts: Date.now()});
         return username;
       }
     }

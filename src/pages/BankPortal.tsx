@@ -197,6 +197,25 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     return `•••• •••• •••• ${chunks[3] || "0000"}`;
   };
 
+
+  const handleToggleCard = async (cardId: string, locked: boolean) => {
+    try {
+      const res = await fetch(`/api/portal/${bankId}/cards/${cardId}/lock`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isLocked: locked })
+      });
+      if (res.ok) {
+         handleSearch();
+      } else {
+         const d = await res.json();
+         alert(d.error || "Failed to update card status");
+      }
+    } catch (e) {
+      alert("Network error updating card status");
+    }
+  };
+
   const handleSearch = async (e?: React.FormEvent | React.MouseEvent) => {
     e?.preventDefault();
     setLoading(true);
@@ -1223,7 +1242,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
                         <div className="mt-4 pt-4 border-t border-white/10 flex gap-2">
                           <button
-                            onClick={() => toggleCardState(card.id, isCardLocked ? 'active' : 'frozen')}
+                            onClick={() => handleToggleCard(card.id, !isCardLocked)}
                             className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold transition-all border ${
                               isCardLocked 
                                 ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20' 

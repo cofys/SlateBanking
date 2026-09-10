@@ -142,7 +142,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   maxAutoApproveLoanAmount: integer("max_auto_approve_loan_amount").default(1000000), // 10,000.00
   vaultTiers: text("vault_tiers", { mode: "json" }).$type<{ lockDays: number; interestRate: number; penaltyPercent: number }[]>(),
   loginBgUrl: text("login_bg_url"),
-  accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean; isPrivate?: boolean }[]>(),
+  accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean; isPrivate?: boolean; creditLimit?: number | null; creditApr?: number | null; autoApproveLoans?: boolean; autoApproveCreditCards?: boolean; maxAutoApproveLoanAmount?: number; }[]>(),
   savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
   interestPaymentSchedule: text("interest_payment_schedule").default("manual"), // manual, daily, weekly, monthly
   interestNextPaymentAt: integer("interest_next_payment_at", { mode: "timestamp" }),
@@ -150,6 +150,8 @@ export const bankSettings = sqliteTable("bank_settings", {
   interestMinBalance: integer("interest_min_balance").default(0),
   interestMaxAccountBalance: integer("interest_max_account_balance"),
   interestRequiresActivityDays: integer("interest_requires_activity_days"), // null = none, otherwise max days since last login/activity
+  interestMinAccountAgeDays: integer("interest_min_account_age_days").default(0),
+  interestCalculationMethod: text("interest_calculation_method").default("current_balance"),
   requirePersonalForBusiness: integer("require_personal_for_business", { mode: "boolean" }).default(true),
   lastInterestAccrualAt: integer("last_interest_accrual_at", { mode: "timestamp" }),
   // Google Docs Contract Integration Settings

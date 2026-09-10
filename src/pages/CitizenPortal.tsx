@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, 
+  Search, Wallet, ArrowRight, ShieldCheck, Shield, Clock, CreditCard, Eye, EyeOff, 
   Lock, Unlock, Link2, BookOpen, LogIn, LogOut, TrendingUp, TrendingDown, 
   PieChart as PieChartIcon, Activity, Target, Plus, Send, Copy, Calendar,
   Users, UserPlus, Trash2, X, Building, UserCheck, AlertCircle, Sparkles, Store,
@@ -16,7 +16,7 @@ export function CitizenPortal() {
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const myMerchants = userData?.merchants || [];
-  const [activeTab, setActiveTab] = useState<"dashboard" | "assets" | "transfer" | "invoices" | "loans" | "analytics" | "vaults" | "merchants" | "subscriptions">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "assets" | "transfer" | "invoices" | "loans" | "analytics" | "vaults" | "merchants" | "subscriptions" | "escrows">("dashboard");
   const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
   const [onyxMerchants, setOnyxMerchants] = useState<any[]>([]);
   const [showManualLinkModal, setShowManualLinkModal] = useState(false);
@@ -25,9 +25,7 @@ export function CitizenPortal() {
 
   // Sync & Deposit modal state
   const [showSyncModal, setShowSyncModal] = useState(false);
-  const [payCardId, setPayCardId] = useState<string | null>(null);
-  const [payCardAmount, setPayCardAmount] = useState("");
-  const [payCardSourceAcc, setPayCardSourceAcc] = useState("");
+
   const [syncingBalances, setSyncingBalances] = useState(false);
   const [citizenSyncProgress, setCitizenSyncProgress] = useState<{ total: number; processed: number; current?: string; syncedCount: number; flaggedCount: number } | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -115,7 +113,11 @@ export function CitizenPortal() {
       const pollInterval = setInterval(async () => {
         try {
           const statusRes = await fetch(`/api/citizen/sync-job/${jobId}`);
-          if (!statusRes.ok) return;
+          if (!statusRes.ok) {
+             clearInterval(pollInterval);
+             setSyncingBalances(false);
+             return;
+          }
           const jobData = await statusRes.json();
 
           setCitizenSyncProgress({
@@ -839,6 +841,9 @@ function DashboardTab({ data, refresh }: { data: any, refresh: () => void }) {
 }
 
 function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, formatCardNumber, onOpenSyncModal }: any) {
+  const [payCardId, setPayCardId] = useState<string | null>(null);
+  const [payCardAmount, setPayCardAmount] = useState("");
+  const [payCardSourceAcc, setPayCardSourceAcc] = useState("");
   const [activeAccountForMembers, setActiveAccountForMembers] = useState<any>(null);
   const [newMemberDiscordId, setNewMemberDiscordId] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("manager");
@@ -852,6 +857,7 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
   const [regBankId, setRegBankId] = useState("");
   const [regAccountName, setRegAccountName] = useState("");
   const [regAccountType, setRegAccountType] = useState<"personal" | "business">("personal");
+  const [regSubType, setRegSubType] = useState<"checking" | "savings">("checking");
   const [regTierId, setRegTierId] = useState("");
   const [regTaxId, setRegTaxId] = useState("");
   const [regSector, setRegSector] = useState("General Commerce");
@@ -904,7 +910,7 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
         body: JSON.stringify({
           bankId: regBankId,
           accountName: regAccountName.trim(),
-          accountType: regAccountType,
+          accountType: `${regAccountType}_${regSubType}`,
           tierId: regTierId || undefined,
           businessTaxId: regTaxId.trim() || undefined,
           businessSector: regSector.trim() || undefined
@@ -1256,7 +1262,7 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
                         type="button"
                         onClick={() => {
                           setRegTierId(tier.id);
-                          setRegAccountType(tier.type);
+                          setRegAccountType(tier.type === "business" ? "business" : "personal");
                         }}
                         className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
                           regTierId === tier.id
@@ -2709,6 +2715,113 @@ function CitizenSubscriptionsTab({ data, refresh }: any) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function EscrowsTab({ data }: any) {
+  const [escrows, setEscrows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchEscrows = async () => {
+    try {
+      const res = await fetch('/api/citizen/escrows');
+      if (res.ok) setEscrows(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEscrows();
+  }, []);
+
+  const handleFund = async (escrowId: string) => {
+    if (!window.confirm("Are you sure you want to fund this escrow? This will deduct the amount from your account and lock it in escrow.")) return;
+    try {
+      const res = await fetch(`/api/citizen/escrows/${escrowId}/fund`, { method: 'POST' });
+      if (res.ok) {
+        alert("Escrow funded successfully!");
+        fetchEscrows();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to fund escrow");
+      }
+    } catch (e: any) {
+      alert("Network error funding escrow");
+    }
+  };
+
+  if (loading) return <div className="p-8 text-center text-white/50 animate-pulse">Loading escrows...</div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white tracking-tight">Escrow Contracts</h2>
+          <p className="text-sm text-white/50 mt-1">Manage secure transactional holds and releases.</p>
+        </div>
+      </div>
+
+      <div className="bg-[#0f0f15] border border-white/10 rounded-2xl p-6">
+        {escrows.length === 0 ? (
+          <div className="text-center py-12">
+            <Shield className="mx-auto h-12 w-12 text-white/20 mb-4" />
+            <h3 className="text-lg font-bold text-white mb-2">No Active Escrows</h3>
+            <p className="text-white/50 max-w-sm mx-auto">
+              You are not a party to any pending or funded escrow contracts.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {escrows.map((e: any) => {
+               // Figure out if I am the buyer or seller
+               const isBuyer = data.accounts?.some((a:any) => a.id === e.buyerAccountId);
+               return (
+                <div key={e.id} className="p-4 bg-[#1a1a24] border border-white/5 rounded-xl flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${e.status === 'funded' ? 'bg-emerald-500/20 text-emerald-400' : e.status === 'released' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                      <Shield size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white flex items-center gap-2">
+                        {e.description || "Escrow Contract"}
+                      </h4>
+                      <p className="text-xs text-white/50">
+                        {e.bankName} • You are the {isBuyer ? <span className="font-bold text-rose-300">Buyer</span> : <span className="font-bold text-emerald-300">Seller</span>}
+                      </p>
+                      <div className="flex items-center gap-3 mt-2">
+                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${e.status === 'funded' ? 'bg-emerald-500/20 text-emerald-400' : e.status === 'released' ? 'bg-indigo-500/20 text-indigo-400' : e.status === 'refunded' ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                           {e.status}
+                         </span>
+                         {e.contractUrl && (
+                           <a href={e.contractUrl} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 text-xs flex items-center gap-1 transition-colors">
+                             View Contract
+                           </a>
+                         )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col md:items-end gap-2 w-full md:w-auto mt-2 md:mt-0">
+                    <p className="font-mono font-bold text-lg text-white">
+                      ${(e.amount / 100).toFixed(2)}
+                    </p>
+                    {e.status === 'pending' && isBuyer && (
+                      <button onClick={() => handleFund(e.id)} className="w-full md:w-auto px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold rounded-lg transition-colors">
+                        Fund Escrow
+                      </button>
+                    )}
+                    {e.status === 'pending' && !isBuyer && (
+                      <span className="text-xs text-amber-400 font-medium">Awaiting Buyer Funding</span>
+                    )}
+                  </div>
+                </div>
+               );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

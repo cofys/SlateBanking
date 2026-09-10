@@ -41,6 +41,9 @@ export function BankTiers() {
         minBalance: 0,
         creditLimit: 0,
         creditApr: 1999,
+        autoApproveLoans: false,
+        autoApproveCreditCards: false,
+        maxAutoApproveLoanAmount: 1000000,
         isDefault: tiers.length === 0, // First tier is default
         isPrivate: false,
       },

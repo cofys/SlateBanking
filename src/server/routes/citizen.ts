@@ -246,7 +246,15 @@ citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
       if (!settings || !settings.enableLoans) return res.status(400).json({ error: "Loans are disabled for this bank" });
 
-      const autoApprove = settings.autoApproveLoans && principalAmount <= (settings.maxAutoApproveLoanAmount || 0);
+      let autoApprove = false;
+      if (settings.enableAccountTiers && account.tierId && settings.accountTiers) {
+         const tier = (settings.accountTiers as any[]).find(t => t.id === account.tierId);
+         if (tier && tier.autoApproveLoans && principalAmount <= (tier.maxAutoApproveLoanAmount || 0)) {
+            autoApprove = true;
+         }
+      } else if (!settings.enableAccountTiers) {
+         autoApprove = !!settings.autoApproveLoans && principalAmount <= (settings.maxAutoApproveLoanAmount || 0);
+      }
 
       const nextPaymentDate = new Date();
       nextPaymentDate.setDate(nextPaymentDate.getDate() + 30); // Need payment in 30 days
@@ -335,7 +343,15 @@ citizenRouter.post("/api/citizen/credit/apply", requireAuth, async (req: express
        const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
        if (!settings || !settings.enableCards) return res.status(400).json({ error: "Cards disabled" });
 
-       const autoApprove = settings.autoApproveCreditCards && requestedLimit <= ((settings.maxAutoApproveLoanAmount || 0) / 2); // Credit is riskier, half parameter
+       let autoApprove = false;
+       if (settings.enableAccountTiers && account.tierId && settings.accountTiers) {
+          const tier = (settings.accountTiers as any[]).find(t => t.id === account.tierId);
+          if (tier && tier.autoApproveCreditCards && requestedLimit <= (tier.maxAutoApproveLoanAmount || 0)) {
+             autoApprove = true;
+          }
+       } else if (!settings.enableAccountTiers) {
+          autoApprove = !!settings.autoApproveCreditCards && requestedLimit <= ((settings.maxAutoApproveLoanAmount || 0) / 2); // Credit is riskier, half parameter
+       }
        
        const appId = uuidv4();
        
@@ -1555,4 +1571,101 @@ citizenRouter.post("/api/citizen/subscriptions/:id/cancel", requireAuth, async (
     console.error(e);
     res.status(500).json({ error: "Internal error" });
   }
+});
+
+// -----------------------------------------------------------------------------------------------------
+// Escrows (Citizen View)
+// -----------------------------------------------------------------------------------------------------
+
+citizenRouter.get("/api/citizen/escrows", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { escrows, bankAccounts, banks } = await import("../../db/schema");
+    const { eq, or, and, inArray } = await import("drizzle-orm");
+
+    try {
+      const discordId = (req as any).user.discordId;
+
+      const myAccounts = await db.select({ id: bankAccounts.id }).from(bankAccounts).where(eq(bankAccounts.ownerDiscordId, discordId));
+      const myAccountIds = myAccounts.map(a => a.id);
+
+      if (myAccountIds.length === 0) return res.json([]);
+
+      const myEscrows = await db.select({
+        id: escrows.id,
+        bankId: escrows.bankId,
+        bankName: banks.name,
+        buyerAccountId: escrows.buyerAccountId,
+        sellerAccountId: escrows.sellerAccountId,
+        amount: escrows.amount,
+        status: escrows.status,
+        description: escrows.description,
+        contractUrl: escrows.contractUrl,
+        createdAt: escrows.createdAt
+      })
+      .from(escrows)
+      .innerJoin(banks, eq(escrows.bankId, banks.id))
+      .where(or(
+        inArray(escrows.buyerAccountId, myAccountIds),
+        inArray(escrows.sellerAccountId, myAccountIds)
+      ))
+      .all();
+
+      res.json(myEscrows);
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
+});
+
+citizenRouter.post("/api/citizen/escrows/:escrowId/fund", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { escrows, bankAccounts, transactions } = await import("../../db/schema");
+    const { eq, and, sql, gte } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const discordId = (req as any).user.discordId;
+      const escrowId = req.params.escrowId;
+
+      const escrow = await db.select().from(escrows).where(eq(escrows.id, escrowId)).get();
+      if (!escrow) return res.status(404).json({ error: "Escrow not found" });
+      if (escrow.status !== "pending") return res.status(400).json({ error: "Escrow not pending" });
+
+      const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
+      if (!buyer || buyer.ownerDiscordId !== discordId) {
+        return res.status(403).json({ error: "Only the buyer can fund this escrow." });
+      }
+
+      if (buyer.balance < escrow.amount) return res.status(400).json({ error: "Insufficient funds" });
+
+      await db.transaction(async (tx) => {
+        const updateResult = await tx.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${escrow.amount}` })
+          .where(and(
+            eq(bankAccounts.id, buyer.id),
+            gte(bankAccounts.balance, escrow.amount),
+            eq(bankAccounts.isFrozen, false)
+          ));
+
+        if (updateResult.changes === 0) throw new Error("Funding failed due to insufficient funds or frozen account.");
+
+        await tx.update(escrows).set({ status: "funded" }).where(eq(escrows.id, escrow.id));
+
+        await tx.insert(transactions).values({
+          id: uuidv4(),
+          bankId: escrow.bankId,
+          fromAccountId: buyer.id,
+          toAccountId: null,
+          amount: escrow.amount,
+          type: "escrow",
+          description: `Escrow Funded: ${escrow.description || escrow.id}`,
+          timestamp: new Date()
+        });
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
 });

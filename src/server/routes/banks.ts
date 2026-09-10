@@ -44,6 +44,16 @@ interface CityCorpSearchCacheEntry {
 const corpSearchCache = new Map<string, CityCorpSearchCacheEntry>();
 const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes TTL
 
+// Simple periodic cleanup for corpSearchCache to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of corpSearchCache.entries()) {
+    if (now - val.timestamp >= CACHE_TTL_MS) {
+      corpSearchCache.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
 banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { banks } = await import("../../db/schema");
@@ -1647,7 +1657,11 @@ banksRouter.get("/api/banks/:bankId/products", requireBankStaff, async (req: exp
     }
   });
 
-banksRouter.post("/api/banks/:bankId/products", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
+banksRouter.post("/api/banks/:bankId/products", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const staffRole = (req as any).staffRole;
+    if (staffRole !== "admin" && staffRole !== "manager") {
+       return res.status(403).json({ error: "Only Managers and Admins can create products." });
+    }
     const { db } = await import("../../db/index");
     const { loanProducts, creditProducts } = await import("../../db/schema");
     const { v4: uuidv4 } = await import("uuid");
@@ -1689,6 +1703,78 @@ banksRouter.post("/api/banks/:bankId/products", requireGlobalAdmin, async (req: 
       res.status(500).json({ error: "Failed to create product" });
     }
   });
+
+banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { loanProducts, creditProducts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    
+    try {
+      const staffRole = (req as any).staffRole;
+      if (staffRole !== "admin" && staffRole !== "manager") {
+         return res.status(403).json({ error: "Only Managers and Admins can edit products." });
+      }
+      
+      const { bankId, productId } = req.params;
+      const { type, name, interestRate, maxLimit, termDays, rewardsPercent, isActive } = req.body;
+      
+      if (!name || isNaN(interestRate) || isNaN(maxLimit)) {
+        return res.status(400).json({ error: "Invalid product data" });
+      }
+
+      if (type === 'loan') {
+        if (!termDays) return res.status(400).json({ error: "Term days required for loans" });
+        await db.update(loanProducts).set({
+          name,
+          interestRate: Number(interestRate),
+          maxAmount: Number(maxLimit) * 100,
+          termDays: Number(termDays),
+          isActive: isActive !== undefined ? isActive : true
+        }).where(and(eq(loanProducts.id, productId), eq(loanProducts.bankId, bankId)));
+      } else {
+        await db.update(creditProducts).set({
+          name,
+          interestRate: Number(interestRate),
+          maxLimit: Number(maxLimit) * 100,
+          rewardsPercent: Number(rewardsPercent) || 0,
+          isActive: isActive !== undefined ? isActive : true
+        }).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId)));
+      }
+      
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to update product" });
+    }
+});
+
+banksRouter.delete("/api/banks/:bankId/products/:productId", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { loanProducts, creditProducts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    
+    try {
+      const staffRole = (req as any).staffRole;
+      if (staffRole !== "admin" && staffRole !== "manager") {
+         return res.status(403).json({ error: "Only Managers and Admins can delete products." });
+      }
+      
+      const { bankId, productId } = req.params;
+      const { type } = req.query; // pass ?type=loan or ?type=credit
+      
+      if (type === 'loan') {
+        await db.delete(loanProducts).where(and(eq(loanProducts.id, productId), eq(loanProducts.bankId, bankId)));
+      } else {
+        await db.delete(creditProducts).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId)));
+      }
+      
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to delete product" });
+    }
+});
+
 
 banksRouter.get("/api/banks/:bankId/accounts", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
@@ -5250,3 +5336,34 @@ banksRouter.post("/api/banks/:bankId/compliance/frozen/:accId/unfreeze", require
       res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
     }
   });
+
+banksRouter.post("/api/banks/:bankId/accounts/:accountId/freeze", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, auditLogs } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const bId = req.params.bankId;
+      const accId = req.params.accountId;
+      const { freeze } = req.body;
+
+      await db.update(bankAccounts)
+        .set({ isFrozen: freeze })
+        .where(and(eq(bankAccounts.bankId, bId), eq(bankAccounts.id, accId)));
+
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: bId,
+        userDiscordId: (req as any).user?.discordId || 'Operator',
+        action: freeze ? 'account_frozen' : 'account_unfrozen',
+        details: `${freeze ? 'Froze' : 'Unfroze'} account ${accId}`,
+        timestamp: new Date()
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
+});

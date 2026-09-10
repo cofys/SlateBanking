@@ -781,7 +781,7 @@ export function BankSettings() {
             </label>
           </div>
 
-          {(settings?.enableLoans || settings?.enableCards) && (
+          {!settings?.enableAccountTiers && (settings?.enableLoans || settings?.enableCards) && (
             <>
               <div className="flex items-center gap-2 text-md font-semibold mb-6 pt-6 border-t border-white/10 text-white/80">
                 Loan & Credit Auto-Approval

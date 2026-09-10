@@ -40,9 +40,11 @@ export function BankInterest() {
       savingsApyPercent: Math.round(parseFloat(formData.get("savingsApyPercent") as string) * 100) || 300,
       interestPaymentSchedule: formData.get("interestPaymentSchedule"),
       interestTargetAccounts: formData.get("interestTargetAccounts"),
+      interestCalculationMethod: formData.get("interestCalculationMethod"),
       interestMinBalance: Math.floor(parseFloat(formData.get("interestMinBalance") as string) * 100) || 0,
       interestMaxAccountBalance: formData.get("interestMaxAccountBalance") ? Math.floor(parseFloat(formData.get("interestMaxAccountBalance") as string) * 100) : null,
       interestRequiresActivityDays: formData.get("interestRequiresActivityDays") ? parseInt(formData.get("interestRequiresActivityDays") as string, 10) : null,
+      interestMinAccountAgeDays: formData.get("interestMinAccountAgeDays") ? parseInt(formData.get("interestMinAccountAgeDays") as string, 10) : null,
     };
 
     fetch(`/api/banks/${bank.id}/interest-settings`, {

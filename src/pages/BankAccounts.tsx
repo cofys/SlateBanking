@@ -65,7 +65,11 @@ export function BankAccounts() {
       const pollInterval = setInterval(async () => {
         try {
           const statusRes = await fetch(`/api/banks/${bank.id}/sync-job/${jobId}`);
-          if (!statusRes.ok) return;
+          if (!statusRes.ok) {
+             clearInterval(pollInterval);
+             setSyncing(false);
+             return;
+          }
           const jobData = await statusRes.json();
 
           setSyncProgress({

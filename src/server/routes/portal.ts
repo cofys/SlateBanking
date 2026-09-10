@@ -682,7 +682,9 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       return res.status(400).json({ error: "Bank selection and Account Name are required." });
     }
 
-    const type = accountType === "business" ? "business" : "personal";
+    const allowedTypes = ["personal_checking", "personal_savings", "business_checking", "business_savings"];
+    let type = allowedTypes.includes(accountType) ? accountType : (accountType === "business" ? "business_checking" : "personal_checking");
+    const isBusiness = type.includes("business");
 
     // 1. Check Bank
     const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
@@ -692,14 +694,14 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
     const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
     const mustHavePersonal = settings?.requirePersonalForBusiness ?? true;
 
-    if (type === "business" && mustHavePersonal) {
+    if (isBusiness && mustHavePersonal) {
       // Check if user has an active personal account in this bank
       const personalAccs = await db.select()
         .from(bankAccounts)
         .where(and(
           eq(bankAccounts.bankId, bankId),
           inArray(bankAccounts.ownerDiscordId, candidateIds),
-          eq(bankAccounts.accountType, "personal"),
+          inArray(bankAccounts.accountType, ["personal", "personal_checking", "personal_savings"]),
           eq(bankAccounts.isActive, true)
         ));
 
@@ -919,11 +921,11 @@ portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: exp
     const isAuthorized = await isUserAccountOwnerOrMember(acc, candidateIds);
     if (!isAuthorized) return res.status(403).json({ error: "Unauthorized" });
 
-    const newRemaining = Math.max(0, loan.remainingBalance - amountCents);
+    const newRemaining = Math.max(0, loan.remainingAmount - amountCents);
     const newStatus = newRemaining === 0 ? "paid" : loan.status;
 
     await db.update(bankAccounts).set({ balance: acc.balance - amountCents }).where(eq(bankAccounts.id, acc.id));
-    await db.update(loans).set({ remainingBalance: newRemaining, status: newStatus as any }).where(eq(loans.id, loanId));
+    await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus as any }).where(eq(loans.id, loanId));
 
     await db.insert(transactions).values({
       id: uuidv4(),

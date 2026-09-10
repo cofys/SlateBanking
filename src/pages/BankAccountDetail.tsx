@@ -495,8 +495,20 @@ export function BankAccountDetail() {
               Security & Admin
             </h3>
             <div className="space-y-3">
-              <button onClick={() => alert("This feature is coming soon to the Slate bank portal.")}  className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg text-sm transition-colors opacity-50 cursor-not-allowed">
-                Freeze Account
+              <button onClick={async () => {
+                if (!confirm(`Are you sure you want to ${account.isFrozen ? 'unfreeze' : 'freeze'} this account?`)) return;
+                const res = await fetch(`/api/banks/${bank.id}/accounts/${accountId}/freeze`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ freeze: !account.isFrozen })
+                });
+                if (res.ok) {
+                  fetchAcc();
+                } else {
+                  alert("Failed to update freeze status");
+                }
+              }} className={`w-full text-left px-4 py-3 ${account.isFrozen ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20' : 'bg-white/5 hover:bg-white/10 border-white/5 text-white'} border rounded-lg text-sm transition-colors`}>
+                {account.isFrozen ? 'Unfreeze Account' : 'Freeze Account'}
               </button>
               <button 
                 onClick={() => setShowCloseModal(true)}
