@@ -259,7 +259,7 @@ export function BankCustomerDetail() {
                           e.preventDefault();
                           const newId = prompt(`Enter Username or Discord ID for account "${acc.accountName}":`, acc.ownerDiscordId);
                           if (!newId || newId === acc.ownerDiscordId) return;
-                          const res = await fetch(`/api/banks/${bank.id}/accounts/${acc.id}/update-owner`, {
+                          const res = await fetch(`/api/banks/${bank.id}/accounts/${acc.id}/update-account`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ newDiscordId: newId })

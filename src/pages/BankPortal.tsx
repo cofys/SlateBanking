@@ -1346,6 +1346,85 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         )}
       </AnimatePresence>
 
+      {/* ISSUE CARD MODAL */}
+      <AnimatePresence>
+        {showIssueCardModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#111118] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-white/10">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <CreditCard size={18} className="text-indigo-400" /> Request New Card
+                </h3>
+                <button onClick={() => setShowIssueCardModal(false)} className="text-zinc-400 hover:text-white">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const form = e.target;
+                setActionPending(true);
+                try {
+                  const res = await fetch(`/api/portal/${bankId}/request-card`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                      accountId: form.accountId.value,
+                      cardType: form.cardType.value
+                    })
+                  });
+                  const d = await res.json();
+                  if (!res.ok) alert(d.error || "Card request failed");
+                  else {
+                    alert("Card issued successfully!");
+                    setShowIssueCardModal(false);
+                    handleSearch();
+                  }
+                } catch (err) {
+                  alert("Error requesting card.");
+                } finally {
+                  setActionPending(false);
+                }
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Linked Account</label>
+                  <select name="accountId" required className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    {userData?.accounts?.map((acc) => (
+                      <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.id})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Card Type</label>
+                  <select name="cardType" required className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    <option value="debit">Debit Card</option>
+                    <option value="credit">Credit Card</option>
+                  </select>
+                  <p className="text-xs text-white/50 mt-2">
+                    Debit cards are instantly linked to your account balance. Credit cards may require manual approval depending on bank policy.
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <button 
+                    type="submit" 
+                    disabled={actionPending}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl flex items-center justify-center transition-colors disabled:opacity-50"
+                  >
+                    {actionPending ? <Loader2 className="animate-spin" size={14} /> : "Submit Request"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* APPLY LOAN MODAL */}
       <AnimatePresence>
         {showApplyLoanModal && (

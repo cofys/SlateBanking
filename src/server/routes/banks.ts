@@ -2441,6 +2441,30 @@ banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, a
         }
       }
 
+      const { or } = await import("drizzle-orm");
+      const { creditApplications, interBankTransfers, accountMembers, cards, loans, subscriptions, payrollJobs, invoices, escrows, vaultDeposits, recurringTransfers, savingsGoals, paymentLinks } = await import("../../db/schema");
+      
+      const accId = req.params.accountId;
+      
+      // Cascade delete foreign key dependencies
+      await db.delete(creditApplications).where(eq(creditApplications.accountId, accId));
+      await db.delete(interBankTransfers).where(or(eq(interBankTransfers.fromAccountId, accId), eq(interBankTransfers.toAccountId, accId)));
+      await db.delete(accountMembers).where(eq(accountMembers.accountId, accId));
+      await db.delete(cards).where(eq(cards.accountId, accId));
+      await db.delete(loans).where(eq(loans.accountId, accId));
+      await db.delete(subscriptions).where(or(eq(subscriptions.customerAccountId, accId), eq(subscriptions.billerAccountId, accId)));
+      await db.delete(payrollJobs).where(or(eq(payrollJobs.employeeAccountId, accId), eq(payrollJobs.employerAccountId, accId)));
+      await db.delete(invoices).where(or(eq(invoices.customerAccountId, accId), eq(invoices.billerAccountId, accId)));
+      await db.delete(escrows).where(or(eq(escrows.buyerAccountId, accId), eq(escrows.sellerAccountId, accId)));
+      await db.delete(vaultDeposits).where(eq(vaultDeposits.accountId, accId));
+      await db.delete(recurringTransfers).where(or(eq(recurringTransfers.fromAccountId, accId), eq(recurringTransfers.toAccountId, accId)));
+      await db.delete(savingsGoals).where(eq(savingsGoals.accountId, accId));
+      await db.delete(paymentLinks).where(eq(paymentLinks.billerAccountId, accId));
+
+      // Nullify transaction references so audit history isn't lost
+      await db.update(transactions).set({ fromAccountId: null }).where(eq(transactions.fromAccountId, accId));
+      await db.update(transactions).set({ toAccountId: null }).where(eq(transactions.toAccountId, accId));
+
       await db.delete(bankAccounts).where(
         and(eq(bankAccounts.id, req.params.accountId), eq(bankAccounts.bankId, req.params.bankId))
       );

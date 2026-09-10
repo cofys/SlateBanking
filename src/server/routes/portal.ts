@@ -834,6 +834,61 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
   }
 });
 
+portalRouter.post("/api/portal/:bankId/request-card", requireAuth, async (req, res) => {
+  const { db } = await import("../../db/index.js");
+  const { cards, bankAccounts, banks } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+  const { randomInt } = await import("crypto");
+
+  try {
+    const { accountId, cardType } = req.body;
+    const bankId = req.params.bankId;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
+
+    const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
+    if (!targetBank) return res.status(404).json({ error: "Bank not found" });
+
+    const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId)));
+    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
+      return res.status(404).json({ error: "Destination account not found or unauthorized" });
+    }
+
+    const cardNumber = Array.from({length: 16}, () => randomInt(0, 10)).join('');
+    const cvv = Array.from({length: 3}, () => randomInt(0, 10)).join('');
+    
+    const nextYear = new Date();
+    nextYear.setFullYear(nextYear.getFullYear() + 4);
+    const expiryDate = `${(nextYear.getMonth() + 1).toString().padStart(2, '0')}/${nextYear.getFullYear().toString().slice(-2)}`;
+
+    const cardId = `crd_${uuidv4().substring(0, 8)}`;
+    const type = cardType === 'credit' ? 'credit' : 'debit';
+    const creditLimit = type === 'credit' ? 1000000 : 0;
+    const apr = type === 'credit' ? 1999 : 0;
+
+    await db.insert(cards).values({
+      id: cardId,
+      bankId,
+      accountId,
+      cardNumber,
+      cvv,
+      expiryDate,
+      type,
+      creditLimit,
+      creditUsed: 0,
+      apr,
+      isLocked: false,
+      createdAt: new Date(),
+    });
+
+    res.json({ success: true, cardId });
+  } catch (e) {
+    console.error("Issue card error:", e);
+    res.status(500).json({ error: e.message || "Failed to issue card." });
+  }
+});
+
 // Portal Loan Request API
 portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
