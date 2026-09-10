@@ -1394,7 +1394,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Linked Account</label>
                   <select name="accountId" required className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    {userData?.accounts?.map((acc) => (
+                    {userData?.accounts?.map((acc: any) => (
                       <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.id})</option>
                     ))}
                   </select>

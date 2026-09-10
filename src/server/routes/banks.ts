@@ -3081,13 +3081,17 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
     const { db } = await import("../../db/index");
     const { bankAccounts, vaultDeposits, loans, transactions, payrollJobs } = await import("../../db/schema");
     const { eq, sum, and, desc, sql, or, ne, like } = await import("drizzle-orm");
-    const { getOrCreateBankCorpAccount, calculateTreasuryFees, FEE_TYPE_LABELS } = await import("../feeService");
+    const { calculateTreasuryFees, FEE_TYPE_LABELS } = await import("../feeService");
 
     try {
       const bId = req.params.bankId;
 
       // Ensure bank default corporate account exists & is resolved
-      const corpAccount = await getOrCreateBankCorpAccount(db, bId);
+      // Native corp balance is calculated from fee ledger or CityCorp if implemented.
+      let nativeCorpBalance = 0;
+      // Calculate local native corp balance from fees
+      const nativeFees = await db.select({ total: sum(transactions.amount) }).from(transactions).where(and(eq(transactions.bankId, bId), eq(transactions.type, "fee"), sql`${transactions.toAccountId} IS NULL`)).get();
+      nativeCorpBalance = Number(nativeFees?.total || 0);
 
       // 1. Reserves & Bank System Assets
       const systemAccounts = await db.select().from(bankAccounts).where(
@@ -3098,10 +3102,10 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
       );
 
       const vaultCash = systemAccounts.find(a => a.systemCategory === "vault_cash")?.balance || 0;
-      const corpAccountReserves = corpAccount.balance || 0;
+      const corpAccountReserves = nativeCorpBalance;
       const interestRevenueReserves = systemAccounts.find(a => a.systemCategory === "interest_revenue")?.balance || 0;
       const otherReserves = systemAccounts
-        .filter(a => a.id !== corpAccount.id && a.systemCategory !== "vault_cash" && a.systemCategory !== "interest_revenue")
+        .filter(a => true && a.systemCategory !== "vault_cash" && a.systemCategory !== "interest_revenue")
         .reduce((sum, a) => sum + (a.balance || 0), 0);
 
       const cashReserves = vaultCash + corpAccountReserves + interestRevenueReserves + otherReserves;
@@ -3195,12 +3199,12 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
 
       res.json({
         bankCorpAccount: {
-          id: corpAccount.id,
-          name: corpAccount.accountName,
-          balance: corpAccount.balance,
-          category: corpAccount.systemCategory,
-          existsInGame: corpAccount.existsInGame,
-          lastSyncedAt: corpAccount.lastSyncedAt
+          id: "native_corp",
+          name: "Native Corp Balance",
+          balance: nativeCorpBalance,
+          category: "corporate",
+          existsInGame: true,
+          lastSyncedAt: new Date()
         },
         // Balance sheet
         totalAssets,
@@ -3860,7 +3864,7 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
     const { loans, bankAccounts, transactions } = await import("../../db/schema");
     const { eq, and, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
-    const { getOrCreateBankCorpAccount } = await import("../feeService");
+    
 
     try {
       const { accountId, amount } = req.body;
@@ -3874,7 +3878,7 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
       if (!acc) return res.status(404).json({ error: "Account not found" });
       if (acc.balance < amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      const corpAcc = await getOrCreateBankCorpAccount(db, req.params.bankId);
+      // Native corp balance receives loan payments (handled in transactions, toAccountId: null)
 
       const newRemaining = Math.max(0, loan.remainingAmount - amount);
       const isPaid = newRemaining === 0;
@@ -3882,8 +3886,17 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
       // Deduct from borrower's account
       await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${amount}` }).where(eq(bankAccounts.id, accountId));
 
-      // Credit the Bank's Corporate Revenue Account
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${amount}` }).where(eq(bankAccounts.id, corpAcc.id));
+      // Credit the Bank's Corporate Revenue Account (Native Corp Balance via CityCorp API)
+      const bank = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
+      if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+        try {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          await client.payCorporation(amount / 100);
+        } catch (e) {
+          console.warn("Failed to pay corp:", e);
+        }
+      }
 
       const ts = new Date();
 
@@ -3897,7 +3910,7 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
           id: uuidv4(),
           bankId: req.params.bankId,
           fromAccountId: accountId,
-          toAccountId: corpAcc.id,
+          toAccountId: null,
           type: "fee",
           feeType: "late_fee",
           amount: lateFeeSettled,
@@ -3912,7 +3925,7 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
         id: uuidv4(),
         bankId: req.params.bankId,
         fromAccountId: accountId,
-        toAccountId: corpAcc.id,
+        toAccountId: null,
         type: "loan_payment",
         amount,
         description: `Loan Repayment${isPaid ? ' (Final Payoff)' : ''} (Loan #${loan.id.slice(0, 8)})`,

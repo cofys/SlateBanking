@@ -891,3 +891,18 @@ Customers can view their active recurring payments (subscriptions) natively with
 ### Financial Products Engine & Auto-Approval
 - **Product Management (`BankProducts.tsx`)**: Bank Managers and Admins can create, edit, and delete predefined Financial Products (Loans and Credit Cards) for their bank. When editing a product, the system automatically checks for the presence of `termDays` to differentiate between loans and credit cards. Products can be toggled active or disabled, preserving existing loans while stopping new applications.
 - **Tier-Based Auto-Approval (`BankTiers.tsx` & `citizen.ts`)**: To provide granular risk management, Loan and Credit Card auto-approval thresholds (e.g., `autoApproveLoans`, `autoApproveCreditCards`, `maxAutoApproveLoanAmount`) have been migrated from global Bank Settings to **Account Tiers**. If Account Tiers are enabled for a bank, auto-approvals will only execute if the customer's specific tier authorizes the amount. If Account Tiers are disabled, the system gracefully falls back to the legacy global auto-approval settings.
+
+### Global Security Suite (Added Sep 2026)
+Slate Banking now features an integrated **Global Security Suite**, exclusively available to Platform/Global Administrators. 
+* **IP Logging**: Every login attempt (CityCorp, Discord, Staff, Admin) and sensitive security event now logs the incoming IP address and Discord Identity into \`securityAuditLogs\`.
+* **Firewall & Banning**: Global Administrators have access to a new dashboard at \`/security\` to review Live Security Streams. They can ban malicious IP addresses directly from this interface, preventing those IPs from accessing any API endpoint instantly via the \`securityFirewall\` Express middleware.
+* **Database Tables Added**:
+  - \`securityAuditLogs\` (Tracks ip, action, status, discordId, timestamp)
+  - \`bannedIps\` (Tracks ipAddress, reason, banner, dates)
+
+### Login Flow Changes (CityCorp Enforced)
+* **CityCorp Only**: The Discord login button has been completely removed from the initial login screens for both Bank Staff and Citizens. 
+* **Authentication**: CityCorp (Minecraft) is the mandatory authentication layer for initial access. 
+* **Onboarding**: Upon initial login via CityCorp, players are prompted with a mandatory onboarding modal if their Legal Name (RP) and Home Address are missing from the global \`users\` database. This applies to all banks seamlessly.
+* **Discord Integration**: Players can continue linking their Discord inside the portal dashboard for bot notifications and Webhook alerts, but it is no longer permitted as a primary login gateway. 
+

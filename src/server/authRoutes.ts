@@ -1,3 +1,4 @@
+import { logSecurityEvent } from "./middleware";
 import express from "express";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET, getRedirectUri, requireAuth } from "./middleware.js";
@@ -278,6 +279,10 @@ export function registerAuthRoutes(app: express.Express) {
         mcUsername = `Citizen_${minecraftUuid.substring(0, 6)}`;
       }
 
+      if (mcUsername && mcUsername.trim().toLowerCase() === 'system') {
+        return res.status(403).send("Registration Error: The username 'System' is reserved for internal bank accounts and cannot be used.");
+      }
+      
       const avatarUrl = `https://mc-heads.net/avatar/${mcUsername || minecraftUuid}/64`;
 
       if (bank) {
@@ -325,6 +330,9 @@ export function registerAuthRoutes(app: express.Express) {
         isGlobalAdmin = true;
       }
 
+      
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+      await logSecurityEvent(ip as string, "citycorp_login", "success", "mc_" + minecraftUuid, "Logged in via CityCorp: " + mcUsername);
       const payload = {
         discordId: "mc_" + minecraftUuid,
         username: mcUsername,
@@ -481,6 +489,9 @@ export function registerAuthRoutes(app: express.Express) {
 
       const userData = await userResponse.json();
       const realDiscordId = userData.id;
+      if (userData.username && userData.username.trim().toLowerCase() === 'system') {
+        return res.status(403).send("Registration Error: The username 'System' is reserved for internal bank accounts and cannot be used.");
+      }
       const { globalAdmins, bankCustomers, bankAccounts, cards, loans, invoices, transactions } = await import("../db/schema");
       const { eq, or: drizzleOr } = await import("drizzle-orm");
       const { db } = await import("../db/index");
@@ -502,6 +513,9 @@ export function registerAuthRoutes(app: express.Express) {
         isGlobalAdmin = true;
       }
 
+      
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+      await logSecurityEvent(ip as string, "discord_login", "success", realDiscordId, "Logged in via Discord: " + userData.username);
       let payload = {
         discordId: realDiscordId,
         username: userData.username,

@@ -165,3 +165,50 @@ export const sendWebhook = async (bankId: string, message: string) => {
     console.error(e);
   }
 };
+
+
+export const securityFirewall = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const { db } = await import("../db/index.js");
+    const { bannedIps } = await import("../db/schema.js");
+    const { eq } = await import("drizzle-orm");
+
+    if (ip !== 'unknown') {
+      const ipStr = typeof ip === 'string' ? ip.split(',')[0].trim() : String(ip);
+      const banned = await db.select().from(bannedIps).where(eq(bannedIps.ipAddress, ipStr)).get();
+      
+      if (banned) {
+        if (banned.expiresAt && new Date() > banned.expiresAt) {
+          await db.delete(bannedIps).where(eq(bannedIps.ipAddress, ipStr));
+        } else {
+          return res.status(403).json({ error: "Access Denied: Your IP address has been banned by the platform administrator.", reason: banned.reason });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Firewall error:", e);
+  }
+  next();
+};
+
+export const logSecurityEvent = async (ip: string, action: string, status: string, discordId: string | null = null, details: string | null = null) => {
+  try {
+    const { db } = await import("../db/index.js");
+    const { securityAuditLogs } = await import("../db/schema.js");
+    const { v4: uuidv4 } = await import("uuid");
+    const ipStr = typeof ip === 'string' ? ip.split(',')[0].trim() : String(ip);
+    
+    await db.insert(securityAuditLogs).values({
+      id: uuidv4(),
+      ipAddress: ipStr,
+      action,
+      status,
+      discordId,
+      details,
+      timestamp: new Date()
+    });
+  } catch (e) {
+    console.error("Failed to log security event:", e);
+  }
+};

@@ -33,6 +33,9 @@ export function CitizenPortal() {
   const [depositAmount, setDepositAmount] = useState("1000");
   const [depositReason, setDepositReason] = useState("Initial Account Funding");
   const [depositing, setDepositing] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingData, setOnboardingData] = useState({ rpName: "", address: "" });
+  const [onboardingSubmitting, setOnboardingSubmitting] = useState(false);
 
   useEffect(() => {
     document.title = "Citizen Portal | Slate Banking";
@@ -184,6 +187,44 @@ export function CitizenPortal() {
     }
   };
 
+  useEffect(() => {
+    if (userData && userData.profile !== undefined) {
+      if (!userData.profile || !userData.profile.rpName || !userData.profile.address) {
+        setShowOnboarding(true);
+      } else {
+        setShowOnboarding(false);
+      }
+    }
+  }, [userData]);
+
+  const handleOnboardingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onboardingData.rpName || !onboardingData.address) return;
+    setOnboardingSubmitting(true);
+    try {
+      const res = await fetch("/api/citizen/update-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankId: userData?.banks?.[0]?.id || "global",
+          rpName: onboardingData.rpName,
+          address: onboardingData.address
+        })
+      });
+      if (res.ok) {
+        setShowOnboarding(false);
+        handleSearch(); // Refresh data
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to update profile.");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setOnboardingSubmitting(false);
+    }
+  };
+
   const handleSearch = async (e?: React.FormEvent | React.MouseEvent) => {
     e?.preventDefault();
     setLoading(true);
@@ -244,18 +285,10 @@ export function CitizenPortal() {
             <div className="space-y-2.5">
               <button 
                 onClick={() => login(undefined, 'citycorp')}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.99] text-sm cursor-pointer"
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-4 rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.99] text-base cursor-pointer"
               >
-                <LogIn size={18} />
-                Continue with CityCorp
-              </button>
-
-              <button 
-                onClick={() => login(undefined, 'discord')}
-                className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-[#5865F2]/20 hover:shadow-[#5865F2]/30 active:scale-[0.99] text-sm cursor-pointer"
-              >
-                <LogIn size={18} />
-                Continue with Discord
+                <LogIn size={20} />
+                Login / Signup with CityCorp
               </button>
             </div>
 
@@ -274,6 +307,58 @@ export function CitizenPortal() {
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-emerald-600/5 rounded-full blur-[150px] pointer-events-none" />
       
+
+      {showOnboarding && (
+        <div className="fixed inset-0 bg-[#060609]/95 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#0e0e15] border border-white/10 p-8 rounded-2xl max-w-md w-full shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500" />
+            
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold text-white mb-2">Complete Your Profile</h2>
+              <p className="text-zinc-400 text-sm leading-relaxed">
+                Welcome to Slate Banking. To open accounts and perform transactions, we need a few legal details for your profile.
+              </p>
+            </div>
+
+            <form onSubmit={handleOnboardingSubmit} className="space-y-5">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wider">Legal RP Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="John Doe"
+                  className="w-full bg-[#151520] border border-white/5 rounded-xl px-4 py-3 text-white placeholder-white/20 focus:outline-none focus:border-indigo-500 transition-colors"
+                  value={onboardingData.rpName}
+                  onChange={e => setOnboardingData({...onboardingData, rpName: e.target.value})}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wider">Home Address</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="123 Main St, CityCorp"
+                  className="w-full bg-[#151520] border border-white/5 rounded-xl px-4 py-3 text-white placeholder-white/20 focus:outline-none focus:border-indigo-500 transition-colors"
+                  value={onboardingData.address}
+                  onChange={e => setOnboardingData({...onboardingData, address: e.target.value})}
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={onboardingSubmitting}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold py-3.5 px-4 rounded-xl transition-colors shadow-lg shadow-indigo-600/20 text-sm"
+                >
+                  {onboardingSubmitting ? "Saving Profile..." : "Complete Setup"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 relative z-10">
         
         {/* Header */}

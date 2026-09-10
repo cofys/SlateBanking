@@ -18,6 +18,8 @@ export const users = sqliteTable("users", {
   discordId: text("discord_id").notNull().unique(),
   mcUuid: text("mc_uuid").notNull(),
   mcUsername: text("mc_username").notNull(),
+  rpName: text("rp_name"),
+  address: text("address"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
@@ -142,6 +144,10 @@ export const bankSettings = sqliteTable("bank_settings", {
   maxAutoApproveLoanAmount: integer("max_auto_approve_loan_amount").default(1000000), // 10,000.00
   vaultTiers: text("vault_tiers", { mode: "json" }).$type<{ lockDays: number; interestRate: number; penaltyPercent: number }[]>(),
   loginBgUrl: text("login_bg_url"),
+  loanPoolAccount: text("loan_pool_account"), // Name of specific sub-account for loans
+  feeCollectionAccount: text("fee_collection_account"), // Name of specific sub-account for fees
+  interestPoolAccount: text("interest_pool_account"), // Name of specific sub-account for interest
+
   accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean; isPrivate?: boolean; creditLimit?: number | null; creditApr?: number | null; autoApproveLoans?: boolean; autoApproveCreditCards?: boolean; maxAutoApproveLoanAmount?: number; }[]>(),
   savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
   interestPaymentSchedule: text("interest_payment_schedule").default("manual"), // manual, daily, weekly, monthly
@@ -419,6 +425,8 @@ export const bankCustomers = sqliteTable("bank_customers", {
   linkedDiscordId: text("linked_discord_id"),
   cityCorpToken: text("city_corp_token"),
   notes: text("notes"),
+  rpName: text("rp_name"),
+  address: text("address"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
   bankIdIdx: index("idx_bank_customers_bank_id").on(table.bankId),
@@ -598,4 +606,26 @@ export const globalAnnouncements = sqliteTable("global_announcements", {
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   createdBy: text("created_by"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+
+export const securityAuditLogs = sqliteTable("security_audit_logs", {
+  id: text("id").primaryKey(),
+  ipAddress: text("ip_address").notNull(),
+  action: text("action").notNull(),
+  status: text("status").notNull(), // 'success', 'failed', 'blocked'
+  discordId: text("discord_id"), // if known
+  details: text("details"),
+  timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+  ipIdx: index("idx_sec_audit_ip").on(table.ipAddress),
+  statusIdx: index("idx_sec_audit_status").on(table.status)
+}));
+
+export const bannedIps = sqliteTable("banned_ips", {
+  ipAddress: text("ip_address").primaryKey(),
+  reason: text("reason").notNull(),
+  bannedBy: text("banned_by").notNull(),
+  bannedAt: integer("banned_at", { mode: "timestamp" }).notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }) // null = permanent
 });

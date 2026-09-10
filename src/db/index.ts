@@ -179,6 +179,9 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "max_auto_approve_loan_amount", "INTEGER DEFAULT 1000000");
   checkAndAddColumn("bank_settings", "vault_tiers", "TEXT");
   checkAndAddColumn("bank_settings", "login_bg_url", "TEXT");
+  checkAndAddColumn("bank_settings", "loan_pool_account", "TEXT");
+  checkAndAddColumn("bank_settings", "fee_collection_account", "TEXT");
+  checkAndAddColumn("bank_settings", "interest_pool_account", "TEXT");
   checkAndAddColumn("bank_settings", "savings_apy_percent", "INTEGER DEFAULT 300");
   checkAndAddColumn("bank_settings", "require_personal_for_business", "INTEGER DEFAULT 1");
   checkAndAddColumn("bank_settings", "last_interest_accrual_at", "INTEGER");

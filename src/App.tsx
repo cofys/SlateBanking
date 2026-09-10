@@ -12,6 +12,7 @@ import { TransactionsList } from "./pages/TransactionsList";
 import { CitizenPortal } from "./pages/CitizenPortal";
 import { PayLink } from "./pages/PayLink";
 import { GlobalSettings } from "./pages/GlobalSettings";
+import { GlobalSecurity } from "./pages/GlobalSecurity";
 import { BankPortal } from "./pages/BankPortal";
 import { BankOverview } from "./pages/BankOverview";
 import { BankAccounts } from "./pages/BankAccounts";
@@ -172,6 +173,7 @@ function App() {
           <Route path="citycorp" element={<CityCorpLogs />} />
           <Route path="eye-of-god" element={<EyeOfGod />} />
           <Route path="settings" element={<GlobalSettings />} />
+          <Route path="security" element={<GlobalSecurity />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>

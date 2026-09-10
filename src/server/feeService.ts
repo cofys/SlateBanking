@@ -279,116 +279,6 @@ export function parseInGameFeeType(tx: any): {
  * Resolves the bank's default in-game corporate account from the CityCorp plugin.
  * There is NO separate fee account; fees go directly into the bank's default corp account.
  */
-export async function getOrCreateBankCorpAccount(db: any, bankId: string) {
-  // 1. Check if bank settings specifies a default corp account name
-  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-  const configuredCorpAccountName = settings?.defaultCorpAccount?.trim();
-
-  // 2. Query all local bank accounts for this bank
-  const allAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId));
-
-  if (configuredCorpAccountName) {
-    const matched = allAccounts.find((a: any) => 
-      a.accountName.toLowerCase().trim() === configuredCorpAccountName.toLowerCase()
-    );
-    if (matched) {
-      if (!matched.isSystem || matched.systemCategory !== "corporate") {
-        await db.update(bankAccounts).set({
-          isSystem: true,
-          systemCategory: "corporate"
-        }).where(eq(bankAccounts.id, matched.id));
-      }
-      return matched;
-    }
-  }
-
-  // 3. Check for existing system corporate account
-  const existingCorp = allAccounts.find((a: any) => 
-    a.systemCategory === "corporate" || 
-    a.systemCategory === "default_corp" ||
-    a.accountName.toLowerCase() === "corporate" ||
-    a.accountName.toLowerCase() === "main" ||
-    a.accountName.toLowerCase() === "default"
-  );
-  if (existingCorp) return existingCorp;
-
-  // 4. If bank has CityCorp credentials, check remote accounts list to find in-game default account
-  const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-  let defaultName = "Main";
-  let inGameBalance = 0;
-
-  if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
-    try {
-      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-      const remoteRes = await client.fetchAllAccounts(3);
-      if (remoteRes.success && Array.isArray(remoteRes.accounts) && remoteRes.accounts.length > 0) {
-        // Find default or first non-personal account
-        const corpCandidate = remoteRes.accounts.find((a: any) => {
-          const n = (a.account_name || a.name || "").toLowerCase();
-          return a.is_default || a.default || n === "main" || n === "default" || n === "corporate" || n === bank.name.toLowerCase();
-        }) || remoteRes.accounts[0];
-
-        if (corpCandidate) {
-          defaultName = corpCandidate.account_name || corpCandidate.name || "Main";
-          inGameBalance = Math.round((Number(corpCandidate.balance) || 0) * 100);
-
-          // Check if already in local accounts
-          const matchRemote = allAccounts.find((a: any) => 
-            a.accountName.toLowerCase().trim() === defaultName.toLowerCase().trim()
-          );
-          if (matchRemote) {
-            await db.update(bankAccounts).set({
-              isSystem: true,
-              systemCategory: "corporate",
-              balance: inGameBalance,
-              existsInGame: true,
-              lastSyncedAt: new Date()
-            }).where(eq(bankAccounts.id, matchRemote.id));
-            return { ...matchRemote, isSystem: true, systemCategory: "corporate", balance: inGameBalance };
-          }
-        }
-      }
-    } catch (e) {
-      console.warn(`[getOrCreateBankCorpAccount] Could not query remote accounts for bank ${bankId}:`, e);
-    }
-  }
-
-  // 5. Look for any business account or fallback to creating local mirror for the default corp account
-  const fallbackBiz = allAccounts.find((a: any) => a.accountType === "business");
-  if (fallbackBiz) {
-    await db.update(bankAccounts).set({
-      isSystem: true,
-      systemCategory: "corporate"
-    }).where(eq(bankAccounts.id, fallbackBiz.id));
-    return { ...fallbackBiz, isSystem: true, systemCategory: "corporate" };
-  }
-
-  // 6. Create local mirror for the bank's default corp account
-  const newCorpId = uuidv4();
-  const newAccount = {
-    id: newCorpId,
-    bankId,
-    ownerDiscordId: "SYSTEM",
-    accountName: defaultName,
-    accountType: "business",
-    isSystem: true,
-    systemCategory: "corporate",
-    balance: inGameBalance,
-    isActive: true,
-    isFrozen: false,
-    existsInGame: true,
-    lastSyncedAt: new Date(),
-    createdAt: new Date(),
-  };
-
-  await db.insert(bankAccounts).values(newAccount);
-  return newAccount;
-}
-
-/**
- * Records an on-platform fee (e.g. transfer fee, late fee), credits the bank's default
- * in-game corporate account, and logs the transaction with its parsed fee type.
- */
 export async function recordBankFee(
   dbOrTx: any,
   params: {
@@ -405,15 +295,8 @@ export async function recordBankFee(
   if (amountCents <= 0) return null;
 
   // Retrieve the bank's default in-game corporate account
-  const corpAccount = await getOrCreateBankCorpAccount(dbOrTx, bankId);
-
-  // Credit bank's default corporate account
-  await dbOrTx.update(bankAccounts)
-    .set({ 
-      balance: sql`${bankAccounts.balance} + ${amountCents}`,
-      lastSyncedAt: new Date()
-    })
-    .where(eq(bankAccounts.id, corpAccount.id));
+  // Fees go directly to the bank's native corp balance, so we don't credit a local bankAccounts row.
+  // We use toAccountId: null to represent the native corp.
 
   // Insert fee transaction into the ledger
   const txId = uuidv4();
@@ -423,7 +306,7 @@ export async function recordBankFee(
     id: txId,
     bankId,
     fromAccountId,
-    toAccountId: corpAccount.id,
+    toAccountId: null,
     type: "fee",
     feeType,
     amount: amountCents,
@@ -435,9 +318,15 @@ export async function recordBankFee(
   // If CityCorp credentials exist, attempt in-game deposit to the default corp account
   try {
     const bank = await dbOrTx.select().from(banks).where(eq(banks.id, bankId)).get();
-    if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey && corpAccount.accountName) {
+    const { bankSettings } = await import("../db/schema");
+    const settings = await dbOrTx.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey ) {
       const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-      await client.deposit(corpAccount.accountName, amountCents / 100);
+      if (settings?.feeCollectionAccount) {
+        await client.deposit(settings.feeCollectionAccount, amountCents / 100);
+      } else {
+        await client.payCorporation(amountCents / 100);
+      }
     }
   } catch (e) {
     console.warn(`[recordBankFee] Remote deposit skipped:`, e);
@@ -446,7 +335,7 @@ export async function recordBankFee(
   return {
     success: true,
     txId,
-    corpAccountId: corpAccount.id,
+    corpAccountId: null,
     amountCents,
     feeType
   };
@@ -460,36 +349,19 @@ export async function syncInGameCorpTransactions(db: any, bankId: string) {
   const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
   if (!bank) throw new Error("Bank not found");
 
-  const corpAccount = await getOrCreateBankCorpAccount(db, bankId);
-
   let inGameTxsCount = 0;
   let newImportedCount = 0;
-  let remoteBalanceCents = corpAccount.balance;
+  let remoteBalanceCents = 0;
   let syncSource = "local";
 
   if (bank.corpId && bank.corpApiUuid && bank.corpApiKey) {
     syncSource = "citycorp_api";
     const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
 
-    // 1. Fetch live balance of default corp account
-    try {
-      const details = await client.getAccountDetails(corpAccount.accountName);
-      if (details.success && details.balance !== undefined) {
-        remoteBalanceCents = Math.round(Number(details.balance) * 100);
-        await db.update(bankAccounts).set({
-          balance: remoteBalanceCents,
-          existsInGame: true,
-          lastSyncedAt: new Date(),
-          syncError: null
-        }).where(eq(bankAccounts.id, corpAccount.id));
-      }
-    } catch (e) {
-      console.warn(`[syncInGameCorpTransactions] Balance fetch error:`, e);
-    }
-
+    // Native corp balance is calculated from the ledger or via transaction history, not a sub-account.
     // 2. Fetch in-game corp transactions from endpoint
     try {
-      const remoteTxs = await client.fetchInGameCorpTransactions(corpAccount.accountName, 15);
+      const remoteTxs = await client.fetchInGameCorpTransactions(undefined, 15);
       inGameTxsCount = remoteTxs.length;
 
       // Existing local transactions for deduplication
@@ -497,8 +369,8 @@ export async function syncInGameCorpTransactions(db: any, bankId: string) {
         and(
           eq(transactions.bankId, bankId),
           or(
-            eq(transactions.toAccountId, corpAccount.id),
-            eq(transactions.fromAccountId, corpAccount.id)
+            and(eq(transactions.type, "fee"), sql`${transactions.toAccountId} IS NULL`),
+            and(eq(transactions.type, "fee"), sql`${transactions.toAccountId} IS NULL`)
           )
         )
       );
@@ -527,8 +399,8 @@ export async function syncInGameCorpTransactions(db: any, bankId: string) {
           await db.insert(transactions).values({
             id: newTxId,
             bankId,
-            fromAccountId: isOutflow ? corpAccount.id : null,
-            toAccountId: !isOutflow ? corpAccount.id : null,
+            fromAccountId: null,
+            toAccountId: null,
             type: parsed.isFeeOrInflow ? "fee" : (isOutflow ? "withdraw" : "deposit"),
             feeType: parsed.feeType,
             amount: amountCents,
@@ -556,8 +428,8 @@ export async function syncInGameCorpTransactions(db: any, bankId: string) {
     inGameTxsCount,
     newImportedCount,
     defaultCorpAccount: {
-      id: corpAccount.id,
-      name: corpAccount.accountName,
+      id: "native_corp",
+      name: bank.name + " (Native Corp Balance)",
       balance: remoteBalanceCents
     },
     ...stats
@@ -568,14 +440,12 @@ export async function syncInGameCorpTransactions(db: any, bankId: string) {
  * Calculates accurate corporate fee totals and breakdown by parsing all potential fee types.
  */
 export async function calculateTreasuryFees(db: any, bankId: string) {
-  const corpAccount = await getOrCreateBankCorpAccount(db, bankId);
-
-  // Retrieve all transactions tied to the bank and default corp account
+  // Retrieve all transactions tied to the bank that are fees or going to the native corp (toAccountId is null)
   const allTxs = await db.select().from(transactions).where(
     and(
       eq(transactions.bankId, bankId),
       or(
-        eq(transactions.toAccountId, corpAccount.id),
+        and(eq(transactions.type, "fee"), sql`${transactions.toAccountId} IS NULL`),
         eq(transactions.type, "fee"),
         sql`${transactions.feeType} IS NOT NULL`,
         like(transactions.category, "%Fee%"),
@@ -617,7 +487,7 @@ export async function calculateTreasuryFees(db: any, bankId: string) {
         type: "fee",
         feeType: resolvedFeeType,
         category: parsed.category,
-        toAccountId: corpAccount.id
+        toAccountId: null
       }).where(eq(transactions.id, tx.id));
     }
 

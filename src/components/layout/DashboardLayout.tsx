@@ -13,6 +13,7 @@ export function DashboardLayout() {
   }, [location.pathname]);
 
   const navItems = [
+  { path: "/security", label: "Security Suite", icon: ShieldAlert },
     { name: "Overview", path: "/", icon: Activity },
     { name: "Bank Instances", path: "/banks", icon: Building2 },
     { name: "Global Transactions", path: "/transactions", icon: Activity },

@@ -40,8 +40,8 @@ export async function processDueLoanRepayments(targetBankId?: string) {
 
     if (account && account.balance >= installment) {
       // SUCCESSFUL AUTOMATED DEBIT
-      const { getOrCreateBankCorpAccount } = await import("./feeService");
-      const corpAcc = await getOrCreateBankCorpAccount(db, loan.bankId);
+      // Native corp receives late fees
+      // Native corp receives late fees
 
       const newAccountBalance = account.balance - installment;
       const newRemainingLoan = loan.remainingAmount - installment;
@@ -52,10 +52,21 @@ export async function processDueLoanRepayments(targetBankId?: string) {
         .set({ balance: newAccountBalance })
         .where(eq(bankAccounts.id, account.id));
 
-      // Credit Bank Corporate Revenue Account
-      await db.update(bankAccounts)
-        .set({ balance: sql`${bankAccounts.balance} + ${installment}` })
-        .where(eq(bankAccounts.id, corpAcc.id));
+      // Bank Corporate Revenue Account is Native Corp
+      const { banks, bankSettings } = await import("../db/schema");
+      const bank = await db.select().from(banks).where(eq(banks.id, loan.bankId)).get();
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, loan.bankId)).get();
+      if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+        try {
+          const { CityCorpClient } = await import("../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          if (settings?.loanPoolAccount) {
+            await client.deposit(settings.loanPoolAccount, installment / 100);
+          } else {
+            await client.payCorporation(installment / 100);
+          }
+        } catch (e) {}
+      }
 
       // Check for late fee settlement
       const currentLateFee = loan.lateFeeAmount || 0;
@@ -67,7 +78,7 @@ export async function processDueLoanRepayments(targetBankId?: string) {
           id: uuidv4(),
           bankId: loan.bankId,
           fromAccountId: account.id,
-          toAccountId: corpAcc.id,
+          toAccountId: null,
           type: "fee",
           feeType: "late_fee",
           amount: lateFeeSettled,
@@ -100,7 +111,7 @@ export async function processDueLoanRepayments(targetBankId?: string) {
         id: uuidv4(),
         bankId: loan.bankId,
         fromAccountId: account.id,
-        toAccountId: corpAcc.id,
+        toAccountId: null,
         type: "loan_payment",
         amount: installment,
         description: isPaidOff ? `Loan Final Repayment (Loan #${loan.id.substring(0, 8)})` : `Automated Monthly Loan Debit (Loan #${loan.id.substring(0, 8)})`,
@@ -238,12 +249,157 @@ export async function accrueLoanInterest(targetBankId?: string) {
  */
 let loanCronInterval: NodeJS.Timeout | null = null;
 
+
+/**
+ * Automatically process credit card minimum payments from linked accounts.
+ */
+export async function processDueCreditRepayments(targetBankId?: string) {
+  const now = new Date();
+  const { cards, bankAccounts, transactions, auditLogs, banks, bankSettings } = await import("../db/schema");
+  const { eq, and, lte, inArray, sql } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+  const { botManager } = await import("../lib/bot_manager");
+
+  const query = db.select()
+    .from(cards)
+    .where(
+      and(
+        eq(cards.type, "credit"),
+        lte(cards.nextPaymentDate, now)
+      )
+    );
+
+  const dueCards = await query;
+  if (dueCards.length === 0) return { processed: 0, debited: 0, failed: 0 };
+
+  let debitedCount = 0;
+  let failedCount = 0;
+
+  for (const card of dueCards) {
+    if (targetBankId && card.bankId !== targetBankId) continue;
+    if ((card.creditUsed || 0) <= 0) {
+      // No balance, push date 30 days
+      const nextDate = new Date(card.nextPaymentDate || now);
+      nextDate.setDate(nextDate.getDate() + 30);
+      await db.update(cards).set({ nextPaymentDate: nextDate }).where(eq(cards.id, card.id));
+      continue;
+    }
+
+    // Check borrower's linked account balance
+    const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
+    
+    // Calculate monthly interest and add it to the balance
+    const apr = card.apr || 0; // APR is in basis points
+    const monthlyRate = apr / 10000 / 12;
+    let interestCharge = 0;
+    if (monthlyRate > 0) {
+      interestCharge = Math.floor((card.creditUsed || 0) * monthlyRate);
+      if (interestCharge > 0) {
+        await db.update(cards).set({ creditUsed: sql`${cards.creditUsed} + ${interestCharge}` }).where(eq(cards.id, card.id));
+        card.creditUsed = (card.creditUsed || 0) + interestCharge;
+        
+        // Log interest
+        await db.insert(auditLogs).values({
+          id: uuidv4(),
+          bankId: card.bankId,
+          userDiscordId: "SYSTEM",
+          action: "credit_interest_accrued",
+          details: `Accrued ${(interestCharge/100).toFixed(2)} interest on Credit Card ending in ${card.cardNumber.substring(card.cardNumber.length - 4)}.`,
+          timestamp: now
+        });
+      }
+    }
+
+    // Monthly repayment installment calculation
+    let installment = card.minimumPayment || Math.max(2500, Math.ceil((card.creditUsed || 0) * 0.05)); // 5% or $25 minimum
+    if (installment > (card.creditUsed || 0)) installment = (card.creditUsed || 0);
+
+    if (account && account.balance >= installment) {
+      // SUCCESSFUL AUTOMATED DEBIT
+      const bank = await db.select().from(banks).where(eq(banks.id, card.bankId)).get();
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, card.bankId)).get();
+
+      if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+        try {
+          const { CityCorpClient } = await import("../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          if (settings?.loanPoolAccount) {
+            await client.deposit(settings.loanPoolAccount, installment / 100);
+          } else {
+            await client.payCorporation(installment / 100);
+          }
+        } catch (e) {}
+      }
+
+      // Deduct from customer account
+      await db.update(bankAccounts)
+        .set({ balance: sql`${bankAccounts.balance} - ${installment}` })
+        .where(eq(bankAccounts.id, account.id));
+
+      // Credit the card (reduce creditUsed)
+      await db.update(cards)
+        .set({ creditUsed: sql`${cards.creditUsed} - ${installment}` })
+        .where(eq(cards.id, card.id));
+
+      // Calculate next payment date (+30 days)
+      const nextDate = new Date(card.nextPaymentDate || now);
+      nextDate.setDate(nextDate.getDate() + 30);
+
+      await db.update(cards)
+        .set({ nextPaymentDate: nextDate })
+        .where(eq(cards.id, card.id));
+
+      // Insert transaction record into bank corporate ledger
+      await db.insert(transactions).values({
+        id: uuidv4(),
+        bankId: card.bankId,
+        fromAccountId: account.id,
+        toAccountId: null,
+        type: "loan_payment",
+        amount: installment,
+        description: `Automated Credit Card Payment (Card ending in ${card.cardNumber.substring(card.cardNumber.length - 4)})`,
+        timestamp: now,
+        category: "Credit Card Repayment"
+      });
+
+      debitedCount++;
+      
+      const accOwner = account.ownerDiscordId;
+      botManager.sendNotification(
+        card.bankId,
+        `💳 **Automated Credit Card Payment**: Debited ${(installment/100).toFixed(2)} from account **${account.accountName}** (<@${accOwner}>) for Card ending in ${card.cardNumber.substring(card.cardNumber.length - 4)}.`
+      );
+    } else {
+      // INSUFFICIENT FUNDS -> DELAY RETRY BY 7 DAYS
+      // Push next payment date by 7 days to attempt retry next week
+      const nextAttemptDate = new Date(now);
+      nextAttemptDate.setDate(nextAttemptDate.getDate() + 7);
+      
+      await db.update(cards)
+        .set({ nextPaymentDate: nextAttemptDate })
+        .where(eq(cards.id, card.id));
+        
+      failedCount++;
+      const accOwner = account?.ownerDiscordId || "Unknown";
+      botManager.sendNotification(
+        card.bankId,
+        `⚠️ **Credit Card Repayment Failed**: Automated debit of ${(installment/100).toFixed(2)} failed for Card ending in ${card.cardNumber.substring(card.cardNumber.length - 4)} (<@${accOwner}>) due to insufficient funds.`
+      );
+    }
+  }
+  return { processed: dueCards.length, debited: debitedCount, failed: failedCount };
+}
+
+
+
+
 export function startLoanCron() {
   if (loanCronInterval) return;
 
   const runTasks = async () => {
     try {
       await processDueLoanRepayments();
+      await processDueCreditRepayments();
       await accrueLoanInterest();
     } catch (err) {
       console.error("[Loan Cron Error]:", err);

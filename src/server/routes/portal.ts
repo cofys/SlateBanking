@@ -254,7 +254,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
           .where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.id, memberAccountIds)));
         }
-      } catch (e) {}
+      } catch (e: any) {}
 
       // Combine accounts without duplicates
       const accountMap = new Map<string, any>();
@@ -275,7 +275,9 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
              kycStatus: customer.kycStatus,
              mcUsername: customer.mcUsername,
              mcUuid: customer.mcUuid,
-             linkedDiscordId: customer.linkedDiscordId
+             linkedDiscordId: customer.linkedDiscordId,
+          rpName: customer.rpName,
+          address: customer.address,
            } : null 
          });
       }
@@ -352,10 +354,12 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           kycStatus: customer.kycStatus,
           mcUsername: customer.mcUsername,
           mcUuid: customer.mcUuid,
-          linkedDiscordId: customer.linkedDiscordId
+          linkedDiscordId: customer.linkedDiscordId,
+          rpName: customer.rpName,
+          address: customer.address
         } : null
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -410,7 +414,7 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
       await db.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
 
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -492,7 +496,7 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
       });
 
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -518,7 +522,7 @@ portalRouter.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async 
 
       await db.update(cards).set({ isLocked: !!isLocked }).where(eq(cards.id, req.params.cardId));
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -577,7 +581,7 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
         .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
         .where(inArray(bankAccounts.id, memberAccountIds));
       }
-    } catch (e) {}
+    } catch (e: any) {}
 
     // Combine accounts without duplicates
     const accountMap = new Map<string, any>();
@@ -648,6 +652,10 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
         ...(accountIds.length > 0 ? [inArray(loans.accountId, accountIds)] : [])
       ));
 
+
+    const { users } = await import("../../db/schema");
+    const globalUser = await db.select().from(users).where(inArray(users.discordId, candidateIds)).limit(1).get();
+
     res.json({
       accounts: userAccounts,
       banks: allBanks,
@@ -655,8 +663,13 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
       recentTx: recentTxs,
       pendingInvoices: userInvoices,
       cards: userCards,
-      loans: userLoans
+      loans: userLoans,
+      profile: globalUser ? {
+        rpName: globalUser.rpName,
+        address: globalUser.address
+      } : null
     });
+
   } catch (e: any) {
     console.error("[CitizenLookupAPI] Error:", e);
     res.status(500).json({ error: "Internal error" });
@@ -664,6 +677,44 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
 });
 
 // Self-Service Account Registration Endpoint with Personal Account Prerequisite check
+
+
+portalRouter.post("/api/citizen/update-profile", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const { rpName, address } = req.body;
+    const { db } = await import("../../db/index.js");
+    const { users } = await import("../../db/schema.js");
+    const { eq, inArray } = await import("drizzle-orm");
+    const candidateIds = await getUserCandidateIdentifiers(req);
+
+    let userRec = await db.select().from(users).where(inArray(users.discordId, candidateIds)).limit(1).get();
+    
+    if (!userRec) {
+      // Create if they don't exist in users table
+      const { v4: uuidv4 } = await import("uuid");
+      await db.insert(users).values({
+        id: uuidv4(),
+        discordId: candidateIds[0] || "unknown",
+        mcUuid: "unknown",
+        mcUsername: "Citizen",
+        rpName: rpName,
+        address: address,
+        createdAt: new Date()
+      });
+    } else {
+      await db.update(users).set({
+        rpName: rpName,
+        address: address
+      }).where(eq(users.id, userRec.id));
+    }
+
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("[ProfileUpdateAPI] Error:", e);
+    res.status(500).json({ error: e.message || "Failed to update profile." });
+  }
+});
+
 portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { bankAccounts, bankSettings, banks, onyxMerchants } = await import("../../db/schema");
@@ -883,7 +934,7 @@ portalRouter.post("/api/portal/:bankId/request-card", requireAuth, async (req, r
     });
 
     res.json({ success: true, cardId });
-  } catch (e) {
+  } catch (e: any) {
     console.error("Issue card error:", e);
     res.status(500).json({ error: e.message || "Failed to issue card." });
   }

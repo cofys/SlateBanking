@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search } from "lucide-react";
+import { Building2,  AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search  } from "lucide-react";
 
 export function BankSettings() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -66,7 +66,10 @@ export function BankSettings() {
       cityCorpAppId: formData.get("cityCorpAppId"),
       cityCorpAppSecret: formData.get("cityCorpAppSecret"),
       cityCorpAuthUrl: formData.get("cityCorpAuthUrl"),
-      defaultCorpAccount: formData.get("defaultCorpAccount")
+      defaultCorpAccount: formData.get("defaultCorpAccount"),
+      loanPoolAccount: formData.get("loanPoolAccount"),
+      feeCollectionAccount: formData.get("feeCollectionAccount"),
+      interestPoolAccount: formData.get("interestPoolAccount")
     };
 
     fetch(`/api/banks/${bank.id}/settings`, {
@@ -816,6 +819,52 @@ export function BankSettings() {
               </div>
             </>
           )}
+        </div>
+
+
+          
+        {/* Treasury Routing */}
+        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold mb-6">
+            <Building2 className="text-emerald-400" size={20} />
+            Institutional Treasury Pools
+          </div>
+          <p className="text-sm text-zinc-400 mb-6">
+            By default, the platform will route all incoming revenue and disburse all loans from your <strong>Native Corporate Balance</strong>. You can optionally map specific sub-accounts to segregate these funds.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Loan Pool Account (Optional)</label>
+              <input 
+                name="loanPoolAccount" 
+                defaultValue={settings?.loanPoolAccount || ""} 
+                placeholder="e.g. loan_reserve"
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+              />
+              <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Account where loan disbursements are withdrawn from, and repayments are deposited.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Fee Collection Account (Optional)</label>
+              <input 
+                name="feeCollectionAccount" 
+                defaultValue={settings?.feeCollectionAccount || ""} 
+                placeholder="e.g. fee_revenue"
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+              />
+              <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Account where general platform fees, wire fees, and transaction charges are deposited.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Interest Pool Account (Optional)</label>
+              <input 
+                name="interestPoolAccount" 
+                defaultValue={settings?.interestPoolAccount || ""} 
+                placeholder="e.g. interest_reserve"
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+              />
+              <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Account where system interest payments to users are withdrawn from.</p>
+            </div>
+          </div>
         </div>
 
 

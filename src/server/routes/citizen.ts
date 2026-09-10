@@ -589,10 +589,10 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
 
       let newRemaining = 0;
       const { gte, sql } = await import("drizzle-orm");
-      const { getOrCreateBankCorpAccount } = await import("../feeService");
+      // Native corp balance receives payments
 
       await db.transaction(async (tx) => {
-        const corpAcc = await getOrCreateBankCorpAccount(tx, theLoan.bankId);
+        // Native corp balance receives loan payments
 
         // Deduct funds atomically from borrower
         await tx.update(bankAccounts)
@@ -604,10 +604,16 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
             eq(bankAccounts.isFrozen, false)
           ));
         
-        // Credit the Bank's Corporate Revenue Account
-        await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} + ${parsedAmount}` })
-          .where(eq(bankAccounts.id, corpAcc.id));
+        // Credit Native Corp Balance
+        const { CityCorpClient } = await import("../../lib/citycorp_api");
+        const { banks } = await import("../../db/schema");
+const bank = await tx.select().from(banks).where(eq(banks.id, theLoan.bankId)).get();
+        if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+          try {
+            const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+            await client.payCorporation(parsedAmount / 100);
+          } catch(e) {}
+        }
 
         newRemaining = Math.max(0, theLoan.remainingAmount - parsedAmount);
         const isPaidOff = newRemaining <= 0;
@@ -622,7 +628,7 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
             id: uuidv4(),
             bankId: theLoan.bankId,
             fromAccountId: fromAccountId,
-            toAccountId: corpAcc.id,
+            toAccountId: null,
             type: "fee",
             feeType: "late_fee",
             amount: lateFeeSettled,
@@ -649,7 +655,7 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
           id: uuidv4(),
           bankId: theLoan.bankId,
           fromAccountId: fromAccountId,
-          toAccountId: corpAcc.id,
+          toAccountId: null,
           amount: parsedAmount,
           type: 'loan_payment',
           description: `Loan Repayment${isPaidOff ? ' (Final Payoff)' : ''} (Loan #${theLoan.id.slice(0, 8)})`,

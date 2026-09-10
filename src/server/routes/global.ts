@@ -350,3 +350,84 @@ globalRouter.get("/api/global/clearinghouse", requireGlobalAdmin, async (req, re
         res.status(500).json({ error: e.message });
     }
 });
+
+
+globalRouter.get("/api/global/security/logs", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const { db } = await import("../../db/index.js");
+    const { securityAuditLogs } = await import("../../db/schema.js");
+    const { desc } = await import("drizzle-orm");
+    const logs = await db.select().from(securityAuditLogs).orderBy(desc(securityAuditLogs.timestamp)).limit(200);
+    res.json(logs);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+globalRouter.get("/api/global/security/bans", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const { db } = await import("../../db/index.js");
+    const { bannedIps } = await import("../../db/schema.js");
+    const { desc } = await import("drizzle-orm");
+    const bans = await db.select().from(bannedIps).orderBy(desc(bannedIps.bannedAt));
+    res.json(bans);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+globalRouter.post("/api/global/security/bans", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const { ipAddress, reason } = req.body;
+    if (!ipAddress || !reason) return res.status(400).json({ error: "Missing ipAddress or reason" });
+    const { db } = await import("../../db/index.js");
+    const { bannedIps, securityAuditLogs } = await import("../../db/schema.js");
+    const { v4: uuidv4 } = await import("uuid");
+
+    await db.insert(bannedIps).values({
+      ipAddress,
+      reason,
+      bannedBy: (req as any).user?.username || "GlobalAdmin",
+      bannedAt: new Date(),
+    });
+
+    await db.insert(securityAuditLogs).values({
+      id: uuidv4(),
+      ipAddress: ipAddress,
+      action: "ip_ban",
+      status: "success",
+      discordId: (req as any).user?.discordId,
+      details: "Banned IP for reason: " + reason,
+      timestamp: new Date()
+    });
+
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+globalRouter.delete("/api/global/security/bans/:ip", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const { db } = await import("../../db/index.js");
+    const { bannedIps, securityAuditLogs } = await import("../../db/schema.js");
+    const { eq } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    await db.delete(bannedIps).where(eq(bannedIps.ipAddress, req.params.ip));
+
+    await db.insert(securityAuditLogs).values({
+      id: uuidv4(),
+      ipAddress: req.params.ip,
+      action: "ip_unban",
+      status: "success",
+      discordId: (req as any).user?.discordId,
+      details: "Unbanned IP",
+      timestamp: new Date()
+    });
+
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
