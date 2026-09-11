@@ -6,17 +6,3 @@ coverage/
 *.log
 .env*
 !.env.example
-
-# SQLite Database files
-*.sqlite
-*.sqlite3
-*.corrupt
-
-# SQLite Database files
-*.db
-*.db-wal
-*.db-shm
-*.sqlite
-*.sqlite3
-data/
-slate_saas.db

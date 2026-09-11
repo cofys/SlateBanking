@@ -28,8 +28,8 @@ export function BankVaults() {
       ]);
       const v = await vaultsRes.json();
       const a = await accsRes.json();
-      setVaults(v);
-      setAccounts(a);
+      setVaults(Array.isArray(v) ? v : []);
+      setAccounts(Array.isArray(a) ? a : []);
       setLoading(false);
     } catch (e) {
       console.error(e);

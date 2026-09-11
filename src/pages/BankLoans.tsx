@@ -67,8 +67,8 @@ export function BankLoans() {
       ]);
       const l = await loansRes.json();
       const a = await accsRes.json();
-      setLoans(l);
-      setAccounts(a);
+      setLoans(Array.isArray(l) ? l : []);
+      setAccounts(Array.isArray(a) ? a : []);
       setLoading(false);
     } catch (e: any) {
       console.error(e);

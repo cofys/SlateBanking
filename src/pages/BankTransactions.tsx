@@ -17,7 +17,7 @@ export function BankTransactions() {
     fetch(`/api/banks/${bank.id}/transactions`)
       .then(r => r.json())
       .then(data => {
-        setTransactions(data);
+        setTransactions(Array.isArray(data) ? data : []);
         setLoading(false);
       });
   };

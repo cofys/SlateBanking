@@ -34,9 +34,9 @@ export function BankCards() {
       const cardsData = await cardsRes.json();
       const accountsData = await accountsRes.json();
       const appsData = await appsRes.json();
-      setCards(cardsData);
-      setAccounts(accountsData);
-      setApps(appsData);
+      setCards(Array.isArray(cardsData) ? cardsData : []);
+      setAccounts(Array.isArray(accountsData) ? accountsData : []);
+      setApps(Array.isArray(appsData) ? appsData : []);
       setLoading(false);
     } catch (e) {
       console.error(e);
