@@ -150,6 +150,12 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_customers", "city_corp_token", "TEXT");
   checkAndAddColumn("bank_customers", "notes", "TEXT");
   checkAndAddColumn("bank_customers", "first_joined", "INTEGER");
+  checkAndAddColumn("bank_customers", "rp_name", "TEXT");
+  checkAndAddColumn("bank_customers", "address", "TEXT");
+
+  // Users table
+  checkAndAddColumn("users", "rp_name", "TEXT");
+  checkAndAddColumn("users", "address", "TEXT");
 
   // Bank Settings table
   checkAndAddColumn("bank_settings", "withdraw_fee_percent", "INTEGER DEFAULT 0");
