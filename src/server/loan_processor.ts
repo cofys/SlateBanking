@@ -1,8 +1,65 @@
 import { db } from "../db/index";
-import { loans, bankAccounts, transactions, auditLogs, banks } from "../db/schema";
-import { eq, and, lte, inArray, sql } from "drizzle-orm";
+import { loans, bankAccounts, transactions, auditLogs, banks, bankSettings } from "../db/schema";
+import { eq, and, lte, inArray, sql, or } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { botManager } from "../lib/bot_manager";
+
+/**
+ * Handles the complex disbursement of loan funds to an account, including handling pool routing and CityCorp API integration.
+ */
+export async function disburseLoan(loan: typeof loans.$inferSelect) {
+   const ts = new Date();
+   
+   // Resolve Bank's funding pool
+   const bankSettingsRow = await db.select().from(bankSettings).where(eq(bankSettings.bankId, loan.bankId)).get();
+   const bankRow = await db.select().from(banks).where(eq(banks.id, loan.bankId)).get();
+   
+   let poolAccountId: string | null = null;
+   let poolQueryNameOrId = bankSettingsRow?.loanPoolAccount || bankRow?.defaultCorpAccount;
+   
+   if (poolQueryNameOrId) {
+      const poolAcc = await db.select().from(bankAccounts).where(
+         and(eq(bankAccounts.bankId, loan.bankId), or(eq(bankAccounts.id, poolQueryNameOrId), eq(bankAccounts.accountName, poolQueryNameOrId)))
+      ).get();
+      if (poolAcc) {
+         poolAccountId = poolAcc.id;
+         poolQueryNameOrId = poolAcc.accountName;
+         await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${loan.principalAmount}` }).where(eq(bankAccounts.id, poolAccountId));
+      }
+   }
+
+   const targetAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, loan.accountId)).get();
+
+   // Handle CityCorp Integration if target account exists in-game
+   if (targetAcc && targetAcc.existsInGame && bankRow?.corpId && bankRow?.corpApiUuid && bankRow?.corpApiKey) {
+      try {
+         const { CityCorpClient } = await import("../lib/citycorp_api");
+         const client = new CityCorpClient(bankRow.corpId, bankRow.corpApiUuid, bankRow.corpApiKey, bankRow.id);
+         
+         // If a specific pool account is defined, withdraw from it first
+         if (poolQueryNameOrId) {
+            await client.withdraw(poolQueryNameOrId, loan.principalAmount / 100);
+         }
+         
+         // Deposit to the player's account
+         await client.deposit(targetAcc.accountName, loan.principalAmount / 100);
+      } catch (e) {
+         console.error("[disburseLoan] CityCorp API error:", e);
+      }
+   }
+
+   await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${loan.principalAmount}` }).where(eq(bankAccounts.id, loan.accountId));
+   await db.insert(transactions).values({
+       id: uuidv4(),
+       bankId: loan.bankId,
+       fromAccountId: poolAccountId,
+       toAccountId: loan.accountId,
+       type: poolAccountId ? "transfer" : "deposit",
+       amount: loan.principalAmount,
+       description: `Loan Disbursement (Principal: $${(loan.principalAmount/100).toFixed(2)})`,
+       timestamp: ts
+   });
+}
 
 /**
  * Process automated loan repayment debits, late fees, delinquency, and defaults.

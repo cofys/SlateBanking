@@ -278,6 +278,10 @@ export class CityCorpClient {
   }
 
   
+  async getCorpData() {
+    return await this.request("GET", "");
+  }
+
   async getAccountTransactions(accountName: string, page: number = 1) {
     const url = new URL(`${this.baseUrl}/accounts/transactions/list`);
     url.searchParams.append("corp_id", this.corpId.toString());

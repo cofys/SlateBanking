@@ -45,8 +45,9 @@ export function BankLoans() {
   const [editPrincipal, setEditPrincipal] = useState("");
   const [editContractUrl, setEditContractUrl] = useState("");
   const [editContractText, setEditContractText] = useState("");
-  
-  
+  const [editStatus, setEditStatus] = useState("");
+  const [isEditingActiveLoan, setIsEditingActiveLoan] = useState(false);
+
   useEffect(() => {
     if (selectedLoan) {
       setEditCollateralStatus(selectedLoan.collateralStatus || "none");
@@ -56,6 +57,8 @@ export function BankLoans() {
       setEditPrincipal(selectedLoan.principalAmount ? (selectedLoan.principalAmount / 100).toString() : "");
       setEditContractUrl(selectedLoan.contractUrl || "");
       setEditContractText(selectedLoan.contractText || "");
+      setEditStatus(selectedLoan.status || "active");
+      setIsEditingActiveLoan(false);
     }
   }, [selectedLoan]);
 
@@ -87,7 +90,11 @@ export function BankLoans() {
         contractUrl: editContractUrl,
         contractText: editContractText,
       };
-      if (statusOverride) (updates as any).status = statusOverride;
+      if (statusOverride) {
+        (updates as any).status = statusOverride;
+      } else if (isEditingActiveLoan) {
+        (updates as any).status = editStatus;
+      }
       
       const res = await fetch(`/api/banks/${bankId}/loans/${selectedLoan.id}`, {
         method: "PUT",
@@ -945,9 +952,15 @@ export function BankLoans() {
 
               <div className="p-6 grid grid-cols-2 gap-8 max-h-[80vh] overflow-y-auto">
 
-                {selectedLoan.status === "pending" || selectedLoan.status === "awaiting_signature" ? (
+                {isEditingActiveLoan || selectedLoan.status === "pending" || selectedLoan.status === "awaiting_signature" ? (
                   <div className="col-span-2 bg-black/20 p-6 rounded-xl border border-white/5 space-y-6">
-                    <h3 className="text-white font-medium mb-2">Review Application & Terms</h3>
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-white font-medium">Review & Edit Terms</h3>
+                      {isEditingActiveLoan && (
+                        <button onClick={() => setIsEditingActiveLoan(false)} className="text-xs text-white/50 hover:text-white">Cancel Edit</button>
+                      )}
+                    </div>
+                    
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs text-white/50 mb-1">Principal Amount ($)</label>
@@ -958,6 +971,21 @@ export function BankLoans() {
                         <input type="number" value={editInterestRate} onChange={e => setEditInterestRate(e.target.value)} className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white" />
                       </div>
                     </div>
+                    {isEditingActiveLoan && (
+                      <div>
+                        <label className="block text-xs text-white/50 mb-1">Status</label>
+                        <select value={editStatus} onChange={e => setEditStatus(e.target.value)} className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white">
+                          <option value="pending">Pending</option>
+                          <option value="awaiting_signature">Awaiting Signature</option>
+                          <option value="active">Active</option>
+                          <option value="delinquent">Delinquent</option>
+                          <option value="defaulted">Defaulted</option>
+                          <option value="paid">Paid</option>
+                          <option value="paid_off">Paid Off</option>
+                        </select>
+                        <p className="text-[10px] text-amber-500/80 mt-1">Warning: Changing Principal resets the Remaining Balance!</p>
+                      </div>
+                    )}
                     <div>
                       <label className="block text-xs text-white/50 mb-1">Contract Document URL (Optional)</label>
                       <input type="text" value={editContractUrl} onChange={e => setEditContractUrl(e.target.value)} className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white" placeholder="https://docs.google.com/..." />
@@ -968,15 +996,23 @@ export function BankLoans() {
                     </div>
                     
                     <div className="flex gap-4 pt-4 border-t border-white/5">
-                      <button onClick={() => handleUpdateLoan("awaiting_signature")} className="flex-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 py-2 rounded-lg font-medium">
-                        Request Client Signature
-                      </button>
-                      <button onClick={() => handleUpdateLoan("active")} className="flex-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 py-2 rounded-lg font-medium">
-                        Approve & Fund Immediately
-                      </button>
-                      <button onClick={() => handleUpdateLoan("rejected")} className="flex-1 bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 py-2 rounded-lg font-medium">
-                        Reject Application
-                      </button>
+                      {isEditingActiveLoan ? (
+                        <button onClick={() => handleUpdateLoan(null)} className="flex-1 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/30 py-2 rounded-lg font-medium">
+                          Save Changes
+                        </button>
+                      ) : (
+                        <>
+                          <button onClick={() => handleUpdateLoan("awaiting_signature")} className="flex-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 py-2 rounded-lg font-medium">
+                            Request Client Signature
+                          </button>
+                          <button onClick={() => handleUpdateLoan("active")} className="flex-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 py-2 rounded-lg font-medium">
+                            Approve & Fund Immediately
+                          </button>
+                          <button onClick={() => handleUpdateLoan("rejected")} className="flex-1 bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 py-2 rounded-lg font-medium">
+                            Reject Application
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ) : (<>
@@ -1141,6 +1177,13 @@ export function BankLoans() {
                       <DollarSign size={18} /> Record Manual Payment
                     </button>
                   )}
+                  
+                  <button
+                    onClick={() => setIsEditingActiveLoan(true)}
+                    className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-2 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <FileText size={16} /> Edit Details Manually
+                  </button>
                 </div>
               </>
               )}

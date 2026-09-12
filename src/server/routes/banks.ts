@@ -1443,7 +1443,8 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
         customDomain: bank?.customDomain || "",
         cityCorpAppId: bank?.cityCorpAppId || "",
         hasCityCorpAppSecret: !!bank?.cityCorpAppSecret,
-        maintenanceMode: bank?.maintenanceMode || false
+        maintenanceMode: bank?.maintenanceMode || false,
+        defaultCorpAccount: bank?.defaultCorpAccount || ""
       });
     } catch (e: any) {
       console.error(e);
@@ -1488,6 +1489,10 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
          }
       }
 
+      if (req.body.defaultCorpAccount !== undefined) {
+         await db.update(banks).set({ defaultCorpAccount: req.body.defaultCorpAccount }).where(eq(banks.id, bId));
+      }
+
       if (req.body.cityCorpAppId !== undefined || req.body.cityCorpAppSecret !== undefined) {
          const updateData: any = {};
          if (req.body.cityCorpAppId !== undefined) updateData.cityCorpAppId = req.body.cityCorpAppId;
@@ -1529,7 +1534,9 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         googleDocsEscrowTemplateUrl: req.body.googleDocsEscrowTemplateUrl,
         googleDocsFolderUrl: req.body.googleDocsFolderUrl,
         googleDocsAutoGenerate: req.body.googleDocsAutoGenerate,
-        defaultCorpAccount: req.body.defaultCorpAccount
+        loanPoolAccount: req.body.loanPoolAccount,
+        feeCollectionAccount: req.body.feeCollectionAccount,
+        interestPoolAccount: req.body.interestPoolAccount
       };
 
       const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId));
@@ -3079,19 +3086,51 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
 
 banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, vaultDeposits, loans, transactions, payrollJobs } = await import("../../db/schema");
+    const { bankAccounts, vaultDeposits, loans, transactions, payrollJobs, banks } = await import("../../db/schema");
     const { eq, sum, and, desc, sql, or, ne, like } = await import("drizzle-orm");
     const { calculateTreasuryFees, FEE_TYPE_LABELS } = await import("../feeService");
 
     try {
       const bId = req.params.bankId;
+      const bank = await db.select().from(banks).where(eq(banks.id, bId)).get();
 
       // Ensure bank default corporate account exists & is resolved
-      // Native corp balance is calculated from fee ledger or CityCorp if implemented.
       let nativeCorpBalance = 0;
-      // Calculate local native corp balance from fees
+      let corpAccountId = "native_corp";
+      let corpAccountName = "Native Corp Balance";
+      
+      // Calculate local native corp balance from fees (fallback)
       const nativeFees = await db.select({ total: sum(transactions.amount) }).from(transactions).where(and(eq(transactions.bankId, bId), eq(transactions.type, "fee"), sql`${transactions.toAccountId} IS NULL`)).get();
       nativeCorpBalance = Number(nativeFees?.total || 0);
+
+      // If CityCorp is configured, fetch the actual top-level corp balance
+      if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+         try {
+            const { CityCorpClient } = await import("../../lib/citycorp_api");
+            const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+            const corpData = await client.getCorpData();
+            if (corpData && corpData.balance !== undefined) {
+               nativeCorpBalance = Math.round(corpData.balance * 100);
+               corpAccountName = corpData.name || "CityCorp Master Balance";
+               corpAccountId = "citycorp_master";
+            }
+         } catch(e) {
+            console.error("Failed to fetch CityCorp master balance", e);
+         }
+      } else if (bank?.defaultCorpAccount) {
+         // Fallback to local linked corp account if CityCorp is not configured
+         const linkedCorpAcc = await db.select().from(bankAccounts).where(
+            and(
+               eq(bankAccounts.bankId, bId),
+               or(eq(bankAccounts.id, bank.defaultCorpAccount), eq(bankAccounts.accountName, bank.defaultCorpAccount))
+            )
+         ).get();
+         if (linkedCorpAcc) {
+            nativeCorpBalance = linkedCorpAcc.balance;
+            corpAccountName = linkedCorpAcc.accountName;
+            corpAccountId = linkedCorpAcc.id;
+         }
+      }
 
       // 1. Reserves & Bank System Assets
       const systemAccounts = await db.select().from(bankAccounts).where(
@@ -3199,8 +3238,8 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
 
       res.json({
         bankCorpAccount: {
-          id: "native_corp",
-          name: "Native Corp Balance",
+          id: corpAccountId,
+          name: corpAccountName,
           balance: nativeCorpBalance,
           category: "corporate",
           existsInGame: true,
@@ -3743,19 +3782,9 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId/status", requireBankStaff, asy
       const loan = await db.select().from(loans).where(eq(loans.id, req.params.loanId)).get();
       if (!loan || loan.bankId !== req.params.bankId) return res.status(404).json({ error: "Loan not found" });
 
-      if (loan.status === "pending" && status === "approved") {
-        const ts = new Date();
-        await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${loan.principalAmount}` }).where(eq(bankAccounts.id, loan.accountId));
-        await db.insert(transactions).values({
-            id: uuidv4(),
-            bankId: loan.bankId,
-            fromAccountId: null,
-            toAccountId: loan.accountId,
-            type: "deposit",
-            amount: loan.principalAmount,
-            description: `Loan Disbursement (Principal: $${(loan.principalAmount/100).toFixed(2)})`,
-            timestamp: ts
-        });
+      if (loan.status === "pending" && status === "active") {
+        const { disburseLoan } = await import("../loan_processor");
+        await disburseLoan(loan);
         await db.update(loans).set({ status: "active" }).where(eq(loans.id, req.params.loanId));
       } else {
         await db.update(loans).set({ status }).where(eq(loans.id, req.params.loanId));

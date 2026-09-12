@@ -293,26 +293,19 @@ citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.
         collateralDescription: collateralDescription || null,
         collateralValue: colVal,
         collateralStatus: colStatus,
-        status: autoApprove ? "approved" : "pending",
+        status: autoApprove ? "active" : "pending",
         contractUrl,
         createdAt: new Date(),
       });
 
       if (autoApprove) {
          // Auto fund
-         const ts = new Date();
-         await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${principalAmount}` }).where(eq(bankAccounts.id, accountId));
-         await db.insert(transactions).values({
-            id: uuidv4(),
-            bankId,
-            fromAccountId: null,
-            toAccountId: accountId,
-            type: "deposit",
-            amount: principalAmount,
-            description: `Auto-Approved Loan Disbursement (Principal: $${(principalAmount/100).toFixed(2)})`,
-            timestamp: ts
-         });
-         await db.update(loans).set({ status: "active" }).where(eq(loans.id, loanId));
+         const { disburseLoan } = await import("../loan_processor.js");
+         const insertedLoan = await db.select().from(loans).where(eq(loans.id, loanId)).get();
+         if (insertedLoan) {
+            await disburseLoan(insertedLoan);
+            await db.update(loans).set({ status: "active" }).where(eq(loans.id, loanId));
+         }
       }
 
       const { botManager } = await import("../../lib/bot_manager");
@@ -470,19 +463,10 @@ citizenRouter.post("/api/citizen/loans/:loanId/sign", requireAuth, async (req: e
         if (!loan || loan.discordId !== discordId) return res.status(404).json({ error: "Loan not found" });
         if (loan.status !== "awaiting_signature") return res.status(400).json({ error: "Loan is not awaiting signature" });
 
-        const ts = new Date();
-        await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${loan.principalAmount}` }).where(eq(bankAccounts.id, loan.accountId));
-        await db.insert(transactions).values({
-            id: uuidv4(),
-            bankId: loan.bankId,
-            fromAccountId: null,
-            toAccountId: loan.accountId,
-            type: "deposit",
-            amount: loan.principalAmount,
-            description: `Loan Disbursement (Principal: ${(loan.principalAmount/100).toFixed(2)})`,
-            timestamp: ts
-        });
-        await db.update(loans).set({ status: "active", clientSignedAt: ts }).where(eq(loans.id, loan.id));
+        const { disburseLoan } = await import("../loan_processor.js");
+        await disburseLoan(loan);
+
+        await db.update(loans).set({ status: "active", clientSignedAt: new Date() }).where(eq(loans.id, loan.id));
         res.json({ success: true });
     } catch(e) {
         console.error(e);

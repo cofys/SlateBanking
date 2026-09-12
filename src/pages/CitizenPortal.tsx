@@ -4,7 +4,7 @@ import {
   Lock, Unlock, Link2, BookOpen, LogIn, LogOut, TrendingUp, TrendingDown, 
   PieChart as PieChartIcon, Activity, Target, Plus, Send, Copy, Calendar,
   Users, UserPlus, Trash2, X, Building, UserCheck, AlertCircle, Sparkles, Store,
-  RefreshCw, DollarSign, Check
+  RefreshCw, DollarSign, Check, FileText, ExternalLink
 } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "../lib/AuthContext";
@@ -772,7 +772,10 @@ export function CitizenPortal() {
 
 function DashboardTab({ data, refresh }: { data: any, refresh: () => void }) {
   const totalAssets = data.accounts?.reduce((sum: number, a: any) => sum + a.balance, 0) || 0;
-  const totalDebts = data.loans?.filter((l:any) => l.status === "active").reduce((sum: number, l: any) => sum + (l.amount - (l.amountPaid || 0)), 0) || 0;
+  const totalDebts = data.loans?.filter((l:any) => l.status === "active" || l.status === "delinquent").reduce((sum: number, l: any) => {
+    const remaining = l.remainingAmount !== undefined ? l.remainingAmount : (l.amount - (l.amountPaid || 0));
+    return sum + (remaining || 0);
+  }, 0) || 0;
   const netWorth = totalAssets - totalDebts;
 
   const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b'];
@@ -1966,6 +1969,7 @@ function TransferTab({ data, refresh, onyxMerchants }: any) {
 
 function LoansTab({ data, refresh }: any) {
   const [showApplyModal, setShowApplyModal] = useState(false);
+  const [selectedLoanDetails, setSelectedLoanDetails] = useState<any>(null);
   const [selectedBankId, setSelectedBankId] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [principalAmount, setPrincipalAmount] = useState("");
@@ -2151,6 +2155,13 @@ function LoansTab({ data, refresh }: any) {
                   </form>
                 </div>
               )}
+              
+              <button 
+                onClick={() => setSelectedLoanDetails(loan)}
+                className="mt-4 w-full bg-white/5 hover:bg-white/10 text-white/80 py-2 rounded-lg text-xs font-medium transition-colors border border-white/5 flex items-center justify-center gap-2"
+              >
+                <FileText size={14} /> View Details & Agreement
+              </button>
             </div>
           );
         })}
@@ -2263,6 +2274,155 @@ function LoansTab({ data, refresh }: any) {
                 {submitting ? "Submitting..." : "Submit Application"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Loan Details Modal */}
+      {selectedLoanDetails && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12121a] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#1a1a24]">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2"><FileText size={18} className="text-indigo-400" /> Loan Details & Agreement</h3>
+                <p className="text-xs text-slate-400 font-mono mt-1">Ref: {selectedLoanDetails.id}</p>
+              </div>
+              <button onClick={() => setSelectedLoanDetails(null)} className="text-slate-500 hover:text-white transition-colors"><X size={20}/></button>
+            </div>
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {/* Financials */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-black/30 border border-white/5 p-4 rounded-xl">
+                  <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Original Principal</p>
+                  <p className="text-lg font-mono text-white font-bold">{formatMoney(selectedLoanDetails.principalAmount || selectedLoanDetails.amount)}</p>
+                </div>
+                <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl">
+                  <p className="text-xs text-emerald-400 uppercase tracking-widest mb-1">Remaining Balance</p>
+                  <p className="text-lg font-mono text-emerald-300 font-bold">
+                    {formatMoney(selectedLoanDetails.remainingAmount !== undefined ? selectedLoanDetails.remainingAmount : (selectedLoanDetails.amount - (selectedLoanDetails.amountPaid || 0)))}
+                  </p>
+                </div>
+              </div>
+
+              {/* General Details */}
+              <div className="bg-black/30 rounded-xl border border-white/5 p-4 space-y-3 text-sm">
+                <div className="flex justify-between border-b border-white/5 pb-2">
+                  <span className="text-slate-400">Status</span>
+                  <span className={`font-bold uppercase ${selectedLoanDetails.isDelinquent ? 'text-amber-400' : selectedLoanDetails.status === 'defaulted' ? 'text-rose-400' : 'text-white'}`}>
+                    {selectedLoanDetails.isDelinquent ? 'OVERDUE' : selectedLoanDetails.status}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-white/5 pb-2">
+                  <span className="text-slate-400">Interest Rate (APR)</span>
+                  <span className="font-mono text-white">{(selectedLoanDetails.interestRate / 100).toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between border-b border-white/5 pb-2">
+                  <span className="text-slate-400">Next Due Date</span>
+                  <span className="text-white">
+                    {selectedLoanDetails.nextPaymentDate ? new Date(selectedLoanDetails.nextPaymentDate).toLocaleDateString() : 'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-white/5 pb-2">
+                  <span className="text-slate-400">Origination Date</span>
+                  <span className="text-white">
+                    {selectedLoanDetails.createdAt ? new Date(selectedLoanDetails.createdAt).toLocaleDateString() : 'Unknown'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Purpose / Notes</span>
+                  <span className="text-white max-w-[250px] text-right truncate" title={selectedLoanDetails.purpose || "N/A"}>
+                    {selectedLoanDetails.purpose || "N/A"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Collateral & Risk */}
+              {(selectedLoanDetails.collateralDescription || selectedLoanDetails.lateFeeAmount > 0) && (
+                <div className="bg-amber-500/10 rounded-xl border border-amber-500/20 p-4 space-y-3 text-sm">
+                  <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">Collateral & Risk Details</p>
+                  
+                  {selectedLoanDetails.collateralDescription && (
+                    <>
+                      <div className="flex justify-between border-b border-amber-500/10 pb-2">
+                        <span className="text-amber-200/70">Pledged Collateral</span>
+                        <span className="text-amber-100 max-w-[200px] text-right truncate">
+                          {selectedLoanDetails.collateralDescription}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-amber-500/10 pb-2">
+                        <span className="text-amber-200/70">Collateral Value</span>
+                        <span className="font-mono text-amber-100">
+                          {selectedLoanDetails.collateralValue ? formatMoney(selectedLoanDetails.collateralValue) : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-amber-500/10 pb-2">
+                        <span className="text-amber-200/70">Status</span>
+                        <span className="text-amber-100 font-bold uppercase text-xs">
+                          {selectedLoanDetails.collateralStatus || 'pledged'}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  
+                  {selectedLoanDetails.lateFeeAmount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-amber-200/70">Late Fees Accrued</span>
+                      <span className="font-mono text-rose-400 font-bold">
+                        {formatMoney(selectedLoanDetails.lateFeeAmount || 0)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Off-System Details */}
+              {selectedLoanDetails.isOffSystem && (
+                <div className="bg-purple-500/10 rounded-xl border border-purple-500/20 p-4 space-y-3 text-sm">
+                  <p className="text-xs font-bold text-purple-400 uppercase tracking-widest flex items-center gap-2">
+                    <FileText size={14} /> Off-System Agreement Record
+                  </p>
+                  <div className="flex justify-between border-b border-purple-500/10 pb-2">
+                    <span className="text-purple-200/70">Prior Paid Off-System</span>
+                    <span className="font-mono text-purple-100 font-bold">
+                      {formatMoney(selectedLoanDetails.initialPaidAmount || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-purple-200/70">External Reference</span>
+                    <span className="text-purple-100">
+                      {selectedLoanDetails.offSystemReference || "None recorded"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Contract Term Sheet */}
+              {(selectedLoanDetails.contractUrl || selectedLoanDetails.contractText) && (
+                <div className="bg-black/30 rounded-xl border border-white/5 p-4 space-y-3">
+                   <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                    <FileText size={14} /> Contract Details
+                   </p>
+                   {selectedLoanDetails.contractText && (
+                     <div className="text-xs text-white/70 whitespace-pre-wrap font-mono bg-[#111116] p-3 rounded-lg border border-white/5">
+                       {selectedLoanDetails.contractText}
+                     </div>
+                   )}
+                   {selectedLoanDetails.contractUrl && (
+                     <a href={selectedLoanDetails.contractUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 font-medium">
+                       <ExternalLink size={14} /> Open External Contract Document
+                     </a>
+                   )}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-white/5 bg-[#1a1a24] flex justify-end">
+              <button 
+                onClick={() => setSelectedLoanDetails(null)}
+                className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
