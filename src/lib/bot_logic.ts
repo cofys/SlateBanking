@@ -951,19 +951,21 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
 
   const client = await getBankClient(bankId);
   if (client) {
-    const wRes = await client.withdraw(sourceAccount.accountName, amount);
-    if (!wRes.success) {
-      await interaction.editReply({ content: `CityCorp Transfer Failed (Withdrawal): ${wRes.message}` });
+    try {
+      const { executeSameBankBookTransfer } = await import('./citycorp_money');
+      await executeSameBankBookTransfer({
+        sourceAccount,
+        destAccount,
+        desiredCents: amountInCents,
+        mode: 'from_payment',
+        description: `Transfer to ${toAccountName}`,
+      });
+      await interaction.editReply({ content: `✅ Transferred $${amount.toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}** via CityCorp.` });
+      return;
+    } catch (e: any) {
+      await interaction.editReply({ content: `CityCorp Transfer Failed: ${e.message}` });
       return;
     }
-    const dRes = await client.deposit(destAccount.accountName, amount);
-    if (!dRes.success) {
-      await client.deposit(sourceAccount.accountName, amount);
-      await interaction.editReply({ content: `CityCorp Transfer Failed (Deposit). Deposited funds back. Error: ${dRes.message}` });
-      return;
-    }
-    await interaction.editReply({ content: `✅ Transferred $${amount.toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}** via CityCorp. It may take a moment to reflect.` });
-    return;
   }
 
   await db.transaction(async (tx) => {

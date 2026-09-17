@@ -69,7 +69,11 @@ export function BankSettings() {
       defaultCorpAccount: formData.get("defaultCorpAccount"),
       loanPoolAccount: formData.get("loanPoolAccount"),
       feeCollectionAccount: formData.get("feeCollectionAccount"),
-      interestPoolAccount: formData.get("interestPoolAccount")
+      interestPoolAccount: formData.get("interestPoolAccount"),
+      settlementAccount: formData.get("settlementAccount") || "SETTLEMENT",
+      settlementFloorCents: Math.round((parseFloat(formData.get("settlementFloor") as string) || 0) * 100),
+      settlementWarnCents: Math.round((parseFloat(formData.get("settlementWarn") as string) || 0) * 100),
+      defaultFeePayerMode: formData.get("defaultFeePayerMode") || "from_payment",
     };
 
     fetch(`/api/banks/${bank.id}/settings`, {
@@ -582,7 +586,7 @@ export function BankSettings() {
                 className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
               <p className="text-xs text-white/40 mt-1.5">
-                The bank's default corporate account from the CityCorp plugin where fees and corporate inflows are deposited.
+                The bank's default named operating subaccount. Used as the loan disbursement source when Loan Pool is empty. This is not corp treasury.
               </p>
             </div>
 
@@ -830,7 +834,7 @@ export function BankSettings() {
             Institutional Treasury Pools
           </div>
           <p className="text-sm text-zinc-400 mb-6">
-            By default, the platform will route all incoming revenue and disburse all loans from your <strong>Native Corporate Balance</strong>. You can optionally map specific sub-accounts to segregate these funds.
+            Loan <strong>disbursement</strong> needs a named Loan Pool subaccount (or Default Corp Account). CityCorp cannot push corp treasury into a named account. Loan <strong>repayments</strong> go to the pool if set, otherwise Default Corp Account, otherwise corp treasury.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -842,7 +846,7 @@ export function BankSettings() {
                 placeholder="e.g. loan_reserve"
                 className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
               />
-              <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Account where loan disbursements are withdrawn from, and repayments are deposited.</p>
+              <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Required to fund new loans. Disbursements are a CityCorp book transfer from this subaccount. Leave empty to fall back to Default Corp Account (still a named subaccount, not treasury).</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Fee Collection Account (Optional)</label>
@@ -863,6 +867,63 @@ export function BankSettings() {
                 className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
               />
               <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Account where system interest payments to users are withdrawn from.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold mb-6">
+            <Building2 className="text-amber-400" size={20} />
+            Interbank Settlement Float
+          </div>
+          <p className="text-sm text-zinc-400 mb-6">
+            Cross-bank Onyx payments never use corp-to-corp (2% API tax). They book customer → your SETTLEMENT, then the receiving bank's SETTLEMENT → their customer. Keep this subaccount at 0% CityCorp fees and funded; VH self-funds for beta. Owner theft of this float cannot be blocked — a RESERVE_BREACH alarm fires for RP/court.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Settlement Account Name</label>
+              <input
+                name="settlementAccount"
+                defaultValue={settings?.settlementAccount || "SETTLEMENT"}
+                placeholder="SETTLEMENT"
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+              <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Created in CityCorp on save with 0% withdraw/deposit fees.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Default Fee Payer</label>
+              <select
+                name="defaultFeePayerMode"
+                defaultValue={settings?.defaultFeePayerMode || "from_payment"}
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+              >
+                <option value="from_payment">Fees from payment (recipient gets less)</option>
+                <option value="sender_covers">Sender covers fees (recipient gets the quoted amount)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Payout Floor ($)</label>
+              <input
+                name="settlementFloor"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={((settings?.settlementFloorCents || 0) / 100).toFixed(2)}
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+              <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Refuse inbound Onyx payouts that would leave settlement cash below this amount.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Low-Balance Warn ($)</label>
+              <input
+                name="settlementWarn"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={((settings?.settlementWarnCents || 0) / 100).toFixed(2)}
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+              <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Discord alert when live SETTLEMENT cash drops under this threshold.</p>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { db } from "../db/index";
-import { banks, bankAccounts, bankSettings, loans, payrollJobs, subscriptions, recurringTransfers, transactions } from "../db/schema";
-import { eq, and, lte, gt } from "drizzle-orm";
+import { banks, bankAccounts, bankSettings, loans, transactions } from "../db/schema";
+import { eq, and, gt } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { dispatchDiscordWebhook } from "./webhook_dispatcher";
 
@@ -104,46 +104,8 @@ export async function processYieldsAndAutomations(targetBankId?: string) {
       }
     }
 
-    // --- 3. AUTOMATED PAYROLL JOBS ---
-    const duePayrolls = targetBankId
-      ? await db.select().from(payrollJobs).where(and(eq(payrollJobs.isActive, true), lte(payrollJobs.nextRun, now), eq(payrollJobs.bankId, targetBankId)))
-      : await db.select().from(payrollJobs).where(and(eq(payrollJobs.isActive, true), lte(payrollJobs.nextRun, now)));
-    for (const job of duePayrolls) {
-      const employerAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, job.employerAccountId)).get();
-      const employeeAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, job.employeeAccountId)).get();
-
-      if (employerAcc && employeeAcc && employerAcc.balance >= job.amount) {
-        await db.update(bankAccounts).set({ balance: employerAcc.balance - job.amount }).where(eq(bankAccounts.id, employerAcc.id));
-        await db.update(bankAccounts).set({ balance: employeeAcc.balance + job.amount }).where(eq(bankAccounts.id, employeeAcc.id));
-
-        let nextRun = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // default biweekly
-        if (job.frequency === 'weekly') nextRun = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        else if (job.frequency === 'monthly') nextRun = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-        await db.update(payrollJobs).set({ nextRun }).where(eq(payrollJobs.id, job.id));
-
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          bankId: job.bankId,
-          fromAccountId: job.employerAccountId,
-          toAccountId: job.employeeAccountId,
-          amount: job.amount,
-          type: "transfer",
-          description: `Automated Payroll Payment (${job.frequency})`,
-          timestamp: now
-        });
-
-        dispatchDiscordWebhook(job.bankId, "payroll_executed", {
-          title: "💼 Automated Payroll Executed",
-          description: `Direct deposit paid to **${employeeAcc.accountName}**.`,
-          color: 0x3b82f6,
-          fields: [
-            { name: "Amount", value: `$${(job.amount / 100).toFixed(2)}`, inline: true },
-            { name: "Employer", value: employerAcc.accountName, inline: true }
-          ]
-        });
-      }
-    }
+    // Payroll and subscriptions are booked through CityCorp rails in cron.ts.
+    // Do not print money here.
 
     console.log("[YieldEngine] Automated yield and background jobs completed successfully.");
   } catch (e) {

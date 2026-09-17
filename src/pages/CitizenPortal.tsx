@@ -1804,6 +1804,44 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
 function TransferTab({ data, refresh, onyxMerchants }: any) {
   const [addressBookForm, setAddressBookForm] = useState(false);
   const [recurringForm, setRecurringForm] = useState(false);
+  const [fromAccountId, setFromAccountId] = useState("");
+  const [toAccountId, setToAccountId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [feePayerMode, setFeePayerMode] = useState<"from_payment" | "sender_covers">("from_payment");
+  const [quote, setQuote] = useState<any>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    const parsed = parseFloat(amount);
+    if (!fromAccountId || !toAccountId || fromAccountId === toAccountId || !Number.isFinite(parsed) || parsed <= 0) {
+      setQuote(null);
+      setQuoteError(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/citizen/transfer/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fromAccountId, toAccountId, amount: parsed, feePayerMode }),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          setQuote(null);
+          setQuoteError(body.error || "Could not quote fees");
+          return;
+        }
+        setQuote(body.quote);
+        setQuoteError(null);
+      } catch (e: any) {
+        setQuote(null);
+        setQuoteError(e.message || "Quote failed");
+      }
+    }, 280);
+    return () => clearTimeout(handle);
+  }, [fromAccountId, toAccountId, amount, feePayerMode]);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1859,18 +1897,41 @@ function TransferTab({ data, refresh, onyxMerchants }: any) {
            <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2"><Send className="text-indigo-400" size={20}/> Send Payment</h3>
            <form onSubmit={async (e:any) => {
               e.preventDefault();
-              const fd = new FormData(e.target);
-              await fetch('/api/citizen/transfer', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(Object.fromEntries(fd))
-              });
-              e.target.reset();
-              refresh();
+              setSendError(null);
+              setSending(true);
+              try {
+                const fd = new FormData(e.target);
+                const res = await fetch('/api/citizen/transfer', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    fromAccountId,
+                    toAccountId,
+                    amount,
+                    description: fd.get("description"),
+                    feePayerMode,
+                  })
+                });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  setSendError(body.error || "Transfer failed");
+                  return;
+                }
+                e.target.reset();
+                setFromAccountId("");
+                setToAccountId("");
+                setAmount("");
+                setQuote(null);
+                refresh();
+              } catch (err: any) {
+                setSendError(err.message || "Transfer failed");
+              } finally {
+                setSending(false);
+              }
            }} className="space-y-4">
              <div>
                 <label className="block text-sm font-medium text-slate-400 mb-1">From Account</label>
-                <select required name="fromAccountId" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                <select required name="fromAccountId" value={fromAccountId} onChange={(e) => setFromAccountId(e.target.value)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
                   <option value="">Select Account</option>
                   {data.accounts?.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.accountName} ({formatMoney(acc.balance)})</option>)}
                   {data.cards?.filter((c:any) => c.type === 'credit' && !c.isLocked).map((c: any) => <option key={c.id} value={c.id}>Credit Card •••• {c.cardNumber.slice(-4)} ({formatMoney((c.creditLimit || 0) - (c.creditUsed || 0))} Avail)</option>)}
@@ -1878,7 +1939,7 @@ function TransferTab({ data, refresh, onyxMerchants }: any) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-400 mb-1">To Account (or Address Book)</label>
-                <input required name="toAccountId" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white font-mono" placeholder="acc-uuid" list="contacts-list" />
+                <input required name="toAccountId" value={toAccountId} onChange={(e) => setToAccountId(e.target.value)} type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white font-mono" placeholder="acc-uuid" list="contacts-list" />
                 <datalist id="contacts-list">
                   {data.addressBook?.map((c:any) => <option key={c.id} value={c.contactAccountId}>{c.nickname}</option>)}
                 </datalist>
@@ -1886,15 +1947,37 @@ function TransferTab({ data, refresh, onyxMerchants }: any) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-400 mb-1">Amount ($)</label>
-                  <input required name="amount" type="number" step="0.01" min="0.01" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white" placeholder="0.00" />
+                  <input required name="amount" value={amount} onChange={(e) => setAmount(e.target.value)} type="number" step="0.01" min="0.01" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white" placeholder="0.00" />
                 </div>
                 <div>
                    <label className="block text-sm font-medium text-slate-400 mb-1">Memo</label>
                    <input required name="description" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white" placeholder="e.g. Dinner" />
                 </div>
               </div>
-              <button type="submit" className="w-full mt-4 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2.5 px-4 rounded-xl transition-colors">
-                Send Payment
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Who pays fees</label>
+                <select value={feePayerMode} onChange={(e) => setFeePayerMode(e.target.value as any)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                  <option value="from_payment">Take fees from the payment (recipient gets less)</option>
+                  <option value="sender_covers">I cover the fees (recipient gets the amount above)</option>
+                </select>
+              </div>
+              {quote && (
+                <div className="bg-black/30 border border-white/10 rounded-xl p-3 text-xs space-y-1.5">
+                  <div className="flex justify-between text-slate-400"><span>You send</span><span className="text-white font-semibold">{formatMoney(quote.submittedCents)}</span></div>
+                  <div className="flex justify-between text-slate-400"><span>They receive</span><span className="text-emerald-400 font-semibold">{formatMoney(quote.receivedCents)}</span></div>
+                  <div className="flex justify-between text-slate-400"><span>Total fees</span><span className="text-amber-300">{formatMoney(quote.totalFeeCents)} ({((quote.combinedRate || 0) * 100).toFixed(3)}%)</span></div>
+                  {quote.lines?.map((line: any) => (
+                    <div key={line.code} className="flex justify-between text-slate-500 pl-2">
+                      <span>{line.label}</span>
+                      <span>{formatMoney(line.amountCents)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {quoteError && <div className="text-xs text-red-400">{quoteError}</div>}
+              {sendError && <div className="text-xs text-red-400">{sendError}</div>}
+              <button disabled={sending} type="submit" className="w-full mt-4 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-xl transition-colors">
+                {sending ? "Sending…" : "Send Payment"}
               </button>
            </form>
         </div>

@@ -97,6 +97,10 @@ export const transactions = sqliteTable("transactions", {
   isFlagged: integer("is_flagged", { mode: "boolean" }).default(false),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
   category: text("category"), // e.g. "Food", "Rent", "Entertainment"
+  amountSubmitted: integer("amount_submitted"),
+  amountReceived: integer("amount_received"),
+  feePayerMode: text("fee_payer_mode"),
+  feeBreakdown: text("fee_breakdown"),
 }, (table) => ({
   bankIdIdx: index("idx_transactions_bank_id").on(table.bankId),
   fromAccIdx: index("idx_transactions_from_acc").on(table.fromAccountId),
@@ -147,6 +151,11 @@ export const bankSettings = sqliteTable("bank_settings", {
   loanPoolAccount: text("loan_pool_account"), // Name of specific sub-account for loans
   feeCollectionAccount: text("fee_collection_account"), // Name of specific sub-account for fees
   interestPoolAccount: text("interest_pool_account"), // Name of specific sub-account for interest
+  settlementAccount: text("settlement_account"), // CityCorp subaccount used as correspondent float
+  settlementFloorCents: integer("settlement_floor_cents").default(0),
+  settlementWarnCents: integer("settlement_warn_cents").default(0),
+  slateAdvanceCents: integer("slate_advance_cents").default(0),
+  defaultFeePayerMode: text("default_fee_payer_mode").default("from_payment"),
 
   accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean; isPrivate?: boolean; creditLimit?: number | null; creditApr?: number | null; autoApproveLoans?: boolean; autoApproveCreditCards?: boolean; maxAutoApproveLoanAmount?: number; }[]>(),
   savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
@@ -345,6 +354,9 @@ export const clearinghouseBalances = sqliteTable("clearinghouse_balances", {
   bankId: text("bank_id").primaryKey().references(() => banks.id),
   balance: integer("balance").notNull().default(0), // Can be negative (owed) or positive (owed to)
   lastSettled: integer("last_settled", { mode: "timestamp" }),
+  settlementCashCents: integer("settlement_cash_cents").default(0),
+  slateAdvanceCents: integer("slate_advance_cents").default(0),
+  lastDriftAlertAt: integer("last_drift_alert_at", { mode: "timestamp" }),
 });
 
 export const clearinghouseSettlements = sqliteTable("clearinghouse_settlements", {

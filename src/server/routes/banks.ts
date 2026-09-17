@@ -1444,7 +1444,6 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
         cityCorpAppId: bank?.cityCorpAppId || "",
         hasCityCorpAppSecret: !!bank?.cityCorpAppSecret,
         maintenanceMode: bank?.maintenanceMode || false,
-        defaultCorpAccount: bank?.defaultCorpAccount || ""
       });
     } catch (e: any) {
       console.error(e);
@@ -1487,10 +1486,6 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
             }
             await botManager.updateBankBotPresence(bId, req.body.maintenanceMode);
          }
-      }
-
-      if (req.body.defaultCorpAccount !== undefined) {
-         await db.update(banks).set({ defaultCorpAccount: req.body.defaultCorpAccount }).where(eq(banks.id, bId));
       }
 
       if (req.body.cityCorpAppId !== undefined || req.body.cityCorpAppSecret !== undefined) {
@@ -1536,7 +1531,12 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         googleDocsAutoGenerate: req.body.googleDocsAutoGenerate,
         loanPoolAccount: req.body.loanPoolAccount,
         feeCollectionAccount: req.body.feeCollectionAccount,
-        interestPoolAccount: req.body.interestPoolAccount
+        interestPoolAccount: req.body.interestPoolAccount,
+        defaultCorpAccount: req.body.defaultCorpAccount,
+        settlementAccount: req.body.settlementAccount,
+        settlementFloorCents: req.body.settlementFloorCents,
+        settlementWarnCents: req.body.settlementWarnCents,
+        defaultFeePayerMode: req.body.defaultFeePayerMode,
       };
 
       const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId));
@@ -1568,6 +1568,19 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
           details: `Applied bank-wide fee update to all accounts (Transfer: ${transferFee ?? 'default'}, Deposit: ${depositFee ?? 'default'}, Withdraw: ${withdrawFee ?? 'default'})`,
           timestamp: new Date()
         });
+      }
+
+      try {
+        const { loadBank, ensureNamedCityCorpAccount } = await import("../../lib/citycorp_money");
+        const bankRow = await loadBank(bId);
+        const settleName = String(req.body.settlementAccount || data.settlementAccount || "SETTLEMENT").trim() || "SETTLEMENT";
+        await ensureNamedCityCorpAccount({
+          bank: bankRow,
+          accountName: settleName,
+          systemCategory: "clearinghouse",
+        });
+      } catch (e) {
+        console.warn("[settings] SETTLEMENT provision skipped", e);
       }
 
       res.json(data);
@@ -2400,18 +2413,33 @@ banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, a
         }
 
         if (balance > 0) {
-           // Withdraw to corporate pool before deleting so money isn't lost
-           await client.withdraw(accName, balance / 100);
-           
            if (action === 'return' && destAccount) {
+              const destAccs = await db.select().from(bankAccounts).where(
+                 and(eq(bankAccounts.bankId, req.params.bankId), eq(bankAccounts.accountName, destAccount))
+              );
+              if (destAccs.length === 0) {
+                 return res.status(404).json({ error: "Destination account not found" });
+              }
               const fee = parseFloat(feePercent || "0");
               const returnAmount = Math.floor(balance * (1 - (fee / 100)));
               if (returnAmount > 0) {
-                  const depositRes = await client.deposit(destAccount, returnAmount / 100);
-                  if (!depositRes.success) {
-                     throw new Error(`Failed to return funds via CityCorp API: ${depositRes.message}`);
-                  }
+                 const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
+                 await executeSameBankBookTransfer({
+                    sourceAccount: { ...targetAcc, balance },
+                    destAccount: destAccs[0],
+                    desiredCents: returnAmount,
+                    mode: "from_payment",
+                    description: `Account close return from ${accName}`,
+                    type: "transfer",
+                 });
               }
+              const leftover = balance - returnAmount;
+              if (leftover > 0) {
+                 await client.withdraw(accName, leftover / 100);
+              }
+           } else {
+              // Cash out to the bank owner's personal wallet, then delete.
+              await client.withdraw(accName, balance / 100);
            }
         }
         await client.deleteAccount(accName).catch(() => {});
@@ -3086,7 +3114,7 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
 
 banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, vaultDeposits, loans, transactions, payrollJobs, banks } = await import("../../db/schema");
+    const { bankAccounts, vaultDeposits, loans, transactions, payrollJobs, banks, bankSettings } = await import("../../db/schema");
     const { eq, sum, and, desc, sql, or, ne, like } = await import("drizzle-orm");
     const { calculateTreasuryFees, FEE_TYPE_LABELS } = await import("../feeService");
 
@@ -3117,18 +3145,21 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
          } catch(e) {
             console.error("Failed to fetch CityCorp master balance", e);
          }
-      } else if (bank?.defaultCorpAccount) {
-         // Fallback to local linked corp account if CityCorp is not configured
-         const linkedCorpAcc = await db.select().from(bankAccounts).where(
-            and(
-               eq(bankAccounts.bankId, bId),
-               or(eq(bankAccounts.id, bank.defaultCorpAccount), eq(bankAccounts.accountName, bank.defaultCorpAccount))
-            )
-         ).get();
-         if (linkedCorpAcc) {
-            nativeCorpBalance = linkedCorpAcc.balance;
-            corpAccountName = linkedCorpAcc.accountName;
-            corpAccountId = linkedCorpAcc.id;
+      } else {
+         const settingsRow = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId)).get();
+         const operating = settingsRow?.defaultCorpAccount?.trim();
+         if (operating) {
+            const linkedCorpAcc = await db.select().from(bankAccounts).where(
+               and(
+                  eq(bankAccounts.bankId, bId),
+                  or(eq(bankAccounts.id, operating), eq(bankAccounts.accountName, operating))
+               )
+            ).get();
+            if (linkedCorpAcc) {
+               nativeCorpBalance = linkedCorpAcc.balance;
+               corpAccountName = linkedCorpAcc.accountName;
+               corpAccountId = linkedCorpAcc.id;
+            }
          }
       }
 
@@ -3907,25 +3938,21 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
       if (!acc) return res.status(404).json({ error: "Account not found" });
       if (acc.balance < amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      // Native corp balance receives loan payments (handled in transactions, toAccountId: null)
+      const { collectToPoolOrTreasury } = await import("../../lib/citycorp_money");
+      try {
+        await collectToPoolOrTreasury({
+          bankId: req.params.bankId,
+          fromAccount: acc,
+          amountCents: amount,
+          description: `Staff loan payment (Loan #${loan.id.substring(0, 8)})`,
+          type: "loan_payment",
+        });
+      } catch (e: any) {
+        return res.status(400).json({ error: e.message || "Loan payment failed" });
+      }
 
       const newRemaining = Math.max(0, loan.remainingAmount - amount);
       const isPaid = newRemaining === 0;
-
-      // Deduct from borrower's account
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${amount}` }).where(eq(bankAccounts.id, accountId));
-
-      // Credit the Bank's Corporate Revenue Account (Native Corp Balance via CityCorp API)
-      const bank = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
-      if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
-        try {
-          const { CityCorpClient } = await import("../../lib/citycorp_api");
-          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-          await client.payCorporation(amount / 100);
-        } catch (e) {
-          console.warn("Failed to pay corp:", e);
-        }
-      }
 
       const ts = new Date();
 
@@ -3949,20 +3976,6 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
         });
       }
 
-      // Record loan repayment transaction into bank corp ledger
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: accountId,
-        toAccountId: null,
-        type: "loan_payment",
-        amount,
-        description: `Loan Repayment${isPaid ? ' (Final Payoff)' : ''} (Loan #${loan.id.slice(0, 8)})`,
-        category: "Loan Repayment",
-        timestamp: ts
-      });
-
-      // Update loan state
       const nextDate = new Date();
       nextDate.setDate(nextDate.getDate() + 30);
 
@@ -4390,44 +4403,67 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
       const vaultCashAccount = sysAccountRes.length > 0 ? sysAccountRes[0] : null;
 
       // Identify source account ID for internal DB
-      const accountRes = await db.select().from(bankAccounts).where(eq(bankAccounts.accountName, accountName)).limit(1);
+      const accountRes = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bank.id), eq(bankAccounts.accountName, accountName))).limit(1);
       if (accountRes.length === 0) return res.status(404).json({ error: "Source account not found locally" });
       const account = accountRes[0];
 
       let toAccountRes: any[] = [];
       if (type === 'transfer' && toAccountName) {
-        toAccountRes = await db.select().from(bankAccounts).where(eq(bankAccounts.accountName, toAccountName)).limit(1);
+        toAccountRes = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bank.id), eq(bankAccounts.accountName, toAccountName))).limit(1);
         if (toAccountRes.length === 0) return res.status(404).json({ error: "Destination account not found locally" });
       }
 
-      // Execute on CityCorp if configured
+      const { auditLogs } = await import("../../db/schema");
+      const { refreshAccountCache } = await import("../../lib/citycorp_money");
+
+      if (type === 'transfer') {
+        if (!toAccountName || toAccountRes.length === 0) return res.status(400).json({ error: "Missing destination account" });
+        try {
+          const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
+          const moved = await executeSameBankBookTransfer({
+            sourceAccount: account,
+            destAccount: toAccountRes[0],
+            desiredCents: parsedAmount,
+            mode: "from_payment",
+            description: description || `Staff transfer to ${toAccountName}`,
+            type: "transfer",
+          });
+          await db.insert(auditLogs).values({
+            id: uuidv4(),
+            bankId: bank.id,
+            userDiscordId: (req as any).user?.discordId || "Operator",
+            action: "manual_transfer",
+            details: `Processed transfer of $${(parsedAmount / 100).toFixed(2)} from ${accountName} to ${toAccountName}`,
+            timestamp: new Date()
+          });
+          return res.json({ success: true, txId: moved.txId, quote: moved.quote });
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message || "Transfer failed" });
+        }
+      }
+
+      // Teller cash window: deposit/withdraw hit the bank owner's personal in-game wallet.
       if (bank.corpId && bank.corpApiUuid && bank.corpApiKey) {
         const { CityCorpClient } = await import("../../lib/citycorp_api");
-        const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey);
-        
+        const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+
         let clientRes;
         if (type === 'deposit') {
           clientRes = await client.deposit(accountName, parsedAmount / 100);
         } else if (type === 'withdraw') {
           clientRes = await client.withdraw(accountName, parsedAmount / 100);
-        } else if (type === 'transfer') {
-          // Withdraw from source, deposit to target via CityCorp logic internally
-          if (!toAccountName) return res.status(400).json({ error: "Missing destination account" });
-          // Note: Real API doesn't have an atomic transfer endpoint yet, so we emulate it.
-          const wRes = await client.withdraw(accountName, parsedAmount / 100);
-          if (!wRes.success) return res.status(400).json({ error: `Withdraw failed: ${wRes.message}` });
-          
-          clientRes = await client.deposit(toAccountName, parsedAmount / 100);
-          if (!clientRes.success) {
-            // Rollback the withdrawal on failure
-            await client.deposit(accountName, parsedAmount / 100);
-            return res.status(400).json({ error: `Deposit to target failed: ${clientRes.message}` });
-          }
         }
-        
+
         if (clientRes && !clientRes.success) {
           return res.status(400).json({ error: `CityCorp API Error: ${clientRes.message}` });
         }
+
+        await refreshAccountCache({
+          bankId: bank.id,
+          accountName,
+          accountId: account.id,
+          client,
+        });
       }
 
       // Enforce Double Entry Ledger Rules
@@ -4440,9 +4476,6 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
       } else if (type === 'withdraw') {
          finalFromId = account.id;
          finalToId = vaultCashAccount ? vaultCashAccount.id : null;
-      } else if (type === 'transfer') {
-         finalFromId = account.id;
-         finalToId = toAccountRes[0].id;
       }
 
       const isFlagged = parsedAmount >= 1000000;
@@ -4460,26 +4493,23 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
         timestamp: new Date()
       };
 
-      const { auditLogs } = await import("../../db/schema");
+      const cityCorpLive = !!(bank.corpId && bank.corpApiUuid && bank.corpApiKey);
 
       await db.transaction(async (txDb) => {
         await txDb.insert(transactions).values(txRecord);
 
-        // Adjust balances in local DB (Double Entry)
-        if (finalFromId) {
-           const fromAccRes = await txDb.select().from(bankAccounts).where(eq(bankAccounts.id, finalFromId)).limit(1);
-           if (fromAccRes.length > 0) {
-              await txDb.update(bankAccounts).set({ balance: fromAccRes[0].balance - parsedAmount }).where(eq(bankAccounts.id, finalFromId));
-           }
-        }
-        if (finalToId) {
-           const toAccRes = await txDb.select().from(bankAccounts).where(eq(bankAccounts.id, finalToId)).limit(1);
-           if (toAccRes.length > 0) {
-              await txDb.update(bankAccounts).set({ balance: toAccRes[0].balance + parsedAmount }).where(eq(bankAccounts.id, finalToId));
-           }
-        }
+        // Customer balance is SET from CityCorp after teller cash ops. Only adjust vault cash locally.
+        const maybeAdjust = async (id: string | null, delta: number) => {
+          if (!id) return;
+          if (cityCorpLive && id === account.id) return;
+          const accRes = await txDb.select().from(bankAccounts).where(eq(bankAccounts.id, id)).limit(1);
+          if (accRes.length > 0) {
+            await txDb.update(bankAccounts).set({ balance: accRes[0].balance + delta }).where(eq(bankAccounts.id, id));
+          }
+        };
+        await maybeAdjust(finalFromId, -parsedAmount);
+        await maybeAdjust(finalToId, parsedAmount);
 
-        // Add audit log
         await txDb.insert(auditLogs).values({
           id: uuidv4(),
           bankId: bank.id,

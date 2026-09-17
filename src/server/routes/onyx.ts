@@ -359,7 +359,7 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
 
     const { db } = await import("../../db/index");
     const { onyxMerchants, bankAccounts, transactions, banks } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
@@ -389,9 +389,10 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
           return res.status(403).json({ error: "Invalid or expired payment token." });
       }
 
+      let userAccount: any = null;
+      let sourceCard: any = null;
+
       await db.transaction(async (tx: any) => {
-        let userAccount;
-        let sourceCard = null;
         if (sourceAccountId) {
            if (sourceAccountId.startsWith("crd_")) {
              const { cards } = await import("../../db/schema");
@@ -432,19 +433,8 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
           throw new Error(`Insufficient funds. Customer balance is ${(userAccount.balance / 100).toFixed(2)}.`);
         }
 
-        // Prepare CityCorp client
-        const { CityCorpClient } = await import("../../lib/citycorp_api");
-        const merchantBankRes = await tx.select().from(banks).where(eq(banks.id, merchant.bankId));
-        const merchantBank = merchantBankRes[0];
-        
-        const sourceBankRes = await tx.select().from(banks).where(eq(banks.id, userAccount.bankId));
-        const sourceBank = sourceBankRes[0];
-
-        const isSourceBankCityCorp = !!(sourceBank && sourceBank.corpId && sourceBank.corpApiUuid && sourceBank.corpApiKey);
-        const isMerchantBankCityCorp = !!(merchantBank && merchantBank.corpId && merchantBank.corpApiUuid && merchantBank.corpApiKey);
-
         // Calculate Tax
-        const { onyxSettings, clearinghouseBalances } = await import("../../db/schema");
+        const { onyxSettings } = await import("../../db/schema");
         const onyxSet = await tx.select().from(onyxSettings).where(eq(onyxSettings.id, 'global')).get();
         const taxRate = onyxSet?.b2bApiFeePercent || 0; 
         const taxAmount = Math.floor(amountCents * (taxRate / 10000));
@@ -462,64 +452,23 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
             bankId: merchant.bankId,
             ownerDiscordId: 'merchant_system',
             accountName: merchant.destinationAccount,
-            balance: isMerchantBankCityCorp ? 0 : netAmount, 
+            balance: 0,
             createdAt: new Date(),
           });
         } else {
           destAccountId = destAccounts[0].id;
-          if (!isMerchantBankCityCorp) {
+        }
+
+        if (sourceCard) {
+            const { cards } = await import("../../db/schema");
+            await tx.update(cards)
+              .set({ creditUsed: (sourceCard.creditUsed || 0) + amountCents })
+              .where(eq(cards.id, sourceCard.id));
             await tx.update(bankAccounts)
-              .set({ balance: destAccounts[0].balance + netAmount })
+              .set({ balance: sql`${bankAccounts.balance} + ${netAmount}` })
               .where(eq(bankAccounts.id, destAccountId));
-          }
-        }
-
-        // Deduct from Source
-        if (isSourceBankCityCorp) {
-           const client = new CityCorpClient(sourceBank.corpId!, sourceBank.corpApiUuid!, sourceBank.corpApiKey!);
-           const wRes = await client.withdraw(userAccount.accountName, amountCents / 100);
-           if (!wRes.success) throw new Error(`Onyx CityCorp Withdrawal Failed: ${wRes.message}`);
         } else {
-           if (sourceCard) {
-               const { cards } = await import("../../db/schema");
-               await tx.update(cards)
-                 .set({ creditUsed: (sourceCard.creditUsed || 0) + amountCents })
-                 .where(eq(cards.id, sourceCard.id));
-           } else {
-               await tx.update(bankAccounts)
-                 .set({ balance: userAccount.balance - amountCents })
-                 .where(eq(bankAccounts.id, userAccount.id));
-           }
-        }
-
-        // Add to Destination CityCorp if needed
-        if (isMerchantBankCityCorp) {
-           const client = new CityCorpClient(merchantBank.corpId!, merchantBank.corpApiUuid!, merchantBank.corpApiKey!);
-           const dRes = await client.deposit(merchant.destinationAccount, netAmount / 100);
-           if (!dRes.success) {
-             // Rollback if destination fails
-             if (isSourceBankCityCorp) {
-                const sClient = new CityCorpClient(sourceBank.corpId!, sourceBank.corpApiUuid!, sourceBank.corpApiKey!);
-                await sClient.deposit(userAccount.accountName, amountCents / 100);
-             } else {
-                await tx.update(bankAccounts)
-                 .set({ balance: userAccount.balance }) // Revert
-                 .where(eq(bankAccounts.id, userAccount.id));
-             }
-             throw new Error(`Onyx CityCorp Deposit Failed: ${dRes.message}`);
-           }
-        }
-        
-        // Handle Clearinghouse Balance Difference
-        if (sourceBank.id !== merchantBank.id) {
-            // Money left Source network and entered Merchant network
-            const fBalance = await tx.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, sourceBank.id)).get();
-            if(!fBalance) await tx.insert(clearinghouseBalances).values({ bankId: sourceBank.id, balance: -amountCents });
-            else await tx.update(clearinghouseBalances).set({ balance: fBalance.balance - amountCents }).where(eq(clearinghouseBalances.bankId, sourceBank.id));
-
-            const tBalance = await tx.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, merchantBank.id)).get();
-            if(!tBalance) await tx.insert(clearinghouseBalances).values({ bankId: merchantBank.id, balance: netAmount });
-            else await tx.update(clearinghouseBalances).set({ balance: tBalance.balance + netAmount }).where(eq(clearinghouseBalances.bankId, merchantBank.id));
+          // CityCorp book transfer happens after this sqlite tx to avoid holding the lock on HTTP.
         }
 
         if (taxAmount > 0) {
@@ -535,18 +484,55 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
             });
         }
 
-        // Create transaction record explicitly so it shows up as an onyx payment in our DB
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: merchant.bankId,
-          fromAccountId: userAccount.id,
-          toAccountId: destAccountId,
-          amount: amountCents,
-          type: 'onyx_payment',
-          description: description || `Onyx Purchase at ${merchant.name}`,
-          timestamp: new Date()
-        });
+        if (sourceCard) {
+          await tx.insert(transactions).values({
+            id: uuidv4(),
+            bankId: merchant.bankId,
+            fromAccountId: userAccount.id,
+            toAccountId: destAccountId,
+            amount: amountCents,
+            type: 'onyx_payment',
+            description: description || `Onyx Purchase at ${merchant.name}`,
+            timestamp: new Date()
+          });
+        }
       });
+
+      if (!sourceCard) {
+        const { executeSameBankBookTransfer, executeCrossBankSettledTransfer } = await import("../../lib/citycorp_money");
+        const { db } = await import("../../db/index");
+        const { bankAccounts } = await import("../../db/schema");
+        const { eq, and } = await import("drizzle-orm");
+        const liveSource = await db.select().from(bankAccounts).where(eq(bankAccounts.id, userAccount.id)).get();
+        const liveDest = await db.select().from(bankAccounts).where(
+          and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.accountName, merchant.destinationAccount))
+        ).get();
+        if (!liveSource || !liveDest) {
+          return res.status(400).json({ error: "Could not load accounts for CityCorp settlement." });
+        }
+        try {
+          if (liveSource.bankId === liveDest.bankId) {
+            await executeSameBankBookTransfer({
+              sourceAccount: liveSource,
+              destAccount: liveDest,
+              desiredCents: amountCents,
+              mode: "sender_covers",
+              description: description || `Onyx Purchase at ${merchant.name}`,
+              type: "onyx_payment",
+            });
+          } else {
+            await executeCrossBankSettledTransfer({
+              sourceAccount: liveSource,
+              destAccount: liveDest,
+              desiredCents: amountCents,
+              mode: "sender_covers",
+              description: description || `Onyx Purchase at ${merchant.name}`,
+            });
+          }
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message || "Onyx CityCorp settlement failed" });
+        }
+      }
 
       res.json({ success: true, message: "Payment processed successfully." });
     } catch (e: any) {

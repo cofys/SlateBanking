@@ -9,55 +9,24 @@ import { botManager } from "../lib/bot_manager";
  */
 export async function disburseLoan(loan: typeof loans.$inferSelect) {
    const ts = new Date();
-   
-   // Resolve Bank's funding pool
-   const bankSettingsRow = await db.select().from(bankSettings).where(eq(bankSettings.bankId, loan.bankId)).get();
-   const bankRow = await db.select().from(banks).where(eq(banks.id, loan.bankId)).get();
-   
-   let poolAccountId: string | null = null;
-   let poolQueryNameOrId = bankSettingsRow?.loanPoolAccount || bankRow?.defaultCorpAccount;
-   
-   if (poolQueryNameOrId) {
-      const poolAcc = await db.select().from(bankAccounts).where(
-         and(eq(bankAccounts.bankId, loan.bankId), or(eq(bankAccounts.id, poolQueryNameOrId), eq(bankAccounts.accountName, poolQueryNameOrId)))
-      ).get();
-      if (poolAcc) {
-         poolAccountId = poolAcc.id;
-         poolQueryNameOrId = poolAcc.accountName;
-         await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${loan.principalAmount}` }).where(eq(bankAccounts.id, poolAccountId));
-      }
-   }
-
    const targetAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, loan.accountId)).get();
+   if (!targetAcc) throw new Error("Loan target account not found");
 
-   // Handle CityCorp Integration if target account exists in-game
-   if (targetAcc && targetAcc.existsInGame && bankRow?.corpId && bankRow?.corpApiUuid && bankRow?.corpApiKey) {
-      try {
-         const { CityCorpClient } = await import("../lib/citycorp_api");
-         const client = new CityCorpClient(bankRow.corpId, bankRow.corpApiUuid, bankRow.corpApiKey, bankRow.id);
-         
-         // If a specific pool account is defined, withdraw from it first
-         if (poolQueryNameOrId) {
-            await client.withdraw(poolQueryNameOrId, loan.principalAmount / 100);
-         }
-         
-         // Deposit to the player's account
-         await client.deposit(targetAcc.accountName, loan.principalAmount / 100);
-      } catch (e) {
-         console.error("[disburseLoan] CityCorp API error:", e);
-      }
-   }
+   const { disburseFromPoolOrOperating } = await import("../lib/citycorp_money");
+   const moved = await disburseFromPoolOrOperating({
+      bankId: loan.bankId,
+      toAccount: targetAcc,
+      amountCents: loan.principalAmount,
+      description: `Loan Disbursement (Principal: $${(loan.principalAmount/100).toFixed(2)})`,
+   });
 
-   await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${loan.principalAmount}` }).where(eq(bankAccounts.id, loan.accountId));
-   await db.insert(transactions).values({
-       id: uuidv4(),
-       bankId: loan.bankId,
-       fromAccountId: poolAccountId,
-       toAccountId: loan.accountId,
-       type: poolAccountId ? "transfer" : "deposit",
-       amount: loan.principalAmount,
-       description: `Loan Disbursement (Principal: $${(loan.principalAmount/100).toFixed(2)})`,
-       timestamp: ts
+   await db.insert(auditLogs).values({
+      id: uuidv4(),
+      bankId: loan.bankId,
+      userDiscordId: loan.discordId,
+      action: "loan_disbursed",
+      details: `Disbursed $${(loan.principalAmount/100).toFixed(2)} to ${targetAcc.accountName} via CityCorp book transfer (tx ${moved.txId}).`,
+      timestamp: ts
    });
 }
 
@@ -90,40 +59,31 @@ export async function processDueLoanRepayments(targetBankId?: string) {
     if (targetBankId && loan.bankId !== targetBankId) continue;
 
     // Check borrower's linked account balance
-    const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, loan.accountId)).get();
+    let account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, loan.accountId)).get();
 
     // Monthly repayment installment calculation (e.g. principal / 12 or total remaining)
     const installment = Math.min(loan.remainingAmount, Math.max(100, Math.ceil(loan.principalAmount / 12)));
 
     if (account && account.balance >= installment) {
-      // SUCCESSFUL AUTOMATED DEBIT
-      // Native corp receives late fees
-      // Native corp receives late fees
+      const { collectToPoolOrTreasury } = await import("../lib/citycorp_money");
+      try {
+        await collectToPoolOrTreasury({
+          bankId: loan.bankId,
+          fromAccount: account,
+          amountCents: installment,
+          description: `Automated Monthly Loan Debit (Loan #${loan.id.substring(0, 8)})`,
+          type: "loan_payment",
+        });
+      } catch (e: any) {
+        console.error("[loan auto debit] CityCorp collect failed", e);
+        continue;
+      }
 
-      const newAccountBalance = account.balance - installment;
+      const fresh = await db.select().from(bankAccounts).where(eq(bankAccounts.id, account.id)).get();
+      account = fresh || account;
+
       const newRemainingLoan = loan.remainingAmount - installment;
       const isPaidOff = newRemainingLoan <= 0;
-
-      // Deduct from customer account
-      await db.update(bankAccounts)
-        .set({ balance: newAccountBalance })
-        .where(eq(bankAccounts.id, account.id));
-
-      // Bank Corporate Revenue Account is Native Corp
-      const { banks, bankSettings } = await import("../db/schema");
-      const bank = await db.select().from(banks).where(eq(banks.id, loan.bankId)).get();
-      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, loan.bankId)).get();
-      if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
-        try {
-          const { CityCorpClient } = await import("../lib/citycorp_api");
-          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-          if (settings?.loanPoolAccount) {
-            await client.deposit(settings.loanPoolAccount, installment / 100);
-          } else {
-            await client.payCorporation(installment / 100);
-          }
-        } catch (e) {}
-      }
 
       // Check for late fee settlement
       const currentLateFee = loan.lateFeeAmount || 0;
@@ -162,19 +122,6 @@ export async function processDueLoanRepayments(targetBankId?: string) {
           lastPaymentAttemptAt: now
         })
         .where(eq(loans.id, loan.id));
-
-      // Insert transaction record into bank corporate ledger
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: loan.bankId,
-        fromAccountId: account.id,
-        toAccountId: null,
-        type: "loan_payment",
-        amount: installment,
-        description: isPaidOff ? `Loan Final Repayment (Loan #${loan.id.substring(0, 8)})` : `Automated Monthly Loan Debit (Loan #${loan.id.substring(0, 8)})`,
-        timestamp: now,
-        category: "Loan Repayment"
-      });
 
       // Insert audit log
       await db.insert(auditLogs).values({
@@ -378,20 +325,24 @@ export async function processDueCreditRepayments(targetBankId?: string) {
 
       if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
         try {
-          const { CityCorpClient } = await import("../lib/citycorp_api");
-          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-          if (settings?.loanPoolAccount) {
-            await client.deposit(settings.loanPoolAccount, installment / 100);
-          } else {
-            await client.payCorporation(installment / 100);
-          }
-        } catch (e) {}
+          const { collectToPoolOrTreasury } = await import("../lib/citycorp_money");
+          await collectToPoolOrTreasury({
+            bankId: card.bankId,
+            fromAccount: account,
+            amountCents: installment,
+            description: `Automated Credit Card Payment (Card ending in ${card.cardNumber.substring(card.cardNumber.length - 4)})`,
+            type: "loan_payment",
+          });
+        } catch (e: any) {
+          console.error("[credit auto debit] CityCorp collect failed", e);
+          failedCount++;
+          continue;
+        }
+      } else {
+        await db.update(bankAccounts)
+          .set({ balance: sql`${bankAccounts.balance} - ${installment}` })
+          .where(eq(bankAccounts.id, account.id));
       }
-
-      // Deduct from customer account
-      await db.update(bankAccounts)
-        .set({ balance: sql`${bankAccounts.balance} - ${installment}` })
-        .where(eq(bankAccounts.id, account.id));
 
       // Credit the card (reduce creditUsed)
       await db.update(cards)
@@ -406,18 +357,19 @@ export async function processDueCreditRepayments(targetBankId?: string) {
         .set({ nextPaymentDate: nextDate })
         .where(eq(cards.id, card.id));
 
-      // Insert transaction record into bank corporate ledger
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: card.bankId,
-        fromAccountId: account.id,
-        toAccountId: null,
-        type: "loan_payment",
-        amount: installment,
-        description: `Automated Credit Card Payment (Card ending in ${card.cardNumber.substring(card.cardNumber.length - 4)})`,
-        timestamp: now,
-        category: "Credit Card Repayment"
-      });
+      if (!bank?.corpId) {
+        await db.insert(transactions).values({
+          id: uuidv4(),
+          bankId: card.bankId,
+          fromAccountId: account.id,
+          toAccountId: null,
+          type: "loan_payment",
+          amount: installment,
+          description: `Automated Credit Card Payment (Card ending in ${card.cardNumber.substring(card.cardNumber.length - 4)})`,
+          timestamp: now,
+          category: "Credit Card Repayment"
+        });
+      }
 
       debitedCount++;
       

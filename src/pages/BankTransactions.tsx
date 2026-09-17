@@ -130,17 +130,17 @@ export function BankTransactions() {
               <label className={`flex-1 p-4 rounded-xl border cursor-pointer transition-colors ${txType === 'deposit' ? 'bg-indigo-500/10 border-indigo-500' : 'bg-transparent border-white/10 opacity-60 hover:bg-white/5'}`}>
                  <input type="radio" name="type" className="hidden" checked={txType === 'deposit'} onChange={() => setTxType('deposit')} />
                  <div className="font-semibold text-indigo-400">Deposit</div>
-                 <div className="text-xs mt-1 text-white/50">Add funds</div>
+                 <div className="text-xs mt-1 text-white/50">From owner's in-game wallet</div>
               </label>
               <label className={`flex-1 p-4 rounded-xl border cursor-pointer transition-colors ${txType === 'withdraw' ? 'bg-red-500/10 border-red-500' : 'bg-transparent border-white/10 opacity-60 hover:bg-white/5'}`}>
                  <input type="radio" name="type" className="hidden" checked={txType === 'withdraw'} onChange={() => setTxType('withdraw')} />
                  <div className="font-semibold text-red-400">Withdraw</div>
-                 <div className="text-xs mt-1 text-white/50">Remove funds</div>
+                 <div className="text-xs mt-1 text-white/50">To owner's in-game wallet</div>
               </label>
               <label className={`flex-1 p-4 rounded-xl border cursor-pointer transition-colors ${txType === 'transfer' ? 'bg-emerald-500/10 border-emerald-500' : 'bg-transparent border-white/10 opacity-60 hover:bg-white/5'}`}>
                  <input type="radio" name="type" className="hidden" checked={txType === 'transfer'} onChange={() => setTxType('transfer')} />
                  <div className="font-semibold text-emerald-400">Transfer</div>
-                 <div className="text-xs mt-1 text-white/50">Move to account</div>
+                 <div className="text-xs mt-1 text-white/50">Book transfer (same bank)</div>
               </label>
             </div>
 

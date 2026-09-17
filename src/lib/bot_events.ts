@@ -1,15 +1,14 @@
 import WebSocket from "ws";
 import { db } from "../db/index";
-import { banks, bankAccounts, transactions } from "../db/schema";
+import { banks, bankAccounts, bankSettings, clearinghouseBalances } from "../db/schema";
 import { eq, and } from "drizzle-orm";
-import { v4 as uuidv4 } from "uuid";
+import { extractLiveBalanceCents, refreshAccountCache, settlementAccountName, clientForBank } from "./citycorp_money";
+import { botManager } from "./bot_manager";
 
 interface CityCorpEvent {
-  name: string;
-  event: {
-    corpAccount?: { name: string };
-    amount?: number;
-  };
+  type?: string;
+  name?: string;
+  event?: any;
 }
 
 export class CityCorpWebSocket {
@@ -18,15 +17,16 @@ export class CityCorpWebSocket {
   private headers: any;
   private bankId: string;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private pingTimer: NodeJS.Timeout | null = null;
   private isClosed = false;
-  private reconnectDelay = 5000; // Start with 5 seconds
-  private maxReconnectDelay = 300000; // Max 5 minutes
+  private reconnectDelay = 5000;
+  private maxReconnectDelay = 300000;
   private failureCount = 0;
 
   constructor(bankId: string, apiUuid: string, apiKey: string) {
     this.bankId = bankId;
     this.url = "wss://api.cityrp.org/citycorp";
-    
+
     if (!apiKey || apiKey.trim() === "" || !apiUuid || apiUuid.trim() === "") {
       this.isClosed = true;
       console.log(`[Bank ${this.bankId}] CityCorp WebSocket event subscription is disabled (missing credentials).`);
@@ -43,7 +43,7 @@ export class CityCorpWebSocket {
   public connect() {
     if (this.isClosed) return;
     console.log(`[Bank ${this.bankId}] Connecting to CityCorp Event Stream (attempt #${this.failureCount + 1})...`);
-    
+
     try {
       this.ws = new WebSocket(this.url, { headers: this.headers });
 
@@ -55,16 +55,17 @@ export class CityCorpWebSocket {
 
       this.ws.on("message", async (data) => {
         try {
-          const payload = JSON.parse(data.toString()) as CityCorpEvent;
+          const raw = data.toString();
+          if (!raw || raw === "ping" || raw === "pong") return;
+          const payload = JSON.parse(raw) as CityCorpEvent;
           await this.processEvent(payload);
         } catch (e) {
-          // JSON parse err
+          // keepalive / non-JSON
         }
       });
 
       this.ws.on("error", (error) => {
         this.failureCount++;
-        // Use warn instead of error to avoid cluttering error logs for transient issues
         console.warn(`[Bank ${this.bankId}] WebSocket Connection Issue: ${error.message}`);
       });
 
@@ -85,9 +86,8 @@ export class CityCorpWebSocket {
   private scheduleReconnect() {
     if (this.isClosed) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    
+
     this.reconnectTimer = setTimeout(() => {
-      // Exponential backoff
       this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, this.maxReconnectDelay);
       this.connect();
     }, this.reconnectDelay);
@@ -101,72 +101,96 @@ export class CityCorpWebSocket {
       } catch (e) {}
     }
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.pingTimer) clearInterval(this.pingTimer);
+  }
+
+  private accountNameFromEvent(eventData: any): string | null {
+    return (
+      eventData?.corpAccount?.name ||
+      eventData?.newAccount?.name ||
+      eventData?.previousAccount?.name ||
+      eventData?.account?.name ||
+      eventData?.accountName ||
+      null
+    );
   }
 
   private async processEvent(payload: CityCorpEvent) {
     const eventName = payload.name || "Unknown";
     const eventData = payload.event || {};
 
-    if (eventName.includes("CorpAccount")) {
-      const accountName = eventData.corpAccount?.name;
-      const amount = Number(eventData.amount || 0);
+    if (eventName === "CorpDisbandEvent") {
+      console.error(`[Bank ${this.bankId}] RESERVE/CORP ALERT: CorpDisbandEvent`);
+      botManager.sendNotification(this.bankId, "🚨 **CityCorp**: The bank corporation was disbanded in-game. Freeze operations and check ownership.");
+      return;
+    }
 
-      if (!accountName || amount === 0) return;
+    if (eventName === "CorpTransferOwnershipEvent") {
+      const newOwner = eventData?.newOwner?.name || eventData?.newOwner?.uuid || "unknown";
+      botManager.sendNotification(this.bankId, `⚠️ **CityCorp ownership transferred** to ${newOwner}. API key holder may have changed.`);
+      return;
+    }
 
-      let transType: "deposit" | "withdraw" | null = null;
-      let finalAmountCents = Math.abs(Math.round(amount * 100));
-      
-      if (eventName.includes("Deposit")) {
-        transType = "deposit";
-      } else if (eventName.includes("Withdraw")) {
-        transType = "withdraw";
-      } else {
-        return;
-      }
+    const isAccountEvent = eventName.includes("CorpAccount");
+    const isTreasuryEvent = eventName === "CorpDepositEvent" || eventName === "CorpWithdrawEvent";
+    if (!isAccountEvent && !isTreasuryEvent) return;
 
-      try {
-        console.log(`[Bank ${this.bankId}] LIVE ${transType.toUpperCase()}: $${(finalAmountCents/100).toFixed(2)} for ${accountName}`);
+    const accountName = this.accountNameFromEvent(eventData);
+    const liveCents =
+      extractLiveBalanceCents(eventData.newAccount) ??
+      extractLiveBalanceCents({ balance: eventData.newBalance }) ??
+      extractLiveBalanceCents(eventData.corpAccount);
 
-        // Find the account
-        const accounts = await db.select().from(bankAccounts).where(
-          and(
-            eq(bankAccounts.bankId, this.bankId),
-            eq(bankAccounts.accountName, accountName)
-          )
-        );
+    const bank = await db.select().from(banks).where(eq(banks.id, this.bankId)).get();
+    if (!bank) return;
+    const client = clientForBank(bank);
 
-        if (accounts.length === 0) return;
-        const account = accounts[0];
+    if (accountName) {
+      const local = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.bankId, this.bankId), eq(bankAccounts.accountName, accountName))
+      ).get();
 
-        // Ensure we don't duplicate transactions coming from our own API calls.
-        // Easiest is to just log it as an external event if needed, but since we rely on caching balance,
-        // wait, if we apply it to balance here AND in bot_logic, we double count!
-        // To fix this safely: The original Discord Bot fetched balances from the API. We shouldn't store balance locally,
-        // OR we ONLY update balance via these webhooks!
-        // For MVP, since we do `bot_logic.ts` tx.update, let's just log it in `transactions` with "external" type.
-        
-        await db.transaction(async (tx) => {
-          // If it's deposit, increase balance. If withdraw, decrease balance.
-          const balanceChange = transType === "deposit" ? finalAmountCents : -finalAmountCents;
-          
-          await tx.update(bankAccounts)
-            .set({ balance: account.balance + balanceChange })
-            .where(eq(bankAccounts.id, account.id));
+      const previousLocal = local?.balance ?? null;
+      const newCents = await refreshAccountCache({
+        bankId: this.bankId,
+        accountName,
+        accountId: local?.id,
+        liveBalanceCents: liveCents,
+        client,
+      });
 
-          await tx.insert(transactions).values({
-            id: uuidv4(),
-            bankId: this.bankId,
-            fromAccountId: transType === "withdraw" ? account.id : null,
-            toAccountId: transType === "deposit" ? account.id : null,
-            amount: finalAmountCents,
-            type: 'external',
-            description: `Live ${transType} event`,
-            timestamp: new Date()
+      if (newCents == null) return;
+
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, this.bankId)).get();
+      const settleName = settlementAccountName(settings);
+      if (accountName.toLowerCase() === settleName.toLowerCase()) {
+        await db.update(clearinghouseBalances)
+          .set({ settlementCashCents: newCents })
+          .where(eq(clearinghouseBalances.bankId, this.bankId))
+          .catch(async () => {
+            const row = await db.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, this.bankId)).get();
+            if (!row) {
+              await db.insert(clearinghouseBalances).values({ bankId: this.bankId, balance: 0, settlementCashCents: newCents });
+            }
           });
-        });
-      } catch (e) {
-        console.error(`[Bank ${this.bankId}] Failed to save live transaction:`, e);
+
+        if (previousLocal != null && newCents < previousLocal - 100) {
+          const drop = previousLocal - newCents;
+          botManager.sendNotification(
+            this.bankId,
+            `🚨 **RESERVE_BREACH**: SETTLEMENT dropped $${(drop / 100).toFixed(2)} without a matching Slate debit (now $${(newCents / 100).toFixed(2)}). Outbound Onyx should be reviewed.`
+          );
+        }
+        const warn = settings?.settlementWarnCents || 0;
+        if (warn > 0 && newCents < warn) {
+          botManager.sendNotification(
+            this.bankId,
+            `⚠️ **Settlement low**: $${(newCents / 100).toFixed(2)} is under the warning threshold of $${(warn / 100).toFixed(2)}. Time to settle / self-fund.`
+          );
+        }
       }
+
+      console.log(`[Bank ${this.bankId}] LIVE ${eventName}: ${accountName} cache set to $${(newCents / 100).toFixed(2)}`);
     }
   }
 }
@@ -186,9 +210,12 @@ export async function initCityCorpEventSubscribers() {
   }
 }
 
-// Ensure when a new bank is added, it gets a socket.
 export function addCityCorpEventSubscriber(bankId: string, apiUuid: string, apiKey: string) {
-  if (activeSockets.has(bankId)) return;
+  const existing = activeSockets.get(bankId);
+  if (existing) {
+    existing.close();
+    activeSockets.delete(bankId);
+  }
   const ws = new CityCorpWebSocket(bankId, apiUuid, apiKey);
   ws.connect();
   activeSockets.set(bankId, ws);

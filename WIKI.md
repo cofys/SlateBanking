@@ -904,5 +904,23 @@ Slate Banking now features an integrated **Global Security Suite**, exclusively 
 * **CityCorp Only**: The Discord login button has been completely removed from the initial login screens for both Bank Staff and Citizens. 
 * **Authentication**: CityCorp (Minecraft) is the mandatory authentication layer for initial access. 
 * **Onboarding**: Upon initial login via CityCorp, players are prompted with a mandatory onboarding modal if their Legal Name (RP) and Home Address are missing from the global \`users\` database. This applies to all banks seamlessly.
-* **Discord Integration**: Players can continue linking their Discord inside the portal dashboard for bot notifications and Webhook alerts, but it is no longer permitted as a primary login gateway. 
+* **Discord Integration**: Players can continue linking their Discord inside the portal dashboard for bot notifications and Webhook alerts, but it is no longer permitted as a primary login gateway.
+
+### CityCorp Money Rails (Launch, Sep 2026)
+CityCorp in-game accounts are the source of truth. Slate is a cache + product layer. The bank owner's `uuid:crp_` token is the only corp credential; citizens are CityCorp subusers on specific accounts.
+
+**Book transfers** (portal, Discord, Onyx cash, payroll, subscriptions, loan principal/repay) use `PATCH /accounts/transfer/account`. They never `withdraw` then `deposit` (those APIs hit the API-key owner's personal wallet) and never `PATCH /pay`.
+
+**Same-bank**: one `transfer/account` under that bank's owner key. **Cross-bank (Onyx)**: A customer → A `SETTLEMENT`, then B `SETTLEMENT` → B customer, using each bank's own key. This avoids the 2% corp-to-corp API tax. Receiving bank pays out immediately from float. SETTLEMENT subaccounts are created with 0% CityCorp WITHDRAW/DEPOSIT fees. Net positions live on `clearinghouse_balances`; weekly/biweekly/monthly in-game net settlement is a later pass.
+
+**Fees**: CityCorp percents (0.25 = 0.25%) stack with Slate stored rates (200 = 2.00%). Combined keep-rate is `1-Π(1-r)`. Incremental bank fee is `max(0, slateRate - cityRate)` so VH's 2% is not double-charged if already set on the CityCorp account. Senders choose **fees from payment** (`from_payment`) vs **sender covers** (`sender_covers`). `POST /api/citizen/transfer/quote` and the citizen Send Payment tab show submitted vs received before confirm.
+
+**Teller cash window**: Staff deposit/withdraw still use owner-key `/accounts/deposit` and `/accounts/withdraw` (owner personal wallet ↔ named account). Staff same-bank transfer uses the book rail.
+
+**Loans**: Disbursement requires a named **Loan Pool** or **Default Corp Account** subaccount (`transfer/account`). Corp treasury cannot credit a named account (no treasury→account API), so treasury-only banks get a clear error instead of silently draining the owner's wallet. Repayments: pool/operating via `transfer/account`, else `PATCH /accounts/transfer/corp` into treasury.
+
+**Live events**: `wss://api.cityrp.org/citycorp` as the bank owner. Cache **SET** from `newBalance` / GET — never increment — so rails + the listener cannot double-count. SETTLEMENT drift (drop without a matching Slate debit) raises `RESERVE_BREACH` for RP/court. Owner theft of in-game funds cannot be technically stopped.
+
+**Schema**: `transactions.amount_submitted`, `amount_received`, `fee_payer_mode`, `fee_breakdown`; `bank_settings.settlement_account`, `settlement_floor_cents`, `settlement_warn_cents`, `default_fee_payer_mode`; `clearinghouse_balances.settlement_cash_cents`.
+
 

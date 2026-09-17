@@ -29,21 +29,33 @@ export function startCronJobs() {
       const duePayroll = await db.select().from(payrollJobs).where(and(eq(payrollJobs.isActive, true), lte(payrollJobs.nextRun, now)));
       for (const job of duePayroll) {
          const empAcc = (await db.select().from(bankAccounts).where(eq(bankAccounts.id, job.employerAccountId)))[0];
-         if (empAcc.balance >= job.amount) {
-            await db.update(bankAccounts).set({ balance: empAcc.balance - job.amount }).where(eq(bankAccounts.id, job.employerAccountId));
-            const eeAcc = (await db.select().from(bankAccounts).where(eq(bankAccounts.id, job.employeeAccountId)))[0];
-            await db.update(bankAccounts).set({ balance: eeAcc.balance + job.amount }).where(eq(bankAccounts.id, job.employeeAccountId));
-            
-            await db.insert(transactions).values({
-               id: uuidv4(),
-               bankId: job.bankId,
-               fromAccountId: job.employerAccountId,
-               toAccountId: job.employeeAccountId,
-               amount: job.amount,
-               type: 'transfer',
-               description: 'Automated Payroll Transfer',
-               timestamp: new Date()
-            });
+         const eeAcc = (await db.select().from(bankAccounts).where(eq(bankAccounts.id, job.employeeAccountId)))[0];
+         if (!empAcc || !eeAcc) continue;
+         if (empAcc.balance < job.amount) continue;
+         try {
+            const { executeSameBankBookTransfer } = await import("./citycorp_money");
+            if (empAcc.bankId === eeAcc.bankId) {
+              await executeSameBankBookTransfer({
+                sourceAccount: empAcc,
+                destAccount: eeAcc,
+                desiredCents: job.amount,
+                mode: "sender_covers",
+                description: "Automated Payroll Transfer",
+              });
+            } else {
+              const { executeCrossBankSettledTransfer } = await import("./citycorp_money");
+              await executeCrossBankSettledTransfer({
+                sourceAccount: empAcc,
+                destAccount: eeAcc,
+                desiredCents: job.amount,
+                mode: "sender_covers",
+                description: "Automated Payroll Transfer",
+              });
+            }
+         } catch (e) {
+            console.error("[Cron] payroll failed", e);
+            continue;
+         }
 
             let nextRun = new Date(job.nextRun);
             if (job.frequency === 'weekly') nextRun.setDate(nextRun.getDate() + 7);
@@ -51,35 +63,44 @@ export function startCronJobs() {
             else if (job.frequency === 'monthly') nextRun.setMonth(nextRun.getMonth() + 1);
 
             await db.update(payrollJobs).set({ nextRun }).where(eq(payrollJobs.id, job.id));
-         }
       }
 
       // Subscription Processing
       const dueSubs = await db.select().from(subscriptions).where(and(eq(subscriptions.isActive, true), lte(subscriptions.nextRun, now)));
       for (const sub of dueSubs) {
          const custAcc = (await db.select().from(bankAccounts).where(eq(bankAccounts.id, sub.customerAccountId)))[0];
-         if (custAcc.balance >= sub.amount) {
-            await db.update(bankAccounts).set({ balance: custAcc.balance - sub.amount }).where(eq(bankAccounts.id, sub.customerAccountId));
-            const bAcc = (await db.select().from(bankAccounts).where(eq(bankAccounts.id, sub.billerAccountId)))[0];
-            await db.update(bankAccounts).set({ balance: bAcc.balance + sub.amount }).where(eq(bankAccounts.id, sub.billerAccountId));
-            
-            await db.insert(transactions).values({
-               id: uuidv4(),
-               bankId: sub.bankId,
-               fromAccountId: sub.customerAccountId,
-               toAccountId: sub.billerAccountId,
-               amount: sub.amount,
-               type: 'transfer',
-               description: sub.description || 'Automated Subscription Billing',
-               timestamp: new Date()
-            });
+         const bAcc = (await db.select().from(bankAccounts).where(eq(bankAccounts.id, sub.billerAccountId)))[0];
+         if (!custAcc || !bAcc) continue;
+         if (custAcc.balance < sub.amount) continue;
+         try {
+            const { executeSameBankBookTransfer, executeCrossBankSettledTransfer } = await import("./citycorp_money");
+            if (custAcc.bankId === bAcc.bankId) {
+              await executeSameBankBookTransfer({
+                sourceAccount: custAcc,
+                destAccount: bAcc,
+                desiredCents: sub.amount,
+                mode: "sender_covers",
+                description: sub.description || "Automated Subscription Billing",
+              });
+            } else {
+              await executeCrossBankSettledTransfer({
+                sourceAccount: custAcc,
+                destAccount: bAcc,
+                desiredCents: sub.amount,
+                mode: "sender_covers",
+                description: sub.description || "Automated Subscription Billing",
+              });
+            }
+         } catch (e) {
+            console.error("[Cron] subscription failed", e);
+            continue;
+         }
 
             let nextRun = new Date(sub.nextRun);
             if (sub.frequency === 'weekly') nextRun.setDate(nextRun.getDate() + 7);
             else if (sub.frequency === 'monthly') nextRun.setMonth(nextRun.getMonth() + 1);
 
             await db.update(subscriptions).set({ nextRun }).where(eq(subscriptions.id, sub.id));
-         }
       }
 
       // Loan Processing is handled by processDueLoanRepayments() in loan_processor.ts

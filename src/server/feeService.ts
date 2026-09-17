@@ -315,23 +315,7 @@ export async function recordBankFee(
     timestamp
   });
 
-  // If CityCorp credentials exist, attempt in-game deposit to the default corp account
-  try {
-    const bank = await dbOrTx.select().from(banks).where(eq(banks.id, bankId)).get();
-    const { bankSettings } = await import("../db/schema");
-    const settings = await dbOrTx.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-    if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey ) {
-      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-      if (settings?.feeCollectionAccount) {
-        await client.deposit(settings.feeCollectionAccount, amountCents / 100);
-      } else {
-        await client.payCorporation(amountCents / 100);
-      }
-    }
-  } catch (e) {
-    console.warn(`[recordBankFee] Remote deposit skipped:`, e);
-  }
-
+  // Ledger only. Never pull from the API-key owner's personal wallet via /pay or /deposit.
   return {
     success: true,
     txId,

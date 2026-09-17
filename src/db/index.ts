@@ -76,6 +76,10 @@ function ensureDatabaseSchemaSynced() {
   createTableIfNotExists("payroll_jobs", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, employer_account_id TEXT NOT NULL, employee_account_id TEXT NOT NULL, amount INTEGER NOT NULL, frequency TEXT NOT NULL, next_run INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("subscriptions", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, biller_account_id TEXT NOT NULL, customer_account_id TEXT NOT NULL, amount INTEGER NOT NULL, frequency TEXT NOT NULL, next_run INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("clearinghouse_balances", "bank_id TEXT PRIMARY KEY NOT NULL, balance INTEGER DEFAULT 0 NOT NULL");
+  checkAndAddColumn("clearinghouse_balances", "last_settled", "INTEGER");
+  checkAndAddColumn("clearinghouse_balances", "settlement_cash_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("clearinghouse_balances", "slate_advance_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("clearinghouse_balances", "last_drift_alert_at", "INTEGER");
   createTableIfNotExists("clearinghouse_settlements", "id TEXT PRIMARY KEY NOT NULL, from_bank_id TEXT NOT NULL, to_bank_id TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("inter_bank_transfers", "id TEXT PRIMARY KEY NOT NULL, from_bank_id TEXT NOT NULL, to_bank_id TEXT NOT NULL, from_account_id TEXT NOT NULL, to_account_id TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("onyx_settings", "id TEXT PRIMARY KEY NOT NULL");
@@ -209,6 +213,11 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "interest_calculation_method", "TEXT DEFAULT 'current_balance'");
   checkAndAddColumn("bank_settings", "interest_eligible_account_types", "TEXT");
   checkAndAddColumn("bank_settings", "default_corp_account", "TEXT");
+  checkAndAddColumn("bank_settings", "settlement_account", "TEXT");
+  checkAndAddColumn("bank_settings", "settlement_floor_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "settlement_warn_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "slate_advance_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "default_fee_payer_mode", "TEXT DEFAULT 'from_payment'");
 
   // Transactions table
   checkAndAddColumn("transactions", "from_account_id", "TEXT");
@@ -217,6 +226,10 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("transactions", "is_flagged", "INTEGER DEFAULT 0");
   checkAndAddColumn("transactions", "category", "TEXT");
   checkAndAddColumn("transactions", "fee_type", "TEXT");
+  checkAndAddColumn("transactions", "amount_submitted", "INTEGER");
+  checkAndAddColumn("transactions", "amount_received", "INTEGER");
+  checkAndAddColumn("transactions", "fee_payer_mode", "TEXT");
+  checkAndAddColumn("transactions", "fee_breakdown", "TEXT");
 
   // Loans table
   checkAndAddColumn("loans", "purpose", "TEXT");
