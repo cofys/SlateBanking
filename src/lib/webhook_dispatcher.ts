@@ -1,5 +1,5 @@
 import { db } from "../db/index";
-import { discordWebhooks, bankSettings } from "../db/schema";
+import { discordWebhooks, bankSettings, banks } from "../db/schema";
 import { eq, or } from "drizzle-orm";
 import { isAllowedWebhookUrl } from "../server/middleware";
 
@@ -11,12 +11,38 @@ export interface WebhookEmbed {
   footerText?: string;
 }
 
+async function webhookIdentity(bankId: string): Promise<{ username: string; color: number; avatar?: string; footer: string }> {
+  if (bankId === "global") {
+    return { username: "Notifications", color: 0x4f46e5, footer: "Platform" };
+  }
+  const bank = await db.select({
+    name: banks.name,
+    brandingColor: banks.brandingColor,
+    logoUrl: banks.logoUrl,
+  }).from(banks).where(eq(banks.id, bankId)).get();
+  const settings = await db.select({
+    logoUrl: bankSettings.logoUrl,
+    discordFooter: bankSettings.discordFooter,
+  }).from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+  const raw = (bank?.brandingColor || "#4f46e5").replace("#", "");
+  const color = /^[0-9a-fA-F]{6}$/.test(raw) ? parseInt(raw, 16) : 0x4f46e5;
+  const avatar = [settings?.logoUrl, bank?.logoUrl].find((u) => !!u && /^https:\/\//i.test(u)) || undefined;
+  return {
+    username: (bank?.name || "Bank").slice(0, 80),
+    color,
+    avatar,
+    footer: ((settings?.discordFooter || bank?.name || "") as string).slice(0, 80),
+  };
+}
+
 export async function dispatchDiscordWebhook(
   bankId: string,
   eventName: string,
   embed: WebhookEmbed
 ) {
   try {
+    const identity = await webhookIdentity(bankId);
+
     // 1. Check legacy single discordWebhookUrl in bankSettings
     if (bankId !== "global") {
       const settingsList = await db
@@ -27,7 +53,7 @@ export async function dispatchDiscordWebhook(
       if (settingsList.length > 0 && settingsList[0].discordWebhookUrl) {
         const url = settingsList[0].discordWebhookUrl;
         if (isAllowedWebhookUrl(url)) {
-          sendWebhookPayload(url, embed, eventName);
+          sendWebhookPayload(url, embed, eventName, identity);
         }
       }
     }
@@ -55,7 +81,7 @@ export async function dispatchDiscordWebhook(
       }
 
       if (eventList.includes(eventName) || eventList.includes("*")) {
-        sendWebhookPayload(hook.url, embed, eventName);
+        sendWebhookPayload(hook.url, embed, eventName, identity);
       }
     }
   } catch (err) {
@@ -63,7 +89,12 @@ export async function dispatchDiscordWebhook(
   }
 }
 
-async function sendWebhookPayload(url: string, embed: WebhookEmbed, eventName: string) {
+async function sendWebhookPayload(
+  url: string,
+  embed: WebhookEmbed,
+  eventName: string,
+  identity?: { username: string; color: number; avatar?: string; footer: string }
+) {
   if (!isAllowedWebhookUrl(url)) {
     console.warn("[WebhookDispatcher] Blocked non-Discord webhook URL");
     return;
@@ -71,16 +102,16 @@ async function sendWebhookPayload(url: string, embed: WebhookEmbed, eventName: s
 
   try {
     const payload = {
-      username: "Slate SaaS • Notification Engine",
-      avatar_url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=128&q=80",
+      username: identity?.username || "Bank",
+      avatar_url: identity?.avatar,
       embeds: [
         {
           title: embed.title,
           description: embed.description,
-          color: embed.color || 0x4f46e5,
+          color: embed.color || identity?.color || 0x4f46e5,
           fields: embed.fields || [],
           footer: {
-            text: embed.footerText || `Event: ${eventName} • Slate SaaS Onyx PSP`
+            text: embed.footerText || identity?.footer || eventName
           },
           timestamp: new Date().toISOString()
         }

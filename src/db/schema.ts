@@ -199,6 +199,13 @@ export const bankSettings = sqliteTable("bank_settings", {
   loanCureDefaultOnPay: integer("loan_cure_default_on_pay", { mode: "boolean" }).default(false),
   loanDaysInYear: integer("loan_days_in_year").default(365),
   interestDaysInYear: integer("interest_days_in_year").default(365),
+
+  // Public / Discord branding copy (owners customize; platform stays invisible)
+  tagline: text("tagline"),
+  discordWelcome: text("discord_welcome"),
+  discordFooter: text("discord_footer"),
+  discordBotActivity: text("discord_bot_activity"),
+  discordShowStats: integer("discord_show_stats", { mode: "boolean" }).default(true),
 });
 
 export const escrows = sqliteTable("escrows", {

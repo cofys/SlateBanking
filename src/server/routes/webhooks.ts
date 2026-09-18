@@ -83,12 +83,10 @@ webhooksRouter.post("/api/banks/:bankId/webhooks/test", requireBankStaff, async 
     const { url } = req.body;
 
     await dispatchDiscordWebhook(bankId, "test_ping", {
-      title: "🔔 Slate SaaS Discord Webhook Connected!",
-      description: "Your Discord webhook channel has been successfully linked to Slate SaaS & Onyx PSP event stream.",
-      color: 0x4f46e5,
+      title: "Webhook connected",
+      description: "This channel will receive bank alerts from the web portal.",
       fields: [
-        { name: "Status", value: "🟢 ONLINE & ACTIVE", inline: true },
-        { name: "Target Bank ID", value: `\`${bankId}\``, inline: true }
+        { name: "Status", value: "Online", inline: true },
       ]
     });
 

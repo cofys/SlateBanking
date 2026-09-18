@@ -188,6 +188,8 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
         vaultTiers: settings.vaultTiers,
         defaultFeePayerMode: settings.defaultFeePayerMode,
         savingsApyPercent: settings.savingsApyPercent,
+        tagline: settings.tagline,
+        discordShowStats: settings.discordShowStats,
       } : null;
 
       const safeBank = {

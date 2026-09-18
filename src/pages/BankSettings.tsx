@@ -34,6 +34,8 @@ export function BankSettings() {
       savingsApyPercent: Math.round(parseFloat(formData.get("savingsApyPercent") as string) * 100) || 300,
       interBankWireThreshold: Math.floor(parseFloat(formData.get("interBankWireThreshold") as string) * 100) || 5000000,
       colorScheme: formData.get("colorScheme"),
+      brandingColor: formData.get("brandingColor"),
+      tagline: formData.get("tagline"),
       logoUrl: formData.get("logoUrl"),
       loginBgUrl: formData.get("loginBgUrl"),
       supportEmail: formData.get("supportEmail"),
@@ -93,6 +95,10 @@ export function BankSettings() {
       loanAllowCitizenApply: formData.get("loanAllowCitizenApply") === "on",
       loanCureDefaultOnPay: formData.get("loanCureDefaultOnPay") === "on",
       loanDaysInYear: parseInt(formData.get("loanDaysInYear") as string, 10) === 360 ? 360 : 365,
+      discordWelcome: formData.get("discordWelcome"),
+      discordFooter: formData.get("discordFooter"),
+      discordBotActivity: formData.get("discordBotActivity"),
+      discordShowStats: formData.get("discordShowStats") === "on",
     };
 
     fetch(`/api/banks/${bank.id}/settings`, {
@@ -225,12 +231,47 @@ export function BankSettings() {
                 className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                 style={{ WebkitAppearance: "none", MozAppearance: "none", appearance: "none" }}
               >
-                <option value="indigo">Slate Indigo (Default)</option>
-                <option value="emerald">Wealth Emerald</option>
-                <option value="rose">Coral Rose</option>
-                <option value="amber">Gold Standard</option>
-                <option value="zinc">Minimalist Monohrome</option>
+                <option value="indigo">Indigo</option>
+                <option value="emerald">Emerald</option>
+                <option value="rose">Rose</option>
+                <option value="amber">Gold</option>
+                <option value="zinc">Monochrome</option>
               </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Accent Color</label>
+              <div className="flex items-center gap-3 bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2">
+                <input
+                  name="brandingColor"
+                  type="color"
+                  defaultValue={settings?.brandingColor || "#4f46e5"}
+                  className="h-8 w-10 rounded border-0 bg-transparent cursor-pointer"
+                />
+                <input
+                  type="text"
+                  defaultValue={settings?.brandingColor || "#4f46e5"}
+                  onInput={(e) => {
+                    const hex = (e.target as HTMLInputElement).value;
+                    const color = (e.currentTarget.parentElement?.querySelector('input[name="brandingColor"]') as HTMLInputElement);
+                    if (color && /^#[0-9a-fA-F]{6}$/.test(hex)) color.value = hex;
+                  }}
+                  placeholder="#4f46e5"
+                  className="flex-1 bg-transparent text-sm text-white font-mono focus:outline-none"
+                />
+              </div>
+              <p className="text-xs text-white/40 mt-1.5">Used on Discord embeds, the citizen portal, and staff chrome. The named scheme above still drives Tailwind accents.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Tagline</label>
+              <input
+                name="tagline"
+                type="text"
+                maxLength={120}
+                placeholder="The bank of the city."
+                defaultValue={settings?.tagline || ""}
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+              />
+              <p className="text-xs text-white/40 mt-1.5">Shown on the citizen portal header and Discord panels.</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Brand Logo URL</label>
@@ -350,17 +391,70 @@ export function BankSettings() {
         <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-2">
             <Bot className="text-indigo-400" size={20} />
-            Interactive Discord Bot Channel GUIs
+            Discord
           </div>
           <p className="text-xs text-white/60 mb-6">
-            Spawn fancy button-based interactive interfaces directly in your Discord channels that auto-update live!
+            Customers only need <code className="text-white/80 bg-white/10 px-1 rounded">/bank</code>. Channel panels live in Discord and refresh on their own — spawn them here, not with extra slash commands.
           </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Welcome copy</label>
+              <textarea
+                name="discordWelcome"
+                rows={3}
+                maxLength={500}
+                placeholder="Welcome to the bank. Open your dashboard, send a transfer, or visit the web portal."
+                defaultValue={settings?.discordWelcome || ""}
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors resize-y min-h-[80px]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Embed footer</label>
+              <input
+                name="discordFooter"
+                type="text"
+                maxLength={80}
+                placeholder={bank?.name || "Your bank"}
+                defaultValue={settings?.discordFooter || ""}
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Bot status text</label>
+              <input
+                name="discordBotActivity"
+                type="text"
+                maxLength={80}
+                placeholder={`/bank · ${bank?.name || "Bank"}`}
+                defaultValue={settings?.discordBotActivity || ""}
+                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+              />
+              <p className="text-xs text-white/40 mt-1.5">What the bot shows as its Discord presence when the bank is open.</p>
+            </div>
+          </div>
+          <label className="flex items-center gap-4 cursor-pointer group mb-6">
+            <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.discordShowStats !== false ? 'bg-indigo-500' : 'bg-white/10'}`}>
+              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.discordShowStats !== false ? 'translate-x-4' : 'translate-x-0'}`}></div>
+            </div>
+            <input
+              type="checkbox"
+              name="discordShowStats"
+              className="hidden"
+              defaultChecked={settings?.discordShowStats !== false}
+              onChange={(e) => setSettings({ ...settings, discordShowStats: e.target.checked })}
+            />
+            <div className="flex flex-col">
+              <span className="text-sm group-hover:text-indigo-400 transition-colors">Show deposit totals on the public panel</span>
+              <span className="text-xs text-white/50">Turn off if you don't want live deposit and account counts in Discord.</span>
+            </div>
+          </label>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-[#15151e] p-4 rounded-lg border border-white/5">
-              <h4 className="text-sm font-semibold text-white mb-2">Public Citizen GUI Channel</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">Public lobby</h4>
               <p className="text-xs text-white/50 mb-4">
-                The main channel where customers check balance, request loans, and transfer money using buttons.
+                Auto-updating panel in a customer channel. Dashboard, transfer, rates, and the web portal — no extra slash commands.
               </p>
               <div className="flex gap-2">
                 <input 
@@ -396,9 +490,9 @@ export function BankSettings() {
             </div>
 
             <div className="bg-[#15151e] p-4 rounded-lg border border-white/5">
-              <h4 className="text-sm font-semibold text-white mb-2">Staff Only Panel Channel</h4>
+              <h4 className="text-sm font-semibold text-white mb-2">Staff desk</h4>
               <p className="text-xs text-white/50 mb-4">
-                A staff-only channel with buttons for bank tellers to approve loans, inspect users, and manage liquidity.
+                Auto-updating teller panel: vault, loan queue, customer lookup, and cash window.
               </p>
               <div className="flex gap-2">
                 <input 
@@ -447,7 +541,7 @@ export function BankSettings() {
               }}
               className="bg-white/10 hover:bg-white/20 text-white text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5"
             >
-              🔄 Refresh Channel Embeds Live
+              🔄 Refresh panels now
             </button>
           </div>
         </div>

@@ -41,22 +41,25 @@ export class BotManager {
 
     try {
       const { db } = await import("../db/index");
-      const { banks } = await import("../db/schema");
+      const { banks, bankSettings } = await import("../db/schema");
       const { eq } = await import("drizzle-orm");
       
       const bank = await db.select({ name: banks.name, maintenanceMode: banks.maintenanceMode }).from(banks).where(eq(banks.id, bankId)).get();
       if (!bank) return;
+      const settings = await db.select({ discordBotActivity: bankSettings.discordBotActivity }).from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
 
       const inMaintenance = isMaintenance !== undefined ? isMaintenance : !!bank.maintenanceMode;
+      const customActivity = (settings?.discordBotActivity || '').trim();
 
       if (inMaintenance) {
         instance.client.user.setPresence({
-          activities: [{ name: '⚠️ Maintenance Mode', state: '⚠️ Maintenance Mode', type: ActivityType.Custom }],
+          activities: [{ name: 'Closed for maintenance', state: 'Closed for maintenance', type: ActivityType.Custom }],
           status: 'dnd',
         });
       } else {
+        const label = customActivity || `/bank · ${bank.name}`;
         instance.client.user.setPresence({
-          activities: [{ name: `/bank | ${bank.name}`, state: `/bank | ${bank.name}`, type: ActivityType.Custom }],
+          activities: [{ name: label, state: label, type: ActivityType.Custom }],
           status: 'online',
         });
       }
@@ -161,13 +164,15 @@ export class BotManager {
      if (instance?.status === 'online') {
         try {
           const { db } = await import("../db/index");
-          const { bankSettings } = await import("../db/schema");
+          const { bankSettings, banks } = await import("../db/schema");
           const { eq } = await import("drizzle-orm");
           const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+          const bank = await db.select({ name: banks.name }).from(banks).where(eq(banks.id, bankId)).get();
           if (settings?.staffChannelId) {
              const channel = await instance.client.channels.fetch(settings.staffChannelId);
              if (channel && channel.isTextBased() && 'send' in channel) {
-                await (channel as any).send({ content: `**[Slate Notification]** ${message}` });
+                const prefix = bank?.name ? `**[${bank.name}]**` : '';
+                await (channel as any).send({ content: `${prefix} ${message}`.trim() });
                 return;
              }
           }

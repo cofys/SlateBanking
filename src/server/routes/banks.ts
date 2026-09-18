@@ -1452,6 +1452,8 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
       res.json({
         ...settings,
         customDomain: bank?.customDomain || "",
+        brandingColor: bank?.brandingColor || "#4f46e5",
+        discordClientId: bank?.discordClientId || "",
         cityCorpAppId: bank?.cityCorpAppId || "",
         hasCityCorpAppSecret: !!bank?.cityCorpAppSecret,
         maintenanceMode: bank?.maintenanceMode || false,
@@ -1476,7 +1478,11 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
          await db.update(banks).set({ discordClientSecret: req.body.discordClientSecret }).where(eq(banks.id, bId));
       }
       if (req.body.brandingColor !== undefined) {
-         await db.update(banks).set({ brandingColor: req.body.brandingColor }).where(eq(banks.id, bId));
+         const raw = String(req.body.brandingColor).trim();
+         const hex = raw.startsWith("#") ? raw : `#${raw}`;
+         if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+           await db.update(banks).set({ brandingColor: hex.toLowerCase() }).where(eq(banks.id, bId));
+         }
       }
       if (req.body.logoUrl !== undefined) {
          await db.update(banks).set({ logoUrl: req.body.logoUrl }).where(eq(banks.id, bId));
@@ -1570,6 +1576,11 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         loanCureDefaultOnPay: req.body.loanCureDefaultOnPay,
         loanDaysInYear: req.body.loanDaysInYear,
         interestDaysInYear: req.body.interestDaysInYear,
+        tagline: req.body.tagline,
+        discordWelcome: req.body.discordWelcome,
+        discordFooter: req.body.discordFooter,
+        discordBotActivity: req.body.discordBotActivity,
+        discordShowStats: req.body.discordShowStats,
       };
 
       const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId));
@@ -1625,6 +1636,15 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         }
       } catch (e) {
         console.warn("[settings] SETTLEMENT provision skipped", e);
+      }
+
+      try {
+        const { botManager } = await import("../../lib/bot_manager");
+        await botManager.updateBankBotPresence(bId);
+        const { refreshBankChannelGUIs } = await import("../../lib/bot_logic");
+        await refreshBankChannelGUIs(bId);
+      } catch (e) {
+        console.warn("[settings] discord refresh skipped", e);
       }
 
       res.json(data);

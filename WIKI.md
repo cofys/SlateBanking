@@ -153,7 +153,7 @@ Every bank defined in the platform can attach a unique Discord Bot Token to its 
 - **Provisioning**: When a bank is created or updated, `botManager.provisionBankBot(bankId, token)` spins up a new independent bot process logged in under that token.
 - **Shutdowns**: `botManager.stopBankBot(bankId)` safely terminates the client.
 - **Status API**: Exposes `/api/bots/status` for the Admin Dashboard to visualize real-time WebSocket connection states of every client.
-- **Use Case**: Allows individual banks to offer slash commands (`/balance`, `/transfer`, `/pay`) and ticket channel management internally within their respective Discord Guilds, all routing back directly to the core SQLite models.
+- **Use Case**: Each bank bot exposes a single slash command (`/bank`) plus auto-updating public and staff channel panels spawned from Bank Settings. Copy, color, logo, footer, presence, and stats are owned by the bank.
 
 ---
 
@@ -267,7 +267,7 @@ To expand Slate SaaS, always follow the tri-level approach:
 ## Changelog
 
 ### June 25th 2026 Update
-- **Bot Interactions**: Transitioned from purely slash commands to rich Button/Modal interactions. Admins can spawn a persistent interactive banking portal message in a channel using `/spawn_menu`.
+- **Bot Interactions**: Transitioned from purely slash commands to rich Button/Modal interactions. Admins spawn persistent public/staff channel panels from Bank Settings (`POST /api/banks/:bankId/spawn-discord-gui`). The only customer slash command is `/bank`.
 - **Financial Products**: Added new database schemas for `loanProducts`, `creditProducts`, and `bankCustomers` (for KYC and notes). Introduced a new `BankProducts.tsx` page for managing these configured products.
 - **CityCorp Dev Portal (OAuth)**: Added a placeholder on the Citizen Portal dashboard preparing for the new CityCorp OAuth linking process, replacing the manual in-game deposit workflow.
 

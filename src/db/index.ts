@@ -245,6 +245,11 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "loan_cure_default_on_pay", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "loan_days_in_year", "INTEGER DEFAULT 365");
   checkAndAddColumn("bank_settings", "interest_days_in_year", "INTEGER DEFAULT 365");
+  checkAndAddColumn("bank_settings", "tagline", "TEXT");
+  checkAndAddColumn("bank_settings", "discord_welcome", "TEXT");
+  checkAndAddColumn("bank_settings", "discord_footer", "TEXT");
+  checkAndAddColumn("bank_settings", "discord_bot_activity", "TEXT");
+  checkAndAddColumn("bank_settings", "discord_show_stats", "INTEGER DEFAULT 1");
 
   // Transactions table
   checkAndAddColumn("transactions", "from_account_id", "TEXT");

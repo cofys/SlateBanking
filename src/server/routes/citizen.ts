@@ -98,6 +98,7 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
         vaultTiers: s.vaultTiers,
         defaultFeePayerMode: s.defaultFeePayerMode,
         savingsApyPercent: s.savingsApyPercent,
+        tagline: s.tagline,
       }));
       const allSettings = publicizeSettings(rawSettings);
 

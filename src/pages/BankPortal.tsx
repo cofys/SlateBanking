@@ -346,9 +346,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 Client Portal
               </span>
             </div>
-            <p className="text-zinc-400 text-xs mt-1 flex items-center gap-2 justify-center md:justify-start font-mono">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Secure 256-Bit Encrypted TLS Connection
+            <p className="text-zinc-400 text-xs mt-1 flex items-center gap-2 justify-center md:justify-start">
+              {bank.settings?.tagline
+                ? <span>{bank.settings.tagline}</span>
+                : <>
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="font-mono">Secure connection</span>
+                  </>
+              }
             </p>
           </div>
         </div>
