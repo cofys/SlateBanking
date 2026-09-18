@@ -193,7 +193,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
       res.json({ ...safeBank, settings });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message || "Internal error", stack: e.stack });
+      res.status(500).json({ error: "Internal error" });
     }
   });
 
@@ -397,18 +397,14 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
       const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, inv.billerAccountId));
       if (!destAccount) return res.status(404).json({ error: "Destination biller account not found" });
 
-      await db.update(bankAccounts).set({ balance: sourceAccount.balance - inv.amount }).where(eq(bankAccounts.id, sourceAccount.id));
-      await db.update(bankAccounts).set({ balance: destAccount.balance + inv.amount }).where(eq(bankAccounts.id, destAccount.id));
-
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: sourceAccount.bankId,
-        fromAccountId: sourceAccount.id,
-        toAccountId: destAccount.id,
-        type: "transfer",
-        amount: inv.amount,
+      const { executeBookTransfer } = await import("../../lib/citycorp_money");
+      await executeBookTransfer({
+        sourceAccount,
+        destAccount,
+        desiredCents: inv.amount,
+        mode: "from_payment",
         description: `Invoice Payment: ${inv.description || inv.id}`,
-        timestamp: new Date()
+        type: "transfer",
       });
 
       await db.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
@@ -422,9 +418,8 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
 
 portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, transactions, banks } = await import("../../db/schema");
+    const { bankAccounts, banks } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
 
     try {
       const { fromAccountId, toAccountId, amount } = req.body;
@@ -463,41 +458,22 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
       if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
-      const { sql, gte } = await import("drizzle-orm");
-      await db.transaction(async (tx) => {
-        // Atomic deduction with balance check constraint
-        const deductResult = await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} - ${amnt}` })
-          .where(and(
-            eq(bankAccounts.id, sourceAccount.id),
-            gte(bankAccounts.balance, amnt),
-            eq(bankAccounts.isActive, true),
-            eq(bankAccounts.isFrozen, false)
-          ));
-
-        await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} + ${amnt}` })
-          .where(and(
-            eq(bankAccounts.id, destAccount.id),
-            eq(bankAccounts.isActive, true),
-            eq(bankAccounts.isFrozen, false)
-          ));
-
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: sourceAccount.bankId,
-          fromAccountId: sourceAccount.id,
-          toAccountId: destAccount.id,
-          type: "transfer",
-          amount: amnt,
-          description: `Citizen Portal Transfer to ${toAccountId.substring(0, 8)}`,
-          timestamp: new Date()
-        });
+      const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
+      await executeSameBankBookTransfer({
+        sourceAccount,
+        destAccount,
+        desiredCents: amnt,
+        mode: "from_payment",
+        description: `Citizen Portal Transfer to ${toAccountId.substring(0, 8)}`,
+        type: "transfer",
       });
 
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
+      if (e?.name === "MoneyRailError") {
+        return res.status(400).json({ error: e.message || "Transfer failed" });
+      }
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -981,19 +957,16 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
       interestRate,
       nextPaymentDate,
       purpose: purpose || "Personal loan request",
-      status: "active", // Approved & active
+      status: "pending",
       createdAt: new Date()
     });
-
-    // Credit account balance immediately upon approval
-    await db.update(bankAccounts).set({ balance: acc.balance + loanAmountCents }).where(eq(bankAccounts.id, acc.id));
 
     res.json({
       success: true,
       loan: {
         id: loanId,
         amount: loanAmountCents,
-        status: "active"
+        status: "pending"
       }
     });
   } catch (e: any) {
@@ -1005,9 +978,8 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
 // Portal Loan Repayment API
 portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
-  const { loans, bankAccounts, transactions } = await import("../../db/schema");
+  const { loans, bankAccounts } = await import("../../db/schema");
   const { eq, and } = await import("drizzle-orm");
-  const { v4: uuidv4 } = await import("uuid");
 
   try {
     const { loanId, accountId, amount } = req.body;
@@ -1027,26 +999,26 @@ portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: exp
     const isAuthorized = await isUserAccountOwnerOrMember(acc, candidateIds);
     if (!isAuthorized) return res.status(403).json({ error: "Unauthorized" });
 
-    const newRemaining = Math.max(0, loan.remainingAmount - amountCents);
-    const newStatus = newRemaining === 0 ? "paid" : loan.status;
-
-    await db.update(bankAccounts).set({ balance: acc.balance - amountCents }).where(eq(bankAccounts.id, acc.id));
-    await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus as any }).where(eq(loans.id, loanId));
-
-    await db.insert(transactions).values({
-      id: uuidv4(),
+    const { collectToPoolOrTreasury } = await import("../../lib/citycorp_money");
+    await collectToPoolOrTreasury({
       bankId,
-      fromAccountId: acc.id,
-      toAccountId: null,
-      amount: amountCents,
-      type: "transfer",
+      fromAccount: acc,
+      amountCents,
       description: `Loan Repayment (${loanId})`,
-      timestamp: new Date()
+      type: "loan_payment",
     });
+
+    const newRemaining = Math.max(0, loan.remainingAmount - amountCents);
+    const newStatus = newRemaining === 0 ? "paid_off" : loan.status;
+
+    await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus as any }).where(eq(loans.id, loanId));
 
     res.json({ success: true, remainingAmount: newRemaining, status: newStatus });
   } catch (e: any) {
     console.error("[LoanRepayAPI] Error:", e);
-    res.status(500).json({ error: e.message || "Failed to process loan repayment" });
+    if (e?.name === "MoneyRailError") {
+      return res.status(400).json({ error: e.message || "Loan repayment failed" });
+    }
+    res.status(500).json({ error: "Failed to process loan repayment" });
   }
 });

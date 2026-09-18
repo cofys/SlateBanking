@@ -1,14 +1,24 @@
 import { db } from "../db/index";
-import { banks, bankAccounts, bankSettings, loans, transactions } from "../db/schema";
+import { banks, bankAccounts, bankSettings } from "../db/schema";
 import { eq, and, gt } from "drizzle-orm";
-import { v4 as uuidv4 } from "uuid";
 import { dispatchDiscordWebhook } from "./webhook_dispatcher";
+
+async function resolveInterestPool(bankId: string, poolName?: string | null) {
+  const name = poolName?.trim();
+  if (!name) return null;
+  return await db.select().from(bankAccounts).where(
+    and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.accountName, name))
+  ).get() || await db.select().from(bankAccounts).where(
+    and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.id, name))
+  ).get() || null;
+}
 
 export async function processYieldsAndAutomations(targetBankId?: string) {
   console.log(`[YieldEngine] Starting automated yield distribution & background jobs${targetBankId ? ` for bank ${targetBankId}` : ""}...`);
 
   try {
-    // --- 1. SAVINGS & YIELD APY PAYOUTS ---
+    // --- SAVINGS APY PAYOUTS (CityCorp pool only; never mint) ---
+    // Loan interest is owned by loan_processor.accrueLoanInterest — do not accrue here.
     const allBanks = targetBankId 
       ? await db.select().from(banks).where(eq(banks.id, targetBankId))
       : await db.select().from(banks);
@@ -20,7 +30,22 @@ export async function processYieldsAndAutomations(targetBankId?: string) {
       const apyBasisPoints = settings?.savingsApyPercent || 300; // 3.00% default
       if (apyBasisPoints <= 0) continue;
 
-      // Yield for non-zero active customer accounts
+      // Scheduled (daily/weekly/monthly) payouts are handled by the hourly cron engine.
+      const schedule = settings?.interestPaymentSchedule;
+      if (schedule && schedule !== "manual") continue;
+
+      // At most one daily pass — this job runs every 15 minutes.
+      const lastAccrual = settings?.lastInterestAccrualAt;
+      if (lastAccrual && (Date.now() - new Date(lastAccrual).getTime()) < 24 * 60 * 60 * 1000) {
+        continue;
+      }
+
+      let poolAcc = await resolveInterestPool(bank.id, settings?.interestPoolAccount);
+      if (!poolAcc) {
+        // No interest pool → skip/defer. Do not locally increment balances.
+        continue;
+      }
+
       const activeAccounts = await db
         .select()
         .from(bankAccounts)
@@ -31,38 +56,44 @@ export async function processYieldsAndAutomations(targetBankId?: string) {
           gt(bankAccounts.balance, 0)
         ));
 
+      const { executeSameBankBookTransfer } = await import("./citycorp_money");
       let totalYieldPaidCents = 0;
       let countAccounts = 0;
 
       for (const acc of activeAccounts) {
-        // Daily yield = Balance * (APY / 10000) / 365
+        if (acc.id === poolAcc.id) continue;
+
         const dailyRate = (apyBasisPoints / 10000) / 365;
         const interestEarnedCents = Math.round(acc.balance * dailyRate);
+        if (interestEarnedCents <= 0) continue;
+        if (poolAcc.balance < interestEarnedCents) continue;
 
-        if (interestEarnedCents > 0) {
-          const newBalance = acc.balance + interestEarnedCents;
-          await db.update(bankAccounts).set({ balance: newBalance }).where(eq(bankAccounts.id, acc.id));
-
-          await db.insert(transactions).values({
-            id: uuidv4(),
-            bankId: bank.id,
-            fromAccountId: null,
-            toAccountId: acc.id,
-            amount: interestEarnedCents,
-            type: "interest_payout",
+        try {
+          await executeSameBankBookTransfer({
+            sourceAccount: poolAcc,
+            destAccount: acc,
+            desiredCents: interestEarnedCents,
+            mode: "sender_covers",
             description: `Automated Yield APY Payout (${(apyBasisPoints / 100).toFixed(2)}% APY)`,
-            timestamp: new Date()
+            type: "interest_payout",
+            skipQuote: true,
           });
-
+          poolAcc = { ...poolAcc, balance: poolAcc.balance - interestEarnedCents };
           totalYieldPaidCents += interestEarnedCents;
           countAccounts++;
+        } catch (e) {
+          console.error(`[YieldEngine] interest payout failed for account ${acc.id}:`, e);
         }
       }
+
+      await db.update(bankSettings)
+        .set({ lastInterestAccrualAt: new Date() })
+        .where(eq(bankSettings.bankId, bank.id));
 
       if (totalYieldPaidCents > 0) {
         dispatchDiscordWebhook(bank.id, "interest_yield", {
           title: "📈 Automated Interest & Yields Distributed",
-          description: `**${bank.name}** processed daily APY savings distributions.`,
+          description: `**${bank.name}** processed daily APY savings distributions from the interest pool.`,
           color: 0x10b981,
           fields: [
             { name: "Total Yield Dispersed", value: `$${(totalYieldPaidCents / 100).toFixed(2)}`, inline: true },
@@ -73,39 +104,8 @@ export async function processYieldsAndAutomations(targetBankId?: string) {
       }
     }
 
-    // --- 2. AUTOMATED LOAN INTEREST CHARGES ---
-    const activeLoans = targetBankId
-      ? await db.select().from(loans).where(and(eq(loans.status, "active"), gt(loans.remainingAmount, 0), eq(loans.bankId, targetBankId)))
-      : await db.select().from(loans).where(and(eq(loans.status, "active"), gt(loans.remainingAmount, 0)));
-    const now = new Date();
-
-    for (const loan of activeLoans) {
-      if (loan.nextPaymentDate && new Date(loan.nextPaymentDate) <= now) {
-        // Monthly Interest Charge = Remaining * (interestRate / 10000)
-        const interestFeeCents = Math.round(loan.remainingAmount * (loan.interestRate / 10000));
-        const newRemaining = loan.remainingAmount + interestFeeCents;
-        const nextDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
-
-        await db.update(loans).set({
-          remainingAmount: newRemaining,
-          nextPaymentDate: nextDate
-        }).where(eq(loans.id, loan.id));
-
-        dispatchDiscordWebhook(loan.bankId, "loan_interest_accrual", {
-          title: "🏦 Loan Interest Compounded",
-          description: `Loan ID \`${loan.id.substring(0, 8)}\` interest charge applied.`,
-          color: 0xf59e0b,
-          fields: [
-            { name: "Interest Added", value: `$${(interestFeeCents / 100).toFixed(2)}`, inline: true },
-            { name: "New Total Balance", value: `$${(newRemaining / 100).toFixed(2)}`, inline: true },
-            { name: "Next Due Date", value: nextDate.toLocaleDateString(), inline: true }
-          ]
-        });
-      }
-    }
-
     // Payroll and subscriptions are booked through CityCorp rails in cron.ts.
-    // Do not print money here.
+    // Do not print money here. Do not accrue loan interest here.
 
     console.log("[YieldEngine] Automated yield and background jobs completed successfully.");
   } catch (e) {

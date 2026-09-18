@@ -5,7 +5,7 @@ import { eq, and, lte, isNotNull } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { CityCorpClient } from "./citycorp_api";
 import { processYieldsAndAutomations } from "./yield_engine";
-import { processDueLoanRepayments, accrueLoanInterest } from "../server/loan_processor";
+import { processDueLoanRepayments, processDueCreditRepayments, accrueLoanInterest } from "../server/loan_processor";
 
 export function startCronJobs() {
   console.log("[Cron] Starting background automated pipelines...");
@@ -15,6 +15,7 @@ export function startCronJobs() {
     try {
       await processYieldsAndAutomations();
       await processDueLoanRepayments();
+      await processDueCreditRepayments();
       await accrueLoanInterest();
     } catch (e) {
       console.error("[Cron] Loan/Yield processing error:", e);
@@ -184,6 +185,15 @@ export function startCronJobs() {
          
          const bank = await db.select().from(banks).where(eq(banks.id, settings.bankId)).get();
          if (!bank) continue;
+
+         const poolName = settings.interestPoolAccount?.trim();
+         if (!poolName) continue; // do not mint; defer until an interest pool is configured
+         let poolAcc = await db.select().from(bankAccounts).where(
+           and(eq(bankAccounts.bankId, bank.id), eq(bankAccounts.accountName, poolName))
+         ).get() || await db.select().from(bankAccounts).where(
+           and(eq(bankAccounts.bankId, bank.id), eq(bankAccounts.id, poolName))
+         ).get();
+         if (!poolAcc) continue;
          
          let targetAccountTypes: string[] = [];
          const accounts = await db.select().from(bankAccounts)
@@ -252,19 +262,23 @@ export function startCronJobs() {
            const interestEarned = Math.floor(principal * (apyToUse / 10000) / divisor);
            
            if (interestEarned > 0) {
-             await db.update(bankAccounts)
-               .set({ balance: account.balance + interestEarned })
-               .where(eq(bankAccounts.id, account.id));
-             await db.insert(transactions).values({
-               id: uuidv4(),
-               bankId: bank.id,
-               toAccountId: account.id,
-               fromAccountId: null,
-               amount: interestEarned,
-               type: "deposit",
-               description: "Interest Payment (APY)",
-               timestamp: new Date()
-             });
+             if (poolAcc.id === account.id || poolAcc.balance < interestEarned) continue;
+             try {
+               const { executeSameBankBookTransfer } = await import("./citycorp_money");
+               await executeSameBankBookTransfer({
+                 sourceAccount: poolAcc,
+                 destAccount: account,
+                 desiredCents: interestEarned,
+                 mode: "sender_covers",
+                 description: "Interest Payment (APY)",
+                 type: "interest_payout",
+                 skipQuote: true,
+               });
+               poolAcc = { ...poolAcc, balance: poolAcc.balance - interestEarned };
+             } catch (e) {
+               console.error("[Cron] interest payout failed", e);
+               continue;
+             }
              count++;
              totalAmount += interestEarned;
            }
@@ -302,97 +316,46 @@ export function startCronJobs() {
     }
   });
 
-  // Automated Operations Engine (Cron)
-  cron.schedule("0 0 * * *", async () => {
-    console.log("Running Daily Automated Operations Engine...");
-    const { db } = await import("../db/index");
-    const { banks, loans, auditLogs } = await import("../db/schema");
-    const { eq, and } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
-
-    try {
-      const allBanks = await db.select().from(banks);
-      for (const bank of allBanks) {
-        let notes = [];
-        
-        // 1. Process Loans (accrue interest)
-        const openLoans = await db.select().from(loans).where(and(eq(loans.bankId, bank.id), eq(loans.status, 'active')));
-        let loansAccrued = 0;
-        for (const loan of openLoans) {
-          if (loan.interestRate && loan.principalAmount) {
-            const dailyInterest = Math.round((loan.principalAmount * (loan.interestRate / 100)) / 365);
-            if (dailyInterest > 0) {
-              await db.update(loans)
-                .set({ remainingAmount: loan.remainingAmount + dailyInterest })
-                .where(eq(loans.id, loan.id));
-              loansAccrued++;
-            }
-          }
-        }
-        if (loansAccrued > 0) notes.push(`Accrued interest on ${loansAccrued} loans.`);
-
-        if (notes.length > 0) {
-          await db.insert(auditLogs).values({
-             id: uuidv4(),
-             bankId: bank.id,
-             userDiscordId: 'SYSTEM',
-             action: `daily_processing_cron`,
-             details: `Automated Engine Executed. ${notes.join(' ')}`,
-             timestamp: new Date()
-          });
-        }
-      }
-      console.log("Daily Automated Operations Engine completed.");
-    } catch (e) {
-      console.error("Failed automated operations engine run:", e);
-    }
-  });
+  // Daily loan interest is owned by accrueLoanInterest in loan_processor (15-min cron).
+  // Do not run a leftover interestRate/100 printer here.
 
   // Recurring Transfer Processor
 setInterval(async () => {
   const { db } = await import("../db/index");
-  const { recurringTransfers, bankAccounts, transactions, clearinghouseBalances, bankSettings } = await import("../db/schema");
+  const { recurringTransfers, bankAccounts } = await import("../db/schema");
   const { eq, and, lt } = await import("drizzle-orm");
-  const { v4: uuidv4 } = await import("uuid");
 
   try {
     const now = new Date();
     const due = await db.select().from(recurringTransfers).where(and(eq(recurringTransfers.isActive, true), lt(recurringTransfers.nextRunAt, now)));
     
     for (const rt of due) {
-       // Process payment
        const source = await db.select().from(bankAccounts).where(eq(bankAccounts.id, rt.fromAccountId)).get();
        const target = await db.select().from(bankAccounts).where(eq(bankAccounts.id, rt.toAccountId)).get();
        
        if (source && target && source.balance >= rt.amount) {
-          // Subtract from source
-          await db.update(bankAccounts).set({ balance: source.balance - rt.amount }).where(eq(bankAccounts.id, source.id));
-          // Add to target
-          await db.update(bankAccounts).set({ balance: target.balance + rt.amount }).where(eq(bankAccounts.id, target.id));
-          
-          // Log transactions
-          await db.insert(transactions).values([
-            {
-              id: uuidv4(),
+          try {
+            const { executeBookTransfer } = await import("./citycorp_money");
+            await executeBookTransfer({
+              sourceAccount: source,
+              destAccount: target,
+              desiredCents: rt.amount,
+              mode: "from_payment",
+              description: (rt.description || "Recurring transfer") + " (Auto)",
               type: "transfer",
-              bankId: source.bankId,
-              fromAccountId: source.id,
-              toAccountId: target.id,
-              amount: rt.amount,
-              description: rt.description + " (Auto)",
-              timestamp: new Date()
-            }
-          ]);
+            });
+          } catch (e) {
+            console.error("[Cron] recurring transfer failed", e);
+          }
        }
        
-       // Calculate next run
+       // Calculate next run even if this cycle failed so we don't tight-loop a dead rail.
        let nextRun = new Date(rt.nextRunAt);
        if (rt.frequency === "daily") nextRun.setDate(nextRun.getDate() + 1);
        else if (rt.frequency === "weekly") nextRun.setDate(nextRun.getDate() + 7);
        else if (rt.frequency === "biweekly") nextRun.setDate(nextRun.getDate() + 14);
        else if (rt.frequency === "monthly") nextRun.setMonth(nextRun.getMonth() + 1);
        
-       // If it's still in the past (e.g. system was off), catch up to future
        while (nextRun <= new Date()) {
          if (rt.frequency === "daily") nextRun.setDate(nextRun.getDate() + 1);
          else if (rt.frequency === "weekly") nextRun.setDate(nextRun.getDate() + 7);

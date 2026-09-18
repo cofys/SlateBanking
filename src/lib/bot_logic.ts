@@ -950,46 +950,23 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
   }
 
   const client = await getBankClient(bankId);
-  if (client) {
-    try {
-      const { executeSameBankBookTransfer } = await import('./citycorp_money');
-      await executeSameBankBookTransfer({
-        sourceAccount,
-        destAccount,
-        desiredCents: amountInCents,
-        mode: 'from_payment',
-        description: `Transfer to ${toAccountName}`,
-      });
-      await interaction.editReply({ content: `✅ Transferred $${amount.toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}** via CityCorp.` });
-      return;
-    } catch (e: any) {
-      await interaction.editReply({ content: `CityCorp Transfer Failed: ${e.message}` });
-      return;
-    }
+  if (!client) {
+    await interaction.editReply({ content: 'This bank is not connected to CityCorp. Transfers are unavailable.' });
+    return;
   }
-
-  await db.transaction(async (tx) => {
-    await tx.update(bankAccounts)
-      .set({ balance: sourceAccount.balance - amountInCents })
-      .where(eq(bankAccounts.id, sourceAccount.id));
-
-    await tx.update(bankAccounts)
-      .set({ balance: destAccount.balance + amountInCents })
-      .where(eq(bankAccounts.id, destAccount.id));
-
-    await tx.insert(transactions).values({
-      id: uuidv4(),
-      bankId,
-      fromAccountId: sourceAccount.id,
-      toAccountId: destAccount.id,
-      amount: amountInCents,
-      type: 'transfer',
+  try {
+    const { executeSameBankBookTransfer } = await import('./citycorp_money');
+    await executeSameBankBookTransfer({
+      sourceAccount,
+      destAccount,
+      desiredCents: amountInCents,
+      mode: 'from_payment',
       description: `Transfer to ${toAccountName}`,
-      timestamp: new Date()
     });
-  });
-
-  await interaction.editReply({ content: `✅ Transferred ${amount.toFixed(2)} to **${toAccountName}**.` });
+    await interaction.editReply({ content: `✅ Transferred $${amount.toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}** via CityCorp.` });
+  } catch (e: any) {
+    await interaction.editReply({ content: `CityCorp Transfer Failed: ${e.message}` });
+  }
 }
 
 async function handleHistory(bankId: string, interaction: ButtonInteraction) {
@@ -1211,22 +1188,16 @@ async function handleStaffApproveLoan(bankId: string, interaction: ButtonInterac
     return;
   }
 
-  await db.update(loans).set({ status: 'active' }).where(eq(loans.id, loanId));
-
-  const userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, loan.discordId)));
-  if (userAccs.length > 0) {
-    const acc = userAccs[0];
-    await db.update(bankAccounts).set({ balance: acc.balance + loan.principalAmount }).where(eq(bankAccounts.id, acc.id));
-    await db.insert(transactions).values({
-      id: uuidv4(),
-      bankId,
-      toAccountId: acc.id,
-      amount: loan.principalAmount,
-      type: 'transfer',
-      description: `Loan Disbursement (ID: ${loan.id.substring(0, 8)})`,
-      timestamp: new Date()
-    });
+  try {
+    const { disburseLoan } = await import('../server/loan_processor');
+    await disburseLoan(loan);
+  } catch (e: any) {
+    console.error("[StaffApproveLoan] disbursement failed", e);
+    await interaction.editReply({ content: `❌ Loan disbursement failed: ${e.message || "CityCorp pool transfer failed"}` });
+    return;
   }
+
+  await db.update(loans).set({ status: 'active' }).where(eq(loans.id, loanId));
 
   await db.insert(auditLogs).values({
     id: uuidv4(),
@@ -1239,7 +1210,7 @@ async function handleStaffApproveLoan(bankId: string, interaction: ButtonInterac
 
   refreshBankChannelGUIs(bankId);
 
-  await interaction.editReply({ content: `✅ **Loan Approved & Disbursed!**\nLoan ID \`${loanId.substring(0, 8)}\` approved for <@${loan.discordId}>. Funds credited.` });
+  await interaction.editReply({ content: `✅ **Loan Approved & Disbursed!**\nLoan ID \`${loanId.substring(0, 8)}\` approved for <@${loan.discordId}>. Funds credited via CityCorp.` });
 }
 
 async function handleStaffDenyLoan(bankId: string, interaction: ButtonInteraction, loanId: string) {
@@ -1314,8 +1285,31 @@ async function handleStaffTellerTxModal(bankId: string, interaction: ModalSubmit
     return;
   }
 
-  const newBalance = type === 'deposit' ? acc.balance + amountCents : acc.balance - amountCents;
-  await db.update(bankAccounts).set({ balance: newBalance }).where(eq(bankAccounts.id, acc.id));
+  const bankRow = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+  if (!bankRow?.corpId || !bankRow.corpApiUuid || !bankRow.corpApiKey) {
+    await interaction.editReply({ content: 'This bank is not connected to CityCorp. Teller cash window is unavailable.' });
+    return;
+  }
+
+  const { CityCorpClient } = await import('./citycorp_api');
+  const { refreshAccountCache } = await import('./citycorp_money');
+  const client = new CityCorpClient(bankRow.corpId, bankRow.corpApiUuid, bankRow.corpApiKey, bankId);
+  const clientRes = type === 'deposit'
+    ? await client.deposit(acc.accountName, amountCents / 100)
+    : await client.withdraw(acc.accountName, amountCents / 100);
+
+  if (clientRes && clientRes.success === false) {
+    await interaction.editReply({ content: `❌ CityCorp teller ${type} failed: ${clientRes.message || 'unknown error'}` });
+    return;
+  }
+
+  const live = await refreshAccountCache({
+    bankId,
+    accountName: acc.accountName,
+    accountId: acc.id,
+    client,
+  });
+  const newBalance = live ?? (type === 'deposit' ? acc.balance + amountCents : acc.balance - amountCents);
 
   await db.insert(transactions).values({
     id: uuidv4(),
@@ -1429,7 +1423,7 @@ async function handleRepayLoanModal(bankId: string, interaction: ModalSubmitInte
   }
 
   const loan = targetLoans[0];
-  if (loan.remainingAmount <= 0 || loan.status === 'paid') {
+  if (loan.remainingAmount <= 0 || loan.status === 'paid' || loan.status === 'paid_off') {
     await interaction.editReply({ content: '✅ This loan has already been paid off in full!' });
     return;
   }
@@ -1448,23 +1442,25 @@ async function handleRepayLoanModal(bankId: string, interaction: ModalSubmitInte
     return;
   }
 
-  const newBalance = account.balance - amountCents;
   const newRemaining = Math.max(0, loan.remainingAmount - amountCents);
-  const newStatus = newRemaining === 0 ? 'paid' : 'active';
+  const newStatus = newRemaining === 0 ? 'paid_off' : 'active';
 
-  await db.update(bankAccounts).set({ balance: newBalance }).where(eq(bankAccounts.id, account.id));
+  try {
+    const { collectToPoolOrTreasury } = await import('./citycorp_money');
+    await collectToPoolOrTreasury({
+      bankId,
+      fromAccount: account,
+      amountCents,
+      description: `Loan Repayment (${loanId.substring(0, 8)}). Remaining: $${(newRemaining / 100).toFixed(2)}`,
+      type: "loan_payment",
+    });
+  } catch (e: any) {
+    console.error("[RepayLoan] collect failed", e);
+    await interaction.editReply({ content: `❌ Loan repayment failed: ${e.message || "CityCorp collection failed"}` });
+    return;
+  }
+
   await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus }).where(eq(loans.id, loan.id));
-
-  await db.insert(transactions).values({
-    id: uuidv4(),
-    bankId,
-    fromAccountId: account.id,
-    toAccountId: account.id,
-    amount: amountCents,
-    type: 'loan_repayment',
-    description: `Loan Repayment (${loanId.substring(0, 8)}). Remaining: $${(newRemaining / 100).toFixed(2)}`,
-    timestamp: new Date()
-  });
 
   await interaction.editReply({
     content: 

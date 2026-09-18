@@ -1,6 +1,7 @@
 import { db } from "../db/index";
 import { discordWebhooks, bankSettings } from "../db/schema";
 import { eq, or } from "drizzle-orm";
+import { isAllowedWebhookUrl } from "../server/middleware";
 
 export interface WebhookEmbed {
   title: string;
@@ -25,7 +26,9 @@ export async function dispatchDiscordWebhook(
 
       if (settingsList.length > 0 && settingsList[0].discordWebhookUrl) {
         const url = settingsList[0].discordWebhookUrl;
-        sendWebhookPayload(url, embed, eventName);
+        if (isAllowedWebhookUrl(url)) {
+          sendWebhookPayload(url, embed, eventName);
+        }
       }
     }
 
@@ -42,6 +45,7 @@ export async function dispatchDiscordWebhook(
 
     for (const hook of hooks) {
       if (!hook.isActive || !hook.url) continue;
+      if (!isAllowedWebhookUrl(hook.url)) continue;
 
       let eventList: string[] = [];
       try {
@@ -60,6 +64,11 @@ export async function dispatchDiscordWebhook(
 }
 
 async function sendWebhookPayload(url: string, embed: WebhookEmbed, eventName: string) {
+  if (!isAllowedWebhookUrl(url)) {
+    console.warn("[WebhookDispatcher] Blocked non-Discord webhook URL");
+    return;
+  }
+
   try {
     const payload = {
       username: "Slate SaaS • Notification Engine",

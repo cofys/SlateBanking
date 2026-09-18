@@ -423,52 +423,44 @@ async function handleOnyxCrossBankPayment(
 
   const destAcc = destAccs[0];
 
-  // 4. Calculate B2B Onyx Fee
   const settings = await db.select().from(onyxSettings).where(eq(onyxSettings.id, 'global')).get();
-  const feePercent = settings?.b2bApiFeePercent || 200; // 2.00%
-  const onyxFeeCents = Math.round((amountCents * feePercent) / 10000);
-  const netAmountCents = amountCents - onyxFeeCents;
+  const feePercent = settings?.b2bApiFeePercent || 200; // 2.00% stored
+  const extraLines = feePercent > 0 ? [{
+    code: "onyx_b2b",
+    label: "Onyx B2B fee",
+    rate: feePercent / 10000,
+    source: "platform" as const,
+  }] : [];
 
-  // 5. Execute ledger transfer
-  await db.update(bankAccounts).set({ balance: sourceAccount.balance - amountCents }).where(eq(bankAccounts.id, sourceAccount.id));
-  await db.update(bankAccounts).set({ balance: destAcc.balance + netAmountCents }).where(eq(bankAccounts.id, destAcc.id));
-
-  // 6. Record transaction and settlement
-  const txId = uuidv4();
-  await db.insert(transactions).values({
-    id: txId,
-    bankId: sourceAccount.bankId,
-    fromAccountId: sourceAccount.id,
-    toAccountId: destAcc.id,
-    amount: amountCents,
-    type: 'onyx_transfer',
-    description: `Onyx PSP Cross-Bank: ${memo} (Fee: $${(onyxFeeCents / 100).toFixed(2)})`,
-    timestamp: new Date()
-  });
-
-  if (sourceAccount.bankId !== destAcc.bankId) {
-    await db.insert(clearinghouseSettlements).values({
-      id: uuidv4(),
-      fromBankId: sourceAccount.bankId,
-      toBankId: destAcc.bankId,
-      amount: netAmountCents,
-      status: 'paid',
-      createdAt: new Date()
+  try {
+    const { executeBookTransfer } = await import("./citycorp_money");
+    const moved = await executeBookTransfer({
+      sourceAccount,
+      destAccount: destAcc,
+      desiredCents: amountCents,
+      mode: "from_payment",
+      description: `Onyx PSP: ${memo}`,
+      type: "onyx_transfer",
+      extraLines,
     });
+
+    if (sourceAccount.bankId !== destAcc.bankId) {
+      await db.insert(clearinghouseSettlements).values({
+        id: uuidv4(),
+        fromBankId: sourceAccount.bankId,
+        toBankId: destAcc.bankId,
+        amount: moved.quote.receivedCents,
+        status: 'paid',
+        createdAt: new Date()
+      });
+    }
+
+    await interaction.editReply({
+      content: `✅ Onyx payment of **$${(amountCents / 100).toFixed(2)}** sent to **${destAcc.accountName}** at **${targetBankObj.name}**.\nReceived: **$${(moved.quote.receivedCents / 100).toFixed(2)}** after fees.`
+    });
+  } catch (e: any) {
+    await interaction.editReply({ content: `❌ Onyx payment failed: ${e.message || "transfer error"}` });
   }
-
-  const sourceBankObj = allBanks.find(b => b.id === sourceAccount.bankId);
-
-  await interaction.editReply({
-    content: 
-      `✅ **Onyx PSP Cross-Bank Payment Successful!**\n\n` +
-      `💸 **Amount**: **$${amount.toFixed(2)}**\n` +
-      `🏦 **From**: **${sourceBankObj?.name || 'Bank'}** (\`${sourceAccount.accountName}\`)\n` +
-      `🏦 **To**: **${targetBankObj.name}** (\`${destAcc.accountName}\`)\n` +
-      `⚡ **Onyx Fee (${(feePercent / 100).toFixed(2)}%)**: **$${(onyxFeeCents / 100).toFixed(2)}**\n` +
-      `📝 **Memo**: \`${memo}\`\n` +
-      `🆔 **Onyx Tx ID**: \`${txId.substring(0, 8)}\``
-  });
 }
 
 async function handleOnyxRegisterMerchantModal(

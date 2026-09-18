@@ -76,8 +76,30 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
         id: banks.id,
         name: banks.name,
         logoUrl: banks.logoUrl,
+        brandingColor: banks.brandingColor,
       }).from(banks);
-      const allSettings = await db.select().from(bankSettings);
+      const rawSettings = await db.select().from(bankSettings);
+      const publicizeSettings = (rows: any[]) => rows.map((s: any) => ({
+        bankId: s.bankId,
+        logoUrl: s.logoUrl,
+        colorScheme: s.colorScheme,
+        requireKyc: s.requireKyc,
+        enableAccountTiers: s.enableAccountTiers,
+        accountTiers: s.accountTiers,
+        enableLoans: s.enableLoans,
+        enableVaults: s.enableVaults,
+        enableCards: s.enableCards,
+        enablePayroll: s.enablePayroll,
+        enableSubscriptions: s.enableSubscriptions,
+        enableEscrow: s.enableEscrow,
+        enableTreasury: s.enableTreasury,
+        loginBgUrl: s.loginBgUrl,
+        requirePersonalForBusiness: s.requirePersonalForBusiness,
+        vaultTiers: s.vaultTiers,
+        defaultFeePayerMode: s.defaultFeePayerMode,
+        savingsApyPercent: s.savingsApyPercent,
+      }));
+      const allSettings = publicizeSettings(rawSettings);
 
       if (userAccounts.length === 0) {
          return res.json({ accounts: [], transactions: [], invoices: [], cards: [], loans: [], subscriptions: [], merchants: [], banksConfig: {}, banks: allBanks, settings: allSettings });
@@ -216,6 +238,7 @@ citizenRouter.post("/api/citizen/accounts/:id/upgrade", requireAuth, async (req:
                     creditLimit: selectedTier.creditLimit,
                     creditUsed: 0,
                     apr: selectedTier.creditApr || 1999,
+                    nextPaymentDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })(),
                     createdAt: new Date()
                 });
             }
@@ -293,18 +316,23 @@ citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.
         collateralDescription: collateralDescription || null,
         collateralValue: colVal,
         collateralStatus: colStatus,
-        status: autoApprove ? "active" : "pending",
+        status: "pending",
         contractUrl,
         createdAt: new Date(),
       });
 
       if (autoApprove) {
-         // Auto fund
          const { disburseLoan } = await import("../loan_processor.js");
          const insertedLoan = await db.select().from(loans).where(eq(loans.id, loanId)).get();
          if (insertedLoan) {
-            await disburseLoan(insertedLoan);
-            await db.update(loans).set({ status: "active" }).where(eq(loans.id, loanId));
+            try {
+              await disburseLoan(insertedLoan);
+              await db.update(loans).set({ status: "active" }).where(eq(loans.id, loanId));
+            } catch (err: any) {
+              const { botManager } = await import("../../lib/bot_manager");
+              botManager.sendNotification(bankId, `New Loan Application: \nDiscord ID: ${discordId}\nAmount: $${(principalAmount/100).toFixed(2)}\nPurpose: ${purpose || 'None specified'}\nStatus: Pending (auto-disburse failed: ${err.message || "CityCorp error"})`);
+              return res.status(400).json({ error: err.message || "Loan disbursement failed. Application left pending for staff review.", autoApprove: false, pending: true });
+            }
          }
       }
 
@@ -399,6 +427,7 @@ citizenRouter.post("/api/citizen/credit/apply", requireAuth, async (req: express
             creditLimit: requestedLimit,
             creditUsed: 0,
             apr: 1999, // 19.99% APR default
+            nextPaymentDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })(),
             createdAt: new Date(),
           });
        }
@@ -510,33 +539,22 @@ citizenRouter.post("/api/citizen/pay-credit-card", requireAuth, async (req: expr
       // Ensure we don't overpay
       const actualPayment = Math.min(parsedAmount, (theCard.creditUsed || 0));
 
-      await db.transaction(async (tx) => {
-          // Deduct from bank account
-          await tx.update(bankAccounts)
-            .set({ balance: sql`${bankAccounts.balance} - ${actualPayment}` })
-            .where(and(
-                eq(bankAccounts.id, fromAccountId),
-                gte(bankAccounts.balance, actualPayment)
-            ));
+      const { collectToPoolOrTreasury } = await import("../../lib/citycorp_money");
+      try {
+        await collectToPoolOrTreasury({
+          bankId: theCard.bankId,
+          fromAccount: sourceAccount,
+          amountCents: actualPayment,
+          description: `Credit Card Payment (Card ending in ${theCard.cardNumber.slice(-4)})`,
+          type: "credit_payment",
+        });
+      } catch (err: any) {
+        return res.status(400).json({ error: err.message || "Credit card payment failed" });
+      }
 
-          // Credit the card (reduce creditUsed)
-          await tx.update(cards)
-            .set({ creditUsed: sql`${cards.creditUsed} - ${actualPayment}` })
-            .where(eq(cards.id, cardId));
-            
-          // Add transaction log
-          await tx.insert(transactions).values({
-              id: uuidv4(),
-              bankId: theCard.bankId,
-              fromAccountId: sourceAccount.id,
-              toAccountId: theCard.accountId,
-              type: "transfer",
-              amount: actualPayment,
-              description: `Credit Card Payment (Card ending in ${theCard.cardNumber.slice(-4)})`,
-              category: "Credit Payment",
-              timestamp: new Date()
-          });
-      });
+      await db.update(cards)
+        .set({ creditUsed: sql`${cards.creditUsed} - ${actualPayment}` })
+        .where(eq(cards.id, cardId));
 
       res.json({ success: true, actualPayment });
     } catch(e) {
@@ -552,10 +570,25 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { loanId, fromAccountId, amount } = req.body;
-      if (!loanId || !fromAccountId || !amount) return res.status(400).json({ error: "Missing fields" });
+      const { loanId, fromAccountId, amount, amountDollars } = req.body;
+      if (!loanId || !fromAccountId || (amount == null && (amountDollars == null || amountDollars === ""))) {
+        return res.status(400).json({ error: "Missing fields" });
+      }
 
-      const parsedAmount = typeof amount === "number" ? Math.round(amount) : Math.round(parseFloat(amount));
+      let parsedAmount: number;
+      if (amountDollars != null && amountDollars !== "") {
+        parsedAmount = Math.round(parseFloat(String(amountDollars)) * 100);
+      } else {
+        const raw = amount;
+        const n = typeof raw === "number" ? raw : parseFloat(String(raw));
+        if (!Number.isFinite(n) || n <= 0) {
+          return res.status(400).json({ error: "Invalid payment amount" });
+        }
+        const hasDecimal =
+          (typeof raw === "number" && !Number.isInteger(raw)) ||
+          (typeof raw === "string" && String(raw).includes("."));
+        parsedAmount = hasDecimal ? Math.round(n * 100) : Math.round(n);
+      }
       if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
         return res.status(400).json({ error: "Invalid payment amount" });
       }
@@ -565,11 +598,13 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
       );
       if (!fromAcc.length) return res.status(404).json({ error: "Account not found or unauthorized" });
 
-      if (fromAcc[0].balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
-
       const [sourceAccount] = fromAcc;
       const [theLoan] = await db.select().from(loans).where(eq(loans.id, loanId));
       if (!theLoan || (theLoan.status !== 'active' && theLoan.status !== 'delinquent')) return res.status(400).json({ error: "Invalid loan" });
+
+      parsedAmount = Math.min(parsedAmount, theLoan.remainingAmount);
+      if (parsedAmount <= 0) return res.status(400).json({ error: "Loan has no remaining balance" });
+      if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
 
       let newRemaining = 0;
       const { gte, sql } = await import("drizzle-orm");
@@ -680,45 +715,41 @@ citizenRouter.post("/api/citizen/pay-invoice", requireAuth, async (req: express.
       const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, inv.billerAccountId));
       if (!destAccount) return res.status(404).json({ error: "Destination biller account not found" });
 
-      // Execute payment atomically
-      await db.transaction(async (tx) => {
-        if (sourceCard) {
-            const { cards } = await import("../../db/schema");
-            await tx.update(cards)
-              .set({ creditUsed: sql`${cards.creditUsed} + ${inv.amount}` })
-              .where(eq(cards.id, sourceCard.id));
-        } else {
-            await tx.update(bankAccounts)
-              .set({ balance: sql`${bankAccounts.balance} - ${inv.amount}` })
-              .where(and(
-                eq(bankAccounts.id, sourceAccount.id),
-                gte(bankAccounts.balance, inv.amount),
-                eq(bankAccounts.isActive, true),
-                eq(bankAccounts.isFrozen, false)
-              ));
-        }
-
-        await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} + ${inv.amount}` })
-          .where(and(
-            eq(bankAccounts.id, destAccount.id),
-            eq(bankAccounts.isActive, true),
-            eq(bankAccounts.isFrozen, false)
-          ));
-
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: sourceAccount.bankId,
-          fromAccountId: sourceAccount.id,
-          toAccountId: destAccount.id,
-          type: "transfer",
-          amount: inv.amount,
-          description: `Invoice Payment: ${inv.description || inv.id}`,
-          timestamp: new Date()
-        });
-
-        await tx.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
-      });
+      if (sourceCard) {
+          try {
+            const { disburseFromPoolOrOperating } = await import("../../lib/citycorp_money");
+            await disburseFromPoolOrOperating({
+              bankId: sourceCard.bankId || sourceAccount.bankId,
+              toAccount: destAccount,
+              amountCents: inv.amount,
+              description: `Credit card payment of invoice ${inv.id}`,
+            });
+          } catch (err: any) {
+            return res.status(400).json({
+              error: err.message || "Credit spend failed. Configure a loan pool or operating subaccount."
+            });
+          }
+          const { cards } = await import("../../db/schema");
+          await db.update(cards)
+            .set({ creditUsed: sql`${cards.creditUsed} + ${inv.amount}` })
+            .where(eq(cards.id, sourceCard.id));
+          await db.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
+      } else {
+          try {
+            const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
+            await executeSameBankBookTransfer({
+              sourceAccount,
+              destAccount,
+              desiredCents: inv.amount,
+              mode: "from_payment",
+              description: `Invoice Payment: ${inv.description || inv.id}`,
+              type: "transfer",
+            });
+          } catch (err: any) {
+            return res.status(400).json({ error: err.message || "Invoice payment failed" });
+          }
+          await db.update(invoices).set({ status: 'paid' }).where(eq(invoices.id, inv.id));
+      }
 
       res.json({ success: true });
     } catch (e) {
@@ -1120,6 +1151,7 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
         executeCrossBankSettledTransfer,
         parseFeePayerMode,
         loadSettings,
+        disburseFromPoolOrOperating,
       } = await import("../../lib/citycorp_money");
       const sourceSettings = await loadSettings(sourceAccount.bankId);
       const feeMode = parseFeePayerMode(
@@ -1131,39 +1163,22 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
 
       if (fromBank === toBank) {
         if (sourceCard) {
-          const { quote } = await (await import("../../lib/citycorp_money")).quoteBookTransfer({
-            sourceAccount,
-            destAccount,
-            desiredCents: parsedAmount,
-            mode: feeMode,
-          });
-          resultQuote = quote;
-          const totalRequired = quote.submittedCents;
-          if ((sourceCard.creditUsed || 0) + totalRequired > (sourceCard.creditLimit || 0)) {
-            return res.status(400).json({ error: `Exceeds credit limit. Transfer requires ${(totalRequired/100).toFixed(2)}.` });
-          }
-          await db.transaction(async (tx) => {
-            await tx.update(cards)
-              .set({ creditUsed: sql`${cards.creditUsed} + ${totalRequired}` })
-              .where(eq(cards.id, sourceCard.id));
-            await tx.update(bankAccounts)
-              .set({ balance: sql`${bankAccounts.balance} + ${quote.receivedCents}` })
-              .where(eq(bankAccounts.id, destAccount.id));
-            await tx.insert(transactions).values({
-              id: uuidv4(),
+          try {
+            await disburseFromPoolOrOperating({
               bankId: sourceAccount.bankId,
-              fromAccountId: sourceAccount.id,
-              toAccountId: destAccount.id,
-              type: "transfer",
-              amount: parsedAmount,
-              amountSubmitted: quote.submittedCents,
-              amountReceived: quote.receivedCents,
-              feePayerMode: feeMode,
-              feeBreakdown: JSON.stringify(quote),
+              toAccount: destAccount,
+              amountCents: parsedAmount,
               description: `Credit transfer to ${destAccount.accountName}`,
-              timestamp: new Date()
             });
-          });
+            resultQuote = { receivedCents: parsedAmount, submittedCents: parsedAmount };
+            await db.update(cards)
+              .set({ creditUsed: sql`${cards.creditUsed} + ${parsedAmount}` })
+              .where(eq(cards.id, sourceCard.id));
+          } catch (err: any) {
+            return res.status(400).json({
+              error: err.message || "Credit spend failed. Configure a loan pool or operating subaccount."
+            });
+          }
         } else {
           try {
             const moved = await executeSameBankBookTransfer({
@@ -1182,74 +1197,25 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
         const { botManager } = await import("../../lib/bot_manager");
         botManager.sendNotification(sourceAccount.bankId, `💸 **Citizen Transfer**: <@${discordId}> transferred ${(parsedAmount/100).toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}**.`);
       } else {
-         const tSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, toBank)).get();
-         const wireThresh = tSettings?.interBankWireThreshold || 5000000;
-
-         if (parsedAmount >= wireThresh) {
-            const transId = uuidv4();
-            await db.transaction(async (tx) => {
-              if (sourceCard) {
-                await tx.update(cards)
-                  .set({ creditUsed: sql`${cards.creditUsed} + ${parsedAmount}` })
-                  .where(eq(cards.id, sourceCard.id));
-              } else {
-                await tx.update(bankAccounts)
-                  .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
-                  .where(and(
-                    eq(bankAccounts.id, sourceAccount.id),
-                    gte(bankAccounts.balance, parsedAmount),
-                    eq(bankAccounts.isActive, true),
-                    eq(bankAccounts.isFrozen, false)
-                  ));
-              }
-              
-              await tx.insert(interBankTransfers).values({
-                 id: transId,
-                 fromBankId: fromBank,
-                 toBankId: toBank,
-                 fromAccountId: sourceAccount.id,
-                 toAccountId: destAccount.id,
-                 amount: parsedAmount,
-                 status: "pending_wire",
-                 createdAt: new Date()
-              });
-
-              await tx.insert(transactions).values({
-                 id: uuidv4(),
-                 bankId: fromBank,
-                 fromAccountId: sourceAccount.id,
-                 toAccountId: null,
-                 type: "transfer",
-                 amount: parsedAmount,
-                 description: `Pending Wire: Transfer to foreign bank account`,
-                 timestamp: new Date()
-              });
-            });
-            
-            const { botManager } = await import("../../lib/bot_manager");
-            botManager.sendNotification(fromBank, `🏦 **Pending Outbound Wire**: <@${discordId}> initiated a ${(parsedAmount/100).toFixed(2)} wire transfer to a foreign bank. Please use in-game commands to securely wire this sum to the receiving bank's corp, then approve the wire in SaaS.`);
-            botManager.sendNotification(toBank, `🏦 **Pending Inbound Wire**: Expect an inbound wire transfer of ${(parsedAmount/100).toFixed(2)}. Once received in game, approve the transfer to deposit into the customer's account.`);
-
-         } else if (sourceCard) {
-            return res.status(400).json({ error: "Credit cards cannot be used for instant inter-bank Onyx transfers." });
-         } else {
-            try {
-              const moved = await executeCrossBankSettledTransfer({
-                sourceAccount,
-                destAccount,
-                desiredCents: parsedAmount,
-                mode: feeMode,
-                description: `Onyx transfer to ${destAccount.accountName}`,
-              });
-              resultQuote = moved.quote;
-            } catch (err: any) {
-              return res.status(400).json({ error: err.message || "Inter-bank transfer failed" });
-            }
-
-            const { botManager } = await import("../../lib/bot_manager");
-            botManager.sendNotification(fromBank, `💸 **Onyx Transfer Out**: <@${discordId}> transferred ${(parsedAmount/100).toFixed(2)} to a foreign bank account.`);
-            botManager.sendNotification(toBank, `💸 **Onyx Transfer In**: Received ${(parsedAmount/100).toFixed(2)} via clearinghouse.`);
+         if (sourceCard) {
+            return res.status(400).json({ error: "Credit cards cannot be used for inter-bank Onyx transfers." });
          }
+         try {
+            const moved = await executeCrossBankSettledTransfer({
+              sourceAccount,
+              destAccount,
+              desiredCents: parsedAmount,
+              mode: feeMode,
+              description: `Onyx transfer to ${destAccount.accountName}`,
+            });
+            resultQuote = moved.quote;
+         } catch (err: any) {
+            return res.status(400).json({ error: err.message || "Inter-bank transfer failed" });
+         }
+
+         const { botManager } = await import("../../lib/bot_manager");
+         botManager.sendNotification(fromBank, `💸 **Onyx Transfer Out**: <@${discordId}> transferred ${(parsedAmount/100).toFixed(2)} to a foreign bank account.`);
+         botManager.sendNotification(toBank, `💸 **Onyx Transfer In**: Received ${(parsedAmount/100).toFixed(2)} via clearinghouse.`);
       }
 
       res.json({ success: true, quote: resultQuote });
@@ -1329,29 +1295,16 @@ citizenRouter.post("/api/citizen/vaults", requireAuth, async (req: express.Reque
             createdAt: new Date()
         };
 
-        await db.transaction(async (tx) => {
-          await tx.update(bankAccounts)
-            .set({ balance: sql`${bankAccounts.balance} - ${parsedAmount}` })
-            .where(and(
-              eq(bankAccounts.id, account.id),
-              gte(bankAccounts.balance, parsedAmount),
-              eq(bankAccounts.isActive, true),
-              eq(bankAccounts.isFrozen, false)
-            ));
-          
-          await tx.insert(transactions).values({
-              id: uuidv4(),
-              bankId: account.bankId,
-              fromAccountId: account.id,
-              toAccountId: null,
-              amount: parsedAmount,
-              type: 'deposit',
-              description: `Vault Deposit (${lockDays} Days)`,
-              timestamp: new Date()
-          });
-          
-          await tx.insert(vaultDeposits).values(vault);
+        const { holdInSystemAccount } = await import("../../lib/citycorp_money");
+        await holdInSystemAccount({
+          fromAccount: account,
+          amountCents: parsedAmount,
+          systemAccountName: "VAULT",
+          systemCategory: "vault",
+          description: `Vault Deposit (${lockDays} Days)`,
+          type: "vault",
         });
+        await db.insert(vaultDeposits).values(vault);
         
         res.json({ success: true, vault });
     } catch (e) {
@@ -1392,35 +1345,41 @@ citizenRouter.post("/api/citizen/vaults/:id/withdraw", requireAuth, async (req: 
         let returnAmount = vault.amount;
         let status = 'released';
         let description = 'Vault Maturity Withdrawal';
+        let interest = 0;
         
         if (isEarly) {
-            // Early withdrawal penalty
             const penalty = Math.floor(vault.amount * (penaltyPercent / 100));
             returnAmount = vault.amount - penalty;
             status = 'early_withdrawn';
             description = `Early Vault Withdrawal (${penaltyPercent}% Penalty)`;
         } else {
-            // Add interest
-            const interest = Math.floor(vault.amount * (vault.interestRate / 10000));
-            returnAmount += interest;
-            description = `Vault Maturity Withdrawal (+${(interest/100).toFixed(2)} Interest)`;
+            interest = Math.floor(vault.amount * (vault.interestRate / 10000));
+            description = `Vault Maturity Withdrawal`;
         }
-        
-        await db.transaction(async (tx) => {
-          await tx.update(vaultDeposits).set({ status }).where(and(eq(vaultDeposits.id, vault.id), eq(vaultDeposits.status, 'locked')));
-          await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${returnAmount}` }).where(eq(bankAccounts.id, account.id));
-          
-          await tx.insert(transactions).values({
-              id: uuidv4(),
-              bankId: vault.bankId,
-              fromAccountId: null,
-              toAccountId: account.id,
-              amount: returnAmount,
-              type: 'deposit',
-              description,
-              timestamp: new Date()
-          });
+
+        const { releaseFromSystemAccount, payFromInterestPool } = await import("../../lib/citycorp_money");
+        await releaseFromSystemAccount({
+          toAccount: account,
+          amountCents: returnAmount,
+          systemAccountName: "VAULT",
+          systemCategory: "vault",
+          description,
+          type: "vault",
         });
+        if (!isEarly && interest > 0) {
+          try {
+            const paid = await payFromInterestPool({
+              bankId: vault.bankId,
+              toAccount: account,
+              amountCents: interest,
+              description: `Vault maturity interest (+${(interest/100).toFixed(2)})`,
+            });
+            if (paid) returnAmount += interest;
+          } catch (e) {
+            console.error("[citizen vault] interest skipped", e);
+          }
+        }
+        await db.update(vaultDeposits).set({ status }).where(and(eq(vaultDeposits.id, vault.id), eq(vaultDeposits.status, 'locked')));
         
         res.json({ success: true, returnAmount, status });
     } catch (e) {
@@ -1473,49 +1432,9 @@ citizenRouter.get("/api/citizen/sync-job/:jobId", requireAuth, async (req: expre
 });
 
 citizenRouter.post("/api/citizen/deposit-funds", requireAuth, async (req: express.Request, res: express.Response) => {
-    const { db } = await import("../../db/index");
-    const { bankAccounts, transactions } = await import("../../db/schema.js");
-    const { eq, and } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
-    const discordId = (req as any).user.discordId;
-
-    try {
-      const { accountId, amountDollars, description } = req.body;
-      if (!accountId || !amountDollars || Number(amountDollars) <= 0) {
-        return res.status(400).json({ error: "Valid account ID and positive deposit amount required" });
-      }
-
-      const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
-      if (!account) return res.status(404).json({ error: "Account not found" });
-
-      if (account.ownerDiscordId !== discordId) {
-        const { accountMembers } = await import("../../db/schema.js");
-        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.discordId, discordId))).get();
-        if (!membership || (membership.role !== "owner" && membership.role !== "manager")) {
-          return res.status(403).json({ error: "Unauthorized to deposit into this account" });
-        }
-      }
-
-      const depositCents = Math.round(Number(amountDollars) * 100);
-      const newBalance = account.balance + depositCents;
-
-      await db.update(bankAccounts).set({ balance: newBalance }).where(eq(bankAccounts.id, account.id));
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: account.bankId,
-        toAccountId: account.id,
-        fromAccountId: null,
-        type: 'deposit',
-        amount: depositCents,
-        description: description || `Manual Deposit / Account Funding (+$${Number(amountDollars).toFixed(2)})`,
-        timestamp: new Date()
-      });
-
-      res.json({ success: true, newBalance, depositedCents: depositCents, message: `Successfully deposited $${Number(amountDollars).toFixed(2)}` });
-    } catch (e: any) {
-      console.error(e);
-      res.status(500).json({ error: e.message || "Failed to deposit funds" });
-    }
+    return res.status(410).json({
+      error: "Deposits happen in-game via /c account deposit or by visiting a teller. Direct portal deposits are disabled."
+    });
 });
 
 citizenRouter.post("/api/citizen/subscriptions/:id/cancel", requireAuth, async (req: express.Request, res: express.Response) => {
@@ -1610,30 +1529,16 @@ citizenRouter.post("/api/citizen/escrows/:escrowId/fund", requireAuth, async (re
 
       if (buyer.balance < escrow.amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      await db.transaction(async (tx) => {
-        const updateResult = await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} - ${escrow.amount}` })
-          .where(and(
-            eq(bankAccounts.id, buyer.id),
-            gte(bankAccounts.balance, escrow.amount),
-            eq(bankAccounts.isFrozen, false)
-          ));
-
-        if (updateResult.changes === 0) throw new Error("Funding failed due to insufficient funds or frozen account.");
-
-        await tx.update(escrows).set({ status: "funded" }).where(eq(escrows.id, escrow.id));
-
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: escrow.bankId,
-          fromAccountId: buyer.id,
-          toAccountId: null,
-          amount: escrow.amount,
-          type: "escrow",
-          description: `Escrow Funded: ${escrow.description || escrow.id}`,
-          timestamp: new Date()
-        });
+      const { holdInSystemAccount } = await import("../../lib/citycorp_money");
+      await holdInSystemAccount({
+        fromAccount: buyer,
+        amountCents: escrow.amount,
+        systemAccountName: "ESCROW",
+        systemCategory: "escrow",
+        description: `Escrow Funded: ${escrow.description || escrow.id}`,
+        type: "escrow",
       });
+      await db.update(escrows).set({ status: "funded" }).where(eq(escrows.id, escrow.id));
 
       res.json({ success: true });
     } catch (e: any) {

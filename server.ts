@@ -21,11 +21,25 @@ async function startServer() {
   startCronJobs();
 
   app.use(helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'", "https://api.cityrp.org", "wss://api.cityrp.org", "https://discord.com", "https://cdn.discordapp.com"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      }
+    },
     crossOriginEmbedderPolicy: false,
     crossOriginOpenerPolicy: false
   }));
-  app.use(express.json({ limit: "50mb" }));
+  app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
 
   app.use((req, res, next) => {
@@ -108,7 +122,10 @@ async function startServer() {
         }
         
         if (!valid) {
-          if (originHost === "localhost" || originHost === "127.0.0.1" || originHost.endsWith(".run.app") || originHost === "run.app") {
+          const isProd = process.env.NODE_ENV === "production";
+          if (originHost === "localhost" || originHost === "127.0.0.1") {
+            valid = !isProd;
+          } else if (!isProd && (originHost.endsWith(".run.app") || originHost === "run.app")) {
             valid = true;
           } else if (process.env.APP_URL) {
             try {

@@ -4,6 +4,36 @@ import { checkUserIsGlobalAdmin, isUserStaffOrGlobalAdmin } from "./userResolver
 
 export const JWT_SECRET = process.env.JWT_SECRET as string;
 
+export function clientIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.length > 0) {
+    // With trust proxy = 1, req.ip is the resolved client. Prefer it.
+    return (req.ip || forwarded.split(',')[0].trim() || 'unknown');
+  }
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+export function sanitizeReturnTo(raw: any): string {
+  if (typeof raw !== 'string' || !raw) return '/portal';
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\') || raw.includes('\n') || raw.includes('\r') || raw.includes("'") || raw.includes('"') || raw.includes('<')) {
+    return '/portal';
+  }
+  if (!/^\/[A-Za-z0-9/_?&=#.\-]*$/.test(raw)) return '/portal';
+  return raw;
+}
+
+export function isAllowedWebhookUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    return host === 'discord.com' || host === 'discordapp.com' || host.endsWith('.discord.com') || host.endsWith('.discordapp.com');
+  } catch {
+    return false;
+  }
+}
+
 export const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const token = req.cookies.auth_token;
   if (!token) return res.status(401).json({ error: "Unauthorized" });
@@ -76,9 +106,15 @@ export const authenticateApiRequest = async (req: express.Request, res: express.
   const token = authHeader.split(" ")[1];
   const { db } = await import("../db/index.js");
   const { banks } = await import("../db/schema.js");
-  const { eq } = await import("drizzle-orm");
   try {
-    const bank = await db.select().from(banks).where(eq(banks.apiKey, token)).get();
+    const { decryptSecret } = await import("../lib/encryption.js");
+    const all = await db.select().from(banks);
+    const bank = all.find((b) => {
+      if (!b.apiKey) return false;
+      if (b.apiKey === token) return true;
+      const plain = decryptSecret(b.apiKey);
+      return plain === token;
+    });
     if (!bank) {
       return res.status(401).json({ error: "Invalid API key" });
     }
@@ -90,17 +126,23 @@ export const authenticateApiRequest = async (req: express.Request, res: express.
   }
 };
 
-export const getRedirectUri = async (req: express.Request, callbackPath: string = "/api/auth/discord/callback") => {
-  if (req.query.origin) {
-    let origin = req.query.origin as string;
-    if (origin.endsWith('/')) origin = origin.slice(0, -1);
-    return `${origin}${callbackPath}`;
-  }
+function hostAllowedForRedirect(host: string, allowed: string[]): boolean {
+  const h = host.toLowerCase().split(':')[0];
+  return allowed.some((a) => {
+    try {
+      const ah = new URL(a.startsWith('http') ? a : `https://${a}`).hostname.toLowerCase();
+      return h === ah;
+    } catch {
+      return h === a.toLowerCase().split('/')[0].split(':')[0];
+    }
+  });
+}
 
+export const getRedirectUri = async (req: express.Request, callbackPath: string = "/api/auth/discord/callback") => {
   const { db } = await import("../db/index.js");
   const { banks } = await import("../db/schema.js");
-  const { eq, like } = await import("drizzle-orm");
-  
+  const { eq } = await import("drizzle-orm");
+
   let bankId: string | undefined = req.query.bankId as string | undefined;
   if (!bankId && req.query.state) {
      try {
@@ -112,7 +154,6 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
 
-  // Check if bank has a custom domain configured
   let bank = null;
   if (bankId) {
     try {
@@ -120,10 +161,22 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
     } catch (e) {}
   } else if (host && host !== 'localhost' && host !== 'localhost:3000' && !host.includes('127.0.0.1')) {
     try {
-      const cleanHost = host.split(':')[0];
-      bank = await db.select().from(banks).where(like(banks.customDomain, `%${cleanHost}%`)).get();
+      const cleanHost = host.split(':')[0].toLowerCase();
+      const all = await db.select().from(banks);
+      bank = all.find((b) => {
+        if (!b.customDomain) return false;
+        try {
+          const d = b.customDomain.trim().toLowerCase();
+          const dh = d.startsWith('http') ? new URL(d).hostname : d.split('/')[0].split(':')[0];
+          return dh === cleanHost;
+        } catch { return false; }
+      }) || null;
     } catch (e) {}
   }
+
+  const allowed: string[] = [];
+  if (process.env.APP_URL) allowed.push(process.env.APP_URL);
+  if (bank?.customDomain) allowed.push(bank.customDomain);
 
   if (bank?.customDomain) {
     let domain = bank.customDomain.trim();
@@ -134,8 +187,7 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
     return `${domain}${callbackPath}`;
   }
 
-  // Always fallback to current request host if valid
-  if (host && host !== 'localhost:3000' && !host.includes('127.0.0.1')) {
+  if (host && hostAllowedForRedirect(host, allowed.length ? allowed : [process.env.APP_URL || `https://${host}`])) {
     return `${proto}://${host}${callbackPath}`;
   }
 
@@ -155,7 +207,12 @@ export const sendWebhook = async (bankId: string, message: string) => {
     const { eq } = await import("drizzle-orm");
     const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId));
     if (settings.length > 0 && settings[0].discordWebhookUrl) {
-      await fetch(settings[0].discordWebhookUrl, {
+      const url = settings[0].discordWebhookUrl;
+      if (!isAllowedWebhookUrl(url)) {
+        console.warn("[webhook] blocked non-Discord URL for bank", bankId);
+        return;
+      }
+      await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: message })
@@ -169,13 +226,12 @@ export const sendWebhook = async (bankId: string, message: string) => {
 
 export const securityFirewall = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const ipStr = clientIp(req);
     const { db } = await import("../db/index.js");
     const { bannedIps } = await import("../db/schema.js");
     const { eq } = await import("drizzle-orm");
 
-    if (ip !== 'unknown') {
-      const ipStr = typeof ip === 'string' ? ip.split(',')[0].trim() : String(ip);
+    if (ipStr !== 'unknown') {
       const banned = await db.select().from(bannedIps).where(eq(bannedIps.ipAddress, ipStr)).get();
       
       if (banned) {
@@ -198,7 +254,7 @@ export const logSecurityEvent = async (ip: string, action: string, status: strin
     const { securityAuditLogs } = await import("../db/schema.js");
     const { v4: uuidv4 } = await import("uuid");
     const ipStr = typeof ip === 'string' ? ip.split(',')[0].trim() : String(ip);
-    
+
     await db.insert(securityAuditLogs).values({
       id: uuidv4(),
       ipAddress: ipStr,
@@ -212,3 +268,4 @@ export const logSecurityEvent = async (ip: string, action: string, status: strin
     console.error("Failed to log security event:", e);
   }
 };
+

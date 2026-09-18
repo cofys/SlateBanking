@@ -566,7 +566,11 @@ export function BankLoans() {
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({ status: "approved" })
                                  });
-                                 if(res.ok) fetchData(); else alert("Error");
+                                 if(res.ok) fetchData();
+                                 else {
+                                   const err = await res.json().catch(() => ({}));
+                                   alert(err.error || "Error approving loan");
+                                 }
                                } catch(e) {}
                            }}
                            className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg transition-colors"

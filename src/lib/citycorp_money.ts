@@ -353,32 +353,30 @@ export async function executeSameBankBookTransfer(opts: {
   }
 
   const client = clientForBank(sourceBank);
-  if (client) {
-    const res = await client.transferToAccount(
-      opts.sourceAccount.accountName,
-      dollars(quote.submittedCents),
-      sourceBank.corpId!,
-      opts.destAccount.accountName
-    );
-    if (!isCityCorpOk(res)) {
-      throw new MoneyRailError(`CityCorp transfer failed: ${res?.message || res?.error || "unknown error"}`);
-    }
-    await refreshAccountCache({
-      bankId: sourceBank.id,
-      accountName: opts.sourceAccount.accountName,
-      accountId: opts.sourceAccount.id,
-      client,
-    });
-    await refreshAccountCache({
-      bankId: sourceBank.id,
-      accountName: opts.destAccount.accountName,
-      accountId: opts.destAccount.id,
-      client,
-    });
-  } else if (!opts.skipLocalDelta) {
-    await applyLocalDelta(opts.sourceAccount.id, -quote.submittedCents);
-    await applyLocalDelta(opts.destAccount.id, quote.receivedCents);
+  if (!client) {
+    throw new MoneyRailError("This bank is not connected to CityCorp. Book transfers are unavailable.");
   }
+  const res = await client.transferToAccount(
+    opts.sourceAccount.accountName,
+    dollars(quote.submittedCents),
+    sourceBank.corpId!,
+    opts.destAccount.accountName
+  );
+  if (!isCityCorpOk(res)) {
+    throw new MoneyRailError(`CityCorp transfer failed: ${res?.message || res?.error || "unknown error"}`);
+  }
+  await refreshAccountCache({
+    bankId: sourceBank.id,
+    accountName: opts.sourceAccount.accountName,
+    accountId: opts.sourceAccount.id,
+    client,
+  });
+  await refreshAccountCache({
+    bankId: sourceBank.id,
+    accountName: opts.destAccount.accountName,
+    accountId: opts.destAccount.id,
+    client,
+  });
 
   const txId = await recordMove({
     bankId: sourceBank.id,
@@ -626,20 +624,19 @@ export async function collectToPoolOrTreasury(opts: {
     return { txId: result.txId, funding };
   }
 
-  if (client) {
-    const res = await client.transferToCorp(opts.fromAccount.accountName, dollars(opts.amountCents), bank.corpId!);
-    if (!isCityCorpOk(res)) {
-      throw new MoneyRailError(`Treasury collection failed: ${res?.message || "error"}`);
-    }
-    await refreshAccountCache({
-      bankId: bank.id,
-      accountName: opts.fromAccount.accountName,
-      accountId: opts.fromAccount.id,
-      client,
-    });
-  } else {
-    await applyLocalDelta(opts.fromAccount.id, -opts.amountCents);
+  if (!client) {
+    throw new MoneyRailError("This bank is not connected to CityCorp. Treasury collection is unavailable.");
   }
+  const res = await client.transferToCorp(opts.fromAccount.accountName, dollars(opts.amountCents), bank.corpId!);
+  if (!isCityCorpOk(res)) {
+    throw new MoneyRailError(`Treasury collection failed: ${res?.message || "error"}`);
+  }
+  await refreshAccountCache({
+    bankId: bank.id,
+    accountName: opts.fromAccount.accountName,
+    accountId: opts.fromAccount.id,
+    client,
+  });
 
   const txId = await recordMove({
     bankId: bank.id,
@@ -687,6 +684,104 @@ export async function disburseFromPoolOrOperating(opts: {
     type: "transfer",
   });
   return { txId: result.txId, fromAccountId: source.id };
+}
+
+export async function executeBookTransfer(opts: {
+  sourceAccount: AccountRow;
+  destAccount: AccountRow;
+  desiredCents: number;
+  mode?: FeePayerMode | string;
+  description?: string;
+  type?: string;
+  extraLines?: FeeLine[];
+  skipQuote?: boolean;
+}): Promise<{ quote: FeeQuote; txId?: string; txOutId?: string; txInId?: string }> {
+  if (opts.sourceAccount.bankId === opts.destAccount.bankId) {
+    const same = await executeSameBankBookTransfer(opts);
+    return { quote: same.quote, txId: same.txId, txOutId: same.txId, txInId: same.txId };
+  }
+  const cross = await executeCrossBankSettledTransfer(opts);
+  return { quote: cross.quote, txId: cross.txOutId, txOutId: cross.txOutId, txInId: cross.txInId };
+}
+
+export async function holdInSystemAccount(opts: {
+  fromAccount: AccountRow;
+  amountCents: number;
+  systemAccountName: string;
+  systemCategory: string;
+  description: string;
+  type?: string;
+}): Promise<{ txId: string; holdAccount: AccountRow }> {
+  const bank = await loadBank(opts.fromAccount.bankId);
+  const hold = await ensureNamedCityCorpAccount({
+    bank,
+    accountName: opts.systemAccountName,
+    systemCategory: opts.systemCategory,
+  });
+  const result = await executeSameBankBookTransfer({
+    sourceAccount: opts.fromAccount,
+    destAccount: hold,
+    desiredCents: opts.amountCents,
+    mode: "from_payment",
+    description: opts.description,
+    type: opts.type || "transfer",
+    skipQuote: true,
+  });
+  return { txId: result.txId, holdAccount: hold };
+}
+
+export async function releaseFromSystemAccount(opts: {
+  toAccount: AccountRow;
+  amountCents: number;
+  systemAccountName: string;
+  systemCategory: string;
+  description: string;
+  type?: string;
+}): Promise<{ txId: string; holdAccount: AccountRow }> {
+  const bank = await loadBank(opts.toAccount.bankId);
+  const hold = await ensureNamedCityCorpAccount({
+    bank,
+    accountName: opts.systemAccountName,
+    systemCategory: opts.systemCategory,
+  });
+  const liveHold = await db.select().from(bankAccounts).where(eq(bankAccounts.id, hold.id)).get() || hold;
+  const result = await executeSameBankBookTransfer({
+    sourceAccount: liveHold,
+    destAccount: opts.toAccount,
+    desiredCents: opts.amountCents,
+    mode: "sender_covers",
+    description: opts.description,
+    type: opts.type || "transfer",
+    skipQuote: true,
+  });
+  return { txId: result.txId, holdAccount: liveHold };
+}
+
+export async function payFromInterestPool(opts: {
+  bankId: string;
+  toAccount: AccountRow;
+  amountCents: number;
+  description: string;
+}): Promise<boolean> {
+  const settings = await loadSettings(opts.bankId);
+  const poolName = settings?.interestPoolAccount?.trim();
+  if (!poolName || opts.amountCents <= 0) return false;
+  const pool = await db.select().from(bankAccounts).where(
+    and(eq(bankAccounts.bankId, opts.bankId), eq(bankAccounts.accountName, poolName))
+  ).get() || await db.select().from(bankAccounts).where(
+    and(eq(bankAccounts.bankId, opts.bankId), eq(bankAccounts.id, poolName))
+  ).get();
+  if (!pool || pool.id === opts.toAccount.id || pool.balance < opts.amountCents) return false;
+  await executeSameBankBookTransfer({
+    sourceAccount: pool,
+    destAccount: opts.toAccount,
+    desiredCents: opts.amountCents,
+    mode: "sender_covers",
+    description: opts.description,
+    type: "interest_payout",
+    skipQuote: true,
+  });
+  return true;
 }
 
 export { parseFeePayerMode };

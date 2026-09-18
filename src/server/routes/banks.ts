@@ -84,7 +84,7 @@ banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Reques
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message || "Internal error", stack: e.stack });
+      res.status(500).json({ error: e.message || "Internal error" });
     }
   });
 
@@ -388,7 +388,7 @@ banksRouter.get("/api/admin/banks/:id/calculate-billing", requireGlobalAdmin, as
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -488,14 +488,13 @@ banksRouter.post("/api/banks/:id/upload-db", requireGlobalAdmin, async (req: exp
             bankId,
             ownerDiscordId: discordId,
             accountName: accountName.toString(),
-            balance: balanceCents,
+            balance: 0,
             isActive: true,
             createdAt: new Date()
           });
           accountsImported++;
         } else {
           targetAccountId = existing[0].id;
-          await db.update(bankAccounts).set({ balance: existing[0].balance + balanceCents }).where(eq(bankAccounts.id, targetAccountId));
         }
         
         // If transactions table exists, let's map them for this account
@@ -673,7 +672,7 @@ banksRouter.post("/api/banks/:id/bot-status", requireGlobalAdmin, async (req: ex
       }
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -722,7 +721,7 @@ banksRouter.get("/api/banks", requireAuth, async (req: express.Request, res: exp
       res.json(enrichedBanks);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -789,7 +788,7 @@ banksRouter.post("/api/banks", requireGlobalAdmin, async (req: express.Request, 
       res.json(newBank);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -874,7 +873,7 @@ banksRouter.get("/api/banks/:bankId/invoices", requireBankStaff, async (req: exp
       res.json(enrichedInvoices);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -929,7 +928,7 @@ banksRouter.put("/api/banks/:bankId/invoices/:invoiceId/status", requireBankStaf
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1042,7 +1041,7 @@ banksRouter.get("/api/banks/:bankId/audit", requireBankStaff, async (req: expres
       res.json(logs);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1095,7 +1094,7 @@ banksRouter.get("/api/banks/:bankId/customers", requireBankStaff, async (req: ex
       res.json(Array.from(customerMap.values()));
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1108,7 +1107,7 @@ banksRouter.get("/api/banks/:bankId/team", [requireBankStaff, requireRole(["owne
       res.json(staff);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1128,7 +1127,7 @@ banksRouter.post("/api/banks/:bankId/team", [requireBankStaff, requireRole(["own
       res.json(newStaff);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1145,7 +1144,7 @@ banksRouter.put("/api/banks/:bankId/team/:staffId", [requireBankStaff, requireRo
       res.json({ success: true, role });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1158,7 +1157,7 @@ banksRouter.delete("/api/banks/:bankId/team/:staffId", [requireBankStaff, requir
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1214,7 +1213,7 @@ banksRouter.get("/api/banks/:bankId/customers/:discordId", requireBankStaff, asy
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1291,7 +1290,7 @@ banksRouter.get("/api/banks/:bankId/accounts/:accountId", requireBankStaff, asyn
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1447,7 +1446,7 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1586,25 +1585,26 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
       res.json(data);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
 banksRouter.post("/api/banks/:bankId/accrue-interest", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, bankSettings, transactions } = await import("../../db/schema");
+    const { bankAccounts, bankSettings } = await import("../../db/schema");
     const { eq, and, gt } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
 
     try {
       const bankId = req.params.bankId;
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-      const apyBasisPoints = settings?.savingsApyPercent ?? 300; // default 3.00%
+      const apyBasisPoints = settings?.savingsApyPercent ?? 300;
       if (apyBasisPoints <= 0) {
         return res.json({ success: true, processedCount: 0, totalInterestPaid: 0, message: "Interest rate set to 0%" });
       }
+      if (!settings?.interestPoolAccount) {
+        return res.status(400).json({ error: "Set an interest pool account before accruing APY. Interest cannot be minted locally." });
+      }
 
-      // Fetch all non-frozen, active accounts with positive balance
       const eligibleAccounts = await db.select().from(bankAccounts).where(
         and(
           eq(bankAccounts.bankId, bankId),
@@ -1616,36 +1616,29 @@ banksRouter.post("/api/banks/:bankId/accrue-interest", requireBankStaff, async (
 
       let processedCount = 0;
       let totalInterestPaid = 0;
+      const { payFromInterestPool } = await import("../../lib/citycorp_money");
 
-      await db.transaction(async (tx) => {
-        for (const account of eligibleAccounts) {
-          // Daily interest calculation: balance * (apyBasisPoints / 10000) / 365
-          const dailyInterest = Math.floor((account.balance * (apyBasisPoints / 10000)) / 365);
-          if (dailyInterest > 0) {
-            await tx.update(bankAccounts)
-              .set({ balance: account.balance + dailyInterest })
-              .where(eq(bankAccounts.id, account.id));
-
-            await tx.insert(transactions).values({
-              id: uuidv4(),
-              bankId,
-              toAccountId: account.id,
-              amount: dailyInterest,
-              type: "interest_payment",
-              description: `Savings Interest Accrual (${(apyBasisPoints / 100).toFixed(2)}% APY)`,
-              timestamp: new Date(),
-              category: "Interest"
-            });
-
-            processedCount++;
-            totalInterestPaid += dailyInterest;
-          }
+      for (const account of eligibleAccounts) {
+        const dailyInterest = Math.floor((account.balance * (apyBasisPoints / 10000)) / 365);
+        if (dailyInterest <= 0) continue;
+        try {
+          const paid = await payFromInterestPool({
+            bankId,
+            toAccount: account,
+            amountCents: dailyInterest,
+            description: `Savings Interest Accrual (${(apyBasisPoints / 100).toFixed(2)}% APY)`,
+          });
+          if (!paid) continue;
+          processedCount++;
+          totalInterestPaid += dailyInterest;
+        } catch (e) {
+          console.error("[InterestAccrual] payout failed", e);
         }
+      }
 
-        await tx.update(bankSettings)
-          .set({ lastInterestAccrualAt: new Date() })
-          .where(eq(bankSettings.bankId, bankId));
-      });
+      await db.update(bankSettings)
+        .set({ lastInterestAccrualAt: new Date() })
+        .where(eq(bankSettings.bankId, bankId));
 
       res.json({
         success: true,
@@ -1844,7 +1837,7 @@ banksRouter.get("/api/banks/:bankId/accounts", requireBankStaff, async (req: exp
       res.json(enrichedAccounts);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -1927,13 +1920,8 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
           }
         }
         
-        // 3c. Initial Deposit (if any and not linking existing)
-        if (!linkExisting && initialBalanceCents && initialBalanceCents > 0) {
-            const depositRes = await client.deposit(accountName, initialBalanceCents / 100);
-            if (!depositRes.success) {
-               console.error(`CityCorp Initial Deposit Failed:`, depositRes.message);
-            }
-        }
+        // 3c. New CityCorp accounts start at $0. Seed via teller cash window or in-game deposit.
+        // Linking an existing in-game account SETS the cache from live balance.
       }
 
       // 4. Resolve Owner ID
@@ -1971,7 +1959,7 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
         accountName,
         accountType: finalAccountType,
         tierId: (req.body.tierId || tierId) || (settings?.enableAccountTiers && settings?.accountTiers?.find((t: any) => t.isDefault && t.type === finalAccountType)?.id) || null,
-        balance: req.body.initialBalanceCents || initialBalanceCents || 0,
+        balance: req.body.initialBalanceCents || 0,
         createdAt: new Date(),
       };
       
@@ -2334,54 +2322,9 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/provision-game", requir
   });
 
 banksRouter.post("/api/banks/:bankId/accounts/:accountId/adjust-balance", requireBankStaff, async (req: express.Request, res: express.Response) => {
-    const { db } = await import("../../db/index");
-    const { bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
-
-    try {
-      const { bankId, accountId } = req.params;
-      const { amountCents, newBalanceCents, mode, description } = req.body;
-
-      const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
-      if (!account) return res.status(404).json({ error: "Account not found" });
-
-      let finalBalance = account.balance;
-      let delta = 0;
-
-      if (mode === "set" || newBalanceCents !== undefined) {
-        const target = Math.max(0, Math.round(Number(newBalanceCents ?? amountCents)));
-        delta = target - account.balance;
-        finalBalance = target;
-      } else if (mode === "deposit") {
-        const dep = Math.max(0, Math.round(Number(amountCents)));
-        delta = dep;
-        finalBalance = account.balance + dep;
-      } else if (mode === "withdraw") {
-        const wdr = Math.max(0, Math.round(Number(amountCents)));
-        delta = -wdr;
-        finalBalance = Math.max(0, account.balance - wdr);
-      }
-
-      if (delta !== 0) {
-        await db.update(bankAccounts).set({ balance: finalBalance }).where(eq(bankAccounts.id, accountId));
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          bankId,
-          fromAccountId: delta < 0 ? accountId : null,
-          toAccountId: delta > 0 ? accountId : null,
-          type: delta > 0 ? 'deposit' : 'withdraw',
-          amount: Math.abs(delta),
-          description: description || `Manual Balance Adjustment (${delta > 0 ? '+' : ''}$${(delta/100).toFixed(2)})`,
-          timestamp: new Date()
-        });
-      }
-
-      return res.json({ success: true, newBalance: finalBalance, accountId });
-    } catch (e: any) {
-      console.error(e);
-      return res.status(500).json({ error: e.message || "Failed to adjust balance" });
-    }
+    return res.status(410).json({
+      error: "Balance adjustments must go through CityCorp (teller cash window or book transfer)."
+    });
   });
 
 banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, async (req: express.Request, res: express.Response) => {
@@ -2443,37 +2386,8 @@ banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, a
            }
         }
         await client.deleteAccount(accName).catch(() => {});
-      } else {
-        // Internal Bank
-        if (balance > 0 && action === 'return' && destAccount) {
-           const fee = parseFloat(feePercent || "0");
-           const returnAmount = Math.floor(balance * (1 - (fee / 100)));
-           
-           if (returnAmount > 0) {
-              // Find dest account
-              const destAccs = await db.select().from(bankAccounts).where(
-                 and(eq(bankAccounts.bankId, req.params.bankId), eq(bankAccounts.accountName, destAccount))
-              );
-              if (destAccs.length > 0) {
-                 await db.update(bankAccounts)
-                   .set({ balance: destAccs[0].balance + returnAmount })
-                   .where(eq(bankAccounts.id, destAccs[0].id));
-                 
-                 await db.insert(transactions).values({
-                    id: uuidv4(),
-                    bankId: req.params.bankId,
-                    fromAccountId: targetAcc.id,
-                    toAccountId: destAccs[0].id,
-                    type: 'transfer',
-                    amount: returnAmount,
-                    description: `Returned funds from closed account ${accName}`,
-                    timestamp: new Date()
-                 });
-              } else {
-                 throw new Error(`Destination account '${destAccount}' not found in this bank.`);
-              }
-           }
-        }
+      } else if (balance > 0) {
+        return res.status(400).json({ error: "This bank is not connected to CityCorp. Cannot close a funded account without a book-transfer return." });
       }
 
       const { or } = await import("drizzle-orm");
@@ -2516,7 +2430,7 @@ banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, a
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -2565,7 +2479,7 @@ banksRouter.get("/api/banks/:bankId/analytics", requireBankStaff, async (req: ex
       res.json(Object.values(grouped));
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -2618,7 +2532,7 @@ banksRouter.get("/api/banks/:bankId/clearinghouse", requireBankStaff, async (req
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -2661,7 +2575,7 @@ banksRouter.post("/api/banks/:bankId/clearinghouse/settle", requireBankStaff, as
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -2685,49 +2599,24 @@ banksRouter.put("/api/banks/:bankId/clearinghouse/wires/:wireId", requireBankSta
        const { action } = req.body;
 
        if (action === 'approve') {
-          // Deposit money to destination account
+          const sa = await db.select().from(bankAccounts).where(eq(bankAccounts.id, wire.fromAccountId)).get();
           const da = await db.select().from(bankAccounts).where(eq(bankAccounts.id, wire.toAccountId)).get();
-          if (da) {
-             const { sql } = await import("drizzle-orm");
-             await db.transaction(async (tx) => {
-               await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${wire.amount}` }).where(eq(bankAccounts.id, da.id));
-               
-               await tx.insert(transactions).values({
-                 id: uuidv4(),
-                 bankId: wire.toBankId,
-                 fromAccountId: null,
-                 toAccountId: da.id,
-                 type: "deposit",
-                 amount: wire.amount,
-                 description: `Approved Inbound Wire Transfer`,
-                 timestamp: new Date()
-               });
-
-               await tx.update(interBankTransfers).set({ status: 'completed', completedAt: new Date() }).where(eq(interBankTransfers.id, wire.id));
-             });
+          if (!sa || !da) return res.status(400).json({ error: "Wire accounts not found" });
+          try {
+            const { executeCrossBankSettledTransfer } = await import("../../lib/citycorp_money");
+            await executeCrossBankSettledTransfer({
+              sourceAccount: sa,
+              destAccount: da,
+              desiredCents: wire.amount,
+              mode: "from_payment",
+              description: "Approved inbound wire transfer",
+            });
+            await db.update(interBankTransfers).set({ status: 'completed', completedAt: new Date() }).where(eq(interBankTransfers.id, wire.id));
+          } catch (err: any) {
+            return res.status(400).json({ error: err.message || "Wire settlement failed" });
           }
        } else if (action === 'reject') {
-          // Refund source account
-          const sa = await db.select().from(bankAccounts).where(eq(bankAccounts.id, wire.fromAccountId)).get();
-          if (sa) {
-             const { sql } = await import("drizzle-orm");
-             await db.transaction(async (tx) => {
-               await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${wire.amount}` }).where(eq(bankAccounts.id, sa.id));
-
-               await tx.insert(transactions).values({
-                 id: uuidv4(),
-                 bankId: wire.fromBankId,
-                 fromAccountId: null,
-                 toAccountId: sa.id,
-                 type: "deposit",
-                 amount: wire.amount,
-                 description: `Refund: Rejected Outbound Wire`,
-                 timestamp: new Date()
-               });
-
-               await tx.update(interBankTransfers).set({ status: 'rejected', completedAt: new Date() }).where(eq(interBankTransfers.id, wire.id));
-             });
-          }
+          await db.update(interBankTransfers).set({ status: 'rejected', completedAt: new Date() }).where(eq(interBankTransfers.id, wire.id));
        }
 
        res.json({ success: true });
@@ -2739,9 +2628,8 @@ banksRouter.put("/api/banks/:bankId/clearinghouse/wires/:wireId", requireBankSta
 
 banksRouter.post("/api/banks/:bankId/wire", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, transactions, clearinghouseBalances } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     try {
       const { fromAccountId, toBankId, toAccountName, amount, description } = req.body;
       if (!fromAccountId || !toBankId || !toAccountName || !amount || amount <= 0) return res.status(400).json({ error: "Invalid params" });
@@ -2750,67 +2638,17 @@ banksRouter.post("/api/banks/:bankId/wire", requireBankStaff, async (req: expres
       if (!fromAccount) return res.status(404).json({ error: "Source account not found" });
       if (fromAccount.balance < amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      const { gte } = await import("drizzle-orm");
-      let actualToAccountId = toAccountName; // fallback to string
       const toAccount = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, toBankId), eq(bankAccounts.accountName, toAccountName))).get();
-      if (toAccount) {
-         actualToAccountId = toAccount.id;
-      }
+      if (!toAccount) return res.status(404).json({ error: "Destination account not found" });
 
-      await db.transaction(async (tx) => {
-        // 1. Deduct from sender
-        await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} - ${amount}` })
-          .where(and(
-            eq(bankAccounts.id, fromAccountId),
-            gte(bankAccounts.balance, amount),
-            eq(bankAccounts.isActive, true),
-            eq(bankAccounts.isFrozen, false)
-          ));
-        
-        // 2. Add to recipient (if we can find by name + bank ID)
-        if (toAccount) {
-           await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${amount}` }).where(eq(bankAccounts.id, toAccount.id));
-        }
-
-        // 3. Update clearinghouse balances 
-        await tx.run(sql`
-          INSERT INTO clearinghouse_balances (bank_id, balance, last_settled) 
-          VALUES (${req.params.bankId}, -${amount}, CURRENT_TIMESTAMP) 
-          ON CONFLICT(bank_id) DO UPDATE SET balance = balance - ${amount}, last_settled = CURRENT_TIMESTAMP
-        `);
-        
-        await tx.run(sql`
-          INSERT INTO clearinghouse_balances (bank_id, balance, last_settled) 
-          VALUES (${toBankId}, ${amount}, CURRENT_TIMESTAMP) 
-          ON CONFLICT(bank_id) DO UPDATE SET balance = balance + ${amount}, last_settled = CURRENT_TIMESTAMP
-        `);
-
-        // 4. Record transactions
-        const ts = new Date();
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId,
-          toAccountId: `ext_${toBankId}`,
-          type: "wire_transfer",
-          amount,
-          description: description || `Wire to ${toAccountName}`,
-          timestamp: ts
-        });
-
-        if (toAccount) {
-          await tx.insert(transactions).values({
-            id: uuidv4(),
-            bankId: toBankId,
-            fromAccountId: `ext_${req.params.bankId}`,
-            toAccountId: toAccount.id,
-            type: "wire_transfer",
-            amount,
-            description: description || `Wire from ${fromAccount.accountName}`,
-            timestamp: ts
-          });
-        }
+      const { executeBookTransfer } = await import("../../lib/citycorp_money");
+      await executeBookTransfer({
+        sourceAccount: fromAccount,
+        destAccount: toAccount,
+        desiredCents: amount,
+        mode: "from_payment",
+        description: description || `Wire to ${toAccountName}`,
+        type: "wire_transfer",
       });
 
       sendWebhook(req.params.bankId, `🌐 **Wire Transfer Sent**: $${(amount/100).toFixed(2)} routed to ${toAccountName}.`);
@@ -2819,7 +2657,7 @@ banksRouter.post("/api/banks/:bankId/wire", requireBankStaff, async (req: expres
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -2853,7 +2691,7 @@ banksRouter.get("/api/banks/:bankId/subscriptions", requireBankStaff, async (req
       res.json(subs);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -2890,7 +2728,7 @@ banksRouter.post("/api/banks/:bankId/subscriptions", requireBankStaff, async (re
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -2907,15 +2745,14 @@ banksRouter.patch("/api/banks/:bankId/subscriptions/:subId", requireBankStaff, a
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
 banksRouter.post("/api/banks/:bankId/subscriptions/:subId/charge", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { subscriptions, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql, gte } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { subscriptions, bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     try {
       const sub = await db.select().from(subscriptions).where(and(eq(subscriptions.id, req.params.subId), eq(subscriptions.bankId, req.params.bankId))).get();
       if (!sub) return res.status(404).json({ error: "Sub not found" });
@@ -2926,45 +2763,25 @@ banksRouter.post("/api/banks/:bankId/subscriptions/:subId/charge", requireBankSt
       if (!biller || !customer) return res.status(400).json({ error: "Accounts invalid" });
       if (customer.balance < sub.amount) return res.status(400).json({ error: "Customer has insufficient funds" });
 
+      const { executeBookTransfer } = await import("../../lib/citycorp_money");
+      await executeBookTransfer({
+        sourceAccount: customer,
+        destAccount: biller,
+        desiredCents: sub.amount,
+        mode: "from_payment",
+        description: `Subscription Charge: ${sub.description}`,
+        type: "transfer",
+      });
+
       const nextRun = new Date(sub.nextRun);
       if (sub.frequency === 'weekly') nextRun.setDate(nextRun.getDate() + 7);
       else if (sub.frequency === 'monthly') nextRun.setMonth(nextRun.getMonth() + 1);
-
-      const ts = new Date();
-      await db.transaction(async (tx) => {
-        // Deduct customer
-        await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} - ${sub.amount}` })
-          .where(and(
-            eq(bankAccounts.id, customer.id),
-            gte(bankAccounts.balance, sub.amount),
-            eq(bankAccounts.isActive, true),
-            eq(bankAccounts.isFrozen, false)
-          ));
-        
-        // Add biller
-        await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${sub.amount}` }).where(eq(bankAccounts.id, biller.id));
-
-        // Record transaction
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId: customer.id,
-          toAccountId: biller.id,
-          type: "transfer",
-          amount: sub.amount,
-          description: `Subscription Charge: ${sub.description}`,
-          timestamp: ts
-        });
-
-        // Advance next run date
-        await tx.update(subscriptions).set({ nextRun }).where(eq(subscriptions.id, sub.id));
-      });
+      await db.update(subscriptions).set({ nextRun }).where(eq(subscriptions.id, sub.id));
 
       res.json({ success: true, nextRun });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -2997,7 +2814,7 @@ banksRouter.get("/api/banks/:bankId/payroll", requireBankStaff, async (req: expr
       res.json(jobs);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3033,7 +2850,7 @@ banksRouter.post("/api/banks/:bankId/payroll", requireBankStaff, async (req: exp
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3050,15 +2867,14 @@ banksRouter.patch("/api/banks/:bankId/payroll/:jobId", requireBankStaff, async (
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
 banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { payrollJobs, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql, gte } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { payrollJobs, bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     try {
       const job = await db.select().from(payrollJobs).where(and(eq(payrollJobs.id, req.params.jobId), eq(payrollJobs.bankId, req.params.bankId))).get();
       if (!job) return res.status(404).json({ error: "Job not found" });
@@ -3069,46 +2885,26 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
       if (!employer || !employee) return res.status(400).json({ error: "Accounts invalid" });
       if (employer.balance < job.amount) return res.status(400).json({ error: "Employer has insufficient funds to run payroll" });
 
+      const { executeBookTransfer } = await import("../../lib/citycorp_money");
+      await executeBookTransfer({
+        sourceAccount: employer,
+        destAccount: employee,
+        desiredCents: job.amount,
+        mode: "sender_covers",
+        description: "Automated Payroll Deposit",
+        type: "transfer",
+      });
+
       const nextRun = new Date(job.nextRun);
       if (job.frequency === 'weekly') nextRun.setDate(nextRun.getDate() + 7);
       else if (job.frequency === 'biweekly') nextRun.setDate(nextRun.getDate() + 14);
       else if (job.frequency === 'monthly') nextRun.setMonth(nextRun.getMonth() + 1);
-
-      const ts = new Date();
-      await db.transaction(async (tx) => {
-        // Deduct employer
-        await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} - ${job.amount}` })
-          .where(and(
-            eq(bankAccounts.id, employer.id),
-            gte(bankAccounts.balance, job.amount),
-            eq(bankAccounts.isActive, true),
-            eq(bankAccounts.isFrozen, false)
-          ));
-        
-        // Add employee
-        await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${job.amount}` }).where(eq(bankAccounts.id, employee.id));
-
-        // Record transaction
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId: employer.id,
-          toAccountId: employee.id,
-          type: "transfer",
-          amount: job.amount,
-          description: `Automated Payroll Deposit`,
-          timestamp: ts
-        });
-
-        // Advance next run date
-        await tx.update(payrollJobs).set({ nextRun }).where(eq(payrollJobs.id, job.id));
-      });
+      await db.update(payrollJobs).set({ nextRun }).where(eq(payrollJobs.id, job.id));
 
       res.json({ success: true, nextRun });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3308,7 +3104,7 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
       });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3370,7 +3166,7 @@ banksRouter.get("/api/banks/:bankId/escrows", requireBankStaff, async (req: expr
       res.json(dbEscrows);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3424,15 +3220,14 @@ banksRouter.post("/api/banks/:bankId/escrows", requireBankStaff, async (req: exp
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
 banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { escrows, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql, gte } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { escrows, bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     try {
       const escrow = await db.select().from(escrows).where(and(eq(escrows.id, req.params.escrowId), eq(escrows.bankId, req.params.bankId))).get();
       if (!escrow) return res.status(404).json({ error: "Escrow not found" });
@@ -3442,41 +3237,28 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, 
       if (!buyer) return res.status(404).json({ error: "Buyer account not found" });
       if (buyer.balance < escrow.amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      await db.transaction(async (tx) => {
-        await tx.update(bankAccounts)
-          .set({ balance: sql`${bankAccounts.balance} - ${escrow.amount}` })
-          .where(and(
-            eq(bankAccounts.id, buyer.id),
-            gte(bankAccounts.balance, escrow.amount),
-            eq(bankAccounts.isActive, true),
-            eq(bankAccounts.isFrozen, false)
-          ));
-        await tx.update(escrows).set({ status: "funded" }).where(eq(escrows.id, escrow.id));
-
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId: buyer.id,
-          toAccountId: null,
-          type: "withdraw",
-          amount: escrow.amount,
-          description: `Escrow Funded: ${escrow.description || escrow.id}`,
-          timestamp: new Date()
-        });
+      const { holdInSystemAccount } = await import("../../lib/citycorp_money");
+      await holdInSystemAccount({
+        fromAccount: buyer,
+        amountCents: escrow.amount,
+        systemAccountName: "ESCROW",
+        systemCategory: "escrow",
+        description: `Escrow Funded: ${escrow.description || escrow.id}`,
+        type: "escrow",
       });
+      await db.update(escrows).set({ status: "funded" }).where(eq(escrows.id, escrow.id));
 
       res.json({ success: true, status: "funded" });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
 banksRouter.post("/api/banks/:bankId/escrows/:escrowId/release", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { escrows, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { escrows, bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     try {
       const escrow = await db.select().from(escrows).where(and(eq(escrows.id, req.params.escrowId), eq(escrows.bankId, req.params.bankId))).get();
       if (!escrow) return res.status(404).json({ error: "Escrow not found" });
@@ -3485,34 +3267,28 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/release", requireBankStaf
       const seller = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.sellerAccountId)).get();
       if (!seller) return res.status(404).json({ error: "Seller account not found" });
 
-      await db.transaction(async (tx) => {
-        await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${escrow.amount}` }).where(eq(bankAccounts.id, seller.id));
-        await tx.update(escrows).set({ status: "released" }).where(eq(escrows.id, escrow.id));
-
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId: null,
-          toAccountId: seller.id,
-          type: "deposit",
-          amount: escrow.amount,
-          description: `Escrow Released: ${escrow.description || escrow.id}`,
-          timestamp: new Date()
-        });
+      const { releaseFromSystemAccount } = await import("../../lib/citycorp_money");
+      await releaseFromSystemAccount({
+        toAccount: seller,
+        amountCents: escrow.amount,
+        systemAccountName: "ESCROW",
+        systemCategory: "escrow",
+        description: `Escrow Released: ${escrow.description || escrow.id}`,
+        type: "escrow",
       });
+      await db.update(escrows).set({ status: "released" }).where(eq(escrows.id, escrow.id));
 
       res.json({ success: true, status: "released" });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
 banksRouter.post("/api/banks/:bankId/escrows/:escrowId/refund", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { escrows, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { escrows, bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     try {
       const escrow = await db.select().from(escrows).where(and(eq(escrows.id, req.params.escrowId), eq(escrows.bankId, req.params.bankId))).get();
       if (!escrow) return res.status(404).json({ error: "Escrow not found" });
@@ -3521,26 +3297,21 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/refund", requireBankStaff
       const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
       if (!buyer) return res.status(404).json({ error: "Buyer account not found" });
 
-      await db.transaction(async (tx) => {
-        await tx.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${escrow.amount}` }).where(eq(bankAccounts.id, buyer.id));
-        await tx.update(escrows).set({ status: "refunded" }).where(eq(escrows.id, escrow.id));
-
-        await tx.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId: null,
-          toAccountId: buyer.id,
-          type: "deposit",
-          amount: escrow.amount,
-          description: `Escrow Refunded: ${escrow.description || escrow.id}`,
-          timestamp: new Date()
-        });
+      const { releaseFromSystemAccount } = await import("../../lib/citycorp_money");
+      await releaseFromSystemAccount({
+        toAccount: buyer,
+        amountCents: escrow.amount,
+        systemAccountName: "ESCROW",
+        systemCategory: "escrow",
+        description: `Escrow Refunded: ${escrow.description || escrow.id}`,
+        type: "escrow",
       });
+      await db.update(escrows).set({ status: "refunded" }).where(eq(escrows.id, escrow.id));
 
       res.json({ success: true, status: "refunded" });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3581,7 +3352,7 @@ banksRouter.get("/api/banks/:bankId/loans", requireBankStaff, async (req: expres
       res.json(bankLoans);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3628,39 +3399,6 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         ? Number(reqRemainingAmount) 
         : Math.max(0, parsedPrincipal - parsedPaid);
 
-      if (isOffSystem) {
-        // Off-system loan: Funds were ALREADY disbursed externally in the past!
-        // DO NOT add funds into the customer's account now.
-        // Record audit/onboarding transaction for full ledger transparency
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId: null,
-          toAccountId: depositAccountId,
-          type: "deposit",
-          amount: calculatedRemaining,
-          description: `Off-System Historical Loan Onboarded (Orig. Principal: $${(parsedPrincipal/100).toFixed(2)}, Prior Off-System Payments: $${(parsedPaid/100).toFixed(2)}, Remaining Balance: $${(calculatedRemaining/100).toFixed(2)})`,
-          category: "Loans",
-          timestamp: ts
-        });
-      } else {
-        // Native on-platform loan: Disburse funds directly to the customer's account
-        await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${parsedPrincipal}` }).where(eq(bankAccounts.id, depositAccountId));
-
-        // Record disbursement transaction
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId: null,
-          toAccountId: depositAccountId,
-          type: "deposit",
-          amount: parsedPrincipal,
-          description: `Loan Disbursement (Principal: $${(parsedPrincipal/100).toFixed(2)})`,
-          category: "Loans",
-          timestamp: ts
-        });
-      }
-
       // Handle contract URL if enabled
       const { bankSettings, banks } = await import("../../db/schema");
       const bSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, req.params.bankId)).get();
@@ -3699,15 +3437,30 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         collateralDescription: collateralDescription || null,
         collateralValue: colVal,
         collateralStatus: colStatus,
-        status: calculatedRemaining <= 0 ? "paid_off" : "active",
+        status: calculatedRemaining <= 0 ? "paid_off" : (isOffSystem ? "active" : "pending"),
         contractUrl,
         createdAt: ts
       }).returning().get();
 
+      if (!isOffSystem && calculatedRemaining > 0) {
+        try {
+          const { disburseLoan } = await import("../loan_processor");
+          await disburseLoan(result);
+          await db.update(loans).set({ status: "active" }).where(eq(loans.id, newLoanId));
+          result.status = "active";
+        } catch (err: any) {
+          return res.status(400).json({
+            error: err.message || "Loan disbursement failed. Loan left pending.",
+            loanId: newLoanId,
+            status: "pending",
+          });
+        }
+      }
+
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3791,7 +3544,19 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId", requireBankStaff, async (req
       if (collateralValue !== undefined) updates.collateralValue = collateralValue;
       if (contractUrl !== undefined) updates.contractUrl = contractUrl;
       if (contractText !== undefined) updates.contractText = contractText;
-      if (status !== undefined) updates.status = status;
+
+      const wantsDisburse = loan.status === "pending" && (status === "active" || status === "approved");
+      if (wantsDisburse) {
+        try {
+          const { disburseLoan } = await import("../loan_processor.js");
+          await disburseLoan(loan);
+          updates.status = "active";
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message || "Loan disbursement failed" });
+        }
+      } else if (status !== undefined) {
+        updates.status = status === "approved" ? "active" : status;
+      }
 
       await db.update(loans).set(updates).where(eq(loans.id, req.params.loanId));
       res.json({ success: true });
@@ -3813,12 +3578,16 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId/status", requireBankStaff, asy
       const loan = await db.select().from(loans).where(eq(loans.id, req.params.loanId)).get();
       if (!loan || loan.bankId !== req.params.bankId) return res.status(404).json({ error: "Loan not found" });
 
-      if (loan.status === "pending" && status === "active") {
-        const { disburseLoan } = await import("../loan_processor");
-        await disburseLoan(loan);
+      if (loan.status === "pending" && (status === "active" || status === "approved")) {
+        try {
+          const { disburseLoan } = await import("../loan_processor");
+          await disburseLoan(loan);
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message || "Loan disbursement failed" });
+        }
         await db.update(loans).set({ status: "active" }).where(eq(loans.id, req.params.loanId));
       } else {
-        await db.update(loans).set({ status }).where(eq(loans.id, req.params.loanId));
+        await db.update(loans).set({ status: status === "approved" ? "active" : status }).where(eq(loans.id, req.params.loanId));
       }
       res.json({ success: true });
     } catch (e: any) {
@@ -3855,7 +3624,7 @@ banksRouter.get("/api/banks/:bankId/credit-applications", requireBankStaff, asyn
       res.json(enrichedApps);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -3892,6 +3661,7 @@ banksRouter.put("/api/banks/:bankId/credit-applications/:appId", requireBankStaf
             creditLimit: capp.requestedLimit,
             creditUsed: 0,
             apr: 1999, // default
+            nextPaymentDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })(),
             createdAt: new Date(),
           });
       }
@@ -3991,7 +3761,7 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
       res.json({ success: true, newRemaining, isPaid });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4017,14 +3787,14 @@ banksRouter.get("/api/banks/:bankId/vaults", requireBankStaff, async (req: expre
       res.json(vaults);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
 banksRouter.post("/api/banks/:bankId/vaults", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { vaultDeposits, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
+    const { vaultDeposits, bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     try {
       const { accountId, amount, durationDays, interestRate } = req.body;
@@ -4036,23 +3806,17 @@ banksRouter.post("/api/banks/:bankId/vaults", requireBankStaff, async (req: expr
       if (!acc) return res.status(404).json({ error: "Account not found" });
       if (acc.balance < amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      // Deduct from account
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} - ${amount}` }).where(eq(bankAccounts.id, accountId));
-
-      // Record transaction
-      const ts = new Date();
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: accountId,
-        toAccountId: null,
-        type: "withdraw",
-        amount,
+      const { holdInSystemAccount } = await import("../../lib/citycorp_money");
+      await holdInSystemAccount({
+        fromAccount: acc,
+        amountCents: amount,
+        systemAccountName: "VAULT",
+        systemCategory: "vault",
         description: `Deposit to Vault (${durationDays} days @ ${(interestRate/100).toFixed(2)}%)`,
-        timestamp: ts
+        type: "vault",
       });
 
-      // Create Vault
+      const ts = new Date();
       const lockedUntil = new Date();
       lockedUntil.setDate(lockedUntil.getDate() + durationDays);
 
@@ -4070,52 +3834,59 @@ banksRouter.post("/api/banks/:bankId/vaults", requireBankStaff, async (req: expr
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
 banksRouter.post("/api/banks/:bankId/vaults/:vaultId/release", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { vaultDeposits, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { vaultDeposits, bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     try {
       const vault = await db.select().from(vaultDeposits).where(and(eq(vaultDeposits.id, req.params.vaultId), eq(vaultDeposits.bankId, req.params.bankId))).get();
       if (!vault) return res.status(404).json({ error: "Vault not found" });
       if (vault.status !== "locked") return res.status(400).json({ error: "Vault is not locked" });
 
+      const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, vault.accountId)).get();
+      if (!acc) return res.status(404).json({ error: "Vault account not found" });
+
       const now = new Date();
       const isEarly = now < vault.lockedUntil;
-      
+      const { releaseFromSystemAccount, payFromInterestPool } = await import("../../lib/citycorp_money");
+      await releaseFromSystemAccount({
+        toAccount: acc,
+        amountCents: vault.amount,
+        systemAccountName: "VAULT",
+        systemCategory: "vault",
+        description: isEarly ? "Early Vault Withdrawal (No Interest)" : "Vault Maturity Release",
+        type: "vault",
+      });
+
       let payout = vault.amount;
       if (!isEarly) {
-        // Calculate interest (simple interest for now)
         const daysLocked = Math.floor((now.getTime() - vault.createdAt.getTime()) / (1000 * 60 * 60 * 24));
         const interestAmount = Math.floor((vault.amount * (vault.interestRate / 10000)) * (daysLocked / 365));
-        payout += interestAmount;
-      } else {
-        // Early withdrawal penalty? Let's just give back principal for now.
+        if (interestAmount > 0) {
+          try {
+            const paid = await payFromInterestPool({
+              bankId: req.params.bankId,
+              toAccount: acc,
+              amountCents: interestAmount,
+              description: "Vault maturity interest",
+            });
+            if (paid) payout += interestAmount;
+          } catch (e) {
+            console.error("[vault] interest payout skipped", e);
+          }
+        }
       }
 
       await db.update(vaultDeposits).set({ status: isEarly ? "early_withdrawn" : "released" }).where(eq(vaultDeposits.id, vault.id));
-      
-      await db.update(bankAccounts).set({ balance: sql`${bankAccounts.balance} + ${payout}` }).where(eq(bankAccounts.id, vault.accountId));
-
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        bankId: req.params.bankId,
-        fromAccountId: null,
-        toAccountId: vault.accountId,
-        type: "deposit",
-        amount: payout,
-        description: isEarly ? "Early Vault Withdrawal (No Interest)" : "Vault Maturity Release",
-        timestamp: now
-      });
 
       res.json({ success: true, payout, isEarly });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4159,7 +3930,7 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
        res.json(enrichedCards);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4196,13 +3967,14 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
          creditUsed: 0,
          apr: creditApr ? parseInt(creditApr) : 1999,
          isLocked: false,
+         nextPaymentDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })(),
          createdAt: new Date(),
        }).returning().get();
 
        res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4216,7 +3988,7 @@ banksRouter.delete("/api/banks/:bankId/cards/:cardId", requireBankStaff, async (
        res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4236,7 +4008,7 @@ banksRouter.patch("/api/banks/:bankId/cards/:cardId", requireBankStaff, async (r
        res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4257,7 +4029,7 @@ banksRouter.get("/api/banks/:bankId/developer", [requireBankStaff, requireRole([
       res.json({ apiKey: bank.apiKey, webhookSecret: bank.webhookSecret });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4294,7 +4066,7 @@ banksRouter.post("/api/banks/:bankId/developer/roll", [requireBankStaff, require
        res.json({ apiKey: bank.apiKey, webhookSecret: bank.webhookSecret });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4379,7 +4151,7 @@ banksRouter.get("/api/banks/:bankId/transactions", requireBankStaff, async (req:
        res.json(enrichedTxs);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -4443,7 +4215,10 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
       }
 
       // Teller cash window: deposit/withdraw hit the bank owner's personal in-game wallet.
-      if (bank.corpId && bank.corpApiUuid && bank.corpApiKey) {
+      if (!bank.corpId || !bank.corpApiUuid || !bank.corpApiKey) {
+        return res.status(400).json({ error: "This bank is not connected to CityCorp. Teller cash window is unavailable." });
+      }
+      {
         const { CityCorpClient } = await import("../../lib/citycorp_api");
         const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
 
@@ -4498,18 +4273,6 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
       await db.transaction(async (txDb) => {
         await txDb.insert(transactions).values(txRecord);
 
-        // Customer balance is SET from CityCorp after teller cash ops. Only adjust vault cash locally.
-        const maybeAdjust = async (id: string | null, delta: number) => {
-          if (!id) return;
-          if (cityCorpLive && id === account.id) return;
-          const accRes = await txDb.select().from(bankAccounts).where(eq(bankAccounts.id, id)).limit(1);
-          if (accRes.length > 0) {
-            await txDb.update(bankAccounts).set({ balance: accRes[0].balance + delta }).where(eq(bankAccounts.id, id));
-          }
-        };
-        await maybeAdjust(finalFromId, -parsedAmount);
-        await maybeAdjust(finalToId, parsedAmount);
-
         await txDb.insert(auditLogs).values({
           id: uuidv4(),
           bankId: bank.id,
@@ -4528,49 +4291,14 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
   });
 
 banksRouter.post("/api/banks/:bankId/tools/mass-action", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
-    const { db } = await import("../../db/index");
-    const { bankAccounts, transactions, auditLogs } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
-
     try {
-      const { type, amount, description } = req.body;
-      const parsedAmount = Math.round(parseFloat(amount) * 100);
-      if (parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
-      
-      const isDeposit = type === 'deposit';
-
-      const accounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, req.params.bankId));
-      if (accounts.length === 0) return res.status(400).json({ error: "No accounts found" });
-
-      // We do this locally instead of hammering the CityCorp API. 
-      for (const account of accounts) {
-         await db.update(bankAccounts)
-           .set({ balance: isDeposit ? account.balance + parsedAmount : Math.max(0, account.balance - parsedAmount) })
-           .where(eq(bankAccounts.id, account.id));
-         
-         await db.insert(transactions).values({
-           id: uuidv4(),
-           bankId: req.params.bankId,
-           fromAccountId: account.id,
-           toAccountId: null,
-           type: isDeposit ? 'deposit' : 'withdraw',
-           amount: isDeposit ? parsedAmount : Math.min(account.balance, parsedAmount),
-           description: description || `Mass ${type}`,
-           timestamp: new Date()
-         });
+      const type = String(req.body?.type || "");
+      if (["freeze", "unfreeze", "close", "notify"].includes(type)) {
+        return res.status(400).json({ error: `Mass action '${type}' is not implemented on this endpoint.` });
       }
-
-      await db.insert(auditLogs).values({
-         id: uuidv4(),
-         bankId: req.params.bankId,
-         userDiscordId: 'Operator',
-         action: `mass_${type}`,
-         details: `Applied mass ${type} of $${(parsedAmount/100).toFixed(2)} to ${accounts.length} accounts`,
-         timestamp: new Date()
+      return res.status(410).json({
+        error: "Mass deposit/credit/interest is disabled. Balance changes must go through CityCorp (teller cash window or book transfer)."
       });
-
-      res.json({ success: true, affectedCount: accounts.length });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message || "Internal error" });
@@ -5390,7 +5118,7 @@ banksRouter.get("/api/banks/:bankId/compliance/flagged", requireBankStaff, async
       res.json(data);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -5403,7 +5131,7 @@ banksRouter.post("/api/banks/:bankId/compliance/flagged/:txId/resolve", requireB
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -5416,7 +5144,7 @@ banksRouter.get("/api/banks/:bankId/compliance/frozen", requireBankStaff, async 
       res.json(data);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 
@@ -5429,7 +5157,7 @@ banksRouter.post("/api/banks/:bankId/compliance/frozen/:accId/unfreeze", require
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message, stack: (e as any).stack });
+      res.status(500).json({ error: (e as any).message });
     }
   });
 

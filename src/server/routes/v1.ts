@@ -35,9 +35,8 @@ v1Router.post("/api/v1/accounts", authenticateApiRequest, async (req: express.Re
        const { discordId, initialDeposit, type, accountName } = req.body;
        if (!discordId) return res.status(400).json({ error: "missing discordId" });
 
-       const parsedDeposit = parseInt(initialDeposit) || 0;
-       if (!Number.isFinite(parsedDeposit) || parsedDeposit < 0) {
-         return res.status(400).json({ error: "Invalid initial deposit" });
+       if (initialDeposit !== undefined && initialDeposit !== null && String(initialDeposit).trim() !== "") {
+         return res.status(400).json({ error: "Funds must be deposited via CityCorp / teller / transfer." });
        }
 
        const id = uuidv4();
@@ -47,7 +46,7 @@ v1Router.post("/api/v1/accounts", authenticateApiRequest, async (req: express.Re
          bankId: bank.id,
          ownerDiscordId: discordId,
          accountType: type || "checking",
-         balance: parsedDeposit,
+         balance: 0,
          accountName: accountName || `${type === 'savings' ? 'Savings' : 'Checking'} Account`,
          isActive: true,
          createdAt: new Date()
@@ -82,7 +81,6 @@ v1Router.post("/api/v1/transfers", authenticateApiRequest, async (req: express.R
     const { db } = await import("../../db/index");
     const { bankAccounts, transactions } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
     const bank = (req as any).bank;
 
     try {
@@ -108,26 +106,23 @@ v1Router.post("/api/v1/transfers", authenticateApiRequest, async (req: express.R
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
       if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
-      // Process transfer
-      await db.update(bankAccounts).set({ balance: sourceAccount.balance - amnt }).where(eq(bankAccounts.id, sourceAccount.id));
-      await db.update(bankAccounts).set({ balance: destAccount.balance + amnt }).where(eq(bankAccounts.id, destAccount.id));
-
-      const txId = uuidv4();
-      await db.insert(transactions).values({
-        id: txId,
-        bankId: bank.id,
-        fromAccountId: sourceAccount.id,
-        toAccountId: destAccount.id,
-        type: "transfer",
-        amount: amnt,
+      const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
+      const moved = await executeSameBankBookTransfer({
+        sourceAccount,
+        destAccount,
+        desiredCents: amnt,
+        mode: "from_payment",
         description: description || `API Transfer to ${toAccountId.substring(0, 8)}`,
-        timestamp: new Date()
+        type: "transfer",
       });
 
-      const [tx] = await db.select().from(transactions).where(eq(transactions.id, txId));
+      const [tx] = await db.select().from(transactions).where(eq(transactions.id, moved.txId));
       res.json({ data: tx });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      if (e?.name === "MoneyRailError") {
+        return res.status(400).json({ error: e.message || "Transfer failed" });
+      }
       res.status(500).json({ error: "Internal error" });
     }
   });

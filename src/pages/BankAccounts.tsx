@@ -310,84 +310,27 @@ export function BankAccounts() {
         </div>
       )}
 
-      {/* Adjust Balance Modal */}
+      {/* Adjust Balance Modal — local mint disabled */}
       {adjustingAcc && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative animate-in zoom-in-95 duration-200">
+          <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
             <button onClick={() => setAdjustingAcc(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5">
               <X size={18} />
             </button>
             <div className="flex items-center gap-3 text-indigo-400">
               <DollarSign size={24} />
-              <div>
-                <h3 className="text-lg font-bold text-white">Adjust Account Balance</h3>
-                <p className="text-xs text-slate-400">{adjustingAcc.accountName} ({adjustingAcc.id})</p>
-              </div>
+              <h3 className="text-lg font-bold text-white">Adjust Account Balance</h3>
             </div>
-
-            <form onSubmit={handleAdjustSubmit} className="space-y-4 pt-2">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Adjustment Mode</label>
-                <div className="grid grid-cols-3 gap-2 bg-[#0a0a0f] p-1 rounded-xl border border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => setAdjustMode("deposit")}
-                    className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustMode === "deposit" ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
-                  >
-                    Deposit (+)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdjustMode("set")}
-                    className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustMode === "set" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
-                  >
-                    Set Exact (=)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdjustMode("withdraw")}
-                    className={`py-2 text-xs font-bold rounded-lg transition-all ${adjustMode === "withdraw" ? "bg-rose-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
-                  >
-                    Withdraw (-)
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  {adjustMode === "deposit" ? "Deposit Amount ($)" : adjustMode === "withdraw" ? "Withdrawal Amount ($)" : "New Total Balance ($)"}
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={adjustAmount}
-                    onChange={(e) => setAdjustAmount(e.target.value)}
-                    className="w-full bg-[#1a1a24] border border-white/15 rounded-xl pl-8 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={adjustingSubmitting}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50"
-                >
-                  {adjustingSubmitting ? "Updating..." : "Confirm Adjustment"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAdjustingAcc(null)}
-                  className="px-4 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold rounded-xl border border-white/10 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+            <p className="text-sm text-slate-400">
+              Balance adjustments must go through CityCorp (teller cash window or book transfer).
+            </p>
+            <button
+              type="button"
+              onClick={() => setAdjustingAcc(null)}
+              className="w-full bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold py-2.5 rounded-xl border border-white/10 transition-colors"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -500,9 +443,9 @@ export function BankAccounts() {
                         </button>
                       )}
                       <button 
-                        onClick={() => { setAdjustingAcc(acc); setAdjustAmount("1000"); }}
-                        className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-2 rounded transition-colors"
-                        title="Top-Up / Adjust Balance"
+                        disabled
+                        className="text-emerald-400/40 p-2 rounded cursor-not-allowed"
+                        title="Balance adjustments must go through CityCorp (teller cash window or book transfer)."
                       >
                         <DollarSign size={16} />
                       </button>

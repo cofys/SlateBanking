@@ -67,7 +67,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      console.log("Received postMessage:", event.data);
+      if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         checkSession();
       }
@@ -97,7 +97,6 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       if (intent) params.append('intent', intent);
       params.append('rememberMe', String(finalRemember));
       params.append('returnTo', window.location.pathname);
-      params.append('origin', window.location.origin);
       
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const response = await fetch(`/api/auth/url${queryString}`);

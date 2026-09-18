@@ -10,7 +10,7 @@ export function buildCityCorpAuthUrl(
   state: string
 ): { url: string; appIdUsed: string; redirectUriUsed: string; toString: () => string } {
   const envAppId = process.env.CITYRP_APP_ID;
-  let appId = bank.cityCorpAppId || envAppId || "9";
+  let appId = bank.cityCorpAppId || envAppId || "";
   let finalRedirectUri = redirectUri;
   const rawAuthUrl = bank.cityCorpAuthUrl?.trim();
 

@@ -165,20 +165,18 @@ export function registerInterestRoutes(app: express.Express) {
         });
       }
 
+      if (!settings?.interestPoolAccount) {
+        return res.status(400).json({ error: "Set an interest pool account before running APY payouts. Interest cannot be minted locally." });
+      }
+
       let count = 0;
       let totalAmount = 0;
       
-      // Usually APY is annual. We should probably calculate it as a monthly/daily rate based on schedule, 
-      // but if it's a manual run, let's assume it's a monthly payout by default, or maybe the user wants 1/12th of the APY?
-      // Since it's a game, often they just want a simple percentage per run.
-      // 300 basis points = 3.00%
-      // So if schedule is monthly, 3% / 12 = 0.25% per month.
-      // Let's calculate the divisor based on schedule.
-      let divisor = 12; // default monthly
+      let divisor = 12;
       if (settings?.interestPaymentSchedule === "daily") divisor = 365;
       if (settings?.interestPaymentSchedule === "weekly") divisor = 52;
-      
-      // Process in a transaction? SQLite can handle it.
+
+      const { payFromInterestPool } = await import("../lib/citycorp_money");
       
       for (const account of eligibleAccounts) {
         let tierApy = null;
@@ -203,28 +201,22 @@ export function registerInterestRoutes(app: express.Express) {
           principal = settings.interestMaxAccountBalance;
         }
 
-        // apyToUse is basis points. 300 = 3% = 0.03.
-        // amount = principal * (apyToUse / 10000) / divisor
         const interestEarned = Math.floor(principal * (apyToUse / 10000) / divisor);
         
         if (interestEarned > 0) {
-          await db.update(bankAccounts)
-            .set({ balance: account.balance + interestEarned })
-            .where(eq(bankAccounts.id, account.id));
-
-          await db.insert(transactions).values({
-            id: uuidv4(),
-            bankId: bank.id,
-            toAccountId: account.id,
-            fromAccountId: null,
-            amount: interestEarned,
-            type: "deposit",
-            description: "Interest Payment (APY)",
-            timestamp: new Date()
-          });
-
-          count++;
-          totalAmount += interestEarned;
+          try {
+            const paid = await payFromInterestPool({
+              bankId: bank.id,
+              toAccount: account,
+              amountCents: interestEarned,
+              description: "Interest Payment (APY)",
+            });
+            if (!paid) continue;
+            count++;
+            totalAmount += interestEarned;
+          } catch (e) {
+            console.error("[interest-run] payout failed", e);
+          }
         }
       }
 

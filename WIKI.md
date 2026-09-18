@@ -923,4 +923,19 @@ CityCorp in-game accounts are the source of truth. Slate is a cache + product la
 
 **Schema**: `transactions.amount_submitted`, `amount_received`, `fee_payer_mode`, `fee_breakdown`; `bank_settings.settlement_account`, `settlement_floor_cents`, `settlement_warn_cents`, `default_fee_payer_mode`; `clearinghouse_balances.settlement_cash_cents`.
 
+## Launch security + loan rails
+
+- **Global admin**: `GLOBAL_ADMIN_DISCORD_IDS` is required. JWT `isGlobalAdmin` is untrusted. First-login auto-admin only if `ALLOW_FIRST_ADMIN=true` **and** `global_admins` is empty.
+- **Removed**: `POST /api/auth/demo-admin-login` and `POST /api/citizen/link-discord-manual`.
+- **Secrets**: API keys and tokens use AES-GCM (`enc:` prefix) via `encryptedText` (including `cityCorpToken`, `botToken`). Decrypt in JS with `decryptSecret`; leftover plaintext still reads through.
+- **Identity**: bind `discordId` / `mcUuid`, not username.
+- **Loans**: stay `pending` until CityCorp `disburseFromPoolOrOperating` succeeds, then `active`. Auto-debit only `active`/`delinquent` (not approved-unfunded). Repay via `collectToPoolOrTreasury`. Failed collect marks `lastPaymentAttemptAt` and skips until the next due window (no interest-on-failure loop). Payoff status is `paid_off`. Credit-card min payments run on the same 15-min cron (`processDueCreditRepayments`).
+- **No local mint** on deposit-funds / initialDeposit / yield / citizen credit. Savings yield pays from `interestPoolAccount` via `executeSameBankBookTransfer` or is deferred.
+- **Webhooks**: Discord HTTPS only (`discord.com` / `discordapp.com`).
+- **HTTP**: CSP on, JSON body limit 1mb, CORS does not allow `*.run.app` in production.
+- **Identity**: `getUserCandidateIdentifiers` uses Discord snowflake / Minecraft UUID only. Session display names are not join keys.
+- **OAuth**: Discord callback requires `state` + `oauth_nonce`. Redirect dest is JSON-encoded. CityCorp `app_id` is never defaulted to `"9"`.
+- **No local mint** on remaining rails: recurring transfers, invoices, Onyx B2B, Discord teller/transfer, payroll/subscription charge, wires, escrow (`ESCROW` system account), vaults (`VAULT` system account). Book transfers fail closed if the bank has no CityCorp credentials. Savings APY and vault interest pay from `interestPoolAccount` or are skipped.
+
+
 

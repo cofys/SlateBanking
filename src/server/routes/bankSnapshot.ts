@@ -3,6 +3,35 @@ import { requireBankStaff, requireRole } from "../middleware.js";
 
 export const bankSnapshotRouter = express.Router();
 
+const REDACT_KEYS = new Set([
+  "discordToken",
+  "corpApiKey",
+  "cityCorpAppSecret",
+  "apiKey",
+  "webhookSecret",
+  "cityCorpToken",
+  "cardNumber",
+  "cvv",
+  "botToken",
+  "discordClientSecret",
+]);
+
+function redactSecrets(value: any): any {
+  if (Array.isArray(value)) return value.map(redactSecrets);
+  if (value && typeof value === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (REDACT_KEYS.has(k) && v != null && v !== "") {
+        out[k] = "[REDACTED]";
+      } else {
+        out[k] = redactSecrets(v);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
 bankSnapshotRouter.get("/api/banks/:id/snapshot", [requireBankStaff, requireRole(["owner", "admin"])], async (req: express.Request, res: express.Response) => {
     try {
         const bankId = req.params.id;
@@ -51,7 +80,7 @@ bankSnapshotRouter.get("/api/banks/:id/snapshot", [requireBankStaff, requireRole
             snapshot.recurringTransfers = [];
         }
 
-        res.json(snapshot);
+        res.json(redactSecrets(snapshot));
     } catch (e: any) {
         console.error("Snapshot generation error:", e);
         res.status(500).json({ error: e.message });

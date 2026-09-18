@@ -1,8 +1,35 @@
-import { logSecurityEvent } from "./middleware";
+import { logSecurityEvent, sanitizeReturnTo, clientIp } from "./middleware";
 import express from "express";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET, getRedirectUri, requireAuth } from "./middleware.js";
 import { buildCityCorpAuthUrl } from "../lib/citycorp_api.js";
+
+function envAdminIds(): Set<string> {
+  const raw = [
+    process.env.GLOBAL_ADMIN_DISCORD_IDS,
+    process.env.GLOBAL_ADMIN_DISCORD_ID,
+    process.env.ADMIN_DISCORD_IDS,
+    process.env.DISCORD_ADMIN_IDS,
+    process.env.ADMIN_IDS,
+    process.env.GLOBAL_ADMIN_IDS,
+    process.env.DISCORD_BOT_OWNER_ID
+  ].filter(Boolean).join(",");
+  return new Set(raw.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean));
+}
+
+async function maybeSeedFirstAdmin(db: any, globalAdmins: any, uuidv4: () => string, discordId: string): Promise<boolean> {
+  if (process.env.ALLOW_FIRST_ADMIN !== "true") return false;
+  if (envAdminIds().size > 0) return false;
+  const totalAdmins = await db.select().from(globalAdmins).all();
+  if (totalAdmins.length > 0) return false;
+  await db.insert(globalAdmins).values({
+    id: uuidv4(),
+    discordId,
+    addedBy: "System (ALLOW_FIRST_ADMIN)",
+    createdAt: new Date()
+  });
+  return true;
+}
 
 export function registerAuthRoutes(app: express.Express) {
   app.get("/api/domain-lookup", async (req, res) => {
@@ -14,8 +41,17 @@ export function registerAuthRoutes(app: express.Express) {
     if (!domain) return res.json({ bankId: null });
     
     try {
-       const { like } = await import("drizzle-orm");
-       const bank = await db.select().from(banks).where(like(banks.customDomain, `%${domain}%`)).get();
+       const clean = String(domain).trim().toLowerCase().split(':')[0].split('/')[0];
+       if (!clean || clean.length > 253) return res.json({ bankId: null });
+       const all = await db.select().from(banks);
+       const bank = all.find((b) => {
+         if (!b.customDomain) return false;
+         try {
+           const d = b.customDomain.trim().toLowerCase();
+           const dh = d.startsWith('http') ? new URL(d).hostname : d.split('/')[0].split(':')[0];
+           return dh === clean;
+         } catch { return false; }
+       });
        if (bank) return res.json({ bankId: bank.id });
        return res.json({ bankId: null });
     } catch(e) {
@@ -46,7 +82,15 @@ export function registerAuthRoutes(app: express.Express) {
     
     if (!bank && hostHeader && hostHeader !== 'localhost' && hostHeader !== '127.0.0.1') {
       try {
-        bank = await db.select().from(banks).where(like(banks.customDomain, `%${hostHeader}%`)).get();
+        const all = await db.select().from(banks);
+        bank = all.find((b: any) => {
+          if (!b.customDomain) return false;
+          try {
+            const d = String(b.customDomain).trim().toLowerCase();
+            const dh = d.startsWith('http') ? new URL(d).hostname : d.split('/')[0].split(':')[0];
+            return dh === hostHeader.toLowerCase();
+          } catch { return false; }
+        }) || null;
       } catch (e) {
         console.error("Domain lookup error for OAuth URL:", e);
       }
@@ -73,7 +117,11 @@ export function registerAuthRoutes(app: express.Express) {
       const nonce = uuidv4();
       res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
 
-      const mockBankObj = { cityCorpAppId: bank?.cityCorpAppId || process.env.CITYRP_APP_ID || "9", cityCorpAuthUrl: bank?.cityCorpAuthUrl || null };
+      const appIdForUrl = bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
+      if (!appIdForUrl && !bank?.cityCorpAuthUrl) {
+        return res.status(400).json({ error: "CityCorp app id is not configured." });
+      }
+      const mockBankObj = { cityCorpAppId: appIdForUrl, cityCorpAuthUrl: bank?.cityCorpAuthUrl || null };
       const authResultInitial = buildCityCorpAuthUrl(mockBankObj, redirectUri, "");
 
       const rememberMe = req.query.rememberMe !== 'false';
@@ -81,7 +129,7 @@ export function registerAuthRoutes(app: express.Express) {
         bankId: bank?.id,
         appId: authResultInitial.appIdUsed,
         redirectUri: authResultInitial.redirectUriUsed,
-        returnTo: req.query.returnTo,
+        returnTo: sanitizeReturnTo(req.query.returnTo),
         rememberMe,
         nonce
       };
@@ -98,14 +146,14 @@ export function registerAuthRoutes(app: express.Express) {
 
     const redirectUri = await getRedirectUri(req);
     const intent = req.query.intent || 'login';
-    const returnTo = req.query.returnTo;
+    const returnTo = sanitizeReturnTo(req.query.returnTo);
     const { v4: uuidv4 } = await import("uuid");
     const nonce = uuidv4();
     res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
     const rememberMe = req.query.rememberMe !== 'false';
     const stateObj: any = { intent, rememberMe, nonce };
     if (bank) stateObj.bankId = bank.id;
-    if (returnTo) stateObj.returnTo = returnTo;
+    stateObj.returnTo = returnTo;
     const state = JSON.stringify(stateObj);
     const params = new URLSearchParams({
       client_id: clientId,
@@ -143,25 +191,18 @@ export function registerAuthRoutes(app: express.Express) {
         const parsedState = JSON.parse(decodeURIComponent(stateStr as string));
         const expectedNonce = req.cookies?.oauth_nonce;
         res.clearCookie('oauth_nonce');
-        if (expectedNonce && parsedState.nonce && parsedState.nonce !== expectedNonce) {
-           console.warn("OAuth state nonce mismatch (cookie might be stripped in iframe/popup)");
+        if (!expectedNonce || !parsedState.nonce || parsedState.nonce !== expectedNonce) {
+           return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
         }
         bankId = parsedState.bankId;
-        returnTo = parsedState.returnTo;
+        returnTo = sanitizeReturnTo(parsedState.returnTo);
         redirectUriFromState = parsedState.redirectUri;
         appIdFromState = parsedState.appId;
         if (parsedState.rememberMe !== undefined) {
           rememberMeFromState = Boolean(parsedState.rememberMe);
         }
       } catch (e) {
-        const host = req.get('host');
-        let possibleBank = await db.select().from(banks).where(eq(banks.customDomain, host || "")).get();
-        if (!possibleBank) {
-            const allBanks = await db.select().from(banks).all();
-            if (allBanks.length === 1) possibleBank = allBanks[0];
-            else possibleBank = allBanks.find((b: any) => b.cityCorpAppId);
-        }
-        if (possibleBank) bankId = possibleBank.id;
+        return res.status(400).send("Invalid OAuth state. Please try again.");
       }
       
       let bank = null;
@@ -174,7 +215,10 @@ export function registerAuthRoutes(app: express.Express) {
         if (allBanks.length > 0) bank = allBanks.find((b: any) => b.cityCorpAppId) || allBanks[0];
       }
 
-      const appId = appIdFromState || bank?.cityCorpAppId || process.env.CITYRP_APP_ID || "9";
+      const appId = appIdFromState || bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
+      if (!appId) {
+        return res.status(400).send("CityCorp app id is not configured for this bank.");
+      }
       const redirectUri = redirectUriFromState || process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, req.path);
 
       // Collect candidate app secrets (bank app secret first, then env)
@@ -311,7 +355,6 @@ export function registerAuthRoutes(app: express.Express) {
 
       const { globalAdmins } = await import("../db/schema");
       const { or: drizzleOr } = await import("drizzle-orm");
-      const totalAdmins = await db.select().from(globalAdmins).all();
       let dbAdmin = await db.select().from(globalAdmins).where(
         drizzleOr(
           eq(globalAdmins.discordId, "mc_" + minecraftUuid),
@@ -320,24 +363,21 @@ export function registerAuthRoutes(app: express.Express) {
       ).get();
 
       let isGlobalAdmin = !!dbAdmin;
-      if (!dbAdmin && totalAdmins.length === 0) {
-        await db.insert(globalAdmins).values({
-          id: uuidv4(),
-          discordId: "mc_" + minecraftUuid,
-          addedBy: "System (First Login)",
-          createdAt: new Date()
-        });
+      if (!dbAdmin) {
+        isGlobalAdmin = await maybeSeedFirstAdmin(db, globalAdmins, uuidv4, "mc_" + minecraftUuid);
+      }
+      if (!isGlobalAdmin && envAdminIds().has("mc_" + minecraftUuid)) {
         isGlobalAdmin = true;
       }
 
       
-      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-      await logSecurityEvent(ip as string, "citycorp_login", "success", "mc_" + minecraftUuid, "Logged in via CityCorp: " + mcUsername);
+      const ip = clientIp(req);
+      await logSecurityEvent(ip, "citycorp_login", "success", "mc_" + minecraftUuid, "Logged in via CityCorp: " + mcUsername);
       const payload = {
         discordId: "mc_" + minecraftUuid,
         username: mcUsername,
         avatarUrl: avatarUrl,
-        isGlobalAdmin
+        mcUuid: minecraftUuid
       };
 
       const tokenExpiry = rememberMeFromState ? '30d' : '24h';
@@ -357,13 +397,7 @@ export function registerAuthRoutes(app: express.Express) {
             <script>
               try {
                 if (window.opener) {
-                  window.opener.postMessage({ 
-                    type: 'OAUTH_AUTH_SUCCESS', 
-                    user: ${JSON.stringify(payload)},
-                    token: ${JSON.stringify(token)},
-                    uuid: ${JSON.stringify(minecraftUuid)},
-                    minecraft_uuid: ${JSON.stringify(minecraftUuid)}
-                  }, '*');
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, window.location.origin);
                 }
               } catch(e) { console.error("Caught error:", e); }
               
@@ -373,12 +407,7 @@ export function registerAuthRoutes(app: express.Express) {
               
               try { window.close(); } catch(e) { console.error("Caught error:", e); }
               setTimeout(() => {
-                const params = new URLSearchParams(window.location.search);
-                let stateObj = {};
-                try {
-                  if (params.get('state')) stateObj = JSON.parse(decodeURIComponent(params.get('state')));
-                } catch(e) { console.error("Caught error:", e); }
-                const dest = stateObj.returnTo || '/portal';
+                const dest = ${JSON.stringify(sanitizeReturnTo(returnTo))};
                 if (!window.opener) {
                   window.location.href = dest;
                 } else {
@@ -404,31 +433,31 @@ export function registerAuthRoutes(app: express.Express) {
     const { db } = await import("../db/index");
     const { banks, bankCustomers, bankAccounts } = await import("../db/schema");
     const { like, eq } = await import("drizzle-orm");
-        const { code, state } = req.query;
+    const { code, state } = req.query;
     const expectedNonce = req.cookies.oauth_nonce;
     res.clearCookie('oauth_nonce');
-    const fs = require('fs');
         console.log("[Auth] Discord Callback received");
     if (!code) return res.status(400).send("No code provided");
+    if (!state) return res.status(400).send("Missing OAuth state. Please try again.");
+    if (!expectedNonce) return res.status(400).send("Missing OAuth nonce. Please try again.");
     
     let intent = 'login';
     let bankId = null;
     let rememberMeFromState = true;
     try {
-      if (state) {
-        const decodedState = JSON.parse(decodeURIComponent(state as string));
-        if (decodedState.nonce !== expectedNonce) {
-           return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
-        }
-        console.log("Discord Callback - Decoded State:", decodedState);
-        intent = decodedState.intent || 'login';
-        bankId = decodedState.bankId;
-        if (decodedState.rememberMe !== undefined) {
-          rememberMeFromState = Boolean(decodedState.rememberMe);
-        }
+      const decodedState = JSON.parse(decodeURIComponent(state as string));
+      if (!decodedState.nonce || decodedState.nonce !== expectedNonce) {
+         return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
+      }
+      console.log("Discord Callback - Decoded State:", decodedState);
+      intent = decodedState.intent || 'login';
+      bankId = decodedState.bankId;
+      if (decodedState.rememberMe !== undefined) {
+        rememberMeFromState = Boolean(decodedState.rememberMe);
       }
     } catch (e) {
         console.error("Discord Callback - State Parse Error:", e, "State was:", state);
+        return res.status(400).send("Invalid OAuth state. Please try again.");
     }
     console.log("Discord Callback - Final Intent:", intent);
 
@@ -439,9 +468,17 @@ export function registerAuthRoutes(app: express.Express) {
     let bankToUse = null;
     if (bankId) {
        bankToUse = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-    } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app') && hostname !== 'sb.azisle.com' && hostname !== 'azisle.com' && hostname !== 'www.azisle.com') {
+    } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app')) {
        try {
-         bankToUse = await db.select().from(banks).where(like(banks.customDomain, `%${hostname}%`)).get();
+         const all = await db.select().from(banks);
+         bankToUse = all.find((b: any) => {
+           if (!b.customDomain) return false;
+           try {
+             const d = String(b.customDomain).trim().toLowerCase();
+             const dh = d.startsWith('http') ? new URL(d).hostname : d.split('/')[0].split(':')[0];
+             return dh === hostname.toLowerCase();
+           } catch { return false; }
+         }) || null;
        } catch (e) {
          console.error("Domain lookup error for OAuth Callback:", e);
        }
@@ -503,24 +540,20 @@ export function registerAuthRoutes(app: express.Express) {
       ).get();
 
       let isGlobalAdmin = !!dbAdmin;
-      if (!dbAdmin && totalAdmins.length === 0) {
-        await db.insert(globalAdmins).values({
-          id: uuidv4(),
-          discordId: userData.id,
-          addedBy: "System (First Login)",
-          createdAt: new Date()
-        });
+      if (!dbAdmin) {
+        isGlobalAdmin = await maybeSeedFirstAdmin(db, globalAdmins, uuidv4, userData.id);
+      }
+      if (!isGlobalAdmin && envAdminIds().has(userData.id)) {
         isGlobalAdmin = true;
       }
 
       
-      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-      await logSecurityEvent(ip as string, "discord_login", "success", realDiscordId, "Logged in via Discord: " + userData.username);
-      let payload = {
+      const ip = clientIp(req);
+      await logSecurityEvent(ip, "discord_login", "success", realDiscordId, "Logged in via Discord: " + userData.username);
+      let payload: any = {
         discordId: realDiscordId,
         username: userData.username,
-        avatarUrl: userData.avatar ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png` : undefined,
-        isGlobalAdmin
+        avatarUrl: userData.avatar ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png` : undefined
       };
 
       if (intent === 'link') {
@@ -570,7 +603,7 @@ export function registerAuthRoutes(app: express.Express) {
       try {
         if (state) {
             const decodedState = JSON.parse(decodeURIComponent(state as string));
-            if (decodedState.returnTo) dest = decodedState.returnTo;
+            if (decodedState.returnTo) dest = sanitizeReturnTo(decodedState.returnTo);
         }
       } catch (e) { console.error("Caught error:", e); }
 
@@ -580,7 +613,7 @@ export function registerAuthRoutes(app: express.Express) {
             <script>
               try {
                 if (window.opener) {
-                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, window.location.origin);
                 }
               } catch(e) { console.error("Caught error:", e); }
               
@@ -593,7 +626,7 @@ export function registerAuthRoutes(app: express.Express) {
               
               // If not closed, redirect after delay
               setTimeout(() => {
-                window.location.href = '${dest}';
+                window.location.href = ${JSON.stringify(dest)};
               }, 1500);
             </script>
             <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
@@ -633,113 +666,12 @@ export function registerAuthRoutes(app: express.Express) {
     res.json({ success: true });
   });
 
-  app.post('/api/auth/demo-admin-login', async (req, res) => {
-    const { db } = await import("../db/index");
-    const { globalAdmins } = await import("../db/schema");
-    const { eq } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
-
-    try {
-      let existingDiscordId: string | null = null;
-      let existingUsername: string | null = null;
-      const currentCookie = req.cookies.auth_token;
-      if (currentCookie) {
-        try {
-          const currentDecoded: any = jwt.verify(currentCookie, JWT_SECRET);
-          existingDiscordId = currentDecoded.discordId;
-          existingUsername = currentDecoded.username;
-        } catch (e) {}
-      }
-
-      const username = req.body?.username || existingUsername || "GlobalOperator";
-      const discordId = req.body?.discordId || existingDiscordId || "operator_admin_001";
-
-      const alreadyAdmin = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, discordId)).get();
-      if (!alreadyAdmin) {
-        await db.insert(globalAdmins).values({
-          id: uuidv4(),
-          discordId,
-          addedBy: "Operator Quick Login",
-          createdAt: new Date()
-        });
-      }
-
-      const payload = {
-        discordId,
-        username,
-        avatarUrl: `https://mc-heads.net/avatar/${username}/64`,
-        isGlobalAdmin: true
-      };
-
-      const remember = req.body?.rememberMe !== false;
-      const expiresIn = remember ? '30d' : '24h';
-      const maxAge = remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-
-      const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn });
-      res.cookie('auth_token', signedToken, {
-        secure: true,
-        sameSite: 'lax',
-        httpOnly: true,
-        maxAge
-      });
-
-      return res.json({ success: true, user: payload });
-    } catch (e: any) {
-      console.error("demo-admin-login error:", e);
-      return res.status(500).json({ error: e.message || "Failed to initialize operator session" });
-    }
+  app.post('/api/auth/demo-admin-login', async (_req, res) => {
+    return res.status(410).json({ error: "Demo admin login is disabled." });
   });
 
-  app.post('/api/citizen/link-discord-manual', requireAuth, async (req, res) => {
-    const { db } = await import("../db/index");
-    const { bankCustomers, bankAccounts, cards, loans, invoices, transactions } = await import("../db/schema");
-    const { eq, or: drizzleOr } = await import("drizzle-orm");
-
-    try {
-      const { discordIdToLink } = req.body;
-      const user = (req as any).user;
-      if (!discordIdToLink || !user?.discordId) {
-        return res.status(400).json({ error: "Missing Discord ID to link" });
-      }
-
-      const cleanDiscordId = discordIdToLink.trim().replace(/^@/, '');
-      const sessionDiscordId = user.discordId;
-
-      // Update bankCustomers
-      await db.update(bankCustomers)
-        .set({ discordId: cleanDiscordId, linkedDiscordId: cleanDiscordId })
-        .where(drizzleOr(eq(bankCustomers.discordId, sessionDiscordId), eq(bankCustomers.linkedDiscordId, sessionDiscordId)));
-
-      // Update bankAccounts
-      await db.update(bankAccounts)
-        .set({ ownerDiscordId: cleanDiscordId })
-        .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
-
-      try { await db.update(cards as any).set({ ownerDiscordId: cleanDiscordId } as any).where(eq((cards as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
-      try { await db.update(loans as any).set({ ownerDiscordId: cleanDiscordId } as any).where(eq((loans as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
-      try { await db.update(invoices as any).set({ recipientDiscordId: cleanDiscordId } as any).where(eq((invoices as any).recipientDiscordId, sessionDiscordId)); } catch(e) {}
-      try { await db.update(invoices as any).set({ creatorDiscordId: cleanDiscordId } as any).where(eq((invoices as any).creatorDiscordId, sessionDiscordId)); } catch(e) {}
-      try { await db.update(transactions as any).set({ toCityCorpId: cleanDiscordId } as any).where(eq((transactions as any).toCityCorpId, sessionDiscordId)); } catch(e) {}
-
-      // Refresh session token with new discordId
-      const payload = {
-        ...user,
-        discordId: cleanDiscordId
-      };
-
-      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
-      res.cookie('auth_token', token, {
-        secure: true,
-        sameSite: 'lax',
-        httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000
-      });
-
-      return res.json({ success: true, linkedDiscordId: cleanDiscordId });
-    } catch (e: any) {
-      console.error("link-discord-manual error:", e);
-      return res.status(500).json({ error: e.message || "Failed to link Discord ID" });
-    }
+  app.post('/api/citizen/link-discord-manual', requireAuth, async (_req, res) => {
+    return res.status(410).json({ error: "Manual Discord linking is disabled. Use OAuth Link Discord." });
   });
 
 

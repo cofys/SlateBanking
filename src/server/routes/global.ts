@@ -238,7 +238,9 @@ globalRouter.get("/api/global/announcements", async (req, res) => {
             try {
                 const jwt = await import('jsonwebtoken');
                 const decoded: any = jwt.default.verify(token, authModule.JWT_SECRET);
-                isGlobalAdmin = !!decoded.isGlobalAdmin;
+                (req as any).user = decoded;
+                const { checkUserIsGlobalAdmin } = await import("../userResolver.js");
+                isGlobalAdmin = await checkUserIsGlobalAdmin(req);
             } catch(e) {}
         }
         

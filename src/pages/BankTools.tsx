@@ -55,50 +55,11 @@ export function BankTools() {
                 <h3 className="text-xl font-bold">Mass Deposit / Stimulus Check</h3>
               </div>
               <p className="text-white/60 text-sm mb-6 max-w-lg">
-                Automatically issues a deposit to all active accounts under this bank. 
-                This action is irreversible and requires manager clearance.
+                Mass deposit/credit is disabled. Balance changes must go through CityCorp (teller cash window or book transfer).
               </p>
-              
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                setRunning(true);
-                setComplete(false);
-                const formData = new FormData(e.target as HTMLFormElement);
-                fetch(`/api/banks/${bank.id}/tools/mass-action`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    type: 'deposit',
-                    amount: formData.get('amount'),
-                    description: formData.get('description')
-                  })
-                }).then(r => r.json()).then(d => {
-                  setRunning(false);
-                  setComplete(true);
-                  if (d.error) alert(d.error);
-                  else alert(`Deposited to ${d.affectedCount} accounts successfully!`);
-                });
-              }} className="max-w-md space-y-6">
-                <div>
-                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Amount per account ($)</label>
-                  <input required name="amount" min="1" type="number" step="0.01" defaultValue="500.00" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Transaction Memo</label>
-                  <input required name="description" type="text" defaultValue="Government Stimulus" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500" />
-                </div>
-                
-                {complete && !running && (
-                  <div className="p-4 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-sm">
-                    Operation complete. Accounts were credited successfully.
-                  </div>
-                )}
-                
-                <button disabled={running} type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
-                  {running ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} fill="currentColor" />}
-                  {running ? "Processing..." : "Execute Simulation"}
-                </button>
-              </form>
+              <button disabled type="button" className="w-full max-w-md bg-indigo-600/40 text-white/70 py-3 rounded-lg font-medium cursor-not-allowed">
+                Disabled
+              </button>
             </div>
           )}
 
@@ -184,50 +145,11 @@ export function BankTools() {
                 <h3 className="text-xl font-bold text-red-500">Mass Fee / Charge</h3>
               </div>
               <p className="text-white/60 text-sm mb-6 max-w-lg">
-                Automatically issues a fee to all active accounts under this bank. 
-                This action is irreversible and requires manager clearance.
+                Mass fee/charge is disabled. Balance changes must go through CityCorp (teller cash window or book transfer).
               </p>
-              
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                setRunning(true);
-                setComplete(false);
-                const formData = new FormData(e.target as HTMLFormElement);
-                fetch(`/api/banks/${bank.id}/tools/mass-action`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    type: 'withdraw',
-                    amount: formData.get('amount'),
-                    description: formData.get('description')
-                  })
-                }).then(r => r.json()).then(d => {
-                  setRunning(false);
-                  setComplete(true);
-                  if (d.error) alert(d.error);
-                  else alert(`Charged ${d.affectedCount} accounts successfully!`);
-                });
-              }} className="max-w-md space-y-6">
-                <div>
-                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Fee Amount ($)</label>
-                  <input required name="amount" min="1" type="number" step="0.01" defaultValue="10.00" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-red-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Transaction Memo</label>
-                  <input required name="description" type="text" defaultValue="Monthly Maintenance Fee" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-red-500" />
-                </div>
-                
-                {complete && !running && (
-                  <div className="p-4 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-sm">
-                    Operation complete. Accounts were charged successfully.
-                  </div>
-                )}
-                
-                <button disabled={running} type="submit" className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
-                  {running ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} fill="currentColor" />}
-                  {running ? "Processing..." : "Execute Charge"}
-                </button>
-              </form>
+              <button disabled type="button" className="w-full max-w-md bg-red-600/40 text-white/70 py-3 rounded-lg font-medium cursor-not-allowed">
+                Disabled
+              </button>
             </div>
           )}
 

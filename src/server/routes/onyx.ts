@@ -9,6 +9,8 @@ const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
 export const onyxRouter = express.Router();
 
+const usedPaymentTokens = new Set<string>();
+
 onyxRouter.get("/api/onyx/merchant/:id", async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { onyxMerchants, banks } = await import("../../db/schema");
@@ -151,7 +153,8 @@ onyxRouter.get("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
         await db.insert(onyxSettings).values(initial);
         settings = initial;
       }
-      res.json(settings);
+      const { botToken, ...safeSettings } = settings as any;
+      res.json({ ...safeSettings, hasBotToken: !!botToken });
     } catch(e) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
@@ -223,7 +226,7 @@ onyxRouter.post("/api/onyx/toggle-bot", requireGlobalAdmin, async (req: express.
       }
     } catch (e: any) {
       console.error("Failed to toggle Onyx bot:", e);
-      res.status(500).json({ error: e.message || "Failed to toggle bot" });
+      res.status(500).json({ error: "Failed to toggle bot" });
     }
 });
 
@@ -255,7 +258,7 @@ onyxRouter.post("/api/onyx/spawn-bot-gui", requireGlobalAdmin, async (req: expre
       res.json({ success: true, message: `Successfully spawned Onyx PSP Global Embed in channel ${channelId}` });
     } catch (err: any) {
       console.error("Failed to spawn Onyx GUI:", err);
-      res.status(500).json({ error: err.message || "Failed to spawn Onyx GUI" });
+      res.status(500).json({ error: "Failed to spawn Onyx GUI" });
     }
 });
 
@@ -268,27 +271,57 @@ onyxRouter.post("/api/onyx/refresh-bot-gui", requireGlobalAdmin, async (req: exp
       await refreshOnyxChannelGUI(onyxClient);
       res.json({ success: true, message: "Onyx PSP Channel GUI refreshed." });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("Failed to refresh Onyx GUI:", err);
+      res.status(500).json({ error: "Internal error" });
     }
 });
 
 onyxRouter.get("/api/onyx/merchants", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { onyxMerchants, banks } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { onyxMerchants, banks, bankStaff, bankAccounts } = await import("../../db/schema");
+    const { eq, inArray } = await import("drizzle-orm");
     try {
-      const merchants = await db
-        .select({
+      const user = (req as any).user;
+      const requestedBankId = typeof req.query.bankId === "string" ? req.query.bankId : undefined;
+
+      let allowedBankIds: string[] | null = null;
+      if (!user?.isGlobalAdmin) {
+        const { getUserCandidateIdentifiers } = await import("../userResolver.js");
+        const candidateIds = await getUserCandidateIdentifiers(req);
+        const ids = new Set<string>();
+        if (candidateIds.length > 0) {
+          const staffRows = await db.select({ bankId: bankStaff.bankId }).from(bankStaff).where(inArray(bankStaff.discordId, candidateIds));
+          const accRows = await db.select({ bankId: bankAccounts.bankId }).from(bankAccounts).where(inArray(bankAccounts.ownerDiscordId, candidateIds));
+          staffRows.forEach((r) => ids.add(r.bankId));
+          accRows.forEach((r) => ids.add(r.bankId));
+        }
+        allowedBankIds = Array.from(ids);
+      }
+
+      if (requestedBankId) {
+        if (allowedBankIds !== null && !allowedBankIds.includes(requestedBankId)) {
+          return res.json([]);
+        }
+        allowedBankIds = [requestedBankId];
+      }
+
+      const selectShape = {
           id: onyxMerchants.id,
           name: onyxMerchants.name,
-          
           bankId: onyxMerchants.bankId,
           destinationAccount: onyxMerchants.destinationAccount,
           createdAt: onyxMerchants.createdAt,
           bankName: banks.name
-        })
+      };
+      const base = db
+        .select(selectShape)
         .from(onyxMerchants)
         .leftJoin(banks, eq(onyxMerchants.bankId, banks.id));
+      const merchants = allowedBankIds === null
+        ? await base
+        : allowedBankIds.length === 0
+          ? []
+          : await base.where(inArray(onyxMerchants.bankId, allowedBankIds));
       res.json(merchants);
     } catch (e) {
       console.error(e);
@@ -358,15 +391,19 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
     if (!apiKey) return res.status(401).json({ error: "Missing x-api-key header" });
 
     const { db } = await import("../../db/index");
-    const { onyxMerchants, bankAccounts, transactions, banks } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
+    const { onyxMerchants, bankAccounts, transactions } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      // Authenticate merchant
-      const merchants = await db.select().from(onyxMerchants).where(eq(onyxMerchants.apiKey, apiKey));
-      if (merchants.length === 0) return res.status(403).json({ error: "Invalid API key" });
-      const merchant = merchants[0];
+      const { decryptSecret } = await import("../../lib/encryption");
+      const allMerchants = await db.select().from(onyxMerchants);
+      const merchant = allMerchants.find((m) => {
+        if (!m.apiKey) return false;
+        if (m.apiKey === apiKey) return true;
+        return decryptSecret(m.apiKey) === apiKey;
+      });
+      if (!merchant) return res.status(403).json({ error: "Invalid API key" });
 
       const { userDiscordId, amountCents, description, sourceAccountId, paymentToken } = req.body;
 
@@ -389,8 +426,15 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
           return res.status(403).json({ error: "Invalid or expired payment token." });
       }
 
+      if (usedPaymentTokens.has(paymentToken)) {
+        return res.status(403).json({ error: "Payment token already used" });
+      }
+      usedPaymentTokens.add(paymentToken);
+
       let userAccount: any = null;
       let sourceCard: any = null;
+      let destAccountId: string | null = null;
+      let netAmount = 0;
 
       await db.transaction(async (tx: any) => {
         if (sourceAccountId) {
@@ -438,10 +482,12 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
         const onyxSet = await tx.select().from(onyxSettings).where(eq(onyxSettings.id, 'global')).get();
         const taxRate = onyxSet?.b2bApiFeePercent || 0; 
         const taxAmount = Math.floor(amountCents * (taxRate / 10000));
-        const netAmount = amountCents - taxAmount;
+        netAmount = amountCents - taxAmount;
 
-        let destAccountId = null as any;
-        const destAccounts = await tx.select().from(bankAccounts).where(
+        const destById = await tx.select().from(bankAccounts).where(
+          and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.id, merchant.destinationAccount))
+        );
+        const destAccounts = destById.length > 0 ? destById : await tx.select().from(bankAccounts).where(
           and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.accountName, merchant.destinationAccount))
         );
 
@@ -460,13 +506,24 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
         }
 
         if (sourceCard) {
+            const { resolveLoanFundingAccount, settlementAccountName, loadSettings } = await import("../../lib/citycorp_money");
+            const funding = await resolveLoanFundingAccount(merchant.bankId);
+            let hasPool = funding.kind !== "treasury" && !!funding.name;
+            if (!hasPool) {
+              const settings = await loadSettings(merchant.bankId);
+              const settleName = settlementAccountName(settings);
+              const settleAcc = await tx.select().from(bankAccounts).where(
+                and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.accountName, settleName))
+              ).get();
+              if (!settleAcc) {
+                throw new Error("Credit checkout requires a loan pool, operating, or settlement account. No pool configured.");
+              }
+            }
+
             const { cards } = await import("../../db/schema");
             await tx.update(cards)
               .set({ creditUsed: (sourceCard.creditUsed || 0) + amountCents })
               .where(eq(cards.id, sourceCard.id));
-            await tx.update(bankAccounts)
-              .set({ balance: sql`${bankAccounts.balance} + ${netAmount}` })
-              .where(eq(bankAccounts.id, destAccountId));
         } else {
           // CityCorp book transfer happens after this sqlite tx to avoid holding the lock on HTTP.
         }
@@ -483,30 +540,62 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
                timestamp: new Date()
             });
         }
-
-        if (sourceCard) {
-          await tx.insert(transactions).values({
-            id: uuidv4(),
-            bankId: merchant.bankId,
-            fromAccountId: userAccount.id,
-            toAccountId: destAccountId,
-            amount: amountCents,
-            type: 'onyx_payment',
-            description: description || `Onyx Purchase at ${merchant.name}`,
-            timestamp: new Date()
-          });
-        }
       });
 
-      if (!sourceCard) {
+      if (sourceCard) {
+        const { resolveLoanFundingAccount, disburseFromPoolOrOperating, executeSameBankBookTransfer, settlementAccountName, loadSettings } = await import("../../lib/citycorp_money");
+        const liveDest = destAccountId
+          ? await db.select().from(bankAccounts).where(eq(bankAccounts.id, destAccountId)).get()
+          : null;
+        if (!liveDest) {
+          return res.status(400).json({ error: "Could not load destination account for credit settlement." });
+        }
+        try {
+          const funding = await resolveLoanFundingAccount(merchant.bankId);
+          if (funding.kind !== "treasury" && funding.name) {
+            await disburseFromPoolOrOperating({
+              bankId: merchant.bankId,
+              toAccount: liveDest,
+              amountCents: netAmount,
+              description: description || `Onyx Purchase at ${merchant.name}`,
+            });
+          } else {
+            const settings = await loadSettings(merchant.bankId);
+            const settleName = settlementAccountName(settings);
+            const settleAcc = await db.select().from(bankAccounts).where(
+              and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.accountName, settleName))
+            ).get();
+            if (!settleAcc) {
+              return res.status(400).json({ error: "Credit checkout requires a loan pool, operating, or settlement account. No pool configured." });
+            }
+            await executeSameBankBookTransfer({
+              sourceAccount: settleAcc,
+              destAccount: liveDest,
+              desiredCents: netAmount,
+              mode: "sender_covers",
+              description: description || `Onyx Purchase at ${merchant.name}`,
+              type: "onyx_payment",
+            });
+          }
+        } catch (err: any) {
+          try {
+            const { cards } = await import("../../db/schema");
+            await db.update(cards)
+              .set({ creditUsed: sourceCard.creditUsed || 0 })
+              .where(eq(cards.id, sourceCard.id));
+          } catch (rollbackErr) {
+            console.error("Failed to roll back creditUsed after CityCorp credit settlement failure", rollbackErr);
+          }
+          return res.status(400).json({ error: err.message || "Onyx credit CityCorp settlement failed" });
+        }
+      } else {
         const { executeSameBankBookTransfer, executeCrossBankSettledTransfer } = await import("../../lib/citycorp_money");
-        const { db } = await import("../../db/index");
-        const { bankAccounts } = await import("../../db/schema");
-        const { eq, and } = await import("drizzle-orm");
         const liveSource = await db.select().from(bankAccounts).where(eq(bankAccounts.id, userAccount.id)).get();
-        const liveDest = await db.select().from(bankAccounts).where(
-          and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.accountName, merchant.destinationAccount))
-        ).get();
+        const liveDest = destAccountId
+          ? await db.select().from(bankAccounts).where(eq(bankAccounts.id, destAccountId)).get()
+          : await db.select().from(bankAccounts).where(
+              and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.accountName, merchant.destinationAccount))
+            ).get();
         if (!liveSource || !liveDest) {
           return res.status(400).json({ error: "Could not load accounts for CityCorp settlement." });
         }

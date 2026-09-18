@@ -12,27 +12,18 @@ import { formatMoney } from "../lib/utils";
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 
 export function CitizenPortal() {
-  const { user, login, logout, isLoading, checkSession, rememberMe, setRememberMe } = useAuth();
+  const { user, login, logout, isLoading, rememberMe, setRememberMe } = useAuth();
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const myMerchants = userData?.merchants || [];
   const [activeTab, setActiveTab] = useState<"dashboard" | "assets" | "transfer" | "invoices" | "loans" | "analytics" | "vaults" | "merchants" | "subscriptions" | "escrows">("dashboard");
   const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
   const [onyxMerchants, setOnyxMerchants] = useState<any[]>([]);
-  const [showManualLinkModal, setShowManualLinkModal] = useState(false);
-  const [manualDiscordId, setManualDiscordId] = useState("");
-  const [submittingLink, setSubmittingLink] = useState(false);
-
-  // Sync & Deposit modal state
   const [showSyncModal, setShowSyncModal] = useState(false);
 
   const [syncingBalances, setSyncingBalances] = useState(false);
   const [citizenSyncProgress, setCitizenSyncProgress] = useState<{ total: number; processed: number; current?: string; syncedCount: number; flaggedCount: number } | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [depositAccountId, setDepositAccountId] = useState("");
-  const [depositAmount, setDepositAmount] = useState("1000");
-  const [depositReason, setDepositReason] = useState("Initial Account Funding");
-  const [depositing, setDepositing] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingData, setOnboardingData] = useState({ rpName: "", address: "" });
   const [onboardingSubmitting, setOnboardingSubmitting] = useState(false);
@@ -40,32 +31,6 @@ export function CitizenPortal() {
   useEffect(() => {
     document.title = "Citizen Portal | Slate Banking";
   }, []);
-
-  const handleManualLinkSubmit = async () => {
-    if (!manualDiscordId.trim()) return;
-    setSubmittingLink(true);
-    try {
-      const res = await fetch('/api/citizen/link-discord-manual', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ discordIdToLink: manualDiscordId })
-      });
-      if (res.ok) {
-        setShowManualLinkModal(false);
-        setManualDiscordId("");
-        await checkSession();
-        handleSearch();
-      } else {
-        const err = await res.json();
-        alert(`Failed to link Discord ID: ${err.error || 'Unknown error'}`);
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Error linking Discord ID.");
-    } finally {
-      setSubmittingLink(false);
-    }
-  };
 
   useEffect(() => {
     fetch("/api/onyx/merchants")
@@ -153,37 +118,6 @@ export function CitizenPortal() {
       console.error(err);
       setSyncMessage("Error starting balance sync");
       setSyncingBalances(false);
-    }
-  };
-
-  const handleDepositFunds = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!depositAccountId || !depositAmount || Number(depositAmount) <= 0) return;
-    setDepositing(true);
-    setSyncMessage(null);
-    try {
-      const res = await fetch("/api/citizen/deposit-funds", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountId: depositAccountId,
-          amountDollars: depositAmount,
-          description: depositReason
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSyncMessage(`Deposited $${Number(depositAmount).toFixed(2)} successfully!`);
-        handleSearch();
-        setTimeout(() => setShowSyncModal(false), 1200);
-      } else {
-        setSyncMessage(data.error || "Failed to deposit funds");
-      }
-    } catch (err) {
-      console.error(err);
-      setSyncMessage("Error depositing funds");
-    } finally {
-      setDepositing(false);
     }
   };
 
@@ -373,15 +307,12 @@ export function CitizenPortal() {
             <button
               onClick={() => {
                 setSyncMessage(null);
-                if (userData?.accounts && userData.accounts.length > 0) {
-                  setDepositAccountId(userData.accounts[0].id);
-                }
                 setShowSyncModal(true);
               }}
               className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-full flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20 hover:scale-[1.02]"
             >
               <RefreshCw size={15} className={syncingBalances ? "animate-spin text-white" : "text-white"} />
-              Sync / Top-Up Balances
+              Sync Balances
             </button>
 
             <div className="flex items-center gap-4 bg-[#12121a] p-2 pr-4 rounded-full border border-white/5 shadow-inner">
@@ -421,12 +352,6 @@ export function CitizenPortal() {
               >
                 <LogIn size={15} />
                 Link via Discord OAuth
-              </button>
-              <button
-                onClick={() => setShowManualLinkModal(true)}
-                className="w-full sm:w-auto bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition-all"
-              >
-                Manual ID
               </button>
             </div>
           </div>
@@ -475,7 +400,7 @@ export function CitizenPortal() {
             {/* Main Content Area */}
             <div className="lg:col-span-9 space-y-8">
               {activeTab === "dashboard" && <DashboardTab data={userData} refresh={handleSearch} />}
-              {activeTab === "assets" && <AssetsTab data={userData} refresh={handleSearch} visibleCardIds={visibleCardIds} toggleCardVisibility={toggleCardVisibility} formatCardNumber={formatCardNumber} onOpenSyncModal={(accId?: string) => { if (accId) setDepositAccountId(accId); setSyncMessage(null); setShowSyncModal(true); }} />}
+              {activeTab === "assets" && <AssetsTab data={userData} refresh={handleSearch} visibleCardIds={visibleCardIds} toggleCardVisibility={toggleCardVisibility} formatCardNumber={formatCardNumber} onOpenSyncModal={() => { setSyncMessage(null); setShowSyncModal(true); }} />}
               {activeTab === "transfer" && <TransferTab data={userData} refresh={handleSearch} onyxMerchants={onyxMerchants} />}
               {activeTab === "loans" && <LoansTab data={userData} refresh={handleSearch} />}
               {activeTab === "invoices" && <InvoicesTab data={userData} refresh={handleSearch} />}
@@ -559,50 +484,7 @@ export function CitizenPortal() {
           </div>
         ) : null}
 
-        {/* Manual Discord Link Modal */}
-        {showManualLinkModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
-              <button onClick={() => setShowManualLinkModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5">
-                <X size={18} />
-              </button>
-              <div className="flex items-center gap-3 text-indigo-400">
-                <Link2 size={24} />
-                <h3 className="text-lg font-bold text-white">Manual Discord Link</h3>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Enter your numeric Discord User ID or handle to link your profile. This unifies your accounts across all Slate banks and enables automated Discord bot notifications.
-              </p>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Discord ID or Handle</label>
-                <input
-                  type="text"
-                  value={manualDiscordId}
-                  onChange={(e) => setManualDiscordId(e.target.value)}
-                  placeholder="e.g. 123456789012345678 or @john_doe"
-                  className="w-full bg-[#0a0a0f] border border-white/15 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-3">
-                <button
-                  onClick={() => setShowManualLinkModal(false)}
-                  className="px-4 py-2 text-xs text-slate-400 hover:text-white font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleManualLinkSubmit}
-                  disabled={submittingLink || !manualDiscordId.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20"
-                >
-                  {submittingLink ? "Linking..." : "Link Profile"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Sync & Top-Up Balances Modal */}
+        {/* Sync Balances Modal */}
         {showSyncModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative animate-in zoom-in-95 duration-200">
@@ -615,8 +497,8 @@ export function CitizenPortal() {
                   <RefreshCw size={24} className={syncingBalances ? "animate-spin" : ""} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">Account Balance Sync & Deposit</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Recalculate ledger balances or add starting funds to your accounts.</p>
+                  <h3 className="text-lg font-bold text-white">Account Balance Sync</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Recalculate ledger balances from CityCorp in-game accounts.</p>
                 </div>
               </div>
 
@@ -675,82 +557,11 @@ export function CitizenPortal() {
                 </button>
               </div>
 
-              {/* Mode 2: Manual Account Top-Up / Deposit */}
-              <form onSubmit={handleDepositFunds} className="bg-[#0a0a0f] p-4 rounded-xl border border-white/5 space-y-3">
-                <h4 className="text-white font-bold text-sm flex items-center gap-2">
-                  <DollarSign size={16} className="text-emerald-400" />
-                  Manual Account Top-Up / Deposit
-                </h4>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Target Account</label>
-                    <select
-                      value={depositAccountId}
-                      onChange={(e) => setDepositAccountId(e.target.value)}
-                      className="w-full bg-[#12121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                    >
-                      {userData?.accounts?.map((acc: any) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.accountName} ({formatMoney(acc.balance)}) - {acc.id}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Deposit Amount ($)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="1"
-                        required
-                        value={depositAmount}
-                        onChange={(e) => setDepositAmount(e.target.value)}
-                        className="w-full bg-[#12121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Quick Presets</label>
-                      <div className="flex gap-1">
-                        {["500", "1000", "5000"].map(amt => (
-                          <button
-                            key={amt}
-                            type="button"
-                            onClick={() => setDepositAmount(amt)}
-                            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg border transition-all ${
-                              depositAmount === amt ? "bg-emerald-600 text-white border-emerald-500" : "bg-white/5 text-slate-400 border-white/10 hover:text-white"
-                            }`}
-                          >
-                            +${amt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Reason / Description</label>
-                    <input
-                      type="text"
-                      value={depositReason}
-                      onChange={(e) => setDepositReason(e.target.value)}
-                      className="w-full bg-[#12121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                      placeholder="e.g. Initial Account Funding"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={depositing || !depositAccountId}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-600/20 disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
-                >
-                  <DollarSign size={14} />
-                  {depositing ? "Processing Deposit..." : `Deposit $${Number(depositAmount || 0).toFixed(2)} Now`}
-                </button>
-              </form>
+              <div className="bg-[#0a0a0f] p-4 rounded-xl border border-white/5">
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Deposit in-game via <span className="font-mono text-slate-200">/c account deposit</span> or visit a teller. Portal deposits are disabled.
+                </p>
+              </div>
 
               <div className="flex justify-end">
                 <button
@@ -1243,11 +1054,11 @@ function AssetsTab({ data, refresh, visibleCardIds, toggleCardVisibility, format
                   )}
                   <button
                     onClick={() => onOpenSyncModal?.(acc.id)}
-                    className="flex items-center gap-1 text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-2.5 py-1.5 rounded-lg transition-colors border border-emerald-500/20 font-medium"
-                    title="Top-Up or Sync Balance"
+                    className="flex items-center gap-1 text-xs bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 px-2.5 py-1.5 rounded-lg transition-colors border border-indigo-500/20 font-medium"
+                    title="Sync in-game balance"
                   >
-                    <DollarSign size={13} />
-                    Top-Up
+                    <RefreshCw size={13} />
+                    Sync
                   </button>
                   {isBusiness && (
                     <span className="text-[11px] bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2.5 py-1 rounded-lg flex items-center gap-1 font-medium">
@@ -2223,17 +2034,28 @@ function LoansTab({ data, refresh }: any) {
                   <form onSubmit={async (e:any) => {
                     e.preventDefault();
                     const fd = new FormData(e.target);
-                    await fetch('/api/citizen/pay-loan', {
+                    const dollars = fd.get("amount");
+                    const res = await fetch('/api/citizen/pay-loan', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ ...Object.fromEntries(fd), loanId: loan.id })
+                      body: JSON.stringify({
+                        loanId: loan.id,
+                        fromAccountId: fd.get("fromAccountId"),
+                        amount: dollars,
+                        amountDollars: dollars,
+                      })
                     });
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      alert(err.error || "Payment failed");
+                    }
                     refresh();
                   }} className="flex gap-2">
                     <select required name="fromAccountId" className="flex-1 bg-black/30 border border-white/10 rounded-lg px-2 py-2 text-xs text-white">
                       <option value="">Pay from...</option>
                       {data.accounts?.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.accountName}</option>)}
                     </select>
+                    <input required name="amount" type="number" step="0.01" min="0.01" placeholder="Amount ($)" className="w-28 bg-black/30 border border-white/10 rounded-lg px-2 py-2 text-xs text-white" />
                     <button type="submit" className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-3 py-2 rounded-lg text-xs font-bold transition-colors">Pay Installment</button>
                   </form>
                 </div>

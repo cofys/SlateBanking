@@ -391,7 +391,7 @@ export const onyxSettings = sqliteTable("onyx_settings", {
   b2bApiFeePercent: integer("b2b_api_fee_percent").default(200), // 2.00%
   clearinghouseEnabled: integer("clearinghouse_enabled", { mode: "boolean" }).default(true),
   globalBotMaintenance: integer("global_bot_maintenance", { mode: "boolean" }).default(false),
-  botToken: text("bot_token"),
+  botToken: encryptedText("bot_token"),
   guiChannelId: text("gui_channel_id"),
   guiMessageId: text("gui_message_id"),
 });
@@ -435,7 +435,7 @@ export const bankCustomers = sqliteTable("bank_customers", {
   mcUuid: text("mc_uuid"),
   mcUsername: text("mc_username"),
   linkedDiscordId: text("linked_discord_id"),
-  cityCorpToken: text("city_corp_token"),
+  cityCorpToken: encryptedText("city_corp_token"),
   notes: text("notes"),
   rpName: text("rp_name"),
   address: text("address"),
