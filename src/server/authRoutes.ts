@@ -176,9 +176,11 @@ export function registerAuthRoutes(app: express.Express) {
     const { state: stateStr } = req.query;
     const code = (req.query.client_secret || req.query.code) as string;
 
-    if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
+    if (req.query.error) {
+      return res.status(400).type("txt").send("CityCorp OAuth was denied. Please try again.");
+    }
     if (!code || !stateStr) {
-      return res.status(400).send(`Missing code or state. URL: ${req.originalUrl}`);
+      return res.status(400).type("txt").send("Missing code or state. Please restart login.");
     }
 
     try {
@@ -561,7 +563,7 @@ export function registerAuthRoutes(app: express.Express) {
         if (!authToken) return res.status(401).send("No active session to link");
         let decodedSession: any;
         try {
-          decodedSession = jwt.verify(authToken, JWT_SECRET);
+          decodedSession = jwt.verify(authToken, JWT_SECRET, { algorithms: ["HS256"] });
         } catch (e) {
           return res.status(401).send("Invalid session token");
         }
@@ -646,7 +648,7 @@ export function registerAuthRoutes(app: express.Express) {
     const token = req.cookies.auth_token;
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
+      const decoded: any = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
       (req as any).user = decoded;
       const { checkUserIsGlobalAdmin } = await import("./userResolver.js");
       const isGlobal = await checkUserIsGlobalAdmin(req);

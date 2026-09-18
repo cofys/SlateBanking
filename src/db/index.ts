@@ -81,6 +81,13 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("clearinghouse_balances", "slate_advance_cents", "INTEGER DEFAULT 0");
   checkAndAddColumn("clearinghouse_balances", "last_drift_alert_at", "INTEGER");
   createTableIfNotExists("clearinghouse_settlements", "id TEXT PRIMARY KEY NOT NULL, from_bank_id TEXT NOT NULL, to_bank_id TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL");
+  checkAndAddColumn("clearinghouse_settlements", "status", "TEXT DEFAULT 'pending'");
+  checkAndAddColumn("clearinghouse_settlements", "run_id", "TEXT");
+  checkAndAddColumn("clearinghouse_settlements", "note", "TEXT");
+  checkAndAddColumn("clearinghouse_settlements", "released_at", "INTEGER");
+  checkAndAddColumn("clearinghouse_settlements", "confirmed_at", "INTEGER");
+  checkAndAddColumn("clearinghouse_settlements", "released_by", "TEXT");
+  checkAndAddColumn("clearinghouse_settlements", "confirmed_by", "TEXT");
   createTableIfNotExists("inter_bank_transfers", "id TEXT PRIMARY KEY NOT NULL, from_bank_id TEXT NOT NULL, to_bank_id TEXT NOT NULL, from_account_id TEXT NOT NULL, to_account_id TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("onyx_settings", "id TEXT PRIMARY KEY NOT NULL");
   createTableIfNotExists("city_corp_logs", "id TEXT PRIMARY KEY NOT NULL, endpoint TEXT NOT NULL, latency_ms INTEGER NOT NULL, status INTEGER NOT NULL, success INTEGER NOT NULL, timestamp INTEGER NOT NULL");
@@ -282,6 +289,9 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("onyx_settings", "bot_token", "TEXT");
   checkAndAddColumn("onyx_settings", "gui_channel_id", "TEXT");
   checkAndAddColumn("onyx_settings", "gui_message_id", "TEXT");
+  checkAndAddColumn("onyx_settings", "settlement_schedule", "TEXT DEFAULT 'weekly'");
+  checkAndAddColumn("onyx_settings", "last_net_settlement_at", "INTEGER");
+  checkAndAddColumn("onyx_settings", "settlement_min_cents", "INTEGER DEFAULT 10000");
 
   // Ensure high-performance indexes exist
   createIndexIfNotExists("idx_bank_accounts_bank_id", "bank_accounts", "bank_id");

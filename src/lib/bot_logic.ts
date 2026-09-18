@@ -956,11 +956,12 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
   }
   try {
     const { executeSameBankBookTransfer } = await import('./citycorp_money');
+    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
     await executeSameBankBookTransfer({
       sourceAccount,
       destAccount,
       desiredCents: amountInCents,
-      mode: 'from_payment',
+      mode: (settings?.defaultFeePayerMode as any) || 'from_payment',
       description: `Transfer to ${toAccountName}`,
     });
     await interaction.editReply({ content: `✅ Transferred $${amount.toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}** via CityCorp.` });

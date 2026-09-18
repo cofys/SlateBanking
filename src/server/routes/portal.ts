@@ -85,7 +85,6 @@ portalRouter.get("/api/portal/:bankId/oauth/callback", async (req: express.Reque
         token: bank.cityCorpAppSecret
       });
 
-      console.log("Exchanging CityCorp OAuth code for token with body:", bodyParams.toString());
       const tokenResponse = await fetch("https://dashboard.cityrp.org/oauth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -170,7 +169,27 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
       const bank = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
       if (!bank) return res.status(404).json({ error: "Bank not found" });
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bank.id)).get();
-      
+      const publicSettings = settings ? {
+        bankId: settings.bankId,
+        logoUrl: settings.logoUrl,
+        colorScheme: settings.colorScheme,
+        requireKyc: settings.requireKyc,
+        enableAccountTiers: settings.enableAccountTiers,
+        accountTiers: settings.accountTiers,
+        enableLoans: settings.enableLoans,
+        enableVaults: settings.enableVaults,
+        enableCards: settings.enableCards,
+        enablePayroll: settings.enablePayroll,
+        enableSubscriptions: settings.enableSubscriptions,
+        enableEscrow: settings.enableEscrow,
+        enableTreasury: settings.enableTreasury,
+        loginBgUrl: settings.loginBgUrl,
+        requirePersonalForBusiness: settings.requirePersonalForBusiness,
+        vaultTiers: settings.vaultTiers,
+        defaultFeePayerMode: settings.defaultFeePayerMode,
+        savingsApyPercent: settings.savingsApyPercent,
+      } : null;
+
       const safeBank = {
         id: bank.id,
         name: bank.name,
@@ -190,7 +209,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
         maintenanceMode: (bank as any).maintenanceMode,
       };
 
-      res.json({ ...safeBank, settings });
+      res.json({ ...safeBank, settings: publicSettings });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
@@ -347,7 +366,10 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         accounts: userAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
-        cards: userCards,
+        cards: userCards.map((c: any) => ({
+          ...c,
+          cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
+        })),
         loans: userLoans,
         subscriptions: userSubscriptions,
         customer: customer ? {
@@ -891,8 +913,11 @@ portalRouter.post("/api/portal/:bankId/request-card", requireAuth, async (req, r
 
     const cardId = `crd_${uuidv4().substring(0, 8)}`;
     const type = cardType === 'credit' ? 'credit' : 'debit';
-    const creditLimit = type === 'credit' ? 1000000 : 0;
-    const apr = type === 'credit' ? 1999 : 0;
+    if (type === 'credit') {
+      return res.status(400).json({ error: "Credit cards must be issued by bank staff. Request a debit card or apply for credit through the bank." });
+    }
+      const creditLimit = 0;
+      const apr = 0;
 
     await db.insert(cards).values({
       id: cardId,

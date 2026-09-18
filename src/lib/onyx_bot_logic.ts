@@ -444,17 +444,6 @@ async function handleOnyxCrossBankPayment(
       extraLines,
     });
 
-    if (sourceAccount.bankId !== destAcc.bankId) {
-      await db.insert(clearinghouseSettlements).values({
-        id: uuidv4(),
-        fromBankId: sourceAccount.bankId,
-        toBankId: destAcc.bankId,
-        amount: moved.quote.receivedCents,
-        status: 'paid',
-        createdAt: new Date()
-      });
-    }
-
     await interaction.editReply({
       content: `✅ Onyx payment of **$${(amountCents / 100).toFixed(2)}** sent to **${destAcc.accountName}** at **${targetBankObj.name}**.\nReceived: **$${(moved.quote.receivedCents / 100).toFixed(2)}** after fees.`
     });

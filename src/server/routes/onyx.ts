@@ -149,7 +149,7 @@ onyxRouter.get("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
     try {
       let settings = await db.select().from(onyxSettings).get();
       if (!settings) {
-        const initial = { id: "global", b2bApiFeePercent: 200, clearinghouseEnabled: true, globalBotMaintenance: false, botToken: null, guiChannelId: null, guiMessageId: null };
+        const initial = { id: "global", b2bApiFeePercent: 200, clearinghouseEnabled: true, globalBotMaintenance: false, botToken: null, guiChannelId: null, guiMessageId: null, settlementSchedule: "weekly", lastNetSettlementAt: null, settlementMinCents: 10000 };
         await db.insert(onyxSettings).values(initial);
         settings = initial;
       }
@@ -169,7 +169,7 @@ onyxRouter.put("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
     const { db } = await import("../../db/index");
     const { onyxSettings } = await import("../../db/schema");
     try {
-      const { b2bApiFeePercent, clearinghouseEnabled, globalBotMaintenance, botToken, guiChannelId, guiMessageId } = req.body;
+      const { b2bApiFeePercent, clearinghouseEnabled, globalBotMaintenance, botToken, guiChannelId, guiMessageId, settlementSchedule, settlementMinCents } = req.body;
       const data = { 
         id: "global", 
         b2bApiFeePercent, 
@@ -177,7 +177,9 @@ onyxRouter.put("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
         globalBotMaintenance,
         ...(botToken !== undefined && { botToken }),
         ...(guiChannelId !== undefined && { guiChannelId }),
-        ...(guiMessageId !== undefined && { guiMessageId })
+        ...(guiMessageId !== undefined && { guiMessageId }),
+        ...(settlementSchedule !== undefined && { settlementSchedule }),
+        ...(settlementMinCents !== undefined && { settlementMinCents }),
       };
       const exists = await db.select().from(onyxSettings).get();
       const { eq } = await import("drizzle-orm");
@@ -198,7 +200,8 @@ onyxRouter.put("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
         }
       }
       
-      res.json(data);
+      const { botToken: _bt, ...safe } = data as any;
+      res.json({ ...safe, hasBotToken: !!(botToken || exists?.botToken) });
     } catch(e) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
@@ -418,7 +421,7 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
       const jwt = require('jsonwebtoken');
       const JWT_SECRET = process.env.JWT_SECRET;
       try {
-          const decoded = jwt.verify(paymentToken, JWT_SECRET);
+          const decoded = jwt.verify(paymentToken, JWT_SECRET, { algorithms: ["HS256"] });
           if (decoded.discordId !== userDiscordId || decoded.amount !== amountCents) {
              return res.status(403).json({ error: "Payment token does not match requested amount or user." });
           }

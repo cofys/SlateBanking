@@ -911,7 +911,9 @@ CityCorp in-game accounts are the source of truth. Slate is a cache + product la
 
 **Book transfers** (portal, Discord, Onyx cash, payroll, subscriptions, loan principal/repay) use `PATCH /accounts/transfer/account`. They never `withdraw` then `deposit` (those APIs hit the API-key owner's personal wallet) and never `PATCH /pay`.
 
-**Same-bank**: one `transfer/account` under that bank's owner key. **Cross-bank (Onyx)**: A customer → A `SETTLEMENT`, then B `SETTLEMENT` → B customer, using each bank's own key. This avoids the 2% corp-to-corp API tax. Receiving bank pays out immediately from float. SETTLEMENT subaccounts are created with 0% CityCorp WITHDRAW/DEPOSIT fees. Net positions live on `clearinghouse_balances`; weekly/biweekly/monthly in-game net settlement is a later pass.
+**Cross-bank (Onyx)**: A customer → A `SETTLEMENT`, then B `SETTLEMENT` → B customer, using each bank's own key. This avoids the 2% corp-to-corp API tax. Receiving bank pays out immediately from float. SETTLEMENT subaccounts are created with 0% CityCorp WITHDRAW/DEPOSIT fees. Net positions live on `clearinghouse_balances`.
+
+**In-game net settlement**: weekly/biweekly/monthly (or Run now). Greedy-pairs IOUs. Tries SETTLEMENT→SETTLEMENT book transfer first; CityCorp usually refuses (caller is not a subuser of the other corp). Fallback: debtor **Release** (withdraw SETTLEMENT → owner wallet), pay the other owner in-game, creditor **Confirm** (deposit into SETTLEMENT). IOU only closes after cash moves. Paper "record paid" is gone. VH self-funds via **Fund SETTLEMENT** (owner-wallet deposit).
 
 **Fees**: CityCorp percents (0.25 = 0.25%) stack with Slate stored rates (200 = 2.00%). Combined keep-rate is `1-Π(1-r)`. Incremental bank fee is `max(0, slateRate - cityRate)` so VH's 2% is not double-charged if already set on the CityCorp account. Senders choose **fees from payment** (`from_payment`) vs **sender covers** (`sender_covers`). `POST /api/citizen/transfer/quote` and the citizen Send Payment tab show submitted vs received before confirm.
 

@@ -17,6 +17,8 @@ export function startCronJobs() {
       await processDueLoanRepayments();
       await processDueCreditRepayments();
       await accrueLoanInterest();
+      const { processDueNetSettlements } = await import("./net_settlement");
+      await processDueNetSettlements();
     } catch (e) {
       console.error("[Cron] Loan/Yield processing error:", e);
     }

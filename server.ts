@@ -68,8 +68,7 @@ async function startServer() {
         const details = {
           status: res.statusCode,
           method: req.method,
-          query: req.query,
-          // limit body logging to safe fields or just flag if present
+          query: path.includes("/auth/") ? undefined : req.query,
           bodySize: req.body ? JSON.stringify(req.body).length : 0
         };
 

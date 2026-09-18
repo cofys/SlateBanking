@@ -345,11 +345,23 @@ globalRouter.get("/api/global/clearinghouse", requireGlobalAdmin, async (req, re
             bankId: clearinghouseBalances.bankId,
             bankName: banks.name,
             balance: clearinghouseBalances.balance,
+            settlementCashCents: clearinghouseBalances.settlementCashCents,
+            lastSettled: clearinghouseBalances.lastSettled,
         }).from(clearinghouseBalances)
         .leftJoin(banks, eq(clearinghouseBalances.bankId, banks.id));
         res.json(results);
     } catch(e: any) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+globalRouter.post("/api/global/clearinghouse/run", requireGlobalAdmin, async (req, res) => {
+    try {
+        const { runNetSettlement } = await import("../../lib/net_settlement");
+        const result = await runNetSettlement({ actorId: (req as any).user?.discordId || "global" });
+        res.json({ success: true, ...result });
+    } catch (e: any) {
+        res.status(400).json({ error: e.message || "Run failed" });
     }
 });
 

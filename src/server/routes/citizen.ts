@@ -162,7 +162,11 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
         accounts: userAccounts,
         transactions: recentTxs,
         invoices: userInvoices,
-        cards: userCards,
+        cards: userCards.map((c: any) => ({
+          ...c,
+          cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
+          cvv: undefined,
+        })),
         loans: userLoans,
         subscriptions: userSubscriptions,
         merchants: userMerchants

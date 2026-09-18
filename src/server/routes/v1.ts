@@ -40,6 +40,16 @@ v1Router.post("/api/v1/accounts", authenticateApiRequest, async (req: express.Re
        }
 
        const id = uuidv4();
+       const finalName = accountName || `${type === 'savings' ? 'Savings' : 'Checking'} Account`;
+
+       if (bank.corpId && bank.corpApiUuid && bank.corpApiKey) {
+         const { CityCorpClient } = await import("../../lib/citycorp_api");
+         const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+         const created = await client.createAccount(finalName);
+         if (created && created.success === false && !String(created.message || created.error || "").toLowerCase().includes("already")) {
+           return res.status(400).json({ error: created.message || created.error || "CityCorp create failed" });
+         }
+       }
        
        await db.insert(bankAccounts).values({
          id,
@@ -47,7 +57,7 @@ v1Router.post("/api/v1/accounts", authenticateApiRequest, async (req: express.Re
          ownerDiscordId: discordId,
          accountType: type || "checking",
          balance: 0,
-         accountName: accountName || `${type === 'savings' ? 'Savings' : 'Checking'} Account`,
+         accountName: finalName,
          isActive: true,
          createdAt: new Date()
        });

@@ -176,10 +176,24 @@ export class CityCorpWebSocket {
 
         if (previousLocal != null && newCents < previousLocal - 100) {
           const drop = previousLocal - newCents;
-          botManager.sendNotification(
-            this.bankId,
-            `🚨 **RESERVE_BREACH**: SETTLEMENT dropped $${(drop / 100).toFixed(2)} without a matching Slate debit (now $${(newCents / 100).toFixed(2)}). Outbound Onyx should be reviewed.`
-          );
+          const chb = await db.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, this.bankId)).get();
+          const lastAlert = chb?.lastDriftAlertAt ? new Date(chb.lastDriftAlertAt).getTime() : 0;
+          const { recentSlateDebitMatches } = await import("./net_settlement");
+          const matched = await recentSlateDebitMatches({
+            bankId: this.bankId,
+            accountId: local?.id,
+            dropCents: drop,
+          });
+          if (!matched && (!lastAlert || Date.now() - lastAlert > 10 * 60 * 1000)) {
+            await db.update(clearinghouseBalances)
+              .set({ lastDriftAlertAt: new Date() })
+              .where(eq(clearinghouseBalances.bankId, this.bankId))
+              .catch(() => {});
+            botManager.sendNotification(
+              this.bankId,
+              `🚨 **RESERVE_BREACH**: SETTLEMENT dropped $${(drop / 100).toFixed(2)} without a matching Slate debit (now $${(newCents / 100).toFixed(2)}). Outbound Onyx should be reviewed.`
+            );
+          }
         }
         const warn = settings?.settlementWarnCents || 0;
         if (warn > 0 && newCents < warn) {

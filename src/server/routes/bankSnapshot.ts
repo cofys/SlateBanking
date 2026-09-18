@@ -14,6 +14,8 @@ const REDACT_KEYS = new Set([
   "cvv",
   "botToken",
   "discordClientSecret",
+  "discordWebhookUrl",
+  "apiWebhookUrl",
 ]);
 
 function redactSecrets(value: any): any {

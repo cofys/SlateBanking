@@ -46,7 +46,7 @@ export function dollars(cents: number): number {
   return Number((cents / 100).toFixed(2));
 }
 
-function isCityCorpOk(res: any): boolean {
+export function isCityCorpOk(res: any): boolean {
   if (!res) return false;
   if (res.success === false) return false;
   if (res.error) return false;
@@ -282,13 +282,6 @@ async function recordMove(opts: {
   return id;
 }
 
-async function applyLocalDelta(accountId: string, deltaCents: number) {
-  if (deltaCents === 0) return;
-  await db.update(bankAccounts)
-    .set({ balance: sql`${bankAccounts.balance} + ${deltaCents}` })
-    .where(eq(bankAccounts.id, accountId));
-}
-
 /**
  * Same-corp book transfer. CityCorp `transfer/account` is the only cash pipe.
  * Owner-key deposit/withdraw are never used here.
@@ -301,7 +294,6 @@ export async function executeSameBankBookTransfer(opts: {
   description?: string;
   type?: string;
   extraLines?: FeeLine[];
-  skipLocalDelta?: boolean;
   /** Send desiredCents as-is. Used for settlement hops that were already quoted end-to-end. */
   skipQuote?: boolean;
 }): Promise<{ quote: FeeQuote; txId: string; sourceBank: BankRow }> {
@@ -477,6 +469,11 @@ export async function executeCrossBankSettledTransfer(opts: {
   const mode = parseFeePayerMode(opts.mode, "from_payment");
   const sourceBank = await loadBank(opts.sourceAccount.bankId);
   const destBank = await loadBank(opts.destAccount.bankId);
+  const { onyxSettings } = await import("../db/schema");
+  const onyx = await db.select().from(onyxSettings).where(eq(onyxSettings.id, "global")).get();
+  if (onyx && onyx.clearinghouseEnabled === false) {
+    throw new MoneyRailError("Onyx clearinghouse is paused. Cross-bank payments are unavailable.");
+  }
   const sourceSettings = await loadSettings(sourceBank.id);
   const destSettings = await loadSettings(destBank.id);
 

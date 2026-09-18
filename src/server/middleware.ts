@@ -1,5 +1,6 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { checkUserIsGlobalAdmin, isUserStaffOrGlobalAdmin } from "./userResolver.js";
 
 export const JWT_SECRET = process.env.JWT_SECRET as string;
@@ -38,7 +39,7 @@ export const requireAuth = async (req: express.Request, res: express.Response, n
   const token = req.cookies.auth_token;
   if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const decoded: any = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
     (req as any).user = decoded;
     const isGlobal = await checkUserIsGlobalAdmin(req);
     (req as any).user.isGlobalAdmin = isGlobal;
@@ -52,7 +53,7 @@ export const requireGlobalAdmin = async (req: express.Request, res: express.Resp
   const token = req.cookies.auth_token;
   if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const decoded: any = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
     (req as any).user = decoded;
     const isGlobal = await checkUserIsGlobalAdmin(req);
     if (!isGlobal) {
@@ -69,7 +70,7 @@ export const requireBankStaff = async (req: express.Request, res: express.Respon
   const token = req.cookies.auth_token;
   if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const decoded: any = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
     (req as any).user = decoded;
     const bankId = req.params.bankId || req.params.id;
     if (!bankId) return res.status(400).json({ error: "Bank ID missing" });
@@ -88,7 +89,10 @@ export const requireBankStaff = async (req: express.Request, res: express.Respon
 export const requireRole = (allowedRoles: string[]) => {
   return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = (req as any).user;
-    if (user && user.isGlobalAdmin) return next();
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const isGlobal = await checkUserIsGlobalAdmin(req);
+    (req as any).user.isGlobalAdmin = isGlobal;
+    if (isGlobal) return next();
     const role = (req as any).staffRole;
     if (!role) return res.status(403).json({ error: "Forbidden - No role assigned" });
     if (role === 'owner' || allowedRoles.includes(role)) {
@@ -109,11 +113,14 @@ export const authenticateApiRequest = async (req: express.Request, res: express.
   try {
     const { decryptSecret } = await import("../lib/encryption.js");
     const all = await db.select().from(banks);
+    const tokenBuf = Buffer.from(String(token));
     const bank = all.find((b) => {
       if (!b.apiKey) return false;
-      if (b.apiKey === token) return true;
-      const plain = decryptSecret(b.apiKey);
-      return plain === token;
+      const plain = b.apiKey === token ? token : decryptSecret(b.apiKey);
+      if (!plain) return false;
+      const plainBuf = Buffer.from(String(plain));
+      if (plainBuf.length !== tokenBuf.length) return false;
+      try { return crypto.timingSafeEqual(plainBuf, tokenBuf); } catch { return false; }
     });
     if (!bank) {
       return res.status(401).json({ error: "Invalid API key" });
@@ -187,7 +194,7 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
     return `${domain}${callbackPath}`;
   }
 
-  if (host && hostAllowedForRedirect(host, allowed.length ? allowed : [process.env.APP_URL || `https://${host}`])) {
+  if (host && allowed.length > 0 && hostAllowedForRedirect(host, allowed)) {
     return `${proto}://${host}${callbackPath}`;
   }
 

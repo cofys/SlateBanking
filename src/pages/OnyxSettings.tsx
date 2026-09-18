@@ -274,6 +274,48 @@ export function OnyxSettings() {
                  <span className="text-sm text-white/50">%</span>
               </div>
             </div>
+
+            <div className="flex items-center justify-between p-3 rounded bg-white/5 border border-white/5">
+              <div>
+                <p className="text-sm font-medium">Net settlement cadence</p>
+                <p className="text-xs text-white/50">Pairs IOUs and opens SETTLEMENT instructions. Manual = staff-run only.</p>
+              </div>
+              <select
+                className="bg-black/50 border border-white/10 rounded px-2 py-1 text-sm"
+                value={settings?.settlementSchedule || "weekly"}
+                onChange={(e) => handleUpdateSettings({ settlementSchedule: e.target.value })}
+              >
+                <option value="manual">Manual</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Biweekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div className="flex items-center justify-between p-3 rounded bg-white/5 border border-white/5">
+              <div>
+                <p className="text-sm font-medium">Minimum net ($)</p>
+                <p className="text-xs text-white/50">Ignore dust smaller than this when pairing.</p>
+              </div>
+              <input
+                type="number"
+                step="1"
+                className="w-24 bg-black/50 border border-white/10 rounded px-2 py-1 text-sm text-right"
+                value={settings ? ((settings.settlementMinCents || 10000) / 100).toFixed(0) : 100}
+                onChange={(e) => handleUpdateSettings({ settlementMinCents: Math.round(parseFloat(e.target.value) * 100) })}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const res = await fetch("/api/global/clearinghouse/run", { method: "POST" });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) alert(body.error || "Run failed");
+                else fetchData();
+              }}
+              className="w-full text-sm bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg"
+            >
+              Run network settlement now
+            </button>
           </div>
         </div>
 

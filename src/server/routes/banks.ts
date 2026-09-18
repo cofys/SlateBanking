@@ -785,7 +785,19 @@ banksRouter.post("/api/banks", requireGlobalAdmin, async (req: express.Request, 
         addCityCorpEventSubscriber(newBank.id, corpApiUuid, corpApiKey);
       }
       
-      res.json(newBank);
+      res.json({
+        id: newBank.id,
+        name: newBank.name,
+        guildId: newBank.guildId,
+        customDomain: newBank.customDomain,
+        corpId: newBank.corpId,
+        cityCorpAppId: newBank.cityCorpAppId,
+        discordClientId: newBank.discordClientId,
+        status: newBank.status,
+        createdAt: newBank.createdAt,
+        hasDiscordToken: !!discordToken,
+        hasCorpApiKey: !!corpApiKey,
+      });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: (e as any).message });
@@ -1536,6 +1548,8 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         settlementFloorCents: req.body.settlementFloorCents,
         settlementWarnCents: req.body.settlementWarnCents,
         defaultFeePayerMode: req.body.defaultFeePayerMode,
+        requirePersonalForBusiness: req.body.requirePersonalForBusiness,
+        savingsApyPercent: req.body.savingsApyPercent,
       };
 
       const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId));
@@ -1578,6 +1592,17 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
           accountName: settleName,
           systemCategory: "clearinghouse",
         });
+        for (const [raw, cat] of [
+          [req.body.loanPoolAccount, "loan_pool"],
+          [req.body.interestPoolAccount, "interest_revenue"],
+          [req.body.defaultCorpAccount, "vault_cash"],
+        ] as const) {
+          const n = String(raw || "").trim();
+          if (!n) continue;
+          await ensureNamedCityCorpAccount({ bank: bankRow, accountName: n, systemCategory: cat }).catch((e) => {
+            console.warn("[settings] pool provision skipped", n, e);
+          });
+        }
       } catch (e) {
         console.warn("[settings] SETTLEMENT provision skipped", e);
       }
@@ -2335,9 +2360,10 @@ banksRouter.delete("/api/banks/:bankId/accounts/:accountId", requireBankStaff, a
     try {
       const { action, feePercent, destAccount } = req.body || {};
 
-      const accs = await db.select().from(bankAccounts).where(eq(bankAccounts.id, req.params.accountId));
+      const accs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, req.params.accountId), eq(bankAccounts.bankId, req.params.bankId)));
       if (accs.length === 0) return res.status(404).json({ error: "Account not found" });
       const targetAcc = accs[0];
+      if (targetAcc.bankId !== req.params.bankId) return res.status(403).json({ error: "Account is not in this bank" });
       const accName = targetAcc.accountName;
       let balance = targetAcc.balance;
 
@@ -2485,31 +2511,26 @@ banksRouter.get("/api/banks/:bankId/analytics", requireBankStaff, async (req: ex
 
 banksRouter.get("/api/banks/:bankId/clearinghouse", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { clearinghouseBalances, clearinghouseSettlements, banks, interBankTransfers } = await import("../../db/schema");
+    const { clearinghouseBalances, clearinghouseSettlements, banks, interBankTransfers, bankSettings } = await import("../../db/schema");
     const { eq, or, desc } = await import("drizzle-orm");
     try {
-      // Ensure balance record exists
       let chb = await db.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, req.params.bankId)).get();
       if (!chb) {
         chb = await db.insert(clearinghouseBalances).values({ bankId: req.params.bankId, balance: 0 }).returning().get();
       }
 
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, req.params.bankId)).get();
+
       const network = await db.select({
         id: banks.id,
         name: banks.name,
-        balance: clearinghouseBalances.balance
+        balance: clearinghouseBalances.balance,
+        settlementCashCents: clearinghouseBalances.settlementCashCents,
       }).from(banks)
         .leftJoin(clearinghouseBalances, eq(banks.id, clearinghouseBalances.bankId))
         .where(eq(banks.status, "active"));
 
-      const settlements = await db.select({
-        id: clearinghouseSettlements.id,
-        amount: clearinghouseSettlements.amount,
-        status: clearinghouseSettlements.status,
-        createdAt: clearinghouseSettlements.createdAt,
-        fromBankId: clearinghouseSettlements.fromBankId,
-        toBankId: clearinghouseSettlements.toBankId,
-      }).from(clearinghouseSettlements)
+      const settlements = await db.select().from(clearinghouseSettlements)
         .where(or(
           eq(clearinghouseSettlements.fromBankId, req.params.bankId),
           eq(clearinghouseSettlements.toBankId, req.params.bankId)
@@ -2526,7 +2547,12 @@ banksRouter.get("/api/banks/:bankId/clearinghouse", requireBankStaff, async (req
 
       res.json({
         balance: chb?.balance || 0,
-        network: network.map(n => ({ ...n, balance: n.balance || 0 })),
+        settlementCashCents: chb?.settlementCashCents || 0,
+        lastSettled: chb?.lastSettled || null,
+        settlementAccount: settings?.settlementAccount || "SETTLEMENT",
+        settlementFloorCents: settings?.settlementFloorCents || 0,
+        settlementWarnCents: settings?.settlementWarnCents || 0,
+        network: network.map(n => ({ ...n, balance: n.balance || 0, settlementCashCents: n.settlementCashCents || 0 })),
         settlements,
         wires
       });
@@ -2536,46 +2562,74 @@ banksRouter.get("/api/banks/:bankId/clearinghouse", requireBankStaff, async (req
     }
   });
 
-banksRouter.post("/api/banks/:bankId/clearinghouse/settle", requireBankStaff, async (req: express.Request, res: express.Response) => {
-    const { db } = await import("../../db/index");
-    const { clearinghouseBalances, clearinghouseSettlements } = await import("../../db/schema");
-    const { eq, sql } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+banksRouter.post("/api/banks/:bankId/clearinghouse/settle", [requireBankStaff, requireRole(["owner", "admin"])], async (req: express.Request, res: express.Response) => {
     try {
       const { toBankId, amount } = req.body;
       if (!toBankId || !amount || amount <= 0) return res.status(400).json({ error: "Invalid parameters" });
-
-      // Create settlement record
-      await db.insert(clearinghouseSettlements).values({
-        id: uuidv4(),
+      const actorId = (req as any).user?.discordId || "staff";
+      const { executeNetSettlement } = await import("../../lib/net_settlement");
+      const result = await executeNetSettlement({
         fromBankId: req.params.bankId,
         toBankId,
-        amount,
-        status: "paid",
-        createdAt: new Date()
+        amountCents: Math.round(Number(amount)),
+        actorId,
+        note: "Staff-initiated net settlement",
       });
-
-      // From Bank is paying To Bank, so From Bank's debt decreases (balance increases), To Bank's debt increases (balance decreases)
-      // Actually, if I send you 50k in cash, you now owe the network 50k more, and I owe 50k less.
-      // So From Bank balance += amount
-      // To Bank balance -= amount
-      
-      await db.run(sql`
-        INSERT INTO clearinghouse_balances (bank_id, balance, last_settled) 
-        VALUES (${req.params.bankId}, ${amount}, CURRENT_TIMESTAMP) 
-        ON CONFLICT(bank_id) DO UPDATE SET balance = balance + ${amount}, last_settled = CURRENT_TIMESTAMP
-      `);
-      
-      await db.run(sql`
-        INSERT INTO clearinghouse_balances (bank_id, balance, last_settled) 
-        VALUES (${toBankId}, -${amount}, CURRENT_TIMESTAMP) 
-        ON CONFLICT(bank_id) DO UPDATE SET balance = balance - ${amount}, last_settled = CURRENT_TIMESTAMP
-      `);
-
-      res.json({ success: true });
+      res.json({ success: true, ...result });
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message });
+      res.status(400).json({ error: e.message || "Settlement failed" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/clearinghouse/self-fund", [requireBankStaff, requireRole(["owner", "admin"])], async (req: express.Request, res: express.Response) => {
+    try {
+      const amount = Math.round(Number(req.body?.amount));
+      const { fundSettlementFromOwner } = await import("../../lib/net_settlement");
+      const result = await fundSettlementFromOwner(req.params.bankId, amount);
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Self-fund failed" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/clearinghouse/run", [requireBankStaff, requireRole(["owner", "admin"])], async (req: express.Request, res: express.Response) => {
+    try {
+      const { runNetSettlement } = await import("../../lib/net_settlement");
+      const result = await runNetSettlement({ actorId: (req as any).user?.discordId || "staff" });
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Run failed" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/clearinghouse/settlements/:settlementId/release", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    try {
+      const { releaseSettlement } = await import("../../lib/net_settlement");
+      const result = await releaseSettlement(req.params.settlementId, req.params.bankId, (req as any).user?.discordId || "staff");
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Release failed" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/clearinghouse/settlements/:settlementId/confirm", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    try {
+      const { confirmSettlement } = await import("../../lib/net_settlement");
+      const result = await confirmSettlement(req.params.settlementId, req.params.bankId, (req as any).user?.discordId || "staff");
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Confirm failed" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/clearinghouse/settlements/:settlementId/cancel", [requireBankStaff, requireRole(["owner", "admin"])], async (req: express.Request, res: express.Response) => {
+    try {
+      const { cancelSettlement } = await import("../../lib/net_settlement");
+      const result = await cancelSettlement(req.params.settlementId, req.params.bankId, (req as any).user?.discordId || "staff");
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Cancel failed" });
     }
   });
 
@@ -4836,6 +4890,9 @@ banksRouter.post("/api/banks/:bankId/tools/sqlite-migration", [requireBankStaff,
   });
 
 banksRouter.post("/api/banks/:bankId/tools/seed-demo", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(410).json({ error: "Demo seed is disabled in production." });
+    }
     const { db } = await import("../../db/index");
     const { 
       bankCustomers, 
@@ -5125,9 +5182,9 @@ banksRouter.get("/api/banks/:bankId/compliance/flagged", requireBankStaff, async
 banksRouter.post("/api/banks/:bankId/compliance/flagged/:txId/resolve", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { transactions } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { eq, and } = await import("drizzle-orm");
     try {
-      await db.update(transactions).set({ isFlagged: false }).where(eq(transactions.id, req.params.txId));
+      await db.update(transactions).set({ isFlagged: false }).where(and(eq(transactions.id, req.params.txId), eq(transactions.bankId, req.params.bankId)));
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
@@ -5151,9 +5208,9 @@ banksRouter.get("/api/banks/:bankId/compliance/frozen", requireBankStaff, async 
 banksRouter.post("/api/banks/:bankId/compliance/frozen/:accId/unfreeze", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankAccounts } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { eq, and } = await import("drizzle-orm");
     try {
-      await db.update(bankAccounts).set({ isFrozen: false }).where(eq(bankAccounts.id, req.params.accId));
+      await db.update(bankAccounts).set({ isFrozen: false }).where(and(eq(bankAccounts.id, req.params.accId), eq(bankAccounts.bankId, req.params.bankId)));
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);

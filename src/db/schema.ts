@@ -364,7 +364,13 @@ export const clearinghouseSettlements = sqliteTable("clearinghouse_settlements",
   fromBankId: text("from_bank_id").references(() => banks.id).notNull(),
   toBankId: text("to_bank_id").references(() => banks.id).notNull(),
   amount: integer("amount").notNull(),
-  status: text("status").default("pending"), // pending, paid
+  status: text("status").default("pending"), // pending, released, paid, cancelled
+  runId: text("run_id"),
+  note: text("note"),
+  releasedAt: integer("released_at", { mode: "timestamp" }),
+  confirmedAt: integer("confirmed_at", { mode: "timestamp" }),
+  releasedBy: text("released_by"),
+  confirmedBy: text("confirmed_by"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
   fromBankIdx: index("idx_settlements_from_bank").on(table.fromBankId),
@@ -394,6 +400,9 @@ export const onyxSettings = sqliteTable("onyx_settings", {
   botToken: encryptedText("bot_token"),
   guiChannelId: text("gui_channel_id"),
   guiMessageId: text("gui_message_id"),
+  settlementSchedule: text("settlement_schedule").default("weekly"), // manual, weekly, biweekly, monthly
+  lastNetSettlementAt: integer("last_net_settlement_at", { mode: "timestamp" }),
+  settlementMinCents: integer("settlement_min_cents").default(10000), // $100 dust floor
 });
 
 export const cityCorpLogs = sqliteTable("city_corp_logs", {
