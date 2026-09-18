@@ -14,6 +14,69 @@ export const LATE_FEE_FLAT_CENTS = 2500;
 export const LATE_FEE_RATE = 0.05;
 export const MISSES_TO_DEFAULT = 3;
 
+export type LoanPolicy = {
+  defaultApr: number;
+  defaultTermMonths: number;
+  maxAmountCents: number;
+  paymentPeriodDays: number;
+  autoDebit: boolean;
+  lateFeeFlatCents: number;
+  lateFeePercent: number;
+  missesToDefault: number;
+  gracePeriodDays: number;
+  retryDays: number;
+  accrueInterest: boolean;
+  interestAccrual: "daily" | "monthly" | "none";
+  accrueOnDefaulted: boolean;
+  compoundLateFees: boolean;
+  minInstallmentCents: number;
+  requireSignature: boolean;
+  allowCitizenApply: boolean;
+  cureDefaultOnPay: boolean;
+  daysInYear: number;
+};
+
+const policyCache = new Map<string, { at: number; policy: LoanPolicy }>();
+
+function num(v: any, fallback: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+export function policyFromSettings(settings: any | null | undefined): LoanPolicy {
+  const accrual = String(settings?.loanInterestAccrual || "daily");
+  return {
+    defaultApr: Math.max(0, num(settings?.defaultLoanApr, DEFAULT_LOAN_APR)),
+    defaultTermMonths: Math.max(1, Math.round(num(settings?.defaultLoanTermMonths, DEFAULT_TERM_MONTHS))),
+    maxAmountCents: Math.max(0, Math.round(num(settings?.maxLoanAmountCents, 0))),
+    paymentPeriodDays: Math.max(1, Math.round(num(settings?.loanPaymentPeriodDays, 30))),
+    autoDebit: settings?.loanAutoDebitEnabled !== false && settings?.loanAutoDebitEnabled !== 0,
+    lateFeeFlatCents: Math.max(0, Math.round(num(settings?.loanLateFeeFlatCents, LATE_FEE_FLAT_CENTS))),
+    lateFeePercent: Math.max(0, num(settings?.loanLateFeePercent, 500)),
+    missesToDefault: Math.max(1, Math.round(num(settings?.loanMissesToDefault, MISSES_TO_DEFAULT))),
+    gracePeriodDays: Math.max(0, Math.round(num(settings?.loanGracePeriodDays, 0))),
+    retryDays: Math.max(1, Math.round(num(settings?.loanRetryDays, 7))),
+    accrueInterest: settings?.loanAccrueInterest !== false && settings?.loanAccrueInterest !== 0,
+    interestAccrual: accrual === "monthly" || accrual === "none" ? accrual : "daily",
+    accrueOnDefaulted: settings?.loanAccrueOnDefaulted !== false && settings?.loanAccrueOnDefaulted !== 0,
+    compoundLateFees: settings?.loanCompoundLateFees !== false && settings?.loanCompoundLateFees !== 0,
+    minInstallmentCents: Math.max(1, Math.round(num(settings?.loanMinInstallmentCents, MIN_INSTALLMENT_CENTS))),
+    requireSignature: !!settings?.loanRequireSignature,
+    allowCitizenApply: settings?.loanAllowCitizenApply !== false && settings?.loanAllowCitizenApply !== 0,
+    cureDefaultOnPay: !!settings?.loanCureDefaultOnPay,
+    daysInYear: num(settings?.loanDaysInYear, 365) === 360 ? 360 : 365,
+  };
+}
+
+export async function loadLoanPolicy(bankId: string): Promise<LoanPolicy> {
+  const hit = policyCache.get(bankId);
+  if (hit && Date.now() - hit.at < 15_000) return hit.policy;
+  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+  const policy = policyFromSettings(settings);
+  policyCache.set(bankId, { at: Date.now(), policy });
+  return policy;
+}
+
 export const COLLECTABLE_LOAN_STATUSES = new Set(["active", "delinquent", "defaulted"]);
 export const PENDING_LOAN_STATUSES = new Set(["pending", "awaiting_signature"]);
 export const TERMINAL_LOAN_STATUSES = new Set(["paid_off", "paid", "rejected"]);
@@ -42,10 +105,10 @@ export function computeInstallment(loan: {
   principalAmount: number;
   remainingAmount: number;
   termMonths?: number | null;
-}): number {
+}, minCents: number = MIN_INSTALLMENT_CENTS): number {
   const months = Math.max(1, loan.termMonths || DEFAULT_TERM_MONTHS);
   const byTerm = Math.ceil(Math.max(0, loan.principalAmount) / months);
-  return Math.min(Math.max(0, loan.remainingAmount), Math.max(MIN_INSTALLMENT_CENTS, byTerm));
+  return Math.min(Math.max(0, loan.remainingAmount), Math.max(minCents, byTerm));
 }
 
 export function normalizeLoanStatus(status: string | undefined | null): string {
@@ -71,6 +134,7 @@ export async function applyLoanPaymentLedger(opts: {
   loan: LoanRow;
   amountCents: number;
   now?: Date;
+  policy?: LoanPolicy;
 }): Promise<{
   newRemaining: number;
   isPaidOff: boolean;
@@ -80,28 +144,50 @@ export async function applyLoanPaymentLedger(opts: {
   isDelinquent: boolean;
 }> {
   const now = opts.now || new Date();
-  const amount = Math.min(Math.max(0, Math.round(opts.amountCents)), opts.loan.remainingAmount);
+  const policy = opts.policy || await loadLoanPolicy(opts.loan.bankId);
+  const amount = Math.max(0, Math.round(opts.amountCents));
   if (amount <= 0) {
     throw new Error("Payment amount must be greater than zero");
   }
 
-  const installment = computeInstallment(opts.loan);
-  const newRemaining = Math.max(0, opts.loan.remainingAmount - amount);
-  const isPaidOff = newRemaining <= 0;
   const currentLateFee = opts.loan.lateFeeAmount || 0;
-  const lateFeeSettled = Math.min(amount, currentLateFee);
-  const newLateFee = Math.max(0, currentLateFee - lateFeeSettled);
-  const coversInstallment = amount >= installment;
+  const totalOwed = policy.compoundLateFees
+    ? opts.loan.remainingAmount
+    : opts.loan.remainingAmount + currentLateFee;
+  const applied = Math.min(amount, totalOwed);
+  if (applied <= 0) {
+    throw new Error("Loan has no remaining balance");
+  }
+
+  const installment = computeInstallment(opts.loan, policy.minInstallmentCents);
+
+  let lateFeeSettled: number;
+  let newLateFee: number;
+  let newRemaining: number;
+  if (policy.compoundLateFees) {
+    newRemaining = Math.max(0, opts.loan.remainingAmount - applied);
+    lateFeeSettled = Math.min(applied, currentLateFee);
+    newLateFee = Math.max(0, currentLateFee - lateFeeSettled);
+  } else {
+    lateFeeSettled = Math.min(applied, currentLateFee);
+    newLateFee = Math.max(0, currentLateFee - lateFeeSettled);
+    newRemaining = Math.max(0, opts.loan.remainingAmount - (applied - lateFeeSettled));
+  }
+
+  const isPaidOff = newRemaining <= 0 && newLateFee <= 0;
+  const coversInstallment = applied >= installment;
 
   let nextPaymentDate = opts.loan.nextPaymentDate ? new Date(opts.loan.nextPaymentDate) : now;
   if (!isPaidOff && coversInstallment) {
     const base = nextPaymentDate.getTime() < now.getTime() ? now : nextPaymentDate;
     nextPaymentDate = new Date(base);
-    nextPaymentDate.setDate(nextPaymentDate.getDate() + 30);
+    nextPaymentDate.setDate(nextPaymentDate.getDate() + policy.paymentPeriodDays);
   }
 
   let status: string;
   if (isPaidOff) status = "paid_off";
+  else if (opts.loan.status === "defaulted" && !policy.cureDefaultOnPay) status = "defaulted";
+  else if (opts.loan.status === "defaulted" && policy.cureDefaultOnPay && newLateFee === 0) status = "active";
   else if (opts.loan.status === "defaulted") status = "defaulted";
   else if (newLateFee > 0) status = "delinquent";
   else status = "active";
@@ -151,7 +237,11 @@ export async function collectLoanPayment(opts: {
     throw new Error("Loan is not in a collectable status");
   }
 
-  const appliedCents = Math.min(Math.max(0, Math.round(opts.amountCents)), opts.loan.remainingAmount);
+  const policy = await loadLoanPolicy(opts.loan.bankId);
+  const owed = policy.compoundLateFees
+    ? opts.loan.remainingAmount
+    : opts.loan.remainingAmount + (opts.loan.lateFeeAmount || 0);
+  const appliedCents = Math.min(Math.max(0, Math.round(opts.amountCents)), owed);
   if (appliedCents <= 0) {
     throw new Error("Loan has no remaining balance");
   }
@@ -165,7 +255,7 @@ export async function collectLoanPayment(opts: {
     type: "loan_payment",
   });
 
-  const ledger = await applyLoanPaymentLedger({ loan: opts.loan, amountCents: appliedCents });
+  const ledger = await applyLoanPaymentLedger({ loan: opts.loan, amountCents: appliedCents, policy });
   return {
     txId: moved.txId,
     newRemaining: ledger.newRemaining,
@@ -236,11 +326,17 @@ export async function submitLoanApplication(opts: {
   if (!settings || !settings.enableLoans) {
     throw new Error("Loans are disabled for this bank");
   }
+  const policy = policyFromSettings(settings);
+  policyCache.set(opts.bankId, { at: Date.now(), policy });
 
-  let interestRate = opts.interestRate != null ? Math.round(Number(opts.interestRate)) : DEFAULT_LOAN_APR;
-  if (!Number.isFinite(interestRate) || interestRate < 0) interestRate = DEFAULT_LOAN_APR;
-  let termMonths = opts.termMonths != null ? Math.round(Number(opts.termMonths)) : DEFAULT_TERM_MONTHS;
-  if (!Number.isFinite(termMonths) || termMonths < 1) termMonths = DEFAULT_TERM_MONTHS;
+  if (!policy.allowCitizenApply && opts.allowAutoApprove) {
+    throw new Error("This bank is not accepting citizen loan applications. Contact staff.");
+  }
+
+  let interestRate = opts.interestRate != null ? Math.round(Number(opts.interestRate)) : policy.defaultApr;
+  if (!Number.isFinite(interestRate) || interestRate < 0) interestRate = policy.defaultApr;
+  let termMonths = opts.termMonths != null ? Math.round(Number(opts.termMonths)) : policy.defaultTermMonths;
+  if (!Number.isFinite(termMonths) || termMonths < 1) termMonths = policy.defaultTermMonths;
   let productId: string | null = opts.productId || null;
 
   if (productId) {
@@ -253,6 +349,10 @@ export async function submitLoanApplication(opts: {
     }
     interestRate = productAprToLoanRate(product.interestRate);
     termMonths = Math.max(1, Math.round((product.termDays || 30) / 30));
+  }
+
+  if (policy.maxAmountCents > 0 && principalAmount > policy.maxAmountCents) {
+    throw new Error(`Amount exceeds this bank's maximum of $${(policy.maxAmountCents / 100).toFixed(2)}`);
   }
 
   let autoApprove = false;
@@ -268,7 +368,7 @@ export async function submitLoanApplication(opts: {
   }
 
   const nextPaymentDate = new Date();
-  nextPaymentDate.setDate(nextPaymentDate.getDate() + 30);
+  nextPaymentDate.setDate(nextPaymentDate.getDate() + policy.paymentPeriodDays);
 
   const loanId = uuidv4();
   let contractUrl: string | null = null;
@@ -289,7 +389,7 @@ export async function submitLoanApplication(opts: {
 
   const colVal = parseCollateralCents(opts.collateralValue);
   const colStatus = opts.collateralDescription ? "pledged" : "none";
-  const requireSignature = autoApprove && !!settings.enableGoogleDocsContracts && !!settings.googleDocsAutoGenerate;
+  const requireSignature = autoApprove && (policy.requireSignature || (!!settings.enableGoogleDocsContracts && !!settings.googleDocsAutoGenerate));
 
   await db.insert(loans).values({
     id: loanId,
@@ -345,9 +445,9 @@ export async function submitLoanApplication(opts: {
   return { loan: loan!, autoApprove: status === "active" || awaitingSignature, awaitingSignature, status };
 }
 
-async function skipLoanUntilNextWindow(loanId: string, now: Date) {
+async function skipLoanUntilNextWindow(loanId: string, now: Date, retryDays: number) {
   const nextAttemptDate = new Date(now);
-  nextAttemptDate.setDate(nextAttemptDate.getDate() + 7);
+  nextAttemptDate.setDate(nextAttemptDate.getDate() + Math.max(1, retryDays));
   await db.update(loans)
     .set({
       lastPaymentAttemptAt: now,
@@ -360,7 +460,7 @@ async function skipLoanUntilNextWindow(loanId: string, now: Date) {
  * Process automated loan repayment debits, late fees, delinquency, and defaults.
  * Auto-debits ONLY active or delinquent loans (never pending or approved-unfunded).
  */
-export async function processDueLoanRepayments(targetBankId?: string) {
+export async function processDueLoanRepayments(targetBankId?: string, opts?: { ignoreAutoDebitFlag?: boolean }) {
   const now = new Date();
 
   const dueLoans = await db.select()
@@ -379,9 +479,17 @@ export async function processDueLoanRepayments(targetBankId?: string) {
   let debitedCount = 0;
   let defaultedCount = 0;
   let lateFeesCount = 0;
+  const policies = new Map<string, LoanPolicy>();
 
   for (const loan of dueLoans) {
     if (targetBankId && loan.bankId !== targetBankId) continue;
+
+    let policy = policies.get(loan.bankId);
+    if (!policy) {
+      policy = await loadLoanPolicy(loan.bankId);
+      policies.set(loan.bankId, policy);
+    }
+    if (!policy.autoDebit && !opts?.ignoreAutoDebitFlag) continue;
 
     let account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, loan.accountId)).get();
     if (account) {
@@ -403,7 +511,7 @@ export async function processDueLoanRepayments(targetBankId?: string) {
       }
     }
 
-    const installment = computeInstallment(loan);
+    const installment = computeInstallment(loan, policy.minInstallmentCents);
 
     if (account && account.balance >= installment) {
       try {
@@ -411,11 +519,11 @@ export async function processDueLoanRepayments(targetBankId?: string) {
           loan,
           fromAccount: account,
           amountCents: installment,
-          description: `Automated Monthly Loan Debit (Loan #${loan.id.substring(0, 8)})`,
+          description: `Automated loan debit (Loan #${loan.id.substring(0, 8)})`,
         });
       } catch (e: any) {
         console.error("[loan auto debit] CityCorp collect failed", e);
-        await skipLoanUntilNextWindow(loan.id, now);
+        await skipLoanUntilNextWindow(loan.id, now, policy.retryDays);
         continue;
       }
 
@@ -435,16 +543,24 @@ export async function processDueLoanRepayments(targetBankId?: string) {
         `💳 **Automated Loan Repayment**: Debited $${(installment / 100).toFixed(2)} from account **${account.accountName}** (<@${loan.discordId}>) for Loan #${loan.id.substring(0, 8)}.${isPaidOff ? " 🎉 **LOAN FULLY PAID OFF!**" : ""}`
       );
     } else {
+      const due = loan.nextPaymentDate ? new Date(loan.nextPaymentDate) : now;
+      const graceEnd = new Date(due);
+      graceEnd.setDate(graceEnd.getDate() + policy.gracePeriodDays);
+      if (now.getTime() < graceEnd.getTime()) {
+        continue;
+      }
+
       const missedCount = (loan.missedPaymentsCount || 0) + 1;
-      const lateFee = Math.max(LATE_FEE_FLAT_CENTS, Math.round(installment * LATE_FEE_RATE));
-      const updatedRemaining = loan.remainingAmount + lateFee;
+      const pct = policy.lateFeePercent / 10000;
+      const lateFee = Math.max(policy.lateFeeFlatCents, Math.round(installment * pct));
+      const updatedRemaining = policy.compoundLateFees ? loan.remainingAmount + lateFee : loan.remainingAmount;
       const updatedTotalLateFees = (loan.lateFeeAmount || 0) + lateFee;
-      const isDefault = missedCount >= MISSES_TO_DEFAULT;
+      const isDefault = missedCount >= policy.missesToDefault;
       const newStatus = isDefault ? "defaulted" : "delinquent";
       const newCollateralStatus = (isDefault && loan.collateralStatus === "pledged") ? "seized" : loan.collateralStatus;
 
       const nextAttemptDate = new Date();
-      nextAttemptDate.setDate(nextAttemptDate.getDate() + 7);
+      nextAttemptDate.setDate(nextAttemptDate.getDate() + policy.retryDays);
 
       await db.update(loans)
         .set({
@@ -496,21 +612,34 @@ export async function accrueLoanInterest(targetBankId?: string) {
 
   let accruedCount = 0;
   let totalInterestCents = 0;
+  const policies = new Map<string, LoanPolicy>();
 
   for (const loan of activeLoans) {
     if (targetBankId && loan.bankId !== targetBankId) continue;
+
+    let policy = policies.get(loan.bankId);
+    if (!policy) {
+      policy = await loadLoanPolicy(loan.bankId);
+      policies.set(loan.bankId, policy);
+    }
+    if (!policy.accrueInterest || policy.interestAccrual === "none") continue;
+    if (loan.status === "defaulted" && !policy.accrueOnDefaulted) continue;
 
     const lastAccrual = loan.lastInterestAccrualAt || loan.createdAt;
     const diffMs = now.getTime() - new Date(lastAccrual).getTime();
     const daysElapsed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    if (daysElapsed < 1) continue;
+    const minDays = policy.interestAccrual === "monthly" ? 30 : 1;
+    if (daysElapsed < minDays) continue;
 
     const annualRate = loan.interestRate / 10000;
-    const dailyInterest = Math.floor((loan.remainingAmount * annualRate * daysElapsed) / 365);
+    const daysInYear = policy.daysInYear || 365;
+    const interest = policy.interestAccrual === "monthly"
+      ? Math.floor((loan.remainingAmount * annualRate * Math.floor(daysElapsed / 30)) / 12)
+      : Math.floor((loan.remainingAmount * annualRate * daysElapsed) / daysInYear);
 
-    if (dailyInterest > 0) {
-      const newRemaining = loan.remainingAmount + dailyInterest;
+    if (interest > 0) {
+      const newRemaining = loan.remainingAmount + interest;
       await db.update(loans)
         .set({
           remainingAmount: newRemaining,
@@ -523,12 +652,12 @@ export async function accrueLoanInterest(targetBankId?: string) {
         bankId: loan.bankId,
         userDiscordId: loan.discordId,
         action: "loan_interest_accrued",
-        details: `Accrued $${(dailyInterest / 100).toFixed(2)} interest over ${daysElapsed} days at APR ${(loan.interestRate / 100).toFixed(2)}% on Loan #${loan.id.substring(0, 8)}. New balance: $${(newRemaining / 100).toFixed(2)}`,
+        details: `Accrued $${(interest / 100).toFixed(2)} interest over ${daysElapsed} days at APR ${(loan.interestRate / 100).toFixed(2)}% on Loan #${loan.id.substring(0, 8)}. New balance: $${(newRemaining / 100).toFixed(2)}`,
         timestamp: now,
       });
 
       accruedCount++;
-      totalInterestCents += dailyInterest;
+      totalInterestCents += interest;
     } else {
       await db.update(loans)
         .set({ lastInterestAccrualAt: now })

@@ -225,6 +225,26 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "settlement_warn_cents", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "slate_advance_cents", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "default_fee_payer_mode", "TEXT DEFAULT 'from_payment'");
+  checkAndAddColumn("bank_settings", "default_loan_apr", "INTEGER DEFAULT 500");
+  checkAndAddColumn("bank_settings", "default_loan_term_months", "INTEGER DEFAULT 12");
+  checkAndAddColumn("bank_settings", "max_loan_amount_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "loan_payment_period_days", "INTEGER DEFAULT 30");
+  checkAndAddColumn("bank_settings", "loan_auto_debit_enabled", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "loan_late_fee_flat_cents", "INTEGER DEFAULT 2500");
+  checkAndAddColumn("bank_settings", "loan_late_fee_percent", "INTEGER DEFAULT 500");
+  checkAndAddColumn("bank_settings", "loan_misses_to_default", "INTEGER DEFAULT 3");
+  checkAndAddColumn("bank_settings", "loan_grace_period_days", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "loan_retry_days", "INTEGER DEFAULT 7");
+  checkAndAddColumn("bank_settings", "loan_accrue_interest", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "loan_interest_accrual", "TEXT DEFAULT 'daily'");
+  checkAndAddColumn("bank_settings", "loan_accrue_on_defaulted", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "loan_compound_late_fees", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "loan_min_installment_cents", "INTEGER DEFAULT 100");
+  checkAndAddColumn("bank_settings", "loan_require_signature", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "loan_allow_citizen_apply", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "loan_cure_default_on_pay", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "loan_days_in_year", "INTEGER DEFAULT 365");
+  checkAndAddColumn("bank_settings", "interest_days_in_year", "INTEGER DEFAULT 365");
 
   // Transactions table
   checkAndAddColumn("transactions", "from_account_id", "TEXT");

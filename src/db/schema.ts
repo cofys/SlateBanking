@@ -177,6 +177,28 @@ export const bankSettings = sqliteTable("bank_settings", {
   googleDocsFolderUrl: text("google_docs_folder_url"),
   googleDocsAutoGenerate: integer("google_docs_auto_generate", { mode: "boolean" }).default(false),
   defaultCorpAccount: text("default_corp_account"),
+
+  // Lending policy (loan interest, collections, origination)
+  defaultLoanApr: integer("default_loan_apr").default(500), // 5.00% as percent * 100
+  defaultLoanTermMonths: integer("default_loan_term_months").default(12),
+  maxLoanAmountCents: integer("max_loan_amount_cents").default(0), // 0 = no global cap
+  loanPaymentPeriodDays: integer("loan_payment_period_days").default(30),
+  loanAutoDebitEnabled: integer("loan_auto_debit_enabled", { mode: "boolean" }).default(true),
+  loanLateFeeFlatCents: integer("loan_late_fee_flat_cents").default(2500),
+  loanLateFeePercent: integer("loan_late_fee_percent").default(500), // 5.00% of installment
+  loanMissesToDefault: integer("loan_misses_to_default").default(3),
+  loanGracePeriodDays: integer("loan_grace_period_days").default(0),
+  loanRetryDays: integer("loan_retry_days").default(7),
+  loanAccrueInterest: integer("loan_accrue_interest", { mode: "boolean" }).default(true),
+  loanInterestAccrual: text("loan_interest_accrual").default("daily"), // daily | monthly | none
+  loanAccrueOnDefaulted: integer("loan_accrue_on_defaulted", { mode: "boolean" }).default(true),
+  loanCompoundLateFees: integer("loan_compound_late_fees", { mode: "boolean" }).default(true),
+  loanMinInstallmentCents: integer("loan_min_installment_cents").default(100),
+  loanRequireSignature: integer("loan_require_signature", { mode: "boolean" }).default(false),
+  loanAllowCitizenApply: integer("loan_allow_citizen_apply", { mode: "boolean" }).default(true),
+  loanCureDefaultOnPay: integer("loan_cure_default_on_pay", { mode: "boolean" }).default(false),
+  loanDaysInYear: integer("loan_days_in_year").default(365),
+  interestDaysInYear: integer("interest_days_in_year").default(365),
 });
 
 export const escrows = sqliteTable("escrows", {

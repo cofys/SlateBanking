@@ -44,7 +44,9 @@ export function BankInterest() {
       interestMinBalance: Math.floor(parseFloat(formData.get("interestMinBalance") as string) * 100) || 0,
       interestMaxAccountBalance: formData.get("interestMaxAccountBalance") ? Math.floor(parseFloat(formData.get("interestMaxAccountBalance") as string) * 100) : null,
       interestRequiresActivityDays: formData.get("interestRequiresActivityDays") ? parseInt(formData.get("interestRequiresActivityDays") as string, 10) : null,
-      interestMinAccountAgeDays: formData.get("interestMinAccountAgeDays") ? parseInt(formData.get("interestMinAccountAgeDays") as string, 10) : null,
+      interestMinAccountAgeDays: formData.get("interestMinAccountAgeDays") ? parseInt(formData.get("interestMinAccountAgeDays") as string, 10) : 0,
+      interestDaysInYear: parseInt(formData.get("interestDaysInYear") as string, 10) === 360 ? 360 : 365,
+      interestPoolAccount: (formData.get("interestPoolAccount") as string) || null,
     };
 
     fetch(`/api/banks/${bank.id}/interest-settings`, {
@@ -96,7 +98,7 @@ export function BankInterest() {
             <Percent className="text-emerald-400" />
             Interest Engine
           </h1>
-          <p className="text-white/60 mt-1">Configure automated yield payouts for your depositors to encourage saving.</p>
+          <p className="text-white/60 mt-1">Configure automated yield payouts for your depositors. Loan APR and compounding live under Bank Settings → Lending Policy.</p>
         </div>
       </div>
 
@@ -173,6 +175,42 @@ export function BankInterest() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Balance method</label>
+                  <select
+                    name="interestCalculationMethod"
+                    defaultValue={settings?.interestCalculationMethod || "current_balance"}
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  >
+                    <option value="current_balance">Current balance at payout</option>
+                    <option value="average_daily_balance">Average daily balance</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Days in year</label>
+                  <select
+                    name="interestDaysInYear"
+                    defaultValue={settings?.interestDaysInYear === 360 ? "360" : "365"}
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  >
+                    <option value="365">365 (actual / 52 weeks)</option>
+                    <option value="360">360 (bank year)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Interest pool account</label>
+                  <input
+                    name="interestPoolAccount"
+                    type="text"
+                    defaultValue={settings?.interestPoolAccount || ""}
+                    placeholder="e.g. interest_reserve"
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  />
+                  <p className="text-[11px] text-white/40 mt-1">Payouts book-transfer from this named subaccount. Empty = skip (never mint).</p>
+                </div>
+
+                <div>
                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Min Balance to Earn ($)</label>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-white/30">$</span>
@@ -219,6 +257,19 @@ export function BankInterest() {
                     <span className="absolute right-4 top-2.5 text-white/30 text-sm">days</span>
                   </div>
                   <p className="text-[11px] text-white/40 mt-1">Max days since last sync/login to earn yield.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Min account age (days)</label>
+                  <input
+                    name="interestMinAccountAgeDays"
+                    type="number"
+                    min="0"
+                    step="1"
+                    defaultValue={settings?.interestMinAccountAgeDays || 0}
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  />
+                  <p className="text-[11px] text-white/40 mt-1">Accounts younger than this earn nothing.</p>
                 </div>
               </div>
             </div>

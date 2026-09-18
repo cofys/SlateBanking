@@ -919,7 +919,9 @@ CityCorp in-game accounts are the source of truth. Slate is a cache + product la
 
 **Teller cash window**: Staff deposit/withdraw still use owner-key `/accounts/deposit` and `/accounts/withdraw` (owner personal wallet ↔ named account). Staff same-bank transfer uses the book rail.
 
-**Loans**: Disbursement requires a named **Loan Pool** or **Default Corp Account** subaccount (`transfer/account`). Corp treasury cannot credit a named account (no treasury→account API), so treasury-only banks get a clear error instead of silently draining the owner's wallet. Repayments: pool/operating via `transfer/account`, else `PATCH /accounts/transfer/corp` into treasury.
+**Loans**: Disbursement requires a named **Loan Pool** or **Default Corp Account** subaccount (`transfer/account`). Corp treasury cannot credit a named account (no treasury→account API), so treasury-only banks get a clear error instead of silently draining the owner's wallet. Repayments: pool/operating via `transfer/account`, else `PATCH /accounts/transfer/corp` into treasury. **Lending Policy** (Bank Settings) controls default APR/term, global max, payment period, auto-debit, late-fee floor/%, grace, retries, misses-to-default, daily/monthly/none interest accrual, 365 vs 360 day year, compounding late fees into remaining, accruing after default, curing default on payment, citizen applications, and signature-before-funding. Loan products still override APR/term/max when selected.
+
+**Savings APY** (Interest page): schedule (manual/daily/weekly/monthly), target account types, current vs average-daily balance, min/max balance, activity and account-age gates, 365 vs 360 day year, and the interest pool subaccount. Manual schedule does **not** auto-pay — only **Run Interest Now** or a non-manual schedule. Payouts never mint; they book-transfer from the interest pool.
 
 **Live events**: `wss://api.cityrp.org/citycorp` as the bank owner. Cache **SET** from `newBalance` / GET — never increment — so rails + the listener cannot double-count. SETTLEMENT drift (drop without a matching Slate debit) raises `RESERVE_BREACH` for RP/court. Owner theft of in-game funds cannot be technically stopped.
 

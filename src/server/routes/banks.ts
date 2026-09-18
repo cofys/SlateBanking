@@ -1550,6 +1550,26 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         defaultFeePayerMode: req.body.defaultFeePayerMode,
         requirePersonalForBusiness: req.body.requirePersonalForBusiness,
         savingsApyPercent: req.body.savingsApyPercent,
+        defaultLoanApr: req.body.defaultLoanApr,
+        defaultLoanTermMonths: req.body.defaultLoanTermMonths,
+        maxLoanAmountCents: req.body.maxLoanAmountCents,
+        loanPaymentPeriodDays: req.body.loanPaymentPeriodDays,
+        loanAutoDebitEnabled: req.body.loanAutoDebitEnabled,
+        loanLateFeeFlatCents: req.body.loanLateFeeFlatCents,
+        loanLateFeePercent: req.body.loanLateFeePercent,
+        loanMissesToDefault: req.body.loanMissesToDefault,
+        loanGracePeriodDays: req.body.loanGracePeriodDays,
+        loanRetryDays: req.body.loanRetryDays,
+        loanAccrueInterest: req.body.loanAccrueInterest,
+        loanInterestAccrual: req.body.loanInterestAccrual,
+        loanAccrueOnDefaulted: req.body.loanAccrueOnDefaulted,
+        loanCompoundLateFees: req.body.loanCompoundLateFees,
+        loanMinInstallmentCents: req.body.loanMinInstallmentCents,
+        loanRequireSignature: req.body.loanRequireSignature,
+        loanAllowCitizenApply: req.body.loanAllowCitizenApply,
+        loanCureDefaultOnPay: req.body.loanCureDefaultOnPay,
+        loanDaysInYear: req.body.loanDaysInYear,
+        interestDaysInYear: req.body.interestDaysInYear,
       };
 
       const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId));
@@ -3443,9 +3463,12 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
       const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, depositAccountId), eq(bankAccounts.bankId, req.params.bankId))).get();
       if (!acc) return res.status(404).json({ error: "Deposit account not found" });
 
+      const { loadLoanPolicy, productAprToLoanRate } = await import("../loan_processor");
+      const policy = await loadLoanPolicy(req.params.bankId);
+
       const nextPaymentDate = customDueDate ? new Date(customDueDate) : new Date();
       if (!customDueDate) {
-        nextPaymentDate.setDate(nextPaymentDate.getDate() + 30);
+        nextPaymentDate.setDate(nextPaymentDate.getDate() + policy.paymentPeriodDays);
       }
 
       const ts = new Date();
@@ -3465,15 +3488,18 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
       const bRecord = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
 
       let resolvedRate = Math.round(Number(interestRate));
-      let resolvedTerm = termMonths ? Math.max(1, Math.round(Number(termMonths))) : 12;
+      if (!Number.isFinite(resolvedRate) || resolvedRate < 0) resolvedRate = policy.defaultApr;
+      let resolvedTerm = termMonths ? Math.max(1, Math.round(Number(termMonths))) : policy.defaultTermMonths;
       let resolvedProductId = productId || null;
       if (resolvedProductId) {
         const product = await db.select().from(loanProducts).where(and(eq(loanProducts.id, resolvedProductId), eq(loanProducts.bankId, req.params.bankId))).get();
         if (product) {
-          const { productAprToLoanRate } = await import("../loan_processor");
           resolvedRate = productAprToLoanRate(product.interestRate);
           resolvedTerm = Math.max(1, Math.round((product.termDays || 30) / 30));
         }
+      }
+      if (policy.maxAmountCents > 0 && parsedPrincipal > policy.maxAmountCents && !isOffSystem) {
+        return res.status(400).json({ error: `Amount exceeds this bank's maximum of $${(policy.maxAmountCents / 100).toFixed(2)}` });
       }
 
       let contractUrl = req.body.contractUrl || null;
@@ -3503,7 +3529,7 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         initialPaidAmount: parsedPaid,
         isOffSystem: Boolean(isOffSystem),
         offSystemReference: offSystemReference || (isOffSystem ? `Off-system import: ${parsedPaid > 0 ? `$${(parsedPaid/100).toFixed(2)} paid prior` : 'manual entry'}` : null),
-        interestRate: resolvedRate,
+        interestRate,
         nextPaymentDate,
         purpose: purpose || (isOffSystem ? "Existing off-system loan record" : null),
         collateralDescription: collateralDescription || null,
@@ -3541,7 +3567,7 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
 banksRouter.post("/api/banks/:bankId/loans/process-due", requireBankStaff, async (req: express.Request, res: express.Response) => {
     try {
       const { processDueLoanRepayments } = await import("../loan_processor");
-      const result = await processDueLoanRepayments(req.params.bankId);
+      const result = await processDueLoanRepayments(req.params.bankId, { ignoreAutoDebitFlag: true });
       res.json({ success: true, result });
     } catch (e: any) {
       console.error(e);
@@ -4401,7 +4427,7 @@ banksRouter.post("/api/banks/:bankId/tools/daily-processing", [requireBankStaff,
       let notes: string[] = [];
 
       const { processDueLoanRepayments, accrueLoanInterest } = await import("../loan_processor");
-      const due = await processDueLoanRepayments(bId);
+      const due = await processDueLoanRepayments(bId, { ignoreAutoDebitFlag: true });
       notes.push(`Due loans: processed ${due.processed}, debited ${due.debited}, late fees ${due.lateFees}, defaulted ${due.defaulted}.`);
       const accrued = await accrueLoanInterest(bId);
       notes.push(`Accrued interest on ${accrued.accruedLoans} loans ($${(accrued.totalInterestAccruedCents / 100).toFixed(2)}).`);

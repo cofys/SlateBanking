@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Building2,  AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search  } from "lucide-react";
+import { Building2,  AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search, Landmark, Percent  } from "lucide-react";
 
 export function BankSettings() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -59,7 +59,7 @@ export function BankSettings() {
       vaultTiers: vaultTiers,
       autoApproveLoans: formData.get("autoApproveLoans") === "on",
       autoApproveCreditCards: formData.get("autoApproveCreditCards") === "on",
-      maxAutoApproveLoanAmount: parseFloat(formData.get("maxAutoApproveLoanAmount") as string) || 1000000,
+      maxAutoApproveLoanAmount: Math.round((parseFloat(formData.get("maxAutoApproveLoanAmount") as string) || 10000) * 100),
       customDomain: formData.get("customDomain"),
       discordClientId: formData.get("discordClientId"),
       discordClientSecret: formData.get("discordClientSecret"),
@@ -74,6 +74,25 @@ export function BankSettings() {
       settlementFloorCents: Math.round((parseFloat(formData.get("settlementFloor") as string) || 0) * 100),
       settlementWarnCents: Math.round((parseFloat(formData.get("settlementWarn") as string) || 0) * 100),
       defaultFeePayerMode: formData.get("defaultFeePayerMode") || "from_payment",
+      defaultLoanApr: Math.round((parseFloat(formData.get("defaultLoanApr") as string) || 5) * 100),
+      defaultLoanTermMonths: parseInt(formData.get("defaultLoanTermMonths") as string, 10) || 12,
+      maxLoanAmountCents: Math.round((parseFloat(formData.get("maxLoanAmount") as string) || 0) * 100),
+      loanPaymentPeriodDays: parseInt(formData.get("loanPaymentPeriodDays") as string, 10) || 30,
+      loanAutoDebitEnabled: formData.get("loanAutoDebitEnabled") === "on",
+      loanLateFeeFlatCents: Math.round((parseFloat(formData.get("loanLateFeeFlat") as string) || 25) * 100),
+      loanLateFeePercent: Math.round((parseFloat(formData.get("loanLateFeePercent") as string) || 5) * 100),
+      loanMissesToDefault: parseInt(formData.get("loanMissesToDefault") as string, 10) || 3,
+      loanGracePeriodDays: parseInt(formData.get("loanGracePeriodDays") as string, 10) || 0,
+      loanRetryDays: parseInt(formData.get("loanRetryDays") as string, 10) || 7,
+      loanAccrueInterest: formData.get("loanAccrueInterest") === "on",
+      loanInterestAccrual: formData.get("loanInterestAccrual") || "daily",
+      loanAccrueOnDefaulted: formData.get("loanAccrueOnDefaulted") === "on",
+      loanCompoundLateFees: formData.get("loanCompoundLateFees") === "on",
+      loanMinInstallmentCents: Math.round((parseFloat(formData.get("loanMinInstallment") as string) || 1) * 100),
+      loanRequireSignature: formData.get("loanRequireSignature") === "on",
+      loanAllowCitizenApply: formData.get("loanAllowCitizenApply") === "on",
+      loanCureDefaultOnPay: formData.get("loanCureDefaultOnPay") === "on",
+      loanDaysInYear: parseInt(formData.get("loanDaysInYear") as string, 10) === 360 ? 360 : 365,
     };
 
     fetch(`/api/banks/${bank.id}/settings`, {
@@ -814,17 +833,154 @@ export function BankSettings() {
                     <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Max Auto-Approve Amount (Safe Limit)</label>
                     <input 
                       name="maxAutoApproveLoanAmount" 
-                      type="number" 
-                      defaultValue={settings?.maxAutoApproveLoanAmount || 1000000} 
+                      type="number"
+                      step="0.01"
+                      defaultValue={settings?.maxAutoApproveLoanAmount ? settings.maxAutoApproveLoanAmount / 100 : 10000} 
                       className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
                     />
-                    <p className="text-xs text-white/40 mt-1.5">For credit limits, the parameter uses HALF this value.</p>
+                    <p className="text-xs text-white/40 mt-1.5">Dollar cap for instant auto-approval. Credit-card auto-approve uses half this value.</p>
                   </div>
               </div>
             </>
           )}
         </div>
 
+        {/* Lending Policy */}
+        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold mb-2">
+            <Landmark className="text-emerald-400" size={20} />
+            Lending Policy
+          </div>
+          <p className="text-sm text-zinc-400 mb-6">
+            Controls origination defaults, loan interest compounding, auto-debit, late fees, and default. Product-specific APR and term still win when a borrower picks a loan product. Depositor yield (savings APY) is configured on the Interest page.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.loanAllowCitizenApply !== false ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.loanAllowCitizenApply !== false ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" name="loanAllowCitizenApply" className="hidden" defaultChecked={settings?.loanAllowCitizenApply !== false} onChange={(e) => setSettings({...settings, loanAllowCitizenApply: e.target.checked})} />
+              <span className="text-sm text-white/80">Citizen applications</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.loanAutoDebitEnabled !== false ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.loanAutoDebitEnabled !== false ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" name="loanAutoDebitEnabled" className="hidden" defaultChecked={settings?.loanAutoDebitEnabled !== false} onChange={(e) => setSettings({...settings, loanAutoDebitEnabled: e.target.checked})} />
+              <span className="text-sm text-white/80">Auto-debit installments</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.loanAccrueInterest !== false ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.loanAccrueInterest !== false ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" name="loanAccrueInterest" className="hidden" defaultChecked={settings?.loanAccrueInterest !== false} onChange={(e) => setSettings({...settings, loanAccrueInterest: e.target.checked})} />
+              <span className="text-sm text-white/80">Accrue loan interest</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.loanRequireSignature ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.loanRequireSignature ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" name="loanRequireSignature" className="hidden" defaultChecked={!!settings?.loanRequireSignature} onChange={(e) => setSettings({...settings, loanRequireSignature: e.target.checked})} />
+              <span className="text-sm text-white/80">Require signature before funding</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.loanCompoundLateFees !== false ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.loanCompoundLateFees !== false ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" name="loanCompoundLateFees" className="hidden" defaultChecked={settings?.loanCompoundLateFees !== false} onChange={(e) => setSettings({...settings, loanCompoundLateFees: e.target.checked})} />
+              <span className="text-sm text-white/80">Compound late fees into balance</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.loanAccrueOnDefaulted !== false ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.loanAccrueOnDefaulted !== false ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" name="loanAccrueOnDefaulted" className="hidden" defaultChecked={settings?.loanAccrueOnDefaulted !== false} onChange={(e) => setSettings({...settings, loanAccrueOnDefaulted: e.target.checked})} />
+              <span className="text-sm text-white/80">Accrue interest after default</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.loanCureDefaultOnPay ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.loanCureDefaultOnPay ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" name="loanCureDefaultOnPay" className="hidden" defaultChecked={!!settings?.loanCureDefaultOnPay} onChange={(e) => setSettings({...settings, loanCureDefaultOnPay: e.target.checked})} />
+              <span className="text-sm text-white/80">Cure default when late fees clear</span>
+            </label>
+          </div>
+
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-3">Origination defaults</p>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Default APR (%)</label>
+              <div className="relative">
+                <input name="defaultLoanApr" type="number" step="0.01" min="0" defaultValue={((settings?.defaultLoanApr ?? 500) / 100).toFixed(2)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                <Percent className="absolute right-3 top-2.5 text-white/30" size={14} />
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-1">Used when no loan product is selected.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Default term (months)</label>
+              <input name="defaultLoanTermMonths" type="number" min="1" step="1" defaultValue={settings?.defaultLoanTermMonths || 12} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Global max loan ($)</label>
+              <input name="maxLoanAmount" type="number" step="0.01" min="0" defaultValue={((settings?.maxLoanAmountCents || 0) / 100) || ""} placeholder="No cap" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <p className="text-[10px] text-zinc-500 mt-1">0 or blank = no global cap (product max still applies).</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Min installment ($)</label>
+              <input name="loanMinInstallment" type="number" step="0.01" min="0.01" defaultValue={((settings?.loanMinInstallmentCents ?? 100) / 100).toFixed(2)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+          </div>
+
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-3">Interest on loans</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Accrual cadence</label>
+              <select name="loanInterestAccrual" defaultValue={settings?.loanInterestAccrual || "daily"} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                <option value="daily">Daily compounding</option>
+                <option value="monthly">Monthly compounding</option>
+                <option value="none">Do not accrue (principal only)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Days in year</label>
+              <select name="loanDaysInYear" defaultValue={settings?.loanDaysInYear === 360 ? "360" : "365"} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                <option value="365">365 (actual)</option>
+                <option value="360">360 (bank year)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Payment period (days)</label>
+              <input name="loanPaymentPeriodDays" type="number" min="1" step="1" defaultValue={settings?.loanPaymentPeriodDays || 30} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <p className="text-[10px] text-zinc-500 mt-1">Days between installments (7 weekly, 14 biweekly, 30 monthly).</p>
+            </div>
+          </div>
+
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-3">Collections & default</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Late fee floor ($)</label>
+              <input name="loanLateFeeFlat" type="number" step="0.01" min="0" defaultValue={((settings?.loanLateFeeFlatCents ?? 2500) / 100).toFixed(2)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Late fee (% of installment)</label>
+              <input name="loanLateFeePercent" type="number" step="0.01" min="0" defaultValue={((settings?.loanLateFeePercent ?? 500) / 100).toFixed(2)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <p className="text-[10px] text-zinc-500 mt-1">Charged as max(floor, % of installment).</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Grace period (days)</label>
+              <input name="loanGracePeriodDays" type="number" min="0" step="1" defaultValue={settings?.loanGracePeriodDays || 0} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Retry after miss (days)</label>
+              <input name="loanRetryDays" type="number" min="1" step="1" defaultValue={settings?.loanRetryDays || 7} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Misses until default</label>
+              <input name="loanMissesToDefault" type="number" min="1" step="1" defaultValue={settings?.loanMissesToDefault || 3} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+          </div>
+        </div>
 
           
         {/* Treasury Routing */}

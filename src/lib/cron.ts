@@ -240,8 +240,9 @@ export function startCronJobs() {
          
          let divisor = 12;
          let periodDays = 30;
-         if (settings.interestPaymentSchedule === "daily") { divisor = 365; periodDays = 1; }
-         if (settings.interestPaymentSchedule === "weekly") { divisor = 52; periodDays = 7; }
+         const daysInYear = settings.interestDaysInYear === 360 ? 360 : 365;
+         if (settings.interestPaymentSchedule === "daily") { divisor = daysInYear; periodDays = 1; }
+         if (settings.interestPaymentSchedule === "weekly") { divisor = daysInYear === 360 ? 72 : 52; periodDays = 7; }
          
          for (const account of eligibleAccounts) {
            let tierApy = null;

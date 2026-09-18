@@ -58,7 +58,9 @@ export function registerInterestRoutes(app: express.Express) {
         interestRequiresActivityDays: settings?.interestRequiresActivityDays,
         interestMinAccountAgeDays: settings?.interestMinAccountAgeDays,
         interestCalculationMethod: settings?.interestCalculationMethod,
-        lastInterestAccrualAt: settings?.lastInterestAccrualAt
+        lastInterestAccrualAt: settings?.lastInterestAccrualAt,
+        interestPoolAccount: settings?.interestPoolAccount,
+        interestDaysInYear: settings?.interestDaysInYear || 365,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -75,7 +77,9 @@ export function registerInterestRoutes(app: express.Express) {
       interestMaxAccountBalance,
       interestRequiresActivityDays,
       interestMinAccountAgeDays,
-      interestCalculationMethod
+      interestCalculationMethod,
+      interestDaysInYear,
+      interestPoolAccount
     } = req.body;
 
     try {
@@ -102,11 +106,26 @@ export function registerInterestRoutes(app: express.Express) {
           interestMaxAccountBalance,
           interestRequiresActivityDays,
           interestMinAccountAgeDays,
-          interestCalculationMethod
+          interestCalculationMethod,
+          interestDaysInYear: interestDaysInYear === 360 ? 360 : 365,
+          interestPoolAccount: interestPoolAccount || currentSettings?.interestPoolAccount,
         }).where(eq(bankSettings.bankId, bankId));
 
-      const updated = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-      res.json(updated);
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+      res.json({
+        savingsApyPercent: settings?.savingsApyPercent,
+        interestPaymentSchedule: settings?.interestPaymentSchedule,
+        interestNextPaymentAt: settings?.interestNextPaymentAt,
+        interestTargetAccounts: settings?.interestTargetAccounts,
+        interestMinBalance: settings?.interestMinBalance,
+        interestMaxAccountBalance: settings?.interestMaxAccountBalance,
+        interestRequiresActivityDays: settings?.interestRequiresActivityDays,
+        interestMinAccountAgeDays: settings?.interestMinAccountAgeDays,
+        interestCalculationMethod: settings?.interestCalculationMethod,
+        lastInterestAccrualAt: settings?.lastInterestAccrualAt,
+        interestPoolAccount: settings?.interestPoolAccount,
+        interestDaysInYear: settings?.interestDaysInYear || 365,
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -173,8 +192,9 @@ export function registerInterestRoutes(app: express.Express) {
       let totalAmount = 0;
       
       let divisor = 12;
-      if (settings?.interestPaymentSchedule === "daily") divisor = 365;
-      if (settings?.interestPaymentSchedule === "weekly") divisor = 52;
+      const daysInYear = settings?.interestDaysInYear === 360 ? 360 : 365;
+      if (settings?.interestPaymentSchedule === "daily") divisor = daysInYear;
+      if (settings?.interestPaymentSchedule === "weekly") divisor = daysInYear === 360 ? 72 : 52;
 
       const { payFromInterestPool } = await import("../lib/citycorp_money");
       
