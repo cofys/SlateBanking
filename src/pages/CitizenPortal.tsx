@@ -1871,12 +1871,22 @@ function LoansTab({ data, refresh }: any) {
   const [collateralDesc, setCollateralDesc] = useState("");
   const [collateralVal, setCollateralVal] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loanProducts, setLoanProducts] = useState<any[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState("");
 
   // Group accounts by bank for loan selection
   const uniqueBanks: { bankId: string; bankName: string }[] = Array.from(new Set(data.accounts?.map((a: any) => a.bankId as string) || [])).map(bId => {
     const acc = data.accounts.find((a: any) => a.bankId === bId);
     return { bankId: bId as string, bankName: (acc?.bankName || "Slate Bank") as string };
   });
+
+  useEffect(() => {
+    if (!selectedBankId) { setLoanProducts([]); return; }
+    fetch(`/api/citizen/loan-products?bankId=${encodeURIComponent(selectedBankId)}`)
+      .then(r => r.json())
+      .then(d => setLoanProducts(Array.isArray(d) ? d : []))
+      .catch(() => setLoanProducts([]));
+  }, [selectedBankId]);
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1892,12 +1902,13 @@ function LoansTab({ data, refresh }: any) {
           principalAmount: Math.round(parseFloat(principalAmount) * 100),
           purpose,
           collateralDescription: collateralDesc,
-          collateralValue: collateralVal
+          collateralValue: collateralVal,
+          productId: selectedProductId || undefined,
         })
       });
       const resData = await res.json();
       if (res.ok) {
-        alert(resData.autoApprove ? "Loan auto-approved and principal disbursed!" : "Loan application submitted for bank review.");
+        alert(resData.autoApprove ? "Loan auto-approved and principal disbursed!" : resData.awaitingSignature ? "Approved — please sign the contract to receive funds." : "Loan application submitted for bank review.");
         setShowApplyModal(false);
         setPrincipalAmount("");
         setPurpose("");
@@ -2025,7 +2036,7 @@ function LoansTab({ data, refresh }: any) {
                 </div>
               )}
 
-              {loan.status === "active" && (
+              { (loan.status === "active" || loan.status === "delinquent" || loan.status === "defaulted") && (
                 <div className="mt-6 pt-4 border-t border-white/5">
                   <p className="text-xs text-slate-500 mb-3 flex items-center justify-between">
                     <span className="flex items-center gap-1"><Calendar size={12}/> Next Due Date:</span>
@@ -2053,7 +2064,7 @@ function LoansTab({ data, refresh }: any) {
                   }} className="flex gap-2">
                     <select required name="fromAccountId" className="flex-1 bg-black/30 border border-white/10 rounded-lg px-2 py-2 text-xs text-white">
                       <option value="">Pay from...</option>
-                      {data.accounts?.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.accountName}</option>)}
+                      {data.accounts?.filter((acc: any) => acc.bankId === loan.bankId).map((acc: any) => <option key={acc.id} value={acc.id}>{acc.accountName}</option>)}
                     </select>
                     <input required name="amount" type="number" step="0.01" min="0.01" placeholder="Amount ($)" className="w-28 bg-black/30 border border-white/10 rounded-lg px-2 py-2 text-xs text-white" />
                     <button type="submit" className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-3 py-2 rounded-lg text-xs font-bold transition-colors">Pay Installment</button>
@@ -2120,6 +2131,24 @@ function LoansTab({ data, refresh }: any) {
                   ))}
                 </select>
               </div>
+
+              {loanProducts.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Loan Product</label>
+                  <select
+                    value={selectedProductId}
+                    onChange={(e) => setSelectedProductId(e.target.value)}
+                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  >
+                    <option value="">Standard terms (5.00% APR)</option>
+                    {loanProducts.map((p: any) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} — {Number(p.interestRate).toFixed(1)}% APR, max ${(p.maxAmount / 100).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">Requested Loan Amount ($)</label>

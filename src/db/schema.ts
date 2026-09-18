@@ -234,7 +234,7 @@ export const loans = sqliteTable("loans", {
   accountId: text("account_id").references(() => bankAccounts.id).notNull(), // specific account that gets funded/pays
   principalAmount: integer("principal_amount").notNull(),
   remainingAmount: integer("remaining_amount").notNull(),
-  interestRate: integer("interest_rate").notNull(), // percentage * 100
+  interestRate: integer("interest_rate").notNull(), // percentage * 100 (500 = 5.00% APR)
   nextPaymentDate: integer("next_payment_date", { mode: "timestamp" }).notNull(),
   purpose: text("purpose"), // Why do they need it?
   status: text("status").default("pending"), // pending, active, rejected, paid_off, defaulted
@@ -258,6 +258,8 @@ export const loans = sqliteTable("loans", {
   initialPaidAmount: integer("initial_paid_amount").default(0), // Amount paid off-system prior to onboarding (in cents)
   isOffSystem: integer("is_off_system", { mode: "boolean" }).default(false), // True if originated externally/off-system
   offSystemReference: text("off_system_reference"), // External contract reference or notes
+  productId: text("product_id"),
+  termMonths: integer("term_months").default(12),
 
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({

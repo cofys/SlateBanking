@@ -1031,12 +1031,12 @@ async function handleViewLoans(bankId: string, interaction: ButtonInteraction) {
     return `${statusEmoji} **Loan ID**: \`${l.id}\`\n**Principal**: $${(l.principalAmount / 100).toFixed(2)}\n**Remaining**: $${(l.remainingAmount / 100).toFixed(2)}\n**Interest**: ${(l.interestRate / 100).toFixed(2)}%\n**Status**: ${l.status?.toUpperCase()}`;
   }).join('\n\n');
 
-  const activeLoans = myLoans.filter(l => (l.status === 'active' || l.status === 'pending') && l.remainingAmount > 0);
+  const repayableLoans = myLoans.filter(l => (l.status === 'active' || l.status === 'delinquent' || l.status === 'defaulted') && l.remainingAmount > 0);
   const rows: ActionRowBuilder<ButtonBuilder>[] = [backButtonRow];
 
-  if (activeLoans.length > 0) {
+  if (repayableLoans.length > 0) {
     const repayRow = new ActionRowBuilder<ButtonBuilder>();
-    for (const l of activeLoans.slice(0, 4)) {
+    for (const l of repayableLoans.slice(0, 4)) {
       repayRow.addComponents(
         new ButtonBuilder()
           .setCustomId(`bank_repay_loan_${l.id}`)
@@ -1067,60 +1067,57 @@ async function handleApplyLoanModal(bankId: string, interaction: ModalSubmitInte
   await interaction.deferReply({ ephemeral: true });
   const amountInCents = Math.round(amount * 100);
 
-  let userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, interaction.user.id)));
-  let accountId: string;
-  if (userAccs.length > 0) {
-    accountId = userAccs[0].id;
-  } else {
-    // Auto open a personal account if none exists
-    accountId = uuidv4();
-    await db.insert(bankAccounts).values({
-      id: accountId,
-      bankId,
-      ownerDiscordId: interaction.user.id,
-      accountName: "personal",
-      accountType: "personal",
-      balance: 0,
-      createdAt: new Date(),
-    });
+  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+  if (!settings || !settings.enableLoans) {
+    await interaction.editReply({ content: '❌ This bank is not currently accepting loan applications.' });
+    return;
   }
 
-  const loanId = uuidv4();
-  const nextPayment = new Date();
-  nextPayment.setDate(nextPayment.getDate() + 30);
+  const userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, interaction.user.id)));
+  const liveAccs = userAccs.filter(a => a.isActive && !a.isFrozen && a.existsInGame !== false);
+  if (liveAccs.length === 0) {
+    await interaction.editReply({ content: '❌ You need an existing CityCorp-linked account at this bank before applying for a loan. Open an account first.' });
+    return;
+  }
+  const personal = liveAccs.find(a => a.accountType === 'personal') || liveAccs[0];
 
-  await db.insert(loans).values({
-    id: loanId,
-    bankId,
-    discordId: interaction.user.id,
-    accountId,
-    principalAmount: amountInCents,
-    remainingAmount: amountInCents,
-    interestRate: 500, // 5% default
-    nextPaymentDate: nextPayment,
-    purpose,
-    status: 'pending',
-    createdAt: new Date(),
-  });
+  try {
+    const { submitLoanApplication } = await import('../server/loan_processor');
+    const result = await submitLoanApplication({
+      bankId,
+      discordId: interaction.user.id,
+      accountId: personal.id,
+      principalAmount: amountInCents,
+      purpose,
+      allowAutoApprove: true,
+    });
 
-  await db.insert(auditLogs).values({
-    id: uuidv4(),
-    bankId,
-    userDiscordId: interaction.user.id,
-    action: 'LOAN_APPLICATION_SUBMITTED',
-    details: `Applied for $${amount.toFixed(2)} loan. Purpose: ${purpose}`,
-    timestamp: new Date()
-  });
+    await db.insert(auditLogs).values({
+      id: uuidv4(),
+      bankId,
+      userDiscordId: interaction.user.id,
+      action: 'LOAN_APPLICATION_SUBMITTED',
+      details: `Applied for $${amount.toFixed(2)} loan. Purpose: ${purpose}. Status: ${result.status}`,
+      timestamp: new Date()
+    });
 
-  refreshBankChannelGUIs(bankId);
+    refreshBankChannelGUIs(bankId);
 
-  await interaction.editReply({
-    content: `✅ **Loan Application Submitted!**\n\n` +
-      `**Amount**: $${amount.toFixed(2)}\n` +
-      `**Purpose**: ${purpose}\n` +
-      `**Status**: 🟡 PENDING REVIEW BY BANK STAFF\n\n` +
-      `You will be notified once a bank teller or manager reviews your application.`
-  });
+    const statusLine = result.status === 'active'
+      ? '🟢 AUTO-APPROVED AND DISBURSED'
+      : result.awaitingSignature
+        ? '📝 AWAITING YOUR SIGNATURE'
+        : '🟡 PENDING REVIEW BY BANK STAFF';
+
+    await interaction.editReply({
+      content: `✅ **Loan Application Submitted!**\n\n` +
+        `**Amount**: $${amount.toFixed(2)}\n` +
+        `**Purpose**: ${purpose}\n` +
+        `**Status**: ${statusLine}`
+    });
+  } catch (e: any) {
+    await interaction.editReply({ content: `❌ ${e.message || 'Loan application failed.'}` });
+  }
 }
 
 async function handleStaffOverview(bankId: string, interaction: ButtonInteraction) {
@@ -1184,7 +1181,7 @@ async function handleStaffApproveLoan(bankId: string, interaction: ButtonInterac
   }
 
   const loan = l[0];
-  if (loan.status !== 'pending') {
+  if (loan.status !== 'pending' && loan.status !== 'awaiting_signature') {
     await interaction.editReply({ content: `❌ Loan is already ${loan.status}.` });
     return;
   }
@@ -1220,6 +1217,12 @@ async function handleStaffDenyLoan(bankId: string, interaction: ButtonInteractio
   const l = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId)));
   if (l.length === 0) {
     await interaction.editReply({ content: "❌ Loan application not found." });
+    return;
+  }
+
+  const loan = l[0];
+  if (loan.status !== 'pending' && loan.status !== 'awaiting_signature') {
+    await interaction.editReply({ content: "❌ Loan application is no longer pending." });
     return;
   }
 
@@ -1424,53 +1427,40 @@ async function handleRepayLoanModal(bankId: string, interaction: ModalSubmitInte
   }
 
   const loan = targetLoans[0];
+  if (loan.discordId !== interaction.user.id) {
+    await interaction.editReply({ content: '❌ You can only repay your own loans from Discord.' });
+    return;
+  }
   if (loan.remainingAmount <= 0 || loan.status === 'paid' || loan.status === 'paid_off') {
     await interaction.editReply({ content: '✅ This loan has already been paid off in full!' });
     return;
   }
 
-  const accs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, interaction.user.id)));
-  if (accs.length === 0) {
-    await interaction.editReply({ content: '❌ No bank account found to draw funds from.' });
+  const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, loan.accountId), eq(bankAccounts.bankId, bankId))).get();
+  if (!account) {
+    await interaction.editReply({ content: '❌ Linked loan account not found.' });
     return;
   }
-
-  const account = accs[0];
-  if (account.balance < amountCents) {
-    await interaction.editReply({
-      content: `❌ **Insufficient Funds.**\nAccount **${account.accountName}** balance: **$${(account.balance / 100).toFixed(2)}**, payment: **$${amount.toFixed(2)}**.`
-    });
-    return;
-  }
-
-  const newRemaining = Math.max(0, loan.remainingAmount - amountCents);
-  const newStatus = newRemaining === 0 ? 'paid_off' : 'active';
 
   try {
-    const { collectToPoolOrTreasury } = await import('./citycorp_money');
-    await collectToPoolOrTreasury({
-      bankId,
+    const { collectLoanPayment } = await import('../server/loan_processor');
+    const result = await collectLoanPayment({
+      loan,
       fromAccount: account,
       amountCents,
-      description: `Loan Repayment (${loanId.substring(0, 8)}). Remaining: $${(newRemaining / 100).toFixed(2)}`,
-      type: "loan_payment",
+    });
+    await interaction.editReply({
+      content: 
+        `🎉 **Loan Repayment Processed!**\n\n` +
+        `💸 **Payment Amount**: **$${(result.appliedCents / 100).toFixed(2)}**\n` +
+        `💳 **Source Account**: **${account.accountName}**\n` +
+        `📉 **Remaining Loan Balance**: **$${(result.newRemaining / 100).toFixed(2)}**\n` +
+        `🏷️ **Status**: **${result.status.toUpperCase()}**`
     });
   } catch (e: any) {
     console.error("[RepayLoan] collect failed", e);
     await interaction.editReply({ content: `❌ Loan repayment failed: ${e.message || "CityCorp collection failed"}` });
-    return;
   }
-
-  await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus }).where(eq(loans.id, loan.id));
-
-  await interaction.editReply({
-    content: 
-      `🎉 **Loan Repayment Processed!**\n\n` +
-      `💸 **Payment Amount**: **$${amount.toFixed(2)}**\n` +
-      `💳 **Source Account**: **${account.accountName}**\n` +
-      `📉 **Remaining Loan Balance**: **$${(newRemaining / 100).toFixed(2)}**\n` +
-      `🏷️ **Status**: **${newStatus.toUpperCase()}**`
-  });
 }
 
 async function handleBankInGameInfo(bankId: string, interaction: ButtonInteraction) {

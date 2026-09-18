@@ -7,6 +7,8 @@ export function BankLoans() {
   const { bankId } = useParams();
   const [loans, setLoans] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [loanProducts, setLoanProducts] = useState<any[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState("");
   const [loading, setLoading] = useState(true);
   const [processingCron, setProcessingCron] = useState(false);
   const [filterTab, setFilterTab] = useState<"all" | "pending" | "active" | "delinquent" | "defaulted" | "paid">("all");
@@ -64,14 +66,17 @@ export function BankLoans() {
 
   const fetchData = async () => {
     try {
-      const [loansRes, accsRes] = await Promise.all([
+      const [loansRes, accsRes, prodRes] = await Promise.all([
         fetch(`/api/banks/${bankId}/loans`),
-        fetch(`/api/banks/${bankId}/accounts`)
+        fetch(`/api/banks/${bankId}/accounts`),
+        fetch(`/api/banks/${bankId}/products`)
       ]);
       const l = await loansRes.json();
       const a = await accsRes.json();
+      const p = await prodRes.json().catch(() => ({}));
       setLoans(Array.isArray(l) ? l : []);
       setAccounts(Array.isArray(a) ? a : []);
+      setLoanProducts(Array.isArray(p.loans) ? p.loans.filter((x: any) => x.isActive) : []);
       setLoading(false);
     } catch (e: any) {
       console.error(e);
@@ -166,6 +171,8 @@ export function BankLoans() {
         isOffSystem
       };
 
+      if (selectedProductId) payload.productId = selectedProductId;
+
       if (isOffSystem) {
         payload.initialPaidAmount = Math.round(parseFloat(initialPaidAmount || "0") * 100);
         payload.offSystemReference = offSystemReference || null;
@@ -193,6 +200,7 @@ export function BankLoans() {
         setPrincipalAmount("");
         setCollateralDescription("");
         setCollateralValue("");
+        setSelectedProductId("");
         fetchData();
       } else {
         const err = await res.json();
@@ -243,7 +251,8 @@ export function BankLoans() {
         setPayAmount("");
         fetchData();
       } else {
-        alert("Payment failed. Check account balance.");
+        const err = await res.json().catch(() => ({}));
+        alert("Payment failed: " + (err.error || "Check account balance."));
       }
     } catch(e) {
       console.error(e);
@@ -279,8 +288,8 @@ export function BankLoans() {
 
   const metrics = {
     totalBook: loans.reduce((acc, l) => acc + (l.principalAmount || 0), 0),
-    activeOutstanding: loans.filter(l => l.status === "active").reduce((acc, l) => acc + (l.remainingAmount || 0), 0),
-    delinquentRisk: loans.filter(l => l.isDelinquent || l.status === "defaulted").reduce((acc, l) => acc + (l.remainingAmount || 0) + (l.lateFeeAmount || 0), 0),
+    activeOutstanding: loans.filter(l => l.status === "active" && !l.isDelinquent).reduce((acc, l) => acc + (l.remainingAmount || 0), 0),
+    delinquentRisk: loans.filter(l => l.isDelinquent || l.status === "defaulted" || l.status === "delinquent").reduce((acc, l) => acc + (l.remainingAmount || 0), 0),
     totalCollateral: loans.filter(l => l.collateralStatus === "pledged" || l.collateralStatus === "seized").reduce((acc, l) => acc + (l.collateralValue || 0), 0),
     pendingCount: loans.filter(l => l.status === "pending" || l.status === "awaiting_signature").length
   };
@@ -678,6 +687,29 @@ export function BankLoans() {
                     required
                   />
                 </div>
+
+                {!isOffSystem && loanProducts.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-1.5">Loan Product (Optional)</label>
+                    <select
+                      value={selectedProductId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setSelectedProductId(id);
+                        const p = loanProducts.find((x: any) => x.id === id);
+                        if (p) setInterestRate(String(p.interestRate));
+                      }}
+                      className="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">Custom terms...</option>
+                      {loanProducts.map((p: any) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — {Number(p.interestRate).toFixed(1)}% APR, max ${(p.maxAmount / 100).toLocaleString()}, {p.termDays} days
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-white/80 mb-1.5">

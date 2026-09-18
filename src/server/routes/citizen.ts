@@ -255,14 +255,29 @@ citizenRouter.post("/api/citizen/accounts/:id/upgrade", requireAuth, async (req:
     }
 });
 
+citizenRouter.get("/api/citizen/loan-products", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { loanProducts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    try {
+      const bankId = String(req.query.bankId || "");
+      if (!bankId) return res.status(400).json({ error: "bankId required" });
+      const products = await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, bankId), eq(loanProducts.isActive, true)));
+      res.json(products);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal error" });
+    }
+});
+
 citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { loans, bankSettings, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, sql } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
+    const { bankAccounts } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
     
     try {
-      const { bankId, accountId, principalAmount, purpose, collateralDescription, collateralValue } = req.body; const discordId = (req as any).user.discordId;
+      const { bankId, accountId, principalAmount, purpose, collateralDescription, collateralValue, productId, termMonths } = req.body;
+      const discordId = (req as any).user.discordId;
       if (!bankId || !discordId || !accountId || !principalAmount) return res.status(400).json({ error: "Missing fields" });
 
       const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
@@ -270,80 +285,30 @@ citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.
         return res.status(403).json({ error: "Unauthorized account" });
       }
 
-      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-      if (!settings || !settings.enableLoans) return res.status(400).json({ error: "Loans are disabled for this bank" });
-
-      let autoApprove = false;
-      if (settings.enableAccountTiers && account.tierId && settings.accountTiers) {
-         const tier = (settings.accountTiers as any[]).find(t => t.id === account.tierId);
-         if (tier && tier.autoApproveLoans && principalAmount <= (tier.maxAutoApproveLoanAmount || 0)) {
-            autoApprove = true;
-         }
-      } else if (!settings.enableAccountTiers) {
-         autoApprove = !!settings.autoApproveLoans && principalAmount <= (settings.maxAutoApproveLoanAmount || 0);
-      }
-
-      const nextPaymentDate = new Date();
-      nextPaymentDate.setDate(nextPaymentDate.getDate() + 30); // Need payment in 30 days
-      
-      const loanId = uuidv4();
-      
-      let contractUrl: string | null = null;
-      if (settings?.enableGoogleDocsContracts) {
-        const { banks } = await import("../../db/schema");
-        const bankRec = await db.select().from(banks).where(eq(banks.id, bankId)).get();
-        const { generateContractUrl } = await import("../../lib/google_docs_contracts");
-        contractUrl = generateContractUrl(settings.googleDocsLoanTemplateUrl, {
-          bankName: bankRec?.name || "Slate Bank",
-          clientDiscordId: discordId,
-          contractType: 'loan',
-          contractId: loanId,
-          amount: principalAmount,
-          interestRate: 500,
-          purpose
+      const { submitLoanApplication } = await import("../loan_processor.js");
+      try {
+        const result = await submitLoanApplication({
+          bankId,
+          discordId,
+          accountId,
+          principalAmount,
+          purpose,
+          productId,
+          termMonths,
+          collateralDescription,
+          collateralValue,
+          allowAutoApprove: true,
         });
+        res.json({
+          success: true,
+          autoApprove: result.status === "active",
+          awaitingSignature: result.awaitingSignature,
+          status: result.status,
+          loanId: result.loan.id,
+        });
+      } catch (err: any) {
+        return res.status(400).json({ error: err.message || "Loan application failed" });
       }
-
-      const colVal = collateralValue ? Math.round(parseFloat(collateralValue) * 100) : null;
-      const colStatus = collateralDescription ? "pledged" : "none";
-
-      await db.insert(loans).values({
-        id: loanId,
-        bankId,
-        discordId,
-        accountId,
-        principalAmount,
-        remainingAmount: principalAmount,
-        interestRate: 500, // Defaulting to 5% APR
-        nextPaymentDate,
-        purpose,
-        collateralDescription: collateralDescription || null,
-        collateralValue: colVal,
-        collateralStatus: colStatus,
-        status: "pending",
-        contractUrl,
-        createdAt: new Date(),
-      });
-
-      if (autoApprove) {
-         const { disburseLoan } = await import("../loan_processor.js");
-         const insertedLoan = await db.select().from(loans).where(eq(loans.id, loanId)).get();
-         if (insertedLoan) {
-            try {
-              await disburseLoan(insertedLoan);
-              await db.update(loans).set({ status: "active" }).where(eq(loans.id, loanId));
-            } catch (err: any) {
-              const { botManager } = await import("../../lib/bot_manager");
-              botManager.sendNotification(bankId, `New Loan Application: \nDiscord ID: ${discordId}\nAmount: $${(principalAmount/100).toFixed(2)}\nPurpose: ${purpose || 'None specified'}\nStatus: Pending (auto-disburse failed: ${err.message || "CityCorp error"})`);
-              return res.status(400).json({ error: err.message || "Loan disbursement failed. Application left pending for staff review.", autoApprove: false, pending: true });
-            }
-         }
-      }
-
-      const { botManager } = await import("../../lib/bot_manager");
-      botManager.sendNotification(bankId, `New Loan Application: \nDiscord ID: ${discordId}\nAmount: $${(principalAmount/100).toFixed(2)}\nPurpose: ${purpose || 'None specified'}\nStatus: ${autoApprove ? 'Auto-Approved' : 'Pending Review'}`);
-
-      res.json({ success: true, autoApprove });
     } catch(e) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
@@ -497,7 +462,11 @@ citizenRouter.post("/api/citizen/loans/:loanId/sign", requireAuth, async (req: e
         if (loan.status !== "awaiting_signature") return res.status(400).json({ error: "Loan is not awaiting signature" });
 
         const { disburseLoan } = await import("../loan_processor.js");
-        await disburseLoan(loan);
+        try {
+          await disburseLoan(loan);
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message || "Loan disbursement failed. Contract is still awaiting signature." });
+        }
 
         await db.update(loans).set({ status: "active", clientSignedAt: new Date() }).where(eq(loans.id, loan.id));
         res.json({ success: true });
@@ -569,9 +538,8 @@ citizenRouter.post("/api/citizen/pay-credit-card", requireAuth, async (req: expr
 
 citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, transactions, loans } = await import("../../db/schema");
+    const { bankAccounts, loans } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
 
     try {
       const { loanId, fromAccountId, amount, amountDollars } = req.body;
@@ -604,66 +572,22 @@ citizenRouter.post("/api/citizen/pay-loan", requireAuth, async (req: express.Req
 
       const [sourceAccount] = fromAcc;
       const [theLoan] = await db.select().from(loans).where(eq(loans.id, loanId));
-      if (!theLoan || (theLoan.status !== 'active' && theLoan.status !== 'delinquent')) return res.status(400).json({ error: "Invalid loan" });
+      if (!theLoan) return res.status(400).json({ error: "Invalid loan" });
+      if (sourceAccount.bankId !== theLoan.bankId) {
+        return res.status(400).json({ error: "Payment must come from an account at the same bank" });
+      }
 
-      parsedAmount = Math.min(parsedAmount, theLoan.remainingAmount);
-      if (parsedAmount <= 0) return res.status(400).json({ error: "Loan has no remaining balance" });
-      if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
-
-      let newRemaining = 0;
-      const { gte, sql } = await import("drizzle-orm");
-      const { collectToPoolOrTreasury } = await import("../../lib/citycorp_money");
+      const { collectLoanPayment } = await import("../loan_processor");
       try {
-        await collectToPoolOrTreasury({
-          bankId: theLoan.bankId,
+        const result = await collectLoanPayment({
+          loan: theLoan,
           fromAccount: sourceAccount,
           amountCents: parsedAmount,
-          description: `Loan payment (Loan #${theLoan.id.slice(0, 8)})`,
-          type: "loan_payment",
         });
+        res.json({ success: true, remaining: result.newRemaining, status: result.status });
       } catch (err: any) {
         return res.status(400).json({ error: err.message || "Loan payment failed" });
       }
-
-      await db.transaction(async (tx) => {
-        newRemaining = Math.max(0, theLoan.remainingAmount - parsedAmount);
-        const isPaidOff = newRemaining <= 0;
-
-        // Check for late fee settlement
-        const currentLateFee = theLoan.lateFeeAmount || 0;
-        const lateFeeSettled = Math.min(parsedAmount, currentLateFee);
-        const newLateFeeAmount = Math.max(0, currentLateFee - lateFeeSettled);
-
-        if (lateFeeSettled > 0) {
-          await tx.insert(transactions).values({
-            id: uuidv4(),
-            bankId: theLoan.bankId,
-            fromAccountId: fromAccountId,
-            toAccountId: null,
-            type: "fee",
-            feeType: "late_fee",
-            amount: lateFeeSettled,
-            description: `Loan Late Fee Settlement (Loan #${theLoan.id.slice(0, 8)})`,
-            category: "Fee Income",
-            timestamp: new Date()
-          });
-        }
-
-        // Push next payment date if partially paid
-        const nextDate = new Date();
-        nextDate.setDate(nextDate.getDate() + 30);
-
-        await tx.update(loans).set({ 
-          remainingAmount: newRemaining,
-          lateFeeAmount: newLateFeeAmount,
-          isDelinquent: newLateFeeAmount > 0,
-          missedPaymentsCount: newLateFeeAmount > 0 ? theLoan.missedPaymentsCount : 0,
-          status: isPaidOff ? 'paid_off' : 'active',
-          nextPaymentDate: isPaidOff ? theLoan.nextPaymentDate : nextDate
-        }).where(eq(loans.id, loanId));
-      });
-
-      res.json({ success: true, remaining: newRemaining });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });

@@ -370,7 +370,11 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           ...c,
           cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
         })),
-        loans: userLoans,
+        loans: userLoans.map((l: any) => ({
+          ...l,
+          amount: l.principalAmount,
+          remainingBalance: l.remainingAmount,
+        })),
         subscriptions: userSubscriptions,
         customer: customer ? {
           kycStatus: customer.kycStatus,
@@ -661,7 +665,11 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
       recentTx: recentTxs,
       pendingInvoices: userInvoices,
       cards: userCards,
-      loans: userLoans,
+      loans: userLoans.map((l: any) => ({
+        ...l,
+        amount: l.principalAmount,
+        remainingBalance: l.remainingAmount,
+      })),
       profile: globalUser ? {
         rpName: globalUser.rpName,
         address: globalUser.address
@@ -942,14 +950,25 @@ portalRouter.post("/api/portal/:bankId/request-card", requireAuth, async (req, r
 });
 
 // Portal Loan Request API
+portalRouter.get("/api/portal/:bankId/loan-products", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { loanProducts } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  try {
+    const products = await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, req.params.bankId), eq(loanProducts.isActive, true)));
+    res.json(products);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Failed to load loan products" });
+  }
+});
+
 portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
-  const { loans, bankAccounts, banks } = await import("../../db/schema");
+  const { bankAccounts, banks } = await import("../../db/schema");
   const { eq, and } = await import("drizzle-orm");
-  const { v4: uuidv4 } = await import("uuid");
 
   try {
-    const { accountId, amount, termMonths, purpose } = req.body;
+    const { accountId, amount, termMonths, purpose, productId } = req.body;
     const bankId = req.params.bankId;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
     if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
@@ -965,38 +984,32 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
     const loanAmountCents = Math.round(parseFloat(amount) * 100);
     if (!loanAmountCents || loanAmountCents <= 0) return res.status(400).json({ error: "Invalid loan amount" });
 
-    const term = parseInt(termMonths) || 12;
-    const interestRate = 550; // 5.50% default
-
-    const loanId = `loan_${uuidv4().substring(0, 8)}`;
-    const nextPaymentDate = new Date();
-    nextPaymentDate.setDate(nextPaymentDate.getDate() + 30);
-
-    await db.insert(loans).values({
-      id: loanId,
+    const { submitLoanApplication } = await import("../loan_processor");
+    const result = await submitLoanApplication({
       bankId,
       discordId: candidateIds[0],
       accountId,
       principalAmount: loanAmountCents,
-      remainingAmount: loanAmountCents,
-      interestRate,
-      nextPaymentDate,
       purpose: purpose || "Personal loan request",
-      status: "pending",
-      createdAt: new Date()
+      productId,
+      termMonths: parseInt(termMonths) || undefined,
+      allowAutoApprove: true,
     });
 
     res.json({
       success: true,
+      autoApprove: result.status === "active",
+      awaitingSignature: result.awaitingSignature,
+      status: result.status,
       loan: {
-        id: loanId,
-        amount: loanAmountCents,
-        status: "pending"
+        id: result.loan.id,
+        amount: result.loan.principalAmount,
+        status: result.status
       }
     });
   } catch (e: any) {
     console.error("[LoanRequestAPI] Error:", e);
-    res.status(500).json({ error: e.message || "Failed to submit loan request" });
+    res.status(400).json({ error: e.message || "Failed to submit loan request" });
   }
 });
 
@@ -1015,35 +1028,25 @@ portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: exp
     if (!loan) return res.status(404).json({ error: "Loan record not found" });
 
     const amountCents = Math.round(parseFloat(amount) * 100);
-    if (amountCents <= 0) return res.status(400).json({ error: "Invalid amount" });
+    if (!Number.isFinite(amountCents) || amountCents <= 0) return res.status(400).json({ error: "Invalid amount" });
 
     const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId)));
-    if (!acc || acc.balance < amountCents) return res.status(400).json({ error: "Linked account not found or insufficient funds" });
+    if (!acc) return res.status(400).json({ error: "Linked account not found" });
     
-    // Check if authorized
     const isAuthorized = await isUserAccountOwnerOrMember(acc, candidateIds);
     if (!isAuthorized) return res.status(403).json({ error: "Unauthorized" });
 
-    const { collectToPoolOrTreasury } = await import("../../lib/citycorp_money");
-    await collectToPoolOrTreasury({
-      bankId,
+    const { collectLoanPayment } = await import("../loan_processor");
+    const result = await collectLoanPayment({
+      loan,
       fromAccount: acc,
       amountCents,
       description: `Loan Repayment (${loanId})`,
-      type: "loan_payment",
     });
 
-    const newRemaining = Math.max(0, loan.remainingAmount - amountCents);
-    const newStatus = newRemaining === 0 ? "paid_off" : loan.status;
-
-    await db.update(loans).set({ remainingAmount: newRemaining, status: newStatus as any }).where(eq(loans.id, loanId));
-
-    res.json({ success: true, remainingAmount: newRemaining, status: newStatus });
+    res.json({ success: true, remainingAmount: result.newRemaining, status: result.status });
   } catch (e: any) {
     console.error("[LoanRepayAPI] Error:", e);
-    if (e?.name === "MoneyRailError") {
-      return res.status(400).json({ error: e.message || "Loan repayment failed" });
-    }
-    res.status(500).json({ error: "Failed to process loan repayment" });
+    return res.status(400).json({ error: e.message || "Loan repayment failed" });
   }
 });

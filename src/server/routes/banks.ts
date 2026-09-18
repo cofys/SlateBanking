@@ -3389,6 +3389,7 @@ banksRouter.get("/api/banks/:bankId/loans", requireBankStaff, async (req: expres
         purpose: loans.purpose,
         status: loans.status,
         contractUrl: loans.contractUrl,
+        contractText: loans.contractText,
         collateralDescription: loans.collateralDescription,
         collateralValue: loans.collateralValue,
         collateralStatus: loans.collateralStatus,
@@ -3397,6 +3398,8 @@ banksRouter.get("/api/banks/:bankId/loans", requireBankStaff, async (req: expres
         missedPaymentsCount: loans.missedPaymentsCount,
         lastInterestAccrualAt: loans.lastInterestAccrualAt,
         lastPaymentAttemptAt: loans.lastPaymentAttemptAt,
+        productId: loans.productId,
+        termMonths: loans.termMonths,
         createdAt: loans.createdAt,
         mcUsername: bankCustomers.mcUsername,
       })
@@ -3428,35 +3431,50 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         remainingAmount: reqRemainingAmount,
         offSystemReference = null,
         purpose = null,
-        nextPaymentDate: customDueDate
+        nextPaymentDate: customDueDate,
+        productId = null,
+        termMonths = null,
       } = req.body;
 
       if (!discordId || !principalAmount || interestRate === undefined || !depositAccountId) {
         return res.status(400).json({ error: "Missing fields" });
       }
 
-      // Find the account to link or deposit the loan into
       const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, depositAccountId), eq(bankAccounts.bankId, req.params.bankId))).get();
       if (!acc) return res.status(404).json({ error: "Deposit account not found" });
 
       const nextPaymentDate = customDueDate ? new Date(customDueDate) : new Date();
       if (!customDueDate) {
-        nextPaymentDate.setDate(nextPaymentDate.getDate() + 30); // First payment in 30 days
+        nextPaymentDate.setDate(nextPaymentDate.getDate() + 30);
       }
 
       const ts = new Date();
       const newLoanId = uuidv4();
 
       const parsedPrincipal = Number(principalAmount);
+      if (!Number.isFinite(parsedPrincipal) || parsedPrincipal <= 0) {
+        return res.status(400).json({ error: "Invalid principal amount" });
+      }
       const parsedPaid = Number(initialPaidAmount || 0);
       const calculatedRemaining = reqRemainingAmount !== undefined && reqRemainingAmount !== null 
         ? Number(reqRemainingAmount) 
         : Math.max(0, parsedPrincipal - parsedPaid);
 
-      // Handle contract URL if enabled
-      const { bankSettings, banks } = await import("../../db/schema");
+      const { bankSettings, banks, loanProducts } = await import("../../db/schema");
       const bSettings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, req.params.bankId)).get();
       const bRecord = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
+
+      let resolvedRate = Math.round(Number(interestRate));
+      let resolvedTerm = termMonths ? Math.max(1, Math.round(Number(termMonths))) : 12;
+      let resolvedProductId = productId || null;
+      if (resolvedProductId) {
+        const product = await db.select().from(loanProducts).where(and(eq(loanProducts.id, resolvedProductId), eq(loanProducts.bankId, req.params.bankId))).get();
+        if (product) {
+          const { productAprToLoanRate } = await import("../loan_processor");
+          resolvedRate = productAprToLoanRate(product.interestRate);
+          resolvedTerm = Math.max(1, Math.round((product.termDays || 30) / 30));
+        }
+      }
 
       let contractUrl = req.body.contractUrl || null;
       if (!contractUrl && bSettings?.enableGoogleDocsContracts) {
@@ -3467,8 +3485,8 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
           contractType: 'loan',
           contractId: newLoanId,
           amount: parsedPrincipal,
-          interestRate,
-          termDays: 30
+          interestRate: resolvedRate,
+          termDays: resolvedTerm * 30
         });
       }
 
@@ -3485,7 +3503,7 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         initialPaidAmount: parsedPaid,
         isOffSystem: Boolean(isOffSystem),
         offSystemReference: offSystemReference || (isOffSystem ? `Off-system import: ${parsedPaid > 0 ? `$${(parsedPaid/100).toFixed(2)} paid prior` : 'manual entry'}` : null),
-        interestRate,
+        interestRate: resolvedRate,
         nextPaymentDate,
         purpose: purpose || (isOffSystem ? "Existing off-system loan record" : null),
         collateralDescription: collateralDescription || null,
@@ -3493,6 +3511,8 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         collateralStatus: colStatus,
         status: calculatedRemaining <= 0 ? "paid_off" : (isOffSystem ? "active" : "pending"),
         contractUrl,
+        productId: resolvedProductId,
+        termMonths: resolvedTerm,
         createdAt: ts
       }).returning().get();
 
@@ -3583,12 +3603,16 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId", requireBankStaff, async (req
     const { loans } = await import("../../db/schema.js");
     const { eq } = await import("drizzle-orm");
     try {
-      const { principalAmount, interestRate, purpose, collateralDescription, collateralValue, contractUrl, contractText, status } = req.body;
+      const { principalAmount, interestRate, purpose, collateralDescription, collateralValue, contractUrl, contractText, status, termMonths } = req.body;
       const loan = await db.select().from(loans).where(eq(loans.id, req.params.loanId)).get();
       if (!loan || loan.bankId !== req.params.bankId) return res.status(404).json({ error: "Loan not found" });
 
+      const pendingLike = loan.status === "pending" || loan.status === "awaiting_signature";
       const updates: any = {};
       if (principalAmount !== undefined) {
+         if (!pendingLike) {
+           return res.status(400).json({ error: "Principal can only be edited before disbursement" });
+         }
          updates.principalAmount = principalAmount;
          updates.remainingAmount = principalAmount;
       }
@@ -3598,18 +3622,29 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId", requireBankStaff, async (req
       if (collateralValue !== undefined) updates.collateralValue = collateralValue;
       if (contractUrl !== undefined) updates.contractUrl = contractUrl;
       if (contractText !== undefined) updates.contractText = contractText;
+      if (termMonths !== undefined) updates.termMonths = Math.max(1, Math.round(Number(termMonths)));
 
-      const wantsDisburse = loan.status === "pending" && (status === "active" || status === "approved");
+      const requested = status === "approved" ? "active" : status;
+      const wantsDisburse = pendingLike && requested === "active";
       if (wantsDisburse) {
         try {
           const { disburseLoan } = await import("../loan_processor.js");
-          await disburseLoan(loan);
+          const disbursable = {
+            ...loan,
+            principalAmount: updates.principalAmount ?? loan.principalAmount,
+            remainingAmount: updates.remainingAmount ?? loan.remainingAmount,
+            interestRate: updates.interestRate ?? loan.interestRate,
+          };
+          await disburseLoan(disbursable);
           updates.status = "active";
         } catch (err: any) {
           return res.status(400).json({ error: err.message || "Loan disbursement failed" });
         }
       } else if (status !== undefined) {
-        updates.status = status === "approved" ? "active" : status;
+        if (status === "rejected" && !pendingLike) {
+          return res.status(400).json({ error: "Cannot reject a loan that has already been funded. Mark it defaulted or collect payoff instead." });
+        }
+        updates.status = requested;
       }
 
       await db.update(loans).set(updates).where(eq(loans.id, req.params.loanId));
@@ -3632,7 +3667,10 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId/status", requireBankStaff, asy
       const loan = await db.select().from(loans).where(eq(loans.id, req.params.loanId)).get();
       if (!loan || loan.bankId !== req.params.bankId) return res.status(404).json({ error: "Loan not found" });
 
-      if (loan.status === "pending" && (status === "active" || status === "approved")) {
+      const pendingLike = loan.status === "pending" || loan.status === "awaiting_signature";
+      const requested = status === "approved" ? "active" : (status === "paid" ? "paid_off" : status);
+
+      if (pendingLike && requested === "active") {
         try {
           const { disburseLoan } = await import("../loan_processor");
           await disburseLoan(loan);
@@ -3640,8 +3678,10 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId/status", requireBankStaff, asy
           return res.status(400).json({ error: err.message || "Loan disbursement failed" });
         }
         await db.update(loans).set({ status: "active" }).where(eq(loans.id, req.params.loanId));
+      } else if (requested === "rejected" && !pendingLike) {
+        return res.status(400).json({ error: "Cannot reject a loan that has already been funded." });
       } else {
-        await db.update(loans).set({ status: status === "approved" ? "active" : status }).where(eq(loans.id, req.params.loanId));
+        await db.update(loans).set({ status: requested }).where(eq(loans.id, req.params.loanId));
       }
       res.json({ success: true });
     } catch (e: any) {
@@ -3745,10 +3785,8 @@ banksRouter.delete("/api/banks/:bankId/credit-applications/:appId", requireBankS
 
 banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { loans, bankAccounts, transactions } = await import("../../db/schema");
-    const { eq, and, sql } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
-    
+    const { loans, bankAccounts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
 
     try {
       const { accountId, amount } = req.body;
@@ -3756,63 +3794,22 @@ banksRouter.post("/api/banks/:bankId/loans/:loanId/pay", requireBankStaff, async
 
       const loan = await db.select().from(loans).where(and(eq(loans.id, req.params.loanId), eq(loans.bankId, req.params.bankId))).get();
       if (!loan) return res.status(404).json({ error: "Loan not found" });
-      if (loan.status === "paid" || loan.status === "paid_off") return res.status(400).json({ error: "Loan already paid off" });
 
       const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, req.params.bankId))).get();
       if (!acc) return res.status(404).json({ error: "Account not found" });
-      if (acc.balance < amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      const { collectToPoolOrTreasury } = await import("../../lib/citycorp_money");
+      const { collectLoanPayment } = await import("../loan_processor");
       try {
-        await collectToPoolOrTreasury({
-          bankId: req.params.bankId,
+        const result = await collectLoanPayment({
+          loan,
           fromAccount: acc,
-          amountCents: amount,
+          amountCents: Math.round(Number(amount)),
           description: `Staff loan payment (Loan #${loan.id.substring(0, 8)})`,
-          type: "loan_payment",
         });
+        res.json({ success: true, newRemaining: result.newRemaining, isPaid: result.isPaidOff, status: result.status });
       } catch (e: any) {
         return res.status(400).json({ error: e.message || "Loan payment failed" });
       }
-
-      const newRemaining = Math.max(0, loan.remainingAmount - amount);
-      const isPaid = newRemaining === 0;
-
-      const ts = new Date();
-
-      // Check for late fee settlement
-      const currentLateFee = loan.lateFeeAmount || 0;
-      const lateFeeSettled = Math.min(amount, currentLateFee);
-      const newLateFeeAmount = Math.max(0, currentLateFee - lateFeeSettled);
-
-      if (lateFeeSettled > 0) {
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          bankId: req.params.bankId,
-          fromAccountId: accountId,
-          toAccountId: null,
-          type: "fee",
-          feeType: "late_fee",
-          amount: lateFeeSettled,
-          description: `Loan Late Fee Settlement (Loan #${loan.id.slice(0, 8)})`,
-          category: "Fee Income",
-          timestamp: ts
-        });
-      }
-
-      const nextDate = new Date();
-      nextDate.setDate(nextDate.getDate() + 30);
-
-      await db.update(loans).set({ 
-        remainingAmount: newRemaining,
-        lateFeeAmount: newLateFeeAmount,
-        isDelinquent: newLateFeeAmount > 0,
-        missedPaymentsCount: newLateFeeAmount > 0 ? loan.missedPaymentsCount : 0,
-        status: isPaid ? "paid_off" : "active",
-        nextPaymentDate: isPaid ? loan.nextPaymentDate : nextDate
-      }).where(eq(loans.id, loan.id));
-
-      res.json({ success: true, newRemaining, isPaid });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: (e as any).message });
@@ -4396,29 +4393,18 @@ banksRouter.post("/api/banks/:bankId/tools/purge-zero", [requireBankStaff, requi
 
 banksRouter.post("/api/banks/:bankId/tools/daily-processing", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, auditLogs, loans, subscriptions } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { auditLogs } = await import("../../db/schema");
     const { v4: uuidv4 } = await import("uuid");
 
     try {
       const bId = req.params.bankId;
-      let notes = [];
+      let notes: string[] = [];
 
-      // 1. Process Loans (accrue interest)
-      const openLoans = await db.select().from(loans).where(and(eq(loans.bankId, bId), eq(loans.status, 'active')));
-      let loansAccrued = 0;
-      for (const loan of openLoans) {
-        if (loan.interestRate && loan.principalAmount) {
-          const dailyInterest = Math.round((loan.principalAmount * (loan.interestRate / 100)) / 365);
-          if (dailyInterest > 0) {
-            await db.update(loans)
-              .set({ remainingAmount: loan.remainingAmount + dailyInterest })
-              .where(eq(loans.id, loan.id));
-            loansAccrued++;
-          }
-        }
-      }
-      if (loansAccrued > 0) notes.push(`Accrued interest on ${loansAccrued} loans.`);
+      const { processDueLoanRepayments, accrueLoanInterest } = await import("../loan_processor");
+      const due = await processDueLoanRepayments(bId);
+      notes.push(`Due loans: processed ${due.processed}, debited ${due.debited}, late fees ${due.lateFees}, defaulted ${due.defaulted}.`);
+      const accrued = await accrueLoanInterest(bId);
+      notes.push(`Accrued interest on ${accrued.accruedLoans} loans ($${(accrued.totalInterestAccruedCents / 100).toFixed(2)}).`);
 
       await db.insert(auditLogs).values({
          id: uuidv4(),

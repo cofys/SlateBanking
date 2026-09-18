@@ -33,7 +33,7 @@ export function BankProducts() {
   
   const handleDeleteProduct = (product: any, type: string) => {
     if (!confirm(`Are you sure you want to delete ${product.name}?`)) return;
-    fetch(`/api/banks/${bank.id}/products/${product.id}`, { method: 'DELETE' })
+    fetch(`/api/banks/${bank.id}/products/${product.id}?type=${type}`, { method: 'DELETE' })
       .then(res => res.json())
       .then(d => {
         if (d.error) return alert(d.error);
@@ -45,17 +45,24 @@ export function BankProducts() {
     e.preventDefault();
     setSubmitting(true);
     const formData = new FormData(e.target as HTMLFormElement);
+    const isLoan = editingProduct ? editingProduct.termDays !== undefined : newProductType === 'loan';
     const data = {
-      type: newProductType,
+      type: isLoan ? 'loan' : 'credit',
       name: formData.get('name'),
       interestRate: Number(formData.get('interestRate')),
       maxLimit: Number(formData.get('maxLimit')),
       termDays: formData.get('termDays') ? Number(formData.get('termDays')) : undefined,
-      rewardsPercent: formData.get('rewardsPercent') ? Number(formData.get('rewardsPercent')) : undefined
+      rewardsPercent: formData.get('rewardsPercent') ? Number(formData.get('rewardsPercent')) : undefined,
+      isActive: editingProduct ? !!editingProduct.isActive : true,
     };
 
-    fetch(`/api/banks/${bank.id}/products`, {
-      method: "POST",
+    const url = editingProduct
+      ? `/api/banks/${bank.id}/products/${editingProduct.id}`
+      : `/api/banks/${bank.id}/products`;
+    const method = editingProduct ? "PUT" : "POST";
+
+    fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
     }).then(res => res.json()).then(d => {

@@ -198,7 +198,7 @@ export function BankTools() {
                 <h3 className="text-xl font-bold">Run Daily Processing</h3>
               </div>
               <p className="text-white/60 text-sm mb-6 max-w-lg">
-                Executes the end-of-day processes for this bank. This includes checking all active loans for interest accrual, charging due subscriptions, and processing vault interest payouts.
+                Executes the end-of-day processes for this bank: automated loan debits, daily loan interest accrual (correct APR math), then reports results. Subscriptions and payroll already run on the 15-minute and 60-second crons.
               </p>
               
               {complete && !running && (

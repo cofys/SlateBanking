@@ -253,6 +253,8 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("loans", "initial_paid_amount", "INTEGER DEFAULT 0");
   checkAndAddColumn("loans", "is_off_system", "INTEGER DEFAULT 0");
   checkAndAddColumn("loans", "off_system_reference", "TEXT");
+  checkAndAddColumn("loans", "product_id", "TEXT");
+  checkAndAddColumn("loans", "term_months", "INTEGER DEFAULT 12");
 
   // Escrows table
   checkAndAddColumn("escrows", "description", "TEXT");

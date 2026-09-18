@@ -123,6 +123,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   // Modals
   const [showOpenAccountModal, setShowOpenAccountModal] = useState(false);
   const [showApplyLoanModal, setShowApplyLoanModal] = useState(false);
+  const [portalLoanProducts, setPortalLoanProducts] = useState<any[]>([]);
   const [showIssueCardModal, setShowIssueCardModal] = useState(false);
   const [repayingLoan, setRepayingLoan] = useState<any | null>(null);
 
@@ -160,6 +161,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
+
+  useEffect(() => {
+    if (!showApplyLoanModal || !bankId) return;
+    fetch(`/api/portal/${bankId}/loan-products`)
+      .then(r => r.json())
+      .then(d => setPortalLoanProducts(Array.isArray(d) ? d : []))
+      .catch(() => setPortalLoanProducts([]));
+  }, [showApplyLoanModal, bankId]);
 
   useEffect(() => {
     fetch(`/api/portal/${bankId}/info`)
@@ -1148,12 +1157,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                       loan.status === 'paid_off' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
                                       'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
                                     }`}>
-                                      {loan.status === 'paid_off' ? 'Paid Off' : 'Active Loan'}
+                                      {loan.status === 'paid_off' ? 'Paid Off' : loan.status === 'pending' ? 'Pending Review' : loan.status === 'delinquent' || loan.isDelinquent ? 'Overdue' : loan.status === 'defaulted' ? 'Defaulted' : loan.status === 'awaiting_signature' ? 'Sign Contract' : 'Active Loan'}
                                     </span>
                                   </div>
                                   <p className="text-xs text-zinc-400">{loan.purpose || 'Personal financing line'}</p>
                                   <div className="flex gap-4 text-xs font-mono text-zinc-500 pt-1">
-                                    <span>Principal: {formatMoney(loan.amount)}</span>
+                                    <span>Principal: {formatMoney(loan.principalAmount || loan.amount)}</span>
                                     <span>APR: {((loan.interestRate || 550) / 100).toFixed(2)}%</span>
                                     <span>Term: {loan.termMonths || 12} Mos</span>
                                   </div>
@@ -1163,11 +1172,11 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                   <div>
                                     <span className="text-[9px] uppercase text-zinc-500 font-bold block">Remaining Principal</span>
                                     <span className="text-lg font-black font-mono text-emerald-400">
-                                      {formatMoney(loan.remainingBalance)}
+                                      {formatMoney(loan.remainingAmount ?? loan.remainingBalance)}
                                     </span>
                                   </div>
 
-                                  {loan.status !== 'paid_off' && loan.remainingBalance > 0 && (
+                                  {loan.status !== 'paid_off' && loan.status !== 'pending' && loan.status !== 'rejected' && (loan.remainingAmount ?? loan.remainingBalance) > 0 && (
                                     <button 
                                       onClick={() => setRepayingLoan(loan)}
                                       className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
@@ -1456,13 +1465,20 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       accountId: form.accountId.value,
                       amount: form.amount.value,
                       termMonths: form.termMonths.value,
-                      purpose: form.purpose.value
+                      purpose: form.purpose.value,
+                      productId: form.productId?.value || undefined,
                     })
                   });
                   const d = await res.json();
                   if (!res.ok) alert(d.error || "Loan request failed");
                   else {
-                    alert("Loan approved and funds credited directly to your account!");
+                    alert(
+                      d.autoApprove
+                        ? "Loan auto-approved and funds credited to your account."
+                        : d.awaitingSignature
+                          ? "Approved — sign the contract to receive funds."
+                          : "Loan application submitted for bank review."
+                    );
                     setShowApplyLoanModal(false);
                     handleSearch();
                   }
@@ -1486,12 +1502,24 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   <input required name="amount" type="number" step="0.01" min="10" placeholder="e.g. 5000" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" />
                 </div>
 
+                {portalLoanProducts.length > 0 && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Loan Product</label>
+                    <select name="productId" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
+                      <option value="">Standard terms</option>
+                      {portalLoanProducts.map((p: any) => (
+                        <option key={p.id} value={p.id}>{p.name} — {Number(p.interestRate).toFixed(1)}% APR, max ${(p.maxAmount/100).toLocaleString()}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Term Duration</label>
                   <select name="termMonths" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    <option value="6">6 Months (5.5% APR)</option>
-                    <option value="12">12 Months (5.5% APR)</option>
-                    <option value="24">24 Months (5.5% APR)</option>
+                    <option value="6">6 Months</option>
+                    <option value="12">12 Months</option>
+                    <option value="24">24 Months</option>
                   </select>
                 </div>
 
@@ -1534,7 +1562,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               </div>
 
               <div className="bg-[#0a0a0f] p-3 rounded-xl border border-white/5 text-xs space-y-1">
-                <p className="text-zinc-400">Remaining Principal: <strong className="text-emerald-400 font-mono">{formatMoney(repayingLoan.remainingBalance)}</strong></p>
+                <p className="text-zinc-400">Remaining Principal: <strong className="text-emerald-400 font-mono">{formatMoney(repayingLoan.remainingAmount ?? repayingLoan.remainingBalance)}</strong></p>
               </div>
 
               <form onSubmit={async (e) => {
@@ -1575,7 +1603,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Repayment Amount ($)</label>
-                  <input required name="amount" type="number" step="0.01" min="0.01" defaultValue={(repayingLoan.remainingBalance / 100).toFixed(2)} className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" />
+                  <input required name="amount" type="number" step="0.01" min="0.01" defaultValue={((repayingLoan.remainingAmount ?? repayingLoan.remainingBalance) / 100).toFixed(2)} className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" />
                 </div>
 
                 <div className="pt-2 flex gap-3">
