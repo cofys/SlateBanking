@@ -944,5 +944,33 @@ CityCorp in-game accounts are the source of truth. Slate is a cache + product la
 - **OAuth**: Discord callback requires `state` + `oauth_nonce`. Redirect dest is JSON-encoded. CityCorp `app_id` is never defaulted to `"9"`.
 - **No local mint** on remaining rails: recurring transfers, invoices, Onyx B2B, Discord teller/transfer, payroll/subscription charge, wires, escrow (`ESCROW` system account), vaults (`VAULT` system account). Book transfers fail closed if the bank has no CityCorp credentials. Savings APY and vault interest pay from `interestPoolAccount` or are skipped.
 
+## Customer portals, ops desk, and tenant kill switch
 
+### Customer portals
+White-label **Bank Portal** (`/portal/:bankId` and custom domains) is a branded banking home: large available balance, account cards, send with a **live fee quote** (city tax + bank fee, fees-from-payment vs sender-covers), activity, loans, cards, invoices, and an **Apply** tab for accounts / loans / cards. Feature flags still hide products the bank turned off; apply is never buried in a 10-tab dump. Hex `brandingColor` drives the UI.
+
+**Citizen gateway** (`/portal`) is the network wallet: totals across banks, a card per bank that opens the branded portal, network send with the same quote, and apply-at-a-bank.
+
+### Honest send
+`POST /api/portal/:bankId/transfer/quote` and `/api/citizen/transfer/quote` return submitted / received / fee lines before confirm. Transfers notify the destination owner over Discord DM when the bank bot is online (`discordNotifyCustomers`, default on).
+
+### Staff desk
+- **Needs attention** (`/bank/:id/queue`): pending loans, delinquent/defaulted, frozen accounts, settlement release/confirm, `RESERVE_BREACH` / platform alerts, low SETTLEMENT.
+- **Teller** (`/bank/:id/teller`): search citizen → accounts/loans → counter transfer with live quote.
+- **Collections** (`/bank/:id/collections`): retry collect, Discord ping borrower, seize collateral, cure default.
+
+### Platform ops
+- **Network health** (`/health`): per-tenant Discord bot, CityCorp listener, SETTLEMENT cash, open IOUs, go-live checklist, suspend/unsuspend.
+- **Kill switch**: `POST /api/admin/banks/:id/suspend` sets `billingStatus=suspended`, stops the bot, freezes book transfers and API keys.
+
+### Security
+- Bank and Onyx merchant **API keys are hashed** (`api_key_hash` + last4). Full secret is returned only on create/roll.
+- Onyx checkout tokens persist in `used_payment_tokens` and bind to `merchantId`.
+- Citizens pay merchants via `POST /api/citizen/pay-merchant` (merchant id, never the merchant API key in the browser).
+
+### Discord customer pings
+No new slash commands. The existing bank bot DMs for incoming transfer, loan applied/approved/denied/disbursed/paid/failed/due/defaulted, card lock. Due reminders run on the 15-minute cron (`notifyUpcomingLoanPayments`).
+
+### Schema additions
+`banks.suspended_reason`, `suspended_at`, `api_key_hash`, `api_key_last4`; `onyx_merchants.api_key_hash/last4`; `loans.last_due_reminder_at`; `bank_settings.discord_notify_customers`; tables `platform_alerts`, `used_payment_tokens`.
 

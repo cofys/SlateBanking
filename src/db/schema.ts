@@ -45,6 +45,10 @@ export const banks = sqliteTable("banks", {
   status: text("status").default("offline"),
   plan: text("plan").default("standard"), // starter, standard, enterprise
   billingStatus: text("billing_status").default("active"), // active, suspended, trialing
+  suspendedReason: text("suspended_reason"),
+  suspendedAt: integer("suspended_at", { mode: "timestamp" }),
+  apiKeyHash: text("api_key_hash"),
+  apiKeyLast4: text("api_key_last4"),
   billingModel: text("billing_model").default("flat_monthly"), // "flat_monthly", "volume_tier", "revenue_share", "per_account", "per_tx", "hybrid"
   flatMonthlyRate: integer("flat_monthly_rate").default(15000), // stored in cents ($150.00)
   volumeFeePercent: integer("volume_fee_percent").default(50), // basis points (0.50%)
@@ -112,6 +116,8 @@ export const onyxMerchants = sqliteTable("onyx_merchants", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   apiKey: encryptedText("api_key").notNull().unique(),
+  apiKeyHash: text("api_key_hash"),
+  apiKeyLast4: text("api_key_last4"),
   bankId: text("bank_id").references(() => banks.id).notNull(), // The routing bank
   destinationAccount: text("destination_account").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
@@ -206,6 +212,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   discordFooter: text("discord_footer"),
   discordBotActivity: text("discord_bot_activity"),
   discordShowStats: integer("discord_show_stats", { mode: "boolean" }).default(true),
+  discordNotifyCustomers: integer("discord_notify_customers", { mode: "boolean" }).default(true),
 });
 
 export const escrows = sqliteTable("escrows", {
@@ -289,6 +296,7 @@ export const loans = sqliteTable("loans", {
   offSystemReference: text("off_system_reference"), // External contract reference or notes
   productId: text("product_id"),
   termMonths: integer("term_months").default(12),
+  lastDueReminderAt: integer("last_due_reminder_at", { mode: "timestamp" }),
 
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
@@ -681,3 +689,30 @@ export const bannedIps = sqliteTable("banned_ips", {
   bannedAt: integer("banned_at", { mode: "timestamp" }).notNull(),
   expiresAt: integer("expires_at", { mode: "timestamp" }) // null = permanent
 });
+
+export const platformAlerts = sqliteTable("platform_alerts", {
+  id: text("id").primaryKey(),
+  bankId: text("bank_id").references(() => banks.id),
+  severity: text("severity").notNull().default("warning"), // info, warning, critical
+  code: text("code").notNull(),
+  message: text("message").notNull(),
+  isOpen: integer("is_open", { mode: "boolean" }).default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+  resolvedBy: text("resolved_by"),
+}, (table) => ({
+  bankIdIdx: index("idx_platform_alerts_bank_id").on(table.bankId),
+  openIdx: index("idx_platform_alerts_open").on(table.isOpen),
+  createdIdx: index("idx_platform_alerts_created").on(table.createdAt),
+}));
+
+export const usedPaymentTokens = sqliteTable("used_payment_tokens", {
+  tokenHash: text("token_hash").primaryKey(),
+  merchantId: text("merchant_id"),
+  discordId: text("discord_id"),
+  amountCents: integer("amount_cents"),
+  usedAt: integer("used_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+  merchantIdx: index("idx_used_payment_tokens_merchant").on(table.merchantId),
+  usedAtIdx: index("idx_used_payment_tokens_used_at").on(table.usedAt),
+}));

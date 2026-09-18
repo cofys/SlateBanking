@@ -695,12 +695,68 @@ citizenRouter.post("/api/citizen/onyx-token", requireAuth, async (req: express.R
       
       const jwt = require('jsonwebtoken');
       const discordId = (req as any).user.discordId;
-      const paymentToken = jwt.sign({ discordId, amount: parsedAmount }, process.env.JWT_SECRET, { expiresIn: '15m' });
+      const merchantId = req.body?.merchantId || null;
+      const paymentToken = jwt.sign({ discordId, amount: parsedAmount, merchantId }, process.env.JWT_SECRET, { expiresIn: '15m' });
       
       res.json({ paymentToken });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+
+citizenRouter.post("/api/citizen/pay-merchant", requireAuth, async (req: express.Request, res: express.Response) => {
+    try {
+      const { merchantId, sourceAccountId, amount, description, feePayerMode } = req.body;
+      const discordId = (req as any).user.discordId;
+      const cents = Math.round(parseFloat(amount) * 100);
+      if (!merchantId || !sourceAccountId || !Number.isFinite(cents) || cents <= 0) {
+        return res.status(400).json({ error: "Invalid payment" });
+      }
+      const { db } = await import("../../db/index.js");
+      const { onyxMerchants, bankAccounts, banks } = await import("../../db/schema.js");
+      const { eq } = await import("drizzle-orm");
+      const { executeBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money.js");
+      const { bankBlocksCustomerMoney } = await import("../../lib/tenant_guard.js");
+
+      const merchant = await db.select().from(onyxMerchants).where(eq(onyxMerchants.id, merchantId)).get();
+      if (!merchant) return res.status(404).json({ error: "Merchant not found" });
+      const dest = await db.select().from(bankAccounts).where(eq(bankAccounts.id, merchant.destinationAccount)).get();
+      if (!dest) return res.status(404).json({ error: "Merchant destination missing" });
+      const source = await db.select().from(bankAccounts).where(eq(bankAccounts.id, sourceAccountId)).get();
+      if (!source) return res.status(404).json({ error: "Source account not found" });
+      if (source.ownerDiscordId !== discordId) {
+        const { accountMembers } = await import("../../db/schema.js");
+        const { and } = await import("drizzle-orm");
+        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, source.id), eq(accountMembers.discordId, discordId))).get();
+        if (!membership || membership.role !== "manager") return res.status(403).json({ error: "Unauthorized" });
+      }
+      const srcBank = await db.select().from(banks).where(eq(banks.id, source.bankId)).get();
+      const block = bankBlocksCustomerMoney(srcBank);
+      if (block.blocked) return res.status(503).json({ error: block.reason });
+      const settings = await loadSettings(source.bankId);
+      const mode = parseFeePayerMode(feePayerMode, (settings?.defaultFeePayerMode as any) || "from_payment");
+      const moved = await executeBookTransfer({
+        sourceAccount: source,
+        destAccount: dest,
+        desiredCents: cents,
+        mode,
+        description: description || `Pay ${merchant.name}`,
+        type: "onyx_payment",
+      });
+      import("../../lib/customer_notify.js").then(({ notifyTransferReceived }) =>
+        notifyTransferReceived({
+          bankId: dest.bankId,
+          destOwnerDiscordId: dest.ownerDiscordId,
+          destAccountName: dest.accountName,
+          receivedCents: moved.quote.receivedCents,
+          fromLabel: source.accountName,
+        })
+      ).catch(() => {});
+      res.json({ success: true, quote: moved.quote, txId: moved.txId });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Payment failed" });
     }
   });
 
@@ -1147,6 +1203,15 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
          botManager.sendNotification(toBank, `💸 **Onyx Transfer In**: Received ${(parsedAmount/100).toFixed(2)} via clearinghouse.`);
       }
 
+      import("../../lib/customer_notify.js").then(({ notifyTransferReceived }) =>
+        notifyTransferReceived({
+          bankId: destAccount.bankId,
+          destOwnerDiscordId: destAccount.ownerDiscordId,
+          destAccountName: destAccount.accountName,
+          receivedCents: resultQuote?.receivedCents ?? parsedAmount,
+          fromLabel: sourceAccount.accountName,
+        })
+      ).catch(() => {});
       res.json({ success: true, quote: resultQuote });
     } catch (e: any) {
       console.error(e);

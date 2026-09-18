@@ -126,6 +126,10 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("banks", "status", "TEXT DEFAULT 'offline'");
   checkAndAddColumn("banks", "plan", "TEXT DEFAULT 'standard'");
   checkAndAddColumn("banks", "billing_status", "TEXT DEFAULT 'active'");
+  checkAndAddColumn("banks", "suspended_reason", "TEXT");
+  checkAndAddColumn("banks", "suspended_at", "INTEGER");
+  checkAndAddColumn("banks", "api_key_hash", "TEXT");
+  checkAndAddColumn("banks", "api_key_last4", "TEXT");
   checkAndAddColumn("banks", "billing_model", "TEXT DEFAULT 'flat_monthly'");
   checkAndAddColumn("banks", "flat_monthly_rate", "INTEGER DEFAULT 15000");
   checkAndAddColumn("banks", "volume_fee_percent", "INTEGER DEFAULT 50");
@@ -250,6 +254,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "discord_footer", "TEXT");
   checkAndAddColumn("bank_settings", "discord_bot_activity", "TEXT");
   checkAndAddColumn("bank_settings", "discord_show_stats", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "discord_notify_customers", "INTEGER DEFAULT 1");
 
   // Transactions table
   checkAndAddColumn("transactions", "from_account_id", "TEXT");
@@ -280,6 +285,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("loans", "off_system_reference", "TEXT");
   checkAndAddColumn("loans", "product_id", "TEXT");
   checkAndAddColumn("loans", "term_months", "INTEGER DEFAULT 12");
+  checkAndAddColumn("loans", "last_due_reminder_at", "INTEGER");
 
   // Escrows table
   checkAndAddColumn("escrows", "description", "TEXT");
@@ -308,6 +314,11 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("onyx_merchant_products", "description", "TEXT");
   checkAndAddColumn("onyx_quotes", "description", "TEXT");
   checkAndAddColumn("discord_webhooks", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("onyx_merchants", "api_key_hash", "TEXT");
+  checkAndAddColumn("onyx_merchants", "api_key_last4", "TEXT");
+
+  createTableIfNotExists("platform_alerts", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT, severity TEXT NOT NULL DEFAULT 'warning', code TEXT NOT NULL, message TEXT NOT NULL, is_open INTEGER DEFAULT 1, created_at INTEGER NOT NULL, resolved_at INTEGER, resolved_by TEXT");
+  createTableIfNotExists("used_payment_tokens", "token_hash TEXT PRIMARY KEY NOT NULL, merchant_id TEXT, discord_id TEXT, amount_cents INTEGER, used_at INTEGER NOT NULL");
 
   // Onyx Settings table
   checkAndAddColumn("onyx_settings", "b2b_api_fee_percent", "INTEGER DEFAULT 200");
@@ -352,6 +363,9 @@ function ensureDatabaseSchemaSynced() {
   createIndexIfNotExists("idx_payment_links_owner", "payment_links", "owner_discord_id");
   createIndexIfNotExists("idx_interbank_from_bank", "inter_bank_transfers", "from_bank_id");
   createIndexIfNotExists("idx_interbank_to_bank", "inter_bank_transfers", "to_bank_id");
+  createIndexIfNotExists("idx_platform_alerts_bank_id", "platform_alerts", "bank_id");
+  createIndexIfNotExists("idx_platform_alerts_open", "platform_alerts", "is_open");
+  createIndexIfNotExists("idx_used_payment_tokens_merchant", "used_payment_tokens", "merchant_id");
 }
 
 try {

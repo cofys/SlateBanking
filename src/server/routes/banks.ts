@@ -3724,10 +3724,18 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId/status", requireBankStaff, asy
           return res.status(400).json({ error: err.message || "Loan disbursement failed" });
         }
         await db.update(loans).set({ status: "active" }).where(eq(loans.id, req.params.loanId));
+        import("../../lib/customer_notify.js").then(({ notifyLoanEvent }) =>
+          notifyLoanEvent({ bankId: loan.bankId, discordId: loan.discordId, kind: "disbursed", loanId: loan.id, amountCents: loan.principalAmount, extra: "Funds are in your account." })
+        ).catch(() => {});
       } else if (requested === "rejected" && !pendingLike) {
         return res.status(400).json({ error: "Cannot reject a loan that has already been funded." });
       } else {
         await db.update(loans).set({ status: requested }).where(eq(loans.id, req.params.loanId));
+        if (requested === "rejected") {
+          import("../../lib/customer_notify.js").then(({ notifyLoanEvent }) =>
+            notifyLoanEvent({ bankId: loan.bankId, discordId: loan.discordId, kind: "denied", loanId: loan.id, extra: "The bank declined this application." })
+          ).catch(() => {});
+        }
       }
       res.json({ success: true });
     } catch (e: any) {
@@ -4117,13 +4125,27 @@ banksRouter.get("/api/banks/:bankId/developer", [requireBankStaff, requireRole([
       let bank = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
       if (!bank) return res.status(404).json({ error: "Bank not found" });
 
-      if (!bank.apiKey || !bank.webhookSecret) {
-         const newApi = "sk_live_" + crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').substring(0, 8);
-         const newWh = "whsec_" + crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').substring(0, 8);
-         bank = await db.update(banks).set({ apiKey: newApi, webhookSecret: newWh }).where(eq(banks.id, req.params.bankId)).returning().get();
+      const { hashApiKey, last4OfKey, generateBankApiKey, generateWebhookSecret } = await import("../../lib/api_keys.js");
+      let plaintextApi: string | null = null;
+      if (!bank.apiKeyHash && !bank.apiKey) {
+         const newApi = generateBankApiKey();
+         const newWh = generateWebhookSecret();
+         bank = await db.update(banks).set({
+           apiKey: `hashed:${hashApiKey(newApi)}`,
+           apiKeyHash: hashApiKey(newApi),
+           apiKeyLast4: last4OfKey(newApi),
+           webhookSecret: newWh,
+         } as any).where(eq(banks.id, req.params.bankId)).returning().get();
+         plaintextApi = newApi;
       }
 
-      res.json({ apiKey: bank.apiKey, webhookSecret: bank.webhookSecret });
+      res.json({
+        apiKey: plaintextApi,
+        apiKeyLast4: (bank as any).apiKeyLast4 || (plaintextApi ? plaintextApi.slice(-4) : null),
+        hasApiKey: Boolean((bank as any).apiKeyHash || bank.apiKey),
+        webhookSecret: bank.webhookSecret,
+        apiWebhookUrl: bank.apiWebhookUrl,
+      });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: (e as any).message });
@@ -4153,14 +4175,20 @@ banksRouter.post("/api/banks/:bankId/developer/roll", [requireBankStaff, require
     const { banks } = await import("../../db/schema");
     const { eq } = await import("drizzle-orm");
     try {
-       const newApi = "sk_live_" + crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').substring(0, 8);
-       const newWh = "whsec_" + crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').substring(0, 8);
+       const { hashApiKey, last4OfKey, generateBankApiKey, generateWebhookSecret } = await import("../../lib/api_keys.js");
+       const newApi = generateBankApiKey();
+       const newWh = generateWebhookSecret();
        const bank = await db.update(banks)
-         .set({ apiKey: newApi, webhookSecret: newWh })
+         .set({
+           apiKey: `hashed:${hashApiKey(newApi)}`,
+           apiKeyHash: hashApiKey(newApi),
+           apiKeyLast4: last4OfKey(newApi),
+           webhookSecret: newWh,
+         } as any)
          .where(eq(banks.id, req.params.bankId))
          .returning().get();
        if (!bank) return res.status(404).json({ error: "Bank not found" });
-       res.json({ apiKey: bank.apiKey, webhookSecret: bank.webhookSecret });
+       res.json({ apiKey: newApi, apiKeyLast4: last4OfKey(newApi), webhookSecret: newWh });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: (e as any).message });

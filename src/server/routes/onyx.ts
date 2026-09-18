@@ -9,7 +9,6 @@ const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
 export const onyxRouter = express.Router();
 
-const usedPaymentTokens = new Set<string>();
 
 onyxRouter.get("/api/onyx/merchant/:id", async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
@@ -370,19 +369,22 @@ onyxRouter.post("/api/onyx/merchants", requireGlobalAdmin, async (req: express.R
     
     try {
       const { name, bankId, destinationAccount } = req.body;
-      const apiKey = "onyx_live_" + crypto.randomBytes(24).toString('hex');
+      const { hashApiKey, last4OfKey, generateMerchantApiKey } = await import("../../lib/api_keys.js");
+      const apiKey = generateMerchantApiKey();
       
       const newMerchant = {
         id: uuidv4(),
         name,
         bankId,
         destinationAccount,
-        apiKey,
+        apiKey: `hashed:${hashApiKey(apiKey)}`,
+        apiKeyHash: hashApiKey(apiKey),
+        apiKeyLast4: last4OfKey(apiKey),
         createdAt: new Date(),
       };
       
       await db.insert(onyxMerchants).values(newMerchant);
-      res.json(newMerchant);
+      res.json({ ...newMerchant, apiKey });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
@@ -399,14 +401,33 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { decryptSecret } = await import("../../lib/encryption");
+      const { verifyPresentedKey, hashApiKey, last4OfKey } = await import("../../lib/api_keys.js");
+      const { consumePaymentToken } = await import("../../lib/payment_tokens.js");
+      const { bankIsSuspended } = await import("../../lib/tenant_guard.js");
+      const { banks } = await import("../../db/schema");
       const allMerchants = await db.select().from(onyxMerchants);
-      const merchant = allMerchants.find((m) => {
-        if (!m.apiKey) return false;
-        if (m.apiKey === apiKey) return true;
-        return decryptSecret(m.apiKey) === apiKey;
-      });
+      const merchant = allMerchants.find((m) => verifyPresentedKey({
+        presented: apiKey,
+        storedHash: (m as any).apiKeyHash,
+        storedEncrypted: m.apiKey,
+      }).ok);
       if (!merchant) return res.status(403).json({ error: "Invalid API key" });
+      const verified = verifyPresentedKey({
+        presented: apiKey,
+        storedHash: (merchant as any).apiKeyHash,
+        storedEncrypted: merchant.apiKey,
+      });
+      if (verified.needsBackfill) {
+        await db.update(onyxMerchants).set({
+          apiKeyHash: hashApiKey(apiKey),
+          apiKeyLast4: last4OfKey(apiKey),
+        } as any).where(eq(onyxMerchants.id, merchant.id));
+      }
+
+      const merchantBank = await db.select().from(banks).where(eq(banks.id, merchant.bankId)).get();
+      if (bankIsSuspended(merchantBank)) {
+        return res.status(403).json({ error: "Receiving bank is suspended." });
+      }
 
       const { userDiscordId, amountCents, description, sourceAccountId, paymentToken } = req.body;
 
@@ -420,19 +441,28 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
 
       const jwt = require('jsonwebtoken');
       const JWT_SECRET = process.env.JWT_SECRET;
+      let decoded: any;
       try {
-          const decoded = jwt.verify(paymentToken, JWT_SECRET, { algorithms: ["HS256"] });
+          decoded = jwt.verify(paymentToken, JWT_SECRET, { algorithms: ["HS256"] });
           if (decoded.discordId !== userDiscordId || decoded.amount !== amountCents) {
              return res.status(403).json({ error: "Payment token does not match requested amount or user." });
+          }
+          if (decoded.merchantId && decoded.merchantId !== merchant.id) {
+             return res.status(403).json({ error: "Payment token is bound to a different merchant." });
           }
       } catch (e) {
           return res.status(403).json({ error: "Invalid or expired payment token." });
       }
 
-      if (usedPaymentTokens.has(paymentToken)) {
+      const consumed = await consumePaymentToken({
+        token: paymentToken,
+        merchantId: merchant.id,
+        discordId: userDiscordId,
+        amountCents,
+      });
+      if (!consumed) {
         return res.status(403).json({ error: "Payment token already used" });
       }
-      usedPaymentTokens.add(paymentToken);
 
       let userAccount: any = null;
       let sourceCard: any = null;

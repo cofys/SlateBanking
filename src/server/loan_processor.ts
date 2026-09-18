@@ -542,6 +542,16 @@ export async function processDueLoanRepayments(targetBankId?: string, opts?: { i
         loan.bankId,
         `💳 **Automated Loan Repayment**: Debited $${(installment / 100).toFixed(2)} from account **${account.accountName}** (<@${loan.discordId}>) for Loan #${loan.id.substring(0, 8)}.${isPaidOff ? " 🎉 **LOAN FULLY PAID OFF!**" : ""}`
       );
+      import("../lib/customer_notify.js").then(({ notifyLoanEvent }) =>
+        notifyLoanEvent({
+          bankId: loan.bankId,
+          discordId: loan.discordId,
+          kind: "paid",
+          loanId: loan.id,
+          amountCents: installment,
+          extra: isPaidOff ? "This loan is paid off." : undefined,
+        })
+      ).catch(() => {});
     } else {
       const due = loan.nextPaymentDate ? new Date(loan.nextPaymentDate) : now;
       const graceEnd = new Date(due);
@@ -593,6 +603,18 @@ export async function processDueLoanRepayments(targetBankId?: string, opts?: { i
           ? `🚨 **LOAN DEFAULT NOTICE**: Loan #${loan.id.substring(0, 8)} (<@${loan.discordId}>) has DEFAULTED after ${missedCount} missed payments! Late fee $${(lateFee / 100).toFixed(2)} added. Collateral status updated to **SEIZED**.`
           : `⚠️ **Loan Repayment Failed**: Automated debit of $${(installment / 100).toFixed(2)} failed for Loan #${loan.id.substring(0, 8)} (<@${loan.discordId}>). Late fee penalty of $${(lateFee / 100).toFixed(2)} added. Loan is now **DELINQUENT**.`
       );
+      import("../lib/customer_notify.js").then(({ notifyLoanEvent }) =>
+        notifyLoanEvent({
+          bankId: loan.bankId,
+          discordId: loan.discordId,
+          kind: isDefault ? "defaulted" : "failed",
+          loanId: loan.id,
+          amountCents: installment,
+          extra: isDefault
+            ? "This loan has defaulted. Contact the bank."
+            : `Late fee $${(lateFee / 100).toFixed(2)} assessed. Please fund your account.`,
+        })
+      ).catch(() => {});
     }
   }
 
@@ -782,4 +804,34 @@ export async function processDueCreditRepayments(targetBankId?: string) {
 /** Loan cron is owned by src/lib/cron.ts (15-min). This is a no-op so a second timer cannot double-debit. */
 export function startLoanCron() {
   if (loanCronInterval) return;
+}
+
+export async function notifyUpcomingLoanPayments() {
+  const now = Date.now();
+  const horizon = now + 3 * 24 * 60 * 60 * 1000;
+  const active = await db.select().from(loans).where(inArray(loans.status, ["active", "delinquent"]));
+  let sent = 0;
+  for (const loan of active) {
+    const due = loan.nextPaymentDate ? new Date(loan.nextPaymentDate).getTime() : 0;
+    if (!due || due > horizon || due + 12 * 60 * 60 * 1000 < now) continue;
+    const last = (loan as any).lastDueReminderAt ? new Date((loan as any).lastDueReminderAt).getTime() : 0;
+    if (last && now - last < 36 * 60 * 60 * 1000) continue;
+    const days = Math.max(0, Math.ceil((due - now) / 86400000));
+    try {
+      const { notifyLoanEvent } = await import("../lib/customer_notify.js");
+      await notifyLoanEvent({
+        bankId: loan.bankId,
+        discordId: loan.discordId,
+        kind: "due",
+        loanId: loan.id,
+        amountCents: loan.remainingAmount,
+        extra: days <= 0 ? "Payment is due today." : `Payment due in ${days} day${days === 1 ? "" : "s"}.`,
+      });
+      await db.update(loans).set({ lastDueReminderAt: new Date() } as any).where(eq(loans.id, loan.id));
+      sent++;
+    } catch (e) {
+      console.error("[loan due reminder]", e);
+    }
+  }
+  return { sent };
 }

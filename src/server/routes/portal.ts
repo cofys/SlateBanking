@@ -312,7 +312,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           inArray(transactions.toAccountId, accountIds)
         ))
         .orderBy(desc(transactions.timestamp))
-        .limit(10);
+        .limit(50);
 
       const mappedTxs = recentTxs.map(tx => ({
         ...tx,
@@ -405,6 +405,9 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
       const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
       const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
+      if (targetBank?.billingStatus === "suspended" || targetBank?.status === "suspended") {
+        return res.status(503).json({ error: "This bank is suspended. Transfers are frozen." });
+      }
       if (targetBank?.maintenanceMode) {
         const isStaff = await isUserStaffOrAdmin(req, bankId);
         if (!isStaff) {
@@ -444,13 +447,43 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
     }
   });
 
+
+portalRouter.post("/api/portal/:bankId/transfer/quote", requireAuth, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { bankAccounts, banks } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    try {
+      const { fromAccountId, toAccountId, amount, feePayerMode } = req.body;
+      const bankId = req.params.bankId;
+      const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+      const cents = Math.round(parseFloat(amount) * 100);
+      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+        return res.status(400).json({ error: "Invalid account selection" });
+      }
+      if (!Number.isFinite(cents) || cents <= 0) return res.status(400).json({ error: "Invalid amount" });
+      const sourceAccount = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bankId))).get();
+      if (!sourceAccount || !(await isUserAccountOwnerOrMember(sourceAccount, candidateIds))) {
+        return res.status(404).json({ error: "Source account not found or unauthorized" });
+      }
+      const destAccount = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId)).get();
+      if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
+      const { quoteBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
+      const settings = await loadSettings(bankId);
+      const mode = parseFeePayerMode(feePayerMode, (settings?.defaultFeePayerMode as any) || "from_payment");
+      const { quote } = await quoteBookTransfer({ sourceAccount, destAccount, desiredCents: cents, mode });
+      res.json({ success: true, quote, sameBank: sourceAccount.bankId === destAccount.bankId, defaultFeePayerMode: settings?.defaultFeePayerMode || "from_payment" });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Quote failed" });
+    }
+  });
+
 portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { bankAccounts, banks } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
 
     try {
-      const { fromAccountId, toAccountId, amount } = req.body;
+      const { fromAccountId, toAccountId, amount, feePayerMode } = req.body;
       const bankId = req.params.bankId;
       const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
@@ -486,17 +519,29 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
       if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
       if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
-      const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
-      await executeSameBankBookTransfer({
+      const { executeSameBankBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
+      const settings = await loadSettings(bankId);
+      const mode = parseFeePayerMode(feePayerMode, (settings?.defaultFeePayerMode as any) || "from_payment");
+      const moved = await executeSameBankBookTransfer({
         sourceAccount,
         destAccount,
         desiredCents: amnt,
-        mode: "from_payment",
-        description: `Citizen Portal Transfer to ${toAccountId.substring(0, 8)}`,
+        mode,
+        description: `Citizen Portal Transfer to ${destAccount.accountName}`,
         type: "transfer",
       });
 
-      res.json({ success: true });
+      import("../../lib/customer_notify.js").then(({ notifyTransferReceived }) =>
+        notifyTransferReceived({
+          bankId,
+          destOwnerDiscordId: destAccount.ownerDiscordId,
+          destAccountName: destAccount.accountName,
+          receivedCents: moved.quote.receivedCents,
+          fromLabel: sourceAccount.accountName,
+        })
+      ).catch(() => {});
+
+      res.json({ success: true, quote: moved.quote, txId: moved.txId });
     } catch (e: any) {
       console.error(e);
       if (e?.name === "MoneyRailError") {
@@ -525,6 +570,14 @@ portalRouter.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async 
       }
 
       await db.update(cards).set({ isLocked: !!isLocked }).where(eq(cards.id, req.params.cardId));
+      import("../../lib/customer_notify.js").then(({ notifyCardLocked }) =>
+        notifyCardLocked({
+          bankId,
+          discordId: account.ownerDiscordId,
+          last4: card.cardNumber ? String(card.cardNumber).slice(-4) : undefined,
+          locked: !!isLocked,
+        })
+      ).catch(() => {});
       res.json({ success: true });
     } catch (e: any) {
       console.error(e);
@@ -997,6 +1050,17 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
       termMonths: parseInt(termMonths) || undefined,
       allowAutoApprove: true,
     });
+
+    import("../../lib/customer_notify.js").then(({ notifyLoanEvent }) =>
+      notifyLoanEvent({
+        bankId,
+        discordId: candidateIds[0],
+        kind: result.status === "active" ? "disbursed" : "applied",
+        loanId: result.loan.id,
+        amountCents: result.loan.principalAmount,
+        extra: result.status === "active" ? "Funds are in your account." : "Staff will review your application.",
+      })
+    ).catch(() => {});
 
     res.json({
       success: true,

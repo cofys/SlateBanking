@@ -5,7 +5,7 @@ import { eq, and, lte, isNotNull } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { CityCorpClient } from "./citycorp_api";
 import { processYieldsAndAutomations } from "./yield_engine";
-import { processDueLoanRepayments, processDueCreditRepayments, accrueLoanInterest } from "../server/loan_processor";
+import { processDueLoanRepayments, processDueCreditRepayments, accrueLoanInterest, notifyUpcomingLoanPayments } from "../server/loan_processor";
 
 export function startCronJobs() {
   console.log("[Cron] Starting background automated pipelines...");
@@ -17,6 +17,7 @@ export function startCronJobs() {
       await processDueLoanRepayments();
       await processDueCreditRepayments();
       await accrueLoanInterest();
+      await notifyUpcomingLoanPayments();
       const { processDueNetSettlements } = await import("./net_settlement");
       await processDueNetSettlements();
     } catch (e) {

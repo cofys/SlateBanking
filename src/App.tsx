@@ -45,8 +45,45 @@ import { PublicDocs } from "./pages/PublicDocs";
 
 import { BankCompliance } from "./pages/BankCompliance";
 import { BankMEAReport } from "./pages/BankMEAReport";
+import { NetworkHealth } from "./pages/NetworkHealth";
+import { BankQueue } from "./pages/BankQueue";
+import { BankTeller } from "./pages/BankTeller";
+import { BankCollections } from "./pages/BankCollections";
 import { useState, useEffect } from "react";
 
+const bankStaffRoutes = (
+  <>
+    <Route index element={<BankOverview />} />
+    <Route path="queue" element={<BankQueue />} />
+    <Route path="teller" element={<BankTeller />} />
+    <Route path="collections" element={<BankCollections />} />
+    <Route path="analytics" element={<BankAnalytics />} />
+    <Route path="customers" element={<BankCustomers />} />
+    <Route path="customers/:discordId" element={<BankCustomerDetail />} />
+    <Route path="accounts" element={<BankAccounts />} />
+    <Route path="accounts/:accountId" element={<BankAccountDetail />} />
+    <Route path="transactions" element={<BankTransactions />} />
+    <Route path="compliance" element={<BankCompliance />} />
+    <Route path="interest" element={<BankInterest />} />
+    <Route path="mea-report" element={<BankMEAReport />} />
+    <Route path="loans" element={<BankLoans />} />
+    <Route path="vaults" element={<BankVaults />} />
+    <Route path="cards" element={<BankCards />} />
+    <Route path="payroll" element={<BankPayroll />} />
+    <Route path="subscriptions" element={<BankSubscriptions />} />
+    <Route path="escrow" element={<BankEscrow />} />
+    <Route path="treasury" element={<BankTreasury />} />
+    <Route path="tiers" element={<BankTiers />} />
+    <Route path="invoices" element={<BankInvoices />} />
+    <Route path="clearinghouse" element={<BankClearinghouse />} />
+    <Route path="audit" element={<BankAuditLog />} />
+    <Route path="tools" element={<BankTools />} />
+    <Route path="developer" element={<BankDeveloper />} />
+    <Route path="team" element={<BankTeam />} />
+    <Route path="products" element={<BankProducts />} />
+    <Route path="settings" element={<BankSettings />} />
+  </>
+);
 
 function App() {
   const [customBankId, setCustomBankId] = useState<string | null>(null);
@@ -54,7 +91,6 @@ function App() {
 
   useEffect(() => {
     const hostname = window.location.hostname;
-    // Don't lookup for default domains or localhost
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('run.app') || hostname === 'sb.azisle.com' || hostname === 'azisle.com' || hostname === 'www.azisle.com') {
        setCheckingDomain(false);
        return;
@@ -82,32 +118,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/bank/:bankId" element={<BankAdminLayout />}>
-            <Route index element={<BankOverview />} />
-            <Route path="analytics" element={<BankAnalytics />} />
-            <Route path="customers" element={<BankCustomers />} />
-            <Route path="customers/:discordId" element={<BankCustomerDetail />} />
-            <Route path="accounts" element={<BankAccounts />} />
-            <Route path="accounts/:accountId" element={<BankAccountDetail />} />
-            <Route path="transactions" element={<BankTransactions />} />
-            <Route path="compliance" element={<BankCompliance />} />
-            <Route path="interest" element={<BankInterest />} />
-            <Route path="mea-report" element={<BankMEAReport />} />
-            <Route path="loans" element={<BankLoans />} />
-            <Route path="vaults" element={<BankVaults />} />
-            <Route path="cards" element={<BankCards />} />
-            <Route path="payroll" element={<BankPayroll />} />
-            <Route path="subscriptions" element={<BankSubscriptions />} />
-            <Route path="escrow" element={<BankEscrow />} />
-            <Route path="treasury" element={<BankTreasury />} />
-            <Route path="tiers" element={<BankTiers />} />
-            <Route path="invoices" element={<BankInvoices />} />
-            <Route path="clearinghouse" element={<BankClearinghouse />} />
-            <Route path="audit" element={<BankAuditLog />} />
-            <Route path="tools" element={<BankTools />} />
-            <Route path="developer" element={<BankDeveloper />} />
-            <Route path="team" element={<BankTeam />} />
-            <Route path="products" element={<BankProducts />} />
-            <Route path="settings" element={<BankSettings />} />
+            {bankStaffRoutes}
           </Route>
           <Route path="/bank" element={<Navigate to={`/bank/${customBankId}`} replace />} />
           <Route path="/admin" element={<Navigate to={`/bank/${customBankId}`} replace />} />
@@ -134,39 +145,13 @@ function App() {
         <Route path="/pay/:linkId" element={<PayLink />} />
         <Route path="/onyx/checkout" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><OnyxCheckout /></div>} />
         
-        {/* Bank Context / Whitelabeled Admin */}
         <Route path="/bank/:bankId" element={<BankAdminLayout />}>
-          <Route index element={<BankOverview />} />
-          <Route path="analytics" element={<BankAnalytics />} />
-          <Route path="customers" element={<BankCustomers />} />
-          <Route path="customers/:discordId" element={<BankCustomerDetail />} />
-          <Route path="accounts" element={<BankAccounts />} />
-          <Route path="accounts/:accountId" element={<BankAccountDetail />} />
-          <Route path="transactions" element={<BankTransactions />} />
-          <Route path="compliance" element={<BankCompliance />} />
-          <Route path="interest" element={<BankInterest />} />
-          <Route path="mea-report" element={<BankMEAReport />} />
-          <Route path="loans" element={<BankLoans />} />
-          <Route path="vaults" element={<BankVaults />} />
-          <Route path="cards" element={<BankCards />} />
-          <Route path="payroll" element={<BankPayroll />} />
-          <Route path="subscriptions" element={<BankSubscriptions />} />
-          <Route path="escrow" element={<BankEscrow />} />
-          <Route path="treasury" element={<BankTreasury />} />
-          <Route path="tiers" element={<BankTiers />} />
-          <Route path="invoices" element={<BankInvoices />} />
-          <Route path="clearinghouse" element={<BankClearinghouse />} />
-          <Route path="audit" element={<BankAuditLog />} />
-          <Route path="tools" element={<BankTools />} />
-          <Route path="developer" element={<BankDeveloper />} />
-          <Route path="team" element={<BankTeam />} />
-          <Route path="products" element={<BankProducts />} />
-          <Route path="settings" element={<BankSettings />} />
+          {bankStaffRoutes}
         </Route>
 
-        {/* Global Slate SaaS Admin */}
         <Route path="/" element={<DashboardLayout />}>
           <Route index element={<Overview />} />
+          <Route path="health" element={<NetworkHealth />} />
           <Route path="banks" element={<BanksList />} />
           <Route path="transactions" element={<TransactionsList />} />
           <Route path="onyx" element={<OnyxSettings />} />

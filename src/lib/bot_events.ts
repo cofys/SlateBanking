@@ -93,6 +93,15 @@ export class CityCorpWebSocket {
     }, this.reconnectDelay);
   }
 
+  public getHealth() {
+    const ready = this.ws ? this.ws.readyState : -1;
+    return {
+      connected: ready === 1,
+      failureCount: this.failureCount,
+      closed: this.isClosed,
+    };
+  }
+
   public close() {
     this.isClosed = true;
     if (this.ws) {
@@ -193,6 +202,15 @@ export class CityCorpWebSocket {
               this.bankId,
               `🚨 **RESERVE_BREACH**: SETTLEMENT dropped $${(drop / 100).toFixed(2)} without a matching Slate debit (now $${(newCents / 100).toFixed(2)}). Outbound Onyx should be reviewed.`
             );
+            import("./platform_alerts.js").then(({ raisePlatformAlert }) =>
+              raisePlatformAlert({
+                bankId: this.bankId,
+                severity: "critical",
+                code: "RESERVE_BREACH",
+                message: `SETTLEMENT dropped $${(drop / 100).toFixed(2)} without a matching Slate debit (now $${(newCents / 100).toFixed(2)}).`,
+                dedupeMinutes: 10,
+              })
+            ).catch(() => {});
           }
         }
         const warn = settings?.settlementWarnCents || 0;
@@ -233,4 +251,12 @@ export function addCityCorpEventSubscriber(bankId: string, apiUuid: string, apiK
   const ws = new CityCorpWebSocket(bankId, apiUuid, apiKey);
   ws.connect();
   activeSockets.set(bankId, ws);
+}
+
+export function getCityCorpListenerHealth(): Record<string, { connected: boolean; failureCount: number; closed: boolean }> {
+  const out: Record<string, { connected: boolean; failureCount: number; closed: boolean }> = {};
+  for (const [id, sock] of activeSockets.entries()) {
+    out[id] = sock.getHealth();
+  }
+  return out;
 }

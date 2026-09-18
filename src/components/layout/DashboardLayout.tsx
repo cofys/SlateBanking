@@ -15,6 +15,7 @@ export function DashboardLayout() {
   const navItems = [
   { path: "/security", label: "Security Suite", icon: ShieldAlert },
     { name: "Overview", path: "/", icon: Activity },
+    { name: "Network Health", path: "/health", icon: Eye },
     { name: "Bank Instances", path: "/banks", icon: Building2 },
     { name: "Global Transactions", path: "/transactions", icon: Activity },
     { name: "Onyx Network (PSP)", path: "/onyx", icon: Shield },

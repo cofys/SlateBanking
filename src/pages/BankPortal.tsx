@@ -1,1784 +1,834 @@
-import { useState, useEffect, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
-import { 
-  Search, Wallet, ArrowRight, ShieldCheck, Clock, CreditCard, Eye, EyeOff, 
-  Lock, Unlock, Loader2, Link2, LogIn, LogOut, Sparkles, CheckCircle2, 
-  AlertTriangle, ArrowUpRight, ArrowDownRight, Send, DollarSign, Activity,
-  FileText, Landmark, UserCheck, Plus, X, Copy, Check, Layers, PieChart,
-  ChevronRight, Building2, HelpCircle, Download, Filter, RefreshCw,
-  SlidersHorizontal, CheckSquare, BarChart2
-} from "lucide-react";
-import { format } from "date-fns";
 import { formatMoney } from "../lib/utils";
+import { format } from "date-fns";
 import { motion, AnimatePresence } from "motion/react";
+import {
+  ArrowDownLeft, ArrowUpRight, Building2, Check, ChevronRight, Copy, CreditCard,
+  FileText, Landmark, Loader2, Lock, LogIn, LogOut, Plus, Send, ShieldCheck,
+  Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock
+} from "lucide-react";
 
-interface ThemeConfig {
-  primary: string;
-  bg: string;
-  text: string;
-  border: string;
-  hoverBg: string;
-  glow: string;
-  fromGradient: string;
-  toGradient: string;
-  textAccent: string;
-  bgLight: string;
-  ring: string;
+type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply";
+
+function hexOr(raw: any, fallback = "#6366f1") {
+  const h = String(raw || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(h) ? h : fallback;
 }
-
-const schemeMap: Record<string, ThemeConfig> = {
-  indigo: {
-    primary: "indigo-500",
-    bg: "bg-indigo-600",
-    text: "text-indigo-400",
-    border: "border-indigo-500/20",
-    hoverBg: "hover:bg-indigo-500",
-    glow: "shadow-indigo-500/10",
-    fromGradient: "from-indigo-600",
-    toGradient: "to-indigo-950",
-    textAccent: "text-indigo-400",
-    bgLight: "bg-indigo-500/10",
-    ring: "focus:ring-indigo-500/40"
-  },
-  emerald: {
-    primary: "emerald-500",
-    bg: "bg-emerald-600",
-    text: "text-emerald-400",
-    border: "border-emerald-500/20",
-    hoverBg: "hover:bg-emerald-500",
-    glow: "shadow-emerald-500/10",
-    fromGradient: "from-emerald-600",
-    toGradient: "to-emerald-950",
-    textAccent: "text-emerald-400",
-    bgLight: "bg-emerald-500/10",
-    ring: "focus:ring-emerald-500/40"
-  },
-  rose: {
-    primary: "rose-500",
-    bg: "bg-rose-600",
-    text: "text-rose-400",
-    border: "border-rose-500/20",
-    hoverBg: "hover:bg-rose-500",
-    glow: "shadow-rose-500/10",
-    fromGradient: "from-rose-600",
-    toGradient: "to-rose-950",
-    textAccent: "text-rose-400",
-    bgLight: "bg-rose-500/10",
-    ring: "focus:ring-rose-500/40"
-  },
-  amber: {
-    primary: "amber-500",
-    bg: "bg-amber-600",
-    text: "text-amber-400",
-    border: "border-amber-500/20",
-    hoverBg: "hover:bg-amber-500",
-    glow: "shadow-amber-500/10",
-    fromGradient: "from-amber-600",
-    toGradient: "to-amber-950",
-    textAccent: "text-amber-400",
-    bgLight: "bg-amber-500/10",
-    ring: "focus:ring-amber-500/40"
-  },
-  zinc: {
-    primary: "zinc-400",
-    bg: "bg-zinc-600",
-    text: "text-zinc-400",
-    border: "border-zinc-500/20",
-    hoverBg: "hover:bg-zinc-500",
-    glow: "shadow-zinc-500/10",
-    fromGradient: "from-zinc-600",
-    toGradient: "to-zinc-950",
-    textAccent: "text-zinc-400",
-    bgLight: "bg-zinc-500/10",
-    ring: "focus:ring-zinc-400/40"
-  },
-};
+function withAlpha(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgba(${r},${g},${b},${a})`;
+}
+function greet() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
 
 export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const params = useParams();
   const bankId = overrideBankId || params.bankId;
   const { user, login, logout, isLoading, rememberMe, setRememberMe } = useAuth();
+
   const [bank, setBank] = useState<any>(null);
   const [bankNotFound, setBankNotFound] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
-  const [visibleCardIds, setVisibleCardIds] = useState<Record<string, boolean>>({});
-  const [onyxMerchants, setOnyxMerchants] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<View>("home");
   const [oauthSuccess, setOauthSuccess] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState(false);
-  
-  // Tab Selection: "transfer" | "onyx" | "invoices" | "loans" | "cards" | "subscriptions"
-  const [activeTab, setActiveTab] = useState<"transfer" | "onyx" | "invoices" | "loans" | "cards" | "subscriptions">("transfer");
-  
-  // Selected account for filtering & focused actions
-  const [selectedAccountId, setSelectedAccountId] = useState<string | "all">("all");
-  const [txTypeFilter, setTxTypeFilter] = useState<string>("all");
-
-  // Ledger search & filters
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTx, setSelectedTx] = useState<any | null>(null);
-  const [copiedTxId, setCopiedTxId] = useState(false);
-
-  // Modals
-  const [showOpenAccountModal, setShowOpenAccountModal] = useState(false);
-  const [showApplyLoanModal, setShowApplyLoanModal] = useState(false);
-  const [portalLoanProducts, setPortalLoanProducts] = useState<any[]>([]);
-  const [showIssueCardModal, setShowIssueCardModal] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+  const [loanProducts, setLoanProducts] = useState<any[]>([]);
+  const [merchants, setMerchants] = useState<any[]>([]);
   const [repayingLoan, setRepayingLoan] = useState<any | null>(null);
 
-  // Interactive UI loaders
-  const [transferPending, setTransferPending] = useState(false);
-  const [onyxPending, setOnyxPending] = useState(false);
-  const [invoicePayId, setInvoicePayId] = useState<string | null>(null);
-  const [lockingCardId, setLockingCardId] = useState<string | null>(null);
-  const [actionPending, setActionPending] = useState(false);
+  const [sendFrom, setSendFrom] = useState("");
+  const [sendTo, setSendTo] = useState("");
+  const [sendAmt, setSendAmt] = useState("");
+  const [sendMemo, setSendMemo] = useState("");
+  const [feeMode, setFeeMode] = useState<"from_payment" | "sender_covers">("from_payment");
+  const [quote, setQuote] = useState<any>(null);
+  const [quoteErr, setQuoteErr] = useState("");
+  const [quoting, setQuoting] = useState(false);
 
-  // Auto-refresh upon OAuth popup messaging
-  useEffect(() => {
-    const handleMessage = (e: MessageEvent) => {
-      if (e.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        handleSearch();
-      }
-    };
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'oauth_auth_success') {
-        handleSearch();
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    window.addEventListener('storage', handleStorage);
-    return () => {
-      window.removeEventListener('message', handleMessage);
-      window.removeEventListener('storage', handleStorage);
-    };
-  }, [bankId]);
+  const brand = hexOr(bank?.brandingColor || bank?.settings?.brandingColor);
+  const settings = bank?.settings || {};
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("oauth") === "success") {
-      setOauthSuccess(params.get("username"));
-      window.history.replaceState({}, document.title, window.location.pathname);
+  const flash = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3200);
+  };
+  const copy = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(id);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {}
+  };
+
+  const handleSearch = async () => {
+    if (!bankId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/lookup`);
+      if (res.ok) setUserData(await res.json());
+      else setUserData({ error: "No accounts at this bank yet." });
+    } catch {
+      setUserData({ error: "Could not load your accounts." });
     }
-  }, []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    if (!showApplyLoanModal || !bankId) return;
-    fetch(`/api/portal/${bankId}/loan-products`)
-      .then(r => r.json())
-      .then(d => setPortalLoanProducts(Array.isArray(d) ? d : []))
-      .catch(() => setPortalLoanProducts([]));
-  }, [showApplyLoanModal, bankId]);
-
-  useEffect(() => {
+    if (!bankId) return;
     fetch(`/api/portal/${bankId}/info`)
-      .then(r => r.json())
-      .then(d => {
-        if (!d.error) { 
-          setBank(d); 
-          document.title = `${d.name} | Client Portal`; 
-        } else {
-          setBankNotFound(true);
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) setBankNotFound(true);
+        else {
+          setBank(d);
+          document.title = `${d.name} · Banking`;
         }
       })
       .catch(() => setBankNotFound(true));
-      
-    fetch("/api/onyx/merchants")
-      .then(r => r.json())
-      .then(d => setOnyxMerchants(d || []));
+    fetch("/api/onyx/merchants").then((r) => r.json()).then((d) => setMerchants(Array.isArray(d) ? d : [])).catch(() => {});
   }, [bankId]);
 
   useEffect(() => {
     if (user && bank) handleSearch();
   }, [user, bank]);
 
-  const colorSchemeKey = bank?.settings?.colorScheme || 'indigo';
-  const theme = schemeMap[colorSchemeKey] || schemeMap.indigo;
-
-  const toggleCardVisibility = (id: string) => {
-    setVisibleCardIds(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const formatCardNumber = (num: string, visible: boolean) => {
-    if (!num) return "";
-    const chunks = num.match(/.{1,4}/g) || [];
-    if (visible) return chunks.join(" ");
-    return `•••• •••• •••• ${chunks[3] || "0000"}`;
-  };
-
-
-  const handleToggleCard = async (cardId: string, locked: boolean) => {
-    try {
-      const res = await fetch(`/api/portal/${bankId}/cards/${cardId}/lock`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isLocked: locked })
-      });
-      if (res.ok) {
-         handleSearch();
-      } else {
-         const d = await res.json();
-         alert(d.error || "Failed to update card status");
-      }
-    } catch (e) {
-      alert("Network error updating card status");
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("oauth") === "success") {
+      setOauthSuccess(q.get("username"));
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
-  };
+  }, []);
 
-  const handleSearch = async (e?: React.FormEvent | React.MouseEvent) => {
-    e?.preventDefault();
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/portal/${bankId}/lookup`);
-      if (res.ok) {
-        setUserData(await res.json());
-      } else {
-        setUserData({ error: "No accounts found for this user at this bank." });
-      }
-    } catch (e) {
-      console.error(e);
-      setUserData({ error: "System error while fetching data." });
-    }
-    setLoading(false);
-  };
-
-  // Calculate Net Worth across all user accounts in this bank
-  const netWorthCents = userData?.accounts?.reduce((sum: number, acc: any) => sum + (acc.balance || 0), 0) || 0;
-
-  // Filter local recent transactions client-side
-  const filteredTx = useMemo(() => {
-    if (!userData?.recentTx) return [];
-    return userData.recentTx.filter((tx: any) => {
-      const term = searchTerm.toLowerCase();
-      const matchesSearch = !term || (
-        (tx.description || "").toLowerCase().includes(term) ||
-        (tx.type || "").toLowerCase().includes(term) ||
-        (tx.fromAccountId || "").toLowerCase().includes(term) ||
-        (tx.toAccountId || "").toLowerCase().includes(term) ||
-        (tx.id || "").toLowerCase().includes(term)
-      );
-
-      const matchesAccount = selectedAccountId === "all" || 
-        tx.fromAccountId === selectedAccountId || 
-        tx.toAccountId === selectedAccountId;
-
-      const matchesType = txTypeFilter === "all" || tx.type === txTypeFilter;
-
-      return matchesSearch && matchesAccount && matchesType;
-    });
-  }, [userData?.recentTx, searchTerm, selectedAccountId, txTypeFilter]);
-
-  // Export transaction ledger to CSV
-  const exportLedgerCSV = () => {
-    if (!filteredTx || filteredTx.length === 0) {
-      alert("No transaction records to export.");
+  useEffect(() => {
+    if (!sendFrom || !sendTo || !sendAmt || sendFrom === sendTo) {
+      setQuote(null);
       return;
     }
-    const headers = ["Transaction ID", "Date", "Type", "From Account", "To Account", "Amount ($)", "Memo / Description"];
-    const rows = filteredTx.map((tx: any) => [
-      `"${tx.id || ''}"`,
-      `"${format(new Date(tx.timestamp), "yyyy-MM-dd HH:mm:ss")}"`,
-      `"${tx.type || 'transfer'}"`,
-      `"${tx.fromAccountId || 'External'}"`,
-      `"${tx.toAccountId || 'External'}"`,
-      `"${(tx.amount / 100).toFixed(2)}"`,
-      `"${(tx.description || '').replace(/"/g, '""')}"`
-    ]);
+    const t = setTimeout(async () => {
+      setQuoting(true);
+      setQuoteErr("");
+      try {
+        const res = await fetch(`/api/portal/${bankId}/transfer/quote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, amount: sendAmt, feePayerMode: feeMode }),
+        });
+        const d = await res.json();
+        if (!res.ok) {
+          setQuote(null);
+          setQuoteErr(d.error || "Could not quote");
+        } else setQuote(d.quote);
+      } catch {
+        setQuoteErr("Quote failed");
+      }
+      setQuoting(false);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [sendFrom, sendTo, sendAmt, feeMode, bankId]);
 
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e: string[]) => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `slate_ledger_${bankId}_${format(new Date(), "yyyyMMdd_HHmm")}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  useEffect(() => {
+    if ((view === "borrow" || view === "apply") && bankId) {
+      fetch(`/api/portal/${bankId}/loan-products`)
+        .then((r) => r.json())
+        .then((d) => setLoanProducts(Array.isArray(d) ? d : []))
+        .catch(() => setLoanProducts([]));
+    }
+  }, [view, bankId]);
+
+  const accounts = userData?.accounts || [];
+  const netWorth = accounts.reduce((s: number, a: any) => s + (a.balance || 0), 0);
+  const loans = userData?.loans || [];
+  const activeLoans = loans.filter((l: any) => ["active", "delinquent", "defaulted", "pending", "awaiting_signature"].includes(l.status));
+  const invoices = (userData?.pendingInvoices || []).filter((i: any) => i.status !== "paid");
+  const cards = userData?.cards || [];
+  const tx = userData?.recentTx || [];
+  const defaultFeeMode = (settings.defaultFeePayerMode as any) === "sender_covers" ? "sender_covers" : "from_payment";
+
+  useEffect(() => {
+    if (accounts[0] && !sendFrom) setSendFrom(accounts[0].id);
+    if (settings.defaultFeePayerMode) setFeeMode(defaultFeeMode);
+  }, [accounts.length, settings.defaultFeePayerMode]);
+
+  const suspended = bank?.billingStatus === "suspended" || bank?.status === "suspended";
 
   if (bankNotFound || !bankId) {
     return (
-      <div className="min-h-screen bg-[#0a0a0c] flex flex-col items-center justify-center gap-4 text-white">
-        <AlertTriangle className="text-red-500" size={48} />
-        <h2 className="text-xl font-bold">Bank Not Found</h2>
-        <p className="text-white/50">The requested financial gateway could not be located.</p>
+      <div className="min-h-screen bg-[#07070b] text-white flex flex-col items-center justify-center gap-3">
+        <AlertTriangle className="text-rose-400" />
+        <p className="font-semibold">Bank not found</p>
       </div>
     );
   }
-
   if (isLoading || !bank) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
-        <Loader2 className="animate-spin text-indigo-500" size={32} />
-        <p className="text-sm text-zinc-400 font-mono">Loading financial gateway...</p>
+      <div className="min-h-screen bg-[#07070b] text-white/50 flex items-center justify-center">
+        <Loader2 className="animate-spin" />
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-[#060609] text-slate-300 font-sans selection:bg-indigo-500/30 relative overflow-hidden">
-      {/* Ambient background glows */}
-      <div className={`absolute top-0 left-1/4 w-[500px] h-[500px] ${theme.bgLight} rounded-full blur-[120px] pointer-events-none opacity-50`} />
-      <div className={`absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-indigo-600/5 rounded-full blur-[150px] pointer-events-none opacity-50`} />
-      
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-8 mb-24 relative z-10">
-      
-      {/* Top Bank Header Banner */}
-      <div className="bg-gradient-to-r from-[#0d0d14] via-[#0b0b10] to-[#0e0e16] border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex items-center gap-5 text-center md:text-left relative z-10">
-          {bank.settings?.logoUrl ? (
-            <img 
-              src={bank.settings.logoUrl} 
-              alt="Logo" 
-              className="w-16 h-16 rounded-2xl border border-white/10 shadow-xl object-contain bg-[#0c0c12] p-1" 
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-          <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${theme.fromGradient} to-black flex items-center justify-center font-bold text-2xl text-white shadow-xl ${theme.glow}`}>
-              {bank.name.substring(0, 2).toUpperCase()}
-            </div>
-          )}
-          <div>
-            <div className="flex items-center gap-3 justify-center md:justify-start">
-              <h1 className="text-2xl font-black tracking-tight text-white">{bank.name}</h1>
-              <span className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full ${theme.bgLight} ${theme.textAccent} border ${theme.border}`}>
-                Client Portal
-              </span>
-            </div>
-            <p className="text-zinc-400 text-xs mt-1 flex items-center gap-2 justify-center md:justify-start">
-              {bank.settings?.tagline
-                ? <span>{bank.settings.tagline}</span>
-                : <>
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="font-mono">Secure connection</span>
-                  </>
-              }
-            </p>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-3 relative z-10">
-          {(userData?.isStaff || user?.isGlobalAdmin) && (
-            <Link 
-              to={`/bank/${bankId}`} 
-              className="flex items-center gap-2 px-4 py-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-xs font-bold text-indigo-300 transition-all shadow-lg"
-            >
-              <ShieldCheck size={16} /> Staff Admin Portal
-            </Link>
-          )}
-
-          {user && (
-            <div className="flex items-center gap-3 bg-[#12121c] border border-white/10 rounded-2xl p-2 px-4 shadow-xl">
-              <div className="flex items-center gap-3">
-                {user.avatarUrl && !avatarError ? (
-                  <img 
-                    src={user.avatarUrl} 
-                    alt="Avatar" 
-                    onError={() => setAvatarError(true)}
-                    className="w-9 h-9 rounded-xl border border-white/10 object-cover bg-zinc-900" 
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                <div className={`w-9 h-9 rounded-xl ${theme.bgLight} ${theme.textAccent} flex items-center justify-center text-xs font-bold border ${theme.border}`}>
-                    {user.username.substring(0, 2).toUpperCase()}
-                  </div>
-                )}
-                <div className="text-left">
-                  <p className="text-xs font-bold text-white tracking-wide">{user.username}</p>
-                  <p className="text-[10px] text-zinc-400 font-mono">{user.discordId}</p>
-                </div>
-              </div>
-              <div className="h-6 w-px bg-white/10" />
-              <button 
-                onClick={logout} 
-                className="text-zinc-400 hover:text-rose-400 transition-colors p-2 rounded-xl hover:bg-rose-500/10"
-                title="Sign Out"
-              >
-                <LogOut size={16} />
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Maintenance Alert */}
-      {bank?.maintenanceMode && (
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`border rounded-2xl p-4 text-sm flex items-center gap-3 shadow-lg ${
-            userData?.isStaff 
-              ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-200' 
-              : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-          }`}
-        >
-          <AlertTriangle className={userData?.isStaff ? "text-indigo-400 shrink-0" : "text-amber-400 shrink-0"} size={20} />
-          <div>
-            <p className="font-semibold flex items-center gap-2">
-              {userData?.isStaff ? "⚙️ Bank Maintenance Active (Staff Testing Mode)" : "⚠️ Scheduled Bank Maintenance Active"}
-            </p>
-            <p className="text-xs opacity-90 mt-0.5">
-              {userData?.isStaff ? (
-                <>System undergoing updates. Staff privileges allow testing override across the portal.</>
-                ) : (
-                  <>Transfers and bot commands are temporarily paused for maintenance.</>
-              )}
-            </p>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Verification Notification */}
-      {oauthSuccess && (
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 text-emerald-300 text-sm flex items-center justify-between shadow-lg"
-        >
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="text-emerald-400 shrink-0" size={24} />
-            <div>
-              <p className="font-bold text-white">Profile Validated & Synchronized!</p>
-              <p className="text-white/70 text-xs mt-0.5">Linked Minecraft identity <strong>{oauthSuccess}</strong> with {bank.name}.</p>
-            </div>
-          </div>
-          <button onClick={() => setOauthSuccess(null)} className="text-white/40 hover:text-white font-bold px-2 py-1 text-lg">×</button>
-        </motion.div>
-      )}
-
-      {/* Login Card for Unauthenticated Visitors */}
-      {!user ? (
-        <div className="max-w-md mx-auto py-12">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#0e0e15]/95 border border-white/10 rounded-2xl p-8 sm:p-9 shadow-2xl text-center space-y-6 relative overflow-hidden backdrop-blur-xl"
-          >
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-xl shadow-indigo-500/10">
-              <Lock size={26} />
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-white tracking-tight">Identity Authentication Required</h2>
-              <p className="text-zinc-400 text-xs mt-1.5 leading-relaxed">
-                Log in to authenticate your citizen profile and access accounts, debit cards, loans, and transaction history with {bank.name}.
-              </p>
-            </div>
-
-            <div className="space-y-4 pt-1">
-              <label className="flex items-center justify-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 select-none transition-colors">
-                <input 
-                  type="checkbox" 
-                  checked={rememberMe} 
-                  onChange={(e) => setRememberMe(e.target.checked)} 
-                  className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 cursor-pointer"
-                />
-                <span>Remember me on this device</span>
-              </label>
-
-              <div className="space-y-2.5">
-                {bank.cityCorpAppId && (
-                  <button 
-                    onClick={() => login(bankId, 'citycorp')}
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.99] flex items-center justify-center gap-2.5 cursor-pointer"
-                  >
-                    <LogIn size={18} /> Continue with CityCorp
-                  </button>
-                )}
-
-                <button 
-                  onClick={() => login(bankId, 'discord')}
-                  className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-[#5865F2]/20 hover:shadow-[#5865F2]/30 active:scale-[0.99] flex items-center justify-center gap-2.5 cursor-pointer"
-                >
-                  <LogIn size={18} /> Continue with Discord
-                </button>
-              </div>
-
-              <p className="text-[11px] text-zinc-500 leading-relaxed">
-                Secure banking access encrypted under Onyx clearing protocols.
-              </p>
-            </div>
-
-            <div className="pt-4 border-t border-white/10 flex items-center justify-between text-xs text-zinc-400">
-              <span>Bank Staff Member?</span>
-              <Link to={`/bank/${bankId}`} className="text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1.5 transition-colors">
-                <ShieldCheck size={14} /> Staff Admin Portal &rarr;
-              </Link>
-            </div>
-          </motion.div>
-        </div>
-        ) : (
-          <div className="space-y-8">
-            {/* Authenticated Client Dashboard */}
-          
-          {/* Clean Header Section */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-[#0a0a0f] border border-white/5 rounded-2xl p-6 shadow-xl">
-               <div className="flex items-center gap-4">
-                 {userData?.customer?.mcUuid ? (
-                   <div className="relative group shrink-0">
-                     <img 
-                        src={`https://mc-heads.net/avatar/${userData.customer.mcUsername || userData.customer.mcUuid}/64`} 
-                        alt="MC Head" 
-                        className="w-14 h-14 rounded-xl border border-white/10 shadow-lg bg-black object-contain"
-                        onError={(e: any) => {
-                          e.target.onerror = null;
-                          e.target.src = `https://minotar.net/helm/${userData.customer.mcUsername || userData.customer.mcUuid}/64.png`;
-                        }}
-                     />
-                   </div>
-                 ) : (
-                   <div className="w-14 h-14 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white shrink-0">
-                     <UserCheck size={24} />
-                   </div>
-                 )}
-                 <div>
-                   <div className="flex items-center gap-2">
-                     <h2 className="font-bold text-white text-xl">{userData?.customer?.mcUsername || user.username || "Citizen"}</h2>
-                     <span className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md ${theme.bgLight} ${theme.textAccent}`}>Verified</span>
-                   </div>
-                   <p className="text-sm text-zinc-400 mt-1">Total Net Worth: <span className="font-mono text-white">{formatMoney(netWorthCents)}</span></p>
-                 </div>
-               </div>
-               
-               <div className="grid grid-cols-3 md:flex md:items-center gap-4 md:gap-8 w-full md:w-auto border-t border-white/10 md:border-t-0 pt-4 md:pt-0">
-                  <div className="text-center md:text-right">
-                     <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Accounts</span>
-                     <span className="font-mono font-bold text-lg text-white">{userData?.accounts?.length || 0}</span>
-                  </div>
-                  <div className="text-center md:text-right">
-                     <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Cards</span>
-                     <span className="font-mono font-bold text-lg text-white">{userData?.cards?.length || 0}</span>
-                  </div>
-                  <div className="text-center md:text-right">
-                     <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Loans</span>
-                     <span className="font-mono font-bold text-lg text-white">{userData?.loans?.length || 0}</span>
-                  </div>
-               </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* LEFT COLUMN */}
-              <div className="lg:col-span-2 space-y-8">
-                
-                {/* Accounts Showcase */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between px-2">
-                    <h2 className="text-sm font-bold text-zinc-300 tracking-wider uppercase flex items-center gap-2">
-                      <Wallet size={16} className={theme.textAccent} /> My Accounts
-                    </h2>
-                    <button 
-                      onClick={() => setShowOpenAccountModal(true)}
-                      className="text-xs font-bold text-zinc-400 hover:text-white flex items-center gap-1 transition-colors"
-                    >
-                      <Plus size={14} /> New Account
-                    </button>
-                  </div>
-
-                  {loading ? (
-                    <div className="space-y-3">
-                      {[1, 2].map(i => (
-                        <div key={i} className="bg-white/5 border border-white/5 rounded-xl h-24 animate-pulse" />
-                      ))}
-                    </div>
-                  ) : userData?.accounts?.length > 0 ? (
-                    <div className="space-y-3">
-                      {userData.accounts.map((acc: any) => {
-                        const isSelected = selectedAccountId === acc.id;
-                        return (
-                          <motion.div 
-                            key={acc.id}
-                            onClick={() => setSelectedAccountId(isSelected ? "all" : acc.id)}
-                            whileHover={{ x: 4 }}
-                            className={`p-4 rounded-xl cursor-pointer transition-all border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                              isSelected 
-                                ? `bg-white/10 border-white/20 shadow-lg ${theme.glow}`
-                                : "bg-[#0b0b0f] border-white/5 hover:border-white/10 hover:bg-white/[0.02]"
-                            }`}
-                          >
-                            <div className="flex items-center gap-4">
-                               <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${isSelected ? theme.bg : 'bg-white/5'}`}>
-                                  <Wallet size={18} className={isSelected ? 'text-white' : 'text-zinc-400'} />
-                               </div>
-                               <div>
-                                  <div className="flex items-center gap-2">
-                                     <h3 className="font-bold text-white text-base">{acc.accountName}</h3>
-                                     {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
-                                  </div>
-                                  <p className="text-xs text-zinc-500 font-mono mt-0.5">ID: {acc.id.slice(0, 10)} • {acc.type.toUpperCase()}</p>
-                               </div>
-                            </div>
-                            <div className="sm:text-right">
-                               <p className="font-mono text-xl font-bold text-white">{formatMoney(acc.balance)}</p>
-                               <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Available Balance</p>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="bg-[#0b0b0f] border border-white/5 rounded-xl p-8 text-center space-y-3">
-                      <Wallet className="mx-auto text-zinc-600" size={32} />
-                      <p className="text-sm font-bold text-white">No Active Accounts</p>
-                      <button 
-                        onClick={() => setShowOpenAccountModal(true)}
-                        className={`mx-auto ${theme.bg} hover:brightness-110 text-white text-xs font-bold py-2 px-4 rounded-lg transition-all shadow-lg flex items-center gap-2`}
-                      >
-                        <Plus size={14} /> Open Account Now
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* ACCOUNT LEDGER HISTORY */}
-{/* ACCOUNT LEDGER HISTORY */}
-              {userData?.recentTx?.length > 0 && (
-                <div className="bg-[#0b0b10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
-                  
-                  {/* Header & Controls */}
-                  <div className="p-6 border-b border-white/10 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex items-center gap-2">
-                        <Activity className={theme.textAccent} size={20} />
-                        <div>
-                          <h3 className="font-bold text-white text-base">Real-Time Account Ledger</h3>
-                          <p className="text-[11px] text-zinc-400">
-                            {selectedAccountId === "all" ? "Showing activity across all accounts" : `Filtered to account ${selectedAccountId}`}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        {/* Live filter input */}
-                        <div className="relative flex-1 sm:flex-initial">
-                          <input 
-                            type="text" 
-                            placeholder="Search memo, ID..." 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="bg-black/40 border border-white/10 rounded-xl py-2 px-3 pl-9 text-xs text-white focus:outline-none focus:border-indigo-500 w-full sm:w-48 font-mono transition-all"
-                          />
-                          <Search className="absolute left-3 top-2.5 text-zinc-500" size={13} />
-                        </div>
-
-                        {/* Export CSV Button */}
-                        <button
-                          onClick={exportLedgerCSV}
-                          title="Export Filtered Ledger to CSV"
-                          className="bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 rounded-xl p-2 px-3 text-xs font-bold flex items-center gap-1.5 transition-all shrink-0"
-                        >
-                          <Download size={14} />
-                          <span className="hidden sm:inline">Export CSV</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Filter Pills */}
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <span className="text-[10px] uppercase font-bold text-zinc-500 flex items-center gap-1 shrink-0">
-                        <Filter size={11} /> Filter:
-                      </span>
-                      {["all", "transfer", "deposit", "withdraw", "payment", "loan"].map((t) => (
-                        <button
-                          key={t}
-                          onClick={() => setTxTypeFilter(t)}
-                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg capitalize transition-all shrink-0 ${
-                            txTypeFilter === t
-                              ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
-                              : "bg-white/5 text-zinc-400 hover:text-zinc-200 border border-transparent"
-                          }`}
-                        >
-                          {t}
-                        </button>
-                      ))}
-                      {(selectedAccountId !== "all" || txTypeFilter !== "all" || searchTerm) && (
-                        <button
-                          onClick={() => {
-                            setSelectedAccountId("all");
-                            setTxTypeFilter("all");
-                            setSearchTerm("");
-                          }}
-                          className="text-[10px] text-rose-400 hover:text-rose-300 underline ml-auto shrink-0"
-                        >
-                          Clear Filters
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Transaction List */}
-                  <div className="divide-y divide-white/5 max-h-96 overflow-y-auto">
-                    <AnimatePresence>
-                      {filteredTx.length > 0 ? (
-                        filteredTx.map((tx: any, i: number) => {
-                          const isIncoming = tx.toDiscordId === user?.discordId || (selectedAccountId !== "all" && tx.toAccountId === selectedAccountId);
-                          return (
-                            <motion.div 
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              key={tx.id || i} 
-                              onClick={() => setSelectedTx(tx)}
-                              className="p-4 px-6 flex items-center justify-between hover:bg-white/[0.02] cursor-pointer transition-colors"
-                            >
-                              <div className="flex gap-4 items-center">
-                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shrink-0
-                                  ${isIncoming ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
-                                  {isIncoming ? <ArrowDownRight size={16} /> : <ArrowUpRight size={16} />}
-                                </div>
-                                <div className="text-left">
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-sm font-semibold text-white truncate max-w-[150px] sm:max-w-[260px]">
-                                      {tx.description || tx.type}
-                                    </p>
-                                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/5 text-zinc-400 border border-white/5">
-                                      {tx.type}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
-                                    {format(new Date(tx.timestamp), "MMM d, h:mm a")} • {tx.fromAccountId ? `From: ${tx.fromAccountId.slice(0, 10)}` : 'System Deposit'}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <span className={`font-mono text-sm font-black ${isIncoming ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {isIncoming ? '+' : '-'}{formatMoney(tx.amount)}
-                                </span>
-                                <span className="block text-[9px] text-zinc-600 font-mono mt-0.5">Click for receipt</span>
-                              </div>
-                            </motion.div>
-                          );
-                        })
-                        ) : (
-                          <div className="text-center py-12 text-zinc-500 text-xs space-y-1">
-                          <p>No transaction records match active parameters.</p>
-                          {(selectedAccountId !== "all" || txTypeFilter !== "all" || searchTerm) && (
-                            <button
-                              onClick={() => {
-                                setSelectedAccountId("all");
-                                setTxTypeFilter("all");
-                                setSearchTerm("");
-                              }}
-                              className="text-xs text-indigo-400 hover:text-indigo-300 font-bold"
-                            >
-                              Reset active filters
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                </div>
-              )}
-
-            </div>
-
-            {/* RIGHT COLUMN */}
-              <div className="space-y-8 lg:col-span-1">
-              {/* Action Hub Tabs */}
-              {userData?.accounts?.length > 0 && (
-                <div className="bg-[#0b0b0f] border border-white/5 rounded-2xl overflow-hidden shadow-lg">
-                  
-                  {/* Elevated Glass Tabs */}
-                  <div className="flex flex-wrap border-b border-white/10 bg-black/40 p-3 gap-2">
-                    {[
-                      { id: "transfer", label: "Wire Transfer", icon: Send },
-                      { id: "onyx", label: "Onyx Pay", icon: Activity },
-                      { id: "invoices", label: "Invoices", icon: FileText, hasAlert: userData?.pendingInvoices?.length > 0 },
-                      { id: "loans", label: "Credit & Loans", icon: Landmark },
-                      { id: "subscriptions", label: "Subscriptions", icon: RefreshCw }
-                    ].map(tab => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id as any)}
-                        className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all relative
-                          ${activeTab === tab.id 
-                            ? `${theme.bg} text-white shadow-md ring-1 ring-white/20` 
-                            : `text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/5`
-                          }`}
-                      >
-                        <tab.icon size={16} className={activeTab === tab.id ? 'text-white' : theme.textAccent} />
-                        {tab.label}
-                        {tab.hasAlert && (
-                           <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-pulse border-2 border-black" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Hub Body */}
-                  <div className="p-6">
-                    
-                    {/* WIRE TRANSFER TAB */}
-                    {activeTab === "transfer" && (
-                      <div className="space-y-4">
-                        <div>
-                          <h3 className="font-bold text-white text-base">Wire Capital Transfer</h3>
-                          <p className="text-zinc-400 text-xs mt-0.5">Instant transfer of funds between internal accounts or to another citizen account.</p>
-                        </div>
-
-                        <form onSubmit={async (e) => {
-                          e.preventDefault();
-                          const form = e.target as any;
-                          setTransferPending(true);
-                          try {
-                            const res = await fetch(`/api/portal/${bankId}/transfer`, {
-                              method: 'POST',
-                              headers: {'Content-Type': 'application/json'},
-                              body: JSON.stringify({
-                                discordId: user?.discordId,
-                                fromAccountId: form.fromAccountId.value,
-                                toAccountId: form.toAccountId.value,
-                                amount: form.amount.value,
-                                description: form.description?.value || undefined
-                              })
-                            });
-                            const d = await res.json();
-                            if (!res.ok) alert(d.error || "Failed");
-                            else {
-                              alert("Transfer authorized and executed successfully!");
-                              handleSearch();
-                              form.reset();
-                            }
-                          } catch (e) {
-                            alert("Error executing transfer.");
-                          } finally {
-                            setTransferPending(false);
-                          }
-                        }} className="space-y-4 pt-2">
-                          
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">From Account</label>
-                              <select 
-                                required 
-                                name="fromAccountId" 
-                                defaultValue={selectedAccountId !== "all" ? selectedAccountId : userData.accounts[0]?.id}
-                                className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all"
-                              >
-                                {userData.accounts.map((acc: any) => (
-                                  <option key={acc.id} value={acc.id} disabled={acc.balance <= 0}>
-                                    {acc.accountName} ({formatMoney(acc.balance)})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            
-                            <div>
-                              <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">Destination Account ID</label>
-                              <div className="relative">
-                                <input 
-                                  required 
-                                  name="toAccountId" 
-                                  type="text" 
-                                  placeholder="e.g. acc_12345" 
-                                  className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-3 px-4 pl-10 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all font-mono" 
-                                />
-                                <Wallet className="absolute left-3.5 top-3.5 text-zinc-500" size={14} />
-                              </div>
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide">Transfer Amount ($)</label>
-                              <div className="flex gap-1.5">
-                                {[10, 50, 100, 500].map((amt) => (
-                                  <button
-                                    key={amt}
-                                    type="button"
-                                    onClick={(e) => {
-                                      const input = (e.currentTarget.form as any)?.amount;
-                                      if (input) input.value = amt.toFixed(2);
-                                    }}
-                                    className="text-[10px] bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white px-2 py-0.5 rounded border border-white/5 font-mono"
-                                  >
-                                    ${amt}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="relative">
-                              <input 
-                                required 
-                                name="amount" 
-                                type="number" 
-                                step="0.01" 
-                                min="0.01" 
-                                placeholder="0.00" 
-                                className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-3 px-4 pl-10 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all font-mono" 
-                              />
-                              <DollarSign className="absolute left-3.5 top-3.5 text-zinc-500" size={14} />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">Transfer Memo / Reference (Optional)</label>
-                            <input 
-                              name="description" 
-                              type="text" 
-                              placeholder="e.g. Rent payment, vehicle purchase, split bill" 
-                              className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-2.5 px-4 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-all" 
-                            />
-                          </div>
-
-                          <button 
-                            type="submit" 
-                            disabled={transferPending}
-                            className={`w-full ${theme.bg} hover:brightness-110 text-white py-3.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2 mt-2 shadow-lg`}
-                          >
-                            {transferPending ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
-                            {transferPending ? "Processing..." : "Authorize Capital Wire"}
-                          </button>
-                        </form>
-                      </div>
-                    )}
-
-                    {/* ONYX QUICK PAY TAB */}
-                    {activeTab === "onyx" && (
-                      <div className="space-y-4">
-                        <div>
-                          <h3 className="font-bold text-white text-base">Onyx Quick Pay Gateway</h3>
-                          <p className="text-zinc-400 text-xs mt-0.5">Direct merchant checkout to whitelisted Slate Onyx storefronts.</p>
-                        </div>
-
-                        <form onSubmit={async (e) => {
-                          e.preventDefault();
-                          const form = e.target as HTMLFormElement;
-                          const fd = new FormData(form);
-                          setOnyxPending(true);
-                          try {
-                            const onyxRes = await fetch(`/api/onyx/checkout`, {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                'x-api-key': fd.get("apiKey") as string
-                              },
-                              body: JSON.stringify({
-                                userCityCorpId: user?.discordId,
-                                amountCents: Math.round(parseFloat(fd.get("amount") as string) * 100),
-                                description: fd.get("description") || "Onyx Portal Purchase"
-                              })
-                            });
-                            const d = await onyxRes.json();
-                            if (!onyxRes.ok) alert(d.error || "Onyx payment failed");
-                            else {
-                              alert("Onyx payment processed successfully!");
-                              handleSearch();
-                              form.reset();
-                            }
-                          } catch (e) {
-                            alert("Error processing Onyx payment.");
-                          } finally {
-                            setOnyxPending(false);
-                          }
-                        }} className="space-y-4 pt-2">
-                          
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">Paying Account</label>
-                              <select 
-                                required 
-                                name="fromAccountId" 
-                                className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all"
-                              >
-                                {userData.accounts.map((acc: any) => (
-                                  <option key={acc.id} value={acc.id} disabled={acc.balance <= 0}>
-                                    {acc.accountName} ({formatMoney(acc.balance)})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            
-                            <div>
-                              <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">Target Onyx Merchant</label>
-                              <select 
-                                required 
-                                name="apiKey" 
-                                className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all"
-                              >
-                                <option value="">Select merchant...</option>
-                                {onyxMerchants.map((m: any) => (
-                                  <option key={m.apiKey} value={m.apiKey}>
-                                    {m.name} ({m.bankName})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">Amount ($)</label>
-                              <div className="relative">
-                                <input 
-                                  required 
-                                  name="amount" 
-                                  type="number" 
-                                  step="0.01" 
-                                  min="0.01" 
-                                  placeholder="0.00" 
-                                  className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-3 px-4 pl-10 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all font-mono" 
-                                />
-                                <DollarSign className="absolute left-3.5 top-3.5 text-zinc-500" size={14} />
-                              </div>
-                            </div>
-                            
-                            <div>
-                              <label className="block text-[10px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wide">Reference Memo</label>
-                              <input 
-                                name="description" 
-                                type="text" 
-                                placeholder="Store Purchase / Donation" 
-                                className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" 
-                              />
-                            </div>
-                          </div>
-
-                          <button 
-                            type="submit" 
-                            disabled={onyxPending}
-                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2 mt-2 shadow-lg"
-                          >
-                            {onyxPending ? <Loader2 className="animate-spin" size={16} /> : <Activity size={16} />}
-                            {onyxPending ? "Authorizing Onyx Clearinghouse..." : "Authorize Onyx Payment"}
-                          </button>
-                        </form>
-                      </div>
-                    )}
-
-                    {/* INVOICES TAB */}
-                    {activeTab === "invoices" && (
-                      <div className="space-y-4">
-                        <div>
-                          <h3 className="font-bold text-white text-base">Unsettled Invoices & Bill Pay</h3>
-                          <p className="text-zinc-400 text-xs mt-0.5">Pay outstanding biller charges directly from your account.</p>
-                        </div>
-
-                        {userData?.pendingInvoices?.length > 0 ? (
-                          <div className="divide-y divide-white/10 space-y-4 pt-2">
-                            {userData.pendingInvoices.map((inv: any) => (
-                              <div key={inv.id} className="pt-4 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-sm font-bold text-white">{inv.description}</p>
-                                    <span className="text-[9px] uppercase font-bold bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/20">
-                                      Pending
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-zinc-400">
-                                    Account: <span className="font-mono text-white/90">{inv.customerAccountName}</span> • Biller: {inv.billerName}
-                                  </p>
-                                  <p className="text-[10px] text-rose-400 flex items-center gap-1">
-                                    <Clock size={10} /> Due by {format(new Date(inv.dueDate), "PP")}
-                                  </p>
-                                </div>
-                                
-                                <div className="flex items-center gap-4 justify-between sm:justify-end">
-                                  <span className="font-mono text-base font-bold text-white">
-                                    {formatMoney(inv.amount)}
-                                  </span>
-                                  <button
-                                    disabled={invoicePayId !== null}
-                                    onClick={async () => {
-                                      setInvoicePayId(inv.id);
-                                      try {
-                                        const res = await fetch(`/api/portal/${bankId}/pay-invoice`, {
-                                          method: 'POST',
-                                          headers: {'Content-Type': 'application/json'},
-                                          body: JSON.stringify({ discordId: user?.discordId, invoiceId: inv.id })
-                                        });
-                                        const d = await res.json();
-                                        if (!res.ok) alert(d.error || "Failed to pay invoice");
-                                        else {
-                                          alert("Invoice settled successfully!");
-                                          handleSearch();
-                                        }
-                                      } catch (e) {
-                                        console.error(e);
-                                      } finally {
-                                        setInvoicePayId(null);
-                                      }
-                                    }}
-                                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2"
-                                  >
-                                    {invoicePayId === inv.id ? <Loader2 className="animate-spin" size={14} /> : <CheckCircle2 size={14} />}
-                                    {invoicePayId === inv.id ? "Settling..." : "Pay Invoice"}
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          ) : (
-                            <div className="text-center py-8">
-                              <CheckCircle2 className="mx-auto text-emerald-400/80 mb-2" size={32} />
-                            <p className="text-sm font-bold text-white">Accounts Fully Current</p>
-                            <p className="text-xs text-zinc-400 mt-1">There are no outstanding invoices or pending bills associated with your accounts.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* LOANS TAB */}
-                    
-{activeTab === "subscriptions" && (
-  <SubscriptionsTab data={userData} refresh={handleSearch} theme={theme} />
-)}
-
-                    {activeTab === "loans" && (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="font-bold text-white text-base">Credit Lines & Active Loans</h3>
-                            <p className="text-zinc-400 text-xs mt-0.5">Manage existing loans, make repayments, or apply for new credit lines.</p>
-                          </div>
-                          <button 
-                            onClick={() => setShowApplyLoanModal(true)}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow"
-                          >
-                            <Landmark size={14} /> Apply for Loan
-                          </button>
-                        </div>
-
-                        {(!userData?.loans || userData.loans.length === 0) ? (
-                          <div className="text-center py-8 border border-white/5 bg-white/[0.01] rounded-2xl space-y-2">
-                            <Landmark size={32} className="mx-auto text-zinc-600" />
-                            <p className="text-white text-sm font-bold">No Active Loans</p>
-                            <p className="text-zinc-400 text-xs">Apply for a low-interest bank loan to finance property, vehicles, or business ventures.</p>
-                            <button 
-                              onClick={() => setShowApplyLoanModal(true)}
-                              className="mx-auto bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-4 rounded-xl transition-all mt-2"
-                            >
-                              Apply for Loan
-                            </button>
-                          </div>
-                          ) : (
-                            <div className="space-y-3 pt-2">
-                            {userData.loans.map((loan: any) => (
-                              <div key={loan.id} className="bg-[#0a0a0f] border border-white/10 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex-1 space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="text-white font-bold text-sm">Loan #{loan.id.slice(0, 8)}</h4>
-                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                                      loan.status === 'paid_off' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                                      'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
-                                    }`}>
-                                      {loan.status === 'paid_off' ? 'Paid Off' : loan.status === 'pending' ? 'Pending Review' : loan.status === 'delinquent' || loan.isDelinquent ? 'Overdue' : loan.status === 'defaulted' ? 'Defaulted' : loan.status === 'awaiting_signature' ? 'Sign Contract' : 'Active Loan'}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-zinc-400">{loan.purpose || 'Personal financing line'}</p>
-                                  <div className="flex gap-4 text-xs font-mono text-zinc-500 pt-1">
-                                    <span>Principal: {formatMoney(loan.principalAmount || loan.amount)}</span>
-                                    <span>APR: {((loan.interestRate || 550) / 100).toFixed(2)}%</span>
-                                    <span>Term: {loan.termMonths || 12} Mos</span>
-                                  </div>
-                                </div>
-                                
-                                <div className="text-right flex items-center justify-between md:flex-col md:items-end gap-2">
-                                  <div>
-                                    <span className="text-[9px] uppercase text-zinc-500 font-bold block">Remaining Principal</span>
-                                    <span className="text-lg font-black font-mono text-emerald-400">
-                                      {formatMoney(loan.remainingAmount ?? loan.remainingBalance)}
-                                    </span>
-                                  </div>
-
-                                  {loan.status !== 'paid_off' && loan.status !== 'pending' && loan.status !== 'rejected' && (loan.remainingAmount ?? loan.remainingBalance) > 0 && (
-                                    <button 
-                                      onClick={() => setRepayingLoan(loan)}
-                                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
-                                    >
-                                      Make Repayment
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                  </div>
-                </div>
-              )}
-
-              
-              {/* Right Column: Cards Management */}
-              <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-bold text-zinc-300 tracking-wider uppercase flex items-center gap-2">
-                  <CreditCard size={16} className={theme.textAccent} /> Cards Facility
-                </h2>
-                <button 
-                  onClick={() => setShowIssueCardModal(true)}
-                  className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
-                >
-                  <Plus size={14} /> Request Card
-                </button>
-              </div>
-
-              {userData?.cards?.length > 0 && (
-                <div className="space-y-6">
-                  {userData.cards.map((card: any) => {
-                    const isCardLocked = card.status === 'frozen';
-                    const isCredit = card.type === 'credit';
-                    const isVisible = visibleCardIds[card.id] || false;
-
-                    return (
-                      <div key={card.id} className={`p-5 rounded-2xl border transition-all ${isCardLocked ? 'bg-zinc-900 border-white/5 opacity-75' : 'bg-[#0b0b0f] border-white/10 hover:bg-white/5'}`}>
-                        <div className="flex justify-between items-center mb-4">
-                           <div className="flex items-center gap-2">
-                             <CreditCard size={18} className={isCardLocked ? "text-zinc-500" : (isCredit ? "text-amber-400" : "text-white")} />
-                             <span className="font-bold text-white text-sm">{card.accountName || "Checking"}</span>
-                           </div>
-                           <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${isCredit ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-white/10 text-white/80'} border`}>
-                              {card.type}
-                           </span>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          <div className="flex justify-between items-center">
-                            <span className="font-mono text-lg tracking-widest text-white select-all">
-                              {formatCardNumber(card.cardNumber, isVisible)}
-                            </span>
-                          </div>
-                          
-                          <div className="flex justify-between items-end text-xs text-zinc-400">
-                             <div>
-                               <span className="block text-[9px] uppercase tracking-widest mb-0.5">Exp</span>
-                               <span className="font-mono text-white">{card.expiryDate}</span>
-                             </div>
-                             <div>
-                               <span className="block text-[9px] uppercase tracking-widest mb-0.5">CVV</span>
-                               <span className="font-mono text-white">{isVisible ? card.cvv : "•••"}</span>
-                             </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 pt-4 border-t border-white/10 flex gap-2">
-                          <button
-                            onClick={() => handleToggleCard(card.id, !isCardLocked)}
-                            className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold transition-all border ${
-                              isCardLocked 
-                                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20' 
-                                : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/20'
-                            }`}
-                          >
-                            {isCardLocked ? <Unlock size={14} /> : <Lock size={14} />}
-                            {isCardLocked ? "Unfreeze" : "Freeze"}
-                          </button>
-                          
-                          <button
-                            onClick={() => toggleCardVisibility(card.id)}
-                            className="py-2 px-3 rounded-lg flex items-center justify-center text-xs font-bold bg-white/5 hover:bg-white/10 text-white/90 border border-white/10 transition-all"
-                            title="Toggle Number Visibility"
-                          >
-                            {isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-{/* OPEN ACCOUNT MODAL */}
-      <AnimatePresence>
-        {showOpenAccountModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#111118] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5"
-            >
-              <div className="flex justify-between items-center pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Plus size={18} className="text-indigo-400" /> Open New Account
-                </h3>
-                <button onClick={() => setShowOpenAccountModal(false)} className="text-zinc-400 hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target as any;
-                setActionPending(true);
-                try {
-                  const res = await fetch(`/api/banks/${bankId}/accounts/register`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                      discordId: user?.discordId,
-                      accountName: form.accountName.value,
-                      type: form.type.value,
-                      businessTaxId: form.businessTaxId?.value,
-                      businessSector: form.businessSector?.value
-                    })
-                  });
-                  const d = await res.json();
-                  if (!res.ok) alert(d.error || "Failed to open account");
-                  else {
-                    alert("Account opened successfully!");
-                    setShowOpenAccountModal(false);
-                    handleSearch();
-                  }
-                } catch (err) {
-                  alert("Error processing account registration.");
-                } finally {
-                  setActionPending(false);
-                }
-              }} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Account Title / Name</label>
-                  <input required name="accountName" placeholder="e.g. Primary Checking / High-Yield Savings" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500" />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Account Category</label>
-                  <select name="type" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    <option value="checking">Checking Account</option>
-                    <option value="savings">High-Yield Savings</option>
-                    <option value="business">Business / Corporation Account</option>
-                  </select>
-                </div>
-
-                <div className="pt-2 flex gap-3">
-                  <button type="button" onClick={() => setShowOpenAccountModal(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-white text-xs font-bold py-3 rounded-xl">Cancel</button>
-                  <button type="submit" disabled={actionPending} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2">
-                    {actionPending ? <Loader2 className="animate-spin" size={14} /> : "Open Account"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ISSUE CARD MODAL */}
-      <AnimatePresence>
-        {showIssueCardModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#111118] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5"
-            >
-              <div className="flex justify-between items-center pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <CreditCard size={18} className="text-indigo-400" /> Request New Card
-                </h3>
-                <button onClick={() => setShowIssueCardModal(false)} className="text-zinc-400 hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target;
-                setActionPending(true);
-                try {
-                  const res = await fetch(`/api/portal/${bankId}/request-card`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                      accountId: form.accountId.value,
-                      cardType: form.cardType.value
-                    })
-                  });
-                  const d = await res.json();
-                  if (!res.ok) alert(d.error || "Card request failed");
-                  else {
-                    alert("Card issued successfully!");
-                    setShowIssueCardModal(false);
-                    handleSearch();
-                  }
-                } catch (err) {
-                  alert("Error requesting card.");
-                } finally {
-                  setActionPending(false);
-                }
-              }} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Linked Account</label>
-                  <select name="accountId" required className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    {userData?.accounts?.map((acc: any) => (
-                      <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.id})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Card Type</label>
-                  <select name="cardType" required className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    <option value="debit">Debit Card</option>
-                    <option value="credit">Credit Card</option>
-                  </select>
-                  <p className="text-xs text-white/50 mt-2">
-                    Debit cards are instantly linked to your account balance. Credit cards may require manual approval depending on bank policy.
-                  </p>
-                </div>
-
-                <div className="pt-2">
-                  <button 
-                    type="submit" 
-                    disabled={actionPending}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl flex items-center justify-center transition-colors disabled:opacity-50"
-                  >
-                    {actionPending ? <Loader2 className="animate-spin" size={14} /> : "Submit Request"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* APPLY LOAN MODAL */}
-      <AnimatePresence>
-        {showApplyLoanModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#111118] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5"
-            >
-              <div className="flex justify-between items-center pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Landmark size={18} className="text-indigo-400" /> Loan Application
-                </h3>
-                <button onClick={() => setShowApplyLoanModal(false)} className="text-zinc-400 hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target as any;
-                setActionPending(true);
-                try {
-                  const res = await fetch(`/api/portal/${bankId}/request-loan`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                      accountId: form.accountId.value,
-                      amount: form.amount.value,
-                      termMonths: form.termMonths.value,
-                      purpose: form.purpose.value,
-                      productId: form.productId?.value || undefined,
-                    })
-                  });
-                  const d = await res.json();
-                  if (!res.ok) alert(d.error || "Loan request failed");
-                  else {
-                    alert(
-                      d.autoApprove
-                        ? "Loan auto-approved and funds credited to your account."
-                        : d.awaitingSignature
-                          ? "Approved — sign the contract to receive funds."
-                          : "Loan application submitted for bank review."
-                    );
-                    setShowApplyLoanModal(false);
-                    handleSearch();
-                  }
-                } catch (err) {
-                  alert("Error submitting loan application.");
-                } finally {
-                  setActionPending(false);
-                }
-              }} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Destination Deposit Account</label>
-                  <select name="accountId" required className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    {userData?.accounts?.map((acc: any) => (
-                      <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.id})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Loan Amount ($)</label>
-                  <input required name="amount" type="number" step="0.01" min="10" placeholder="e.g. 5000" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" />
-                </div>
-
-                {portalLoanProducts.length > 0 && (
-                  <div>
-                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Loan Product</label>
-                    <select name="productId" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                      <option value="">Standard terms</option>
-                      {portalLoanProducts.map((p: any) => (
-                        <option key={p.id} value={p.id}>{p.name} — {Number(p.interestRate).toFixed(1)}% APR, max ${(p.maxAmount/100).toLocaleString()}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Term Duration</label>
-                  <select name="termMonths" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    <option value="6">6 Months</option>
-                    <option value="12">12 Months</option>
-                    <option value="24">24 Months</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Purpose / Note</label>
-                  <input name="purpose" placeholder="e.g. Business Expansion / Real Estate Purchase" className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500" />
-                </div>
-
-                <div className="pt-2 flex gap-3">
-                  <button type="button" onClick={() => setShowApplyLoanModal(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-white text-xs font-bold py-3 rounded-xl">Cancel</button>
-                  <button type="submit" disabled={actionPending} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2">
-                    {actionPending ? <Loader2 className="animate-spin" size={14} /> : "Submit Application"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ISSUE CARD MODAL REMOVED */}
-
-      {/* REPAY LOAN MODAL */}
-      <AnimatePresence>
-        {repayingLoan && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#111118] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5"
-            >
-              <div className="flex justify-between items-center pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <DollarSign size={18} className="text-emerald-400" /> Loan Repayment #{repayingLoan.id.slice(0, 8)}
-                </h3>
-                <button onClick={() => setRepayingLoan(null)} className="text-zinc-400 hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="bg-[#0a0a0f] p-3 rounded-xl border border-white/5 text-xs space-y-1">
-                <p className="text-zinc-400">Remaining Principal: <strong className="text-emerald-400 font-mono">{formatMoney(repayingLoan.remainingAmount ?? repayingLoan.remainingBalance)}</strong></p>
-              </div>
-
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target as any;
-                setActionPending(true);
-                try {
-                  const res = await fetch(`/api/portal/${bankId}/repay-loan`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                      loanId: repayingLoan.id,
-                      accountId: form.accountId.value,
-                      amount: form.amount.value
-                    })
-                  });
-                  const d = await res.json();
-                  if (!res.ok) alert(d.error || "Repayment failed");
-                  else {
-                    alert("Repayment processed successfully!");
-                    setRepayingLoan(null);
-                    handleSearch();
-                  }
-                } catch (err) {
-                  alert("Error processing repayment.");
-                } finally {
-                  setActionPending(false);
-                }
-              }} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Source Payment Account</label>
-                  <select name="accountId" required className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    {userData?.accounts?.map((acc: any) => (
-                      <option key={acc.id} value={acc.id}>{acc.accountName} ({formatMoney(acc.balance)})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-1">Repayment Amount ($)</label>
-                  <input required name="amount" type="number" step="0.01" min="0.01" defaultValue={((repayingLoan.remainingAmount ?? repayingLoan.remainingBalance) / 100).toFixed(2)} className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" />
-                </div>
-
-                <div className="pt-2 flex gap-3">
-                  <button type="button" onClick={() => setRepayingLoan(null)} className="flex-1 bg-white/5 hover:bg-white/10 text-white text-xs font-bold py-3 rounded-xl">Cancel</button>
-                  <button type="submit" disabled={actionPending} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2">
-                    {actionPending ? <Loader2 className="animate-spin" size={14} /> : "Authorize Repayment"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* TRANSACTION RECEIPT MODAL */}
-      <AnimatePresence>
-        {selectedTx && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#111118] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5"
-            >
-              <div className="flex justify-between items-center pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <FileText size={18} className="text-indigo-400" /> Transaction Receipt
-                </h3>
-                <button onClick={() => setSelectedTx(null)} className="text-zinc-400 hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-4 font-mono text-xs">
-                <div className="bg-[#0a0a0f] p-4 rounded-2xl border border-white/5 space-y-3">
-                  <div className="flex justify-between border-b border-white/5 pb-2">
-                    <span className="text-zinc-500">Transaction ID</span>
-                    <span className="text-white font-bold select-all">{selectedTx.id}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-white/5 pb-2">
-                    <span className="text-zinc-500">Timestamp</span>
-                    <span className="text-white">{format(new Date(selectedTx.timestamp), "PPpp")}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-white/5 pb-2">
-                    <span className="text-zinc-500">Transaction Type</span>
-                    <span className="text-indigo-400 font-bold uppercase">{selectedTx.type}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-white/5 pb-2">
-                    <span className="text-zinc-500">From Account</span>
-                    <span className="text-zinc-300 truncate max-w-[180px]">{selectedTx.fromAccountId || "External Deposit"}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-white/5 pb-2">
-                    <span className="text-zinc-500">To Account</span>
-                    <span className="text-zinc-300 truncate max-w-[180px]">{selectedTx.toAccountId || "External Withdrawal"}</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-1">
-                    <span className="text-zinc-400 font-bold">Total Amount</span>
-                    <span className="text-xl font-black text-emerald-400">{formatMoney(selectedTx.amount)}</span>
-                  </div>
-                </div>
-
-                {selectedTx.description && (
-                  <div className="p-3 bg-white/5 rounded-xl text-zinc-300">
-                    <span className="text-[10px] text-zinc-500 block uppercase mb-0.5">Memo / Description</span>
-                    {selectedTx.description}
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-2 flex gap-3">
-                <button 
-                  onClick={() => {
-                    navigator.clipboard.writeText(`Transaction Receipt\nID: ${selectedTx.id}\nAmount: ${formatMoney(selectedTx.amount)}\nDate: ${selectedTx.timestamp}`);
-                    setCopiedTxId(true);
-                    setTimeout(() => setCopiedTxId(false), 2000);
-                  }} 
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2"
-                >
-                  {copiedTxId ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedTxId ? "Receipt Copied!" : "Copy Receipt Details"}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-    </div>
-    </div>
-  );
-}
-
-
-function SubscriptionsTab({ data, refresh, theme }: any) {
-  const [cancelling, setCancelling] = useState(false);
-  const mySubs = data?.subscriptions || [];
-  
-  const handleCancel = async (sub: any) => {
-     if (!confirm(`Are you sure you want to cancel the subscription: ${sub.description}?`)) return;
-     setCancelling(true);
-     try {
-       const res = await fetch(`/api/citizen/subscriptions/${sub.id}/cancel`, { method: "POST" });
-       if (res.ok) {
-          alert("Subscription cancelled successfully.");
-          refresh();
-       } else {
-          const err = await res.json();
-          alert(err.error || "Failed to cancel.");
-       }
-     } catch (e) {
-       alert("An error occurred.");
-     }
-     setCancelling(false);
+  const shell = {
+    background: `radial-gradient(1200px 500px at 20% -10%, ${withAlpha(brand, 0.22)}, transparent 55%), #07070b`,
+  } as const;
+
+  const btnBrand = {
+    background: `linear-gradient(180deg, ${withAlpha(brand, 1)} 0%, ${withAlpha(brand, 0.82)} 100%)`,
+    boxShadow: `0 12px 40px ${withAlpha(brand, 0.28)}`,
   };
 
-  return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xl font-bold text-white flex items-center gap-2">
-          <RefreshCw className={theme.textAccent} size={20} /> My Subscriptions
-        </h3>
-      </div>
-      
-      {mySubs.length === 0 ? (
-        <div className="bg-black/20 border border-white/5 rounded-2xl p-12 text-center">
-           <RefreshCw size={32} className="mx-auto text-white/20 mb-3" />
-           <p className="text-white/50">You have no active subscriptions.</p>
+  const sendNow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/transfer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, amount: sendAmt, feePayerMode: feeMode, description: sendMemo }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Transfer failed");
+      else {
+        flash("Sent.");
+        setSendAmt("");
+        setSendTo("");
+        setSendMemo("");
+        setQuote(null);
+        setView("home");
+        handleSearch();
+      }
+    } catch {
+      flash("Network error");
+    }
+    setActionPending(false);
+  };
+
+  const applyLoan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const fd = new FormData(form);
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/request-loan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: fd.get("accountId"),
+          amount: fd.get("amount"),
+          termMonths: fd.get("termMonths"),
+          purpose: fd.get("purpose"),
+          productId: fd.get("productId") || undefined,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Application failed");
+      else {
+        flash(d.autoApprove ? "Approved — funds are in your account." : d.awaitingSignature ? "Sign the contract to receive funds." : "Application submitted.");
+        setView("home");
+        handleSearch();
+      }
+    } catch {
+      flash("Could not submit");
+    }
+    setActionPending(false);
+  };
+
+  const openAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const fd = new FormData(form);
+    setActionPending(true);
+    try {
+      const res = await fetch("/api/citizen/accounts/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bankId, accountName: fd.get("accountName"), accountType: fd.get("accountType") || "personal" }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Could not open account");
+      else {
+        flash("Account opened.");
+        setView("home");
+        handleSearch();
+      }
+    } catch {
+      flash("Could not open account");
+    }
+    setActionPending(false);
+  };
+
+  const requestCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fd = new FormData(e.target as HTMLFormElement);
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/request-card`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: fd.get("accountId"), cardType: fd.get("cardType") }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Card request failed");
+      else {
+        flash("Card issued.");
+        setView("cards");
+        handleSearch();
+      }
+    } catch {
+      flash("Card request failed");
+    }
+    setActionPending(false);
+  };
+
+  const payLoan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!repayingLoan) return;
+    const fd = new FormData(e.target as HTMLFormElement);
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/repay-loan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loanId: repayingLoan.id, accountId: fd.get("accountId"), amount: fd.get("amount") }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Payment failed");
+      else {
+        flash("Payment posted.");
+        setRepayingLoan(null);
+        handleSearch();
+      }
+    } catch {
+      flash("Payment failed");
+    }
+    setActionPending(false);
+  };
+
+  const toggleCard = async (cardId: string, locked: boolean) => {
+    const res = await fetch(`/api/portal/${bankId}/cards/${cardId}/lock`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isLocked: locked }),
+    });
+    if (res.ok) handleSearch();
+    else {
+      const d = await res.json();
+      flash(d.error || "Could not update card");
+    }
+  };
+
+  const payInvoice = async (invoiceId: string, accountId: string) => {
+    const res = await fetch(`/api/portal/${bankId}/pay-invoice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invoiceId, accountId }),
+    });
+    const d = await res.json();
+    if (!res.ok) flash(d.error || "Could not pay invoice");
+    else {
+      flash("Invoice paid.");
+      handleSearch();
+    }
+  };
+
+  const payMerchant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fd = new FormData(e.target as HTMLFormElement);
+    setActionPending(true);
+    try {
+      const res = await fetch("/api/citizen/pay-merchant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchantId: fd.get("merchantId"),
+          sourceAccountId: fd.get("sourceAccountId"),
+          amount: fd.get("amount"),
+          description: fd.get("description"),
+          feePayerMode: feeMode,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Payment failed");
+      else {
+        flash("Paid.");
+        handleSearch();
+      }
+    } catch {
+      flash("Payment failed");
+    }
+    setActionPending(false);
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen text-white relative overflow-hidden" style={shell}>
+        <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(600px 400px at 80% 120%, ${withAlpha(brand, 0.18)}, transparent)` }} />
+        <div className="relative z-10 max-w-md mx-auto px-5 py-16 space-y-10">
+          <div className="text-center space-y-5">
+            {settings.logoUrl || bank.logoUrl ? (
+              <img src={settings.logoUrl || bank.logoUrl} alt="" className="w-20 h-20 rounded-3xl mx-auto object-contain bg-black/40 border border-white/10 p-2 shadow-2xl" />
+            ) : (
+              <div className="w-20 h-20 rounded-3xl mx-auto flex items-center justify-center text-3xl font-black shadow-2xl" style={{ background: brand }}>
+                {bank.name.slice(0, 1)}
+              </div>
+            )}
+            <div>
+              <h1 className="text-3xl font-black tracking-tight">{bank.name}</h1>
+              <p className="text-white/50 text-sm mt-2">{settings.tagline || "Private banking for the city."}</p>
+            </div>
+          </div>
+          <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-6 space-y-4 shadow-2xl">
+            <label className="flex items-center justify-center gap-2 text-xs text-white/40">
+              <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded" />
+              Remember this device
+            </label>
+            {bank.cityCorpAppId && (
+              <button onClick={() => login(bankId, "citycorp")} className="w-full py-3.5 rounded-2xl font-bold text-sm text-white" style={btnBrand}>
+                Continue with CityCorp
+              </button>
+            )}
+            <button onClick={() => login(bankId, "discord")} className="w-full py-3.5 rounded-2xl font-bold text-sm bg-[#5865F2] hover:bg-[#4752C4] text-white flex items-center justify-center gap-2">
+              <LogIn size={16} /> Continue with Discord
+            </button>
+          </div>
+          <div className="text-center text-xs text-white/30">
+            Staff? <Link to={`/bank/${bankId}`} className="text-white/70 hover:text-white">Open the desk</Link>
+          </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {mySubs.map((sub: any) => {
-             const isBiller = data?.accounts?.some((a: any) => a.id === sub.billerAccountId);
-             return (
-               <div key={sub.id} className={`bg-[#13131c] border ${sub.isActive ? 'border-white/10' : 'border-red-500/20 opacity-60'} rounded-xl p-5 hover:border-white/20 transition-all`}>
-                 <div className="flex justify-between items-start mb-3">
-                   <div className="text-sm font-semibold text-white/70 truncate flex-1 pr-2">{sub.description || "Recurring Payment"}</div>
-                   <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${sub.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                     {sub.isActive ? "Active" : "Cancelled"}
-                   </div>
-                 </div>
-                 
-                 <div className="text-3xl font-black text-white mb-4">
-                   {formatMoney(sub.amount)}<span className="text-sm font-medium text-white/40">/{sub.frequency === 'weekly' ? 'wk' : 'mo'}</span>
-                 </div>
-                 
-                 <div className="space-y-2 mb-5">
-                   <div className="flex justify-between text-xs">
-                     <span className="text-white/40">Role</span>
-                     <span className={isBiller ? "text-emerald-400 font-medium" : "text-white/80"}>{isBiller ? "Receiving (Biller)" : "Paying (Customer)"}</span>
-                   </div>
-                   <div className="flex justify-between text-xs">
-                     <span className="text-white/40">Next Billing</span>
-                     <span className="text-white/80">{sub.isActive ? format(new Date(sub.nextRun), "MMM d, yyyy") : "-"}</span>
-                   </div>
-                 </div>
-                 
-                 {sub.isActive && (
-                   <button 
-                     disabled={cancelling}
-                     onClick={() => handleCancel(sub)}
-                     className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50"
-                   >
-                     Cancel Subscription
-                   </button>
-                 )}
-               </div>
-             )
+      </div>
+    );
+  }
+
+  const displayName = userData?.customer?.rpName || userData?.customer?.mcUsername || user.username;
+  const nav = [
+    { id: "home" as View, label: "Home", icon: Wallet },
+    { id: "send" as View, label: "Send", icon: Send },
+    { id: "activity" as View, label: "Activity", icon: Clock },
+    { id: "apply" as View, label: "Apply", icon: Sparkles },
+  ];
+
+  return (
+    <div className="min-h-screen text-white" style={shell}>
+      <header className="sticky top-0 z-30 backdrop-blur-xl border-b border-white/5 bg-[#07070b]/70">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {settings.logoUrl || bank.logoUrl ? (
+              <img src={settings.logoUrl || bank.logoUrl} className="w-9 h-9 rounded-xl object-contain bg-black/30 border border-white/10" alt="" />
+            ) : (
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black" style={{ background: brand }}>{bank.name.slice(0, 1)}</div>
+            )}
+            <div className="min-w-0">
+              <p className="font-bold truncate leading-tight">{bank.name}</p>
+              <p className="text-[11px] text-white/40 truncate">{settings.tagline || "Online banking"}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {(userData?.isStaff || user.isGlobalAdmin) && (
+              <Link to={`/bank/${bankId}`} className="hidden sm:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-white/10 text-white/70 hover:text-white">
+                <ShieldCheck size={13} /> Desk
+              </Link>
+            )}
+            <button onClick={logout} className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5" title="Sign out">
+              <LogOut size={16} />
+            </button>
+            <div className="w-9 h-9 rounded-xl overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center text-xs font-bold">
+              {user.avatarUrl && !avatarError ? (
+                <img src={user.avatarUrl} alt="" onError={() => setAvatarError(true)} className="w-full h-full object-cover" />
+              ) : displayName?.slice(0, 2).toUpperCase()}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 py-8 pb-28 space-y-6">
+        {suspended && (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">This bank is suspended. Transfers are frozen.</div>
+        )}
+        {bank.maintenanceMode && (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">Maintenance — transfers may be paused.</div>
+        )}
+        {oauthSuccess && (
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200 flex justify-between">
+            Linked as {oauthSuccess}
+            <button onClick={() => setOauthSuccess(null)}><X size={14} /></button>
+          </div>
+        )}
+
+        {view === "home" && (
+          <div className="space-y-6">
+            <div className="rounded-[28px] p-7 relative overflow-hidden border border-white/10" style={{ background: `linear-gradient(145deg, ${withAlpha(brand, 0.45)} 0%, #0c0c12 55%)` }}>
+              <p className="text-white/60 text-sm">{greet()}, {displayName}</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/40 mt-5">Available</p>
+              <p className="text-4xl sm:text-5xl font-black tracking-tight mt-1 tabular-nums">{formatMoney(netWorth)}</p>
+              <p className="text-white/40 text-xs mt-2">{accounts.length} account{accounts.length === 1 ? "" : "s"}</p>
+              <div className="grid grid-cols-4 gap-2 mt-7">
+                {[
+                  { id: "send" as View, label: "Send", icon: Send },
+                  { id: "bills" as View, label: "Pay", icon: Receipt },
+                  { id: "borrow" as View, label: "Loans", icon: Landmark },
+                  { id: "apply" as View, label: "Apply", icon: Plus },
+                ].map((a) => (
+                  <button key={a.id} onClick={() => setView(a.id)} className="flex flex-col items-center gap-2 py-3 rounded-2xl bg-black/25 hover:bg-black/40 border border-white/10 text-xs font-semibold">
+                    <a.icon size={16} />
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {activeLoans.some((l: any) => l.status === "delinquent" || l.isDelinquent) && (
+              <button onClick={() => setView("borrow")} className="w-full text-left rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-amber-200">A loan needs attention</p>
+                  <p className="text-xs text-amber-200/70 mt-0.5">Open loans to pay or review terms.</p>
+                </div>
+                <ChevronRight size={16} className="text-amber-300" />
+              </button>
+            )}
+            {invoices.length > 0 && (
+              <button onClick={() => setView("bills")} className="w-full text-left rounded-2xl border border-white/10 bg-white/[0.03] p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold">{invoices.length} unpaid invoice{invoices.length === 1 ? "" : "s"}</p>
+                  <p className="text-xs text-white/40 mt-0.5">Pay from your accounts in one tap.</p>
+                </div>
+                <ChevronRight size={16} className="text-white/30" />
+              </button>
+            )}
+
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Accounts</h2>
+                <button onClick={() => setView("apply")} className="text-xs font-bold text-white/50 hover:text-white flex items-center gap-1"><Plus size={12} /> New</button>
+              </div>
+              {loading ? (
+                <div className="h-24 rounded-2xl bg-white/5 animate-pulse" />
+              ) : accounts.length === 0 ? (
+                <div className="rounded-2xl border border-white/10 p-6 text-center text-sm text-white/50">
+                  No accounts yet.
+                  <button onClick={() => setView("apply")} className="block mx-auto mt-3 text-white font-bold" style={{ color: brand }}>Open one</button>
+                </div>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {accounts.map((acc: any) => (
+                    <div key={acc.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 hover:border-white/20 transition">
+                      <div className="flex justify-between items-start gap-3">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wider text-white/40">{acc.accountType || "personal"}</p>
+                          <p className="font-bold mt-0.5">{acc.accountName}</p>
+                        </div>
+                        {acc.isFrozen && <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-full">Frozen</span>}
+                      </div>
+                      <p className="text-2xl font-black tabular-nums mt-4">{formatMoney(acc.balance)}</p>
+                      <button onClick={() => copy(acc.id, acc.id)} className="mt-3 text-[11px] font-mono text-white/30 hover:text-white flex items-center gap-1">
+                        {copied === acc.id ? <Check size={11} /> : <Copy size={11} />}
+                        {acc.id.slice(0, 14)}…
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Recent</h2>
+                <button onClick={() => setView("activity")} className="text-xs font-bold text-white/50 hover:text-white">See all</button>
+              </div>
+              <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
+                {tx.slice(0, 6).length === 0 && <p className="p-5 text-sm text-white/40">No activity yet.</p>}
+                {tx.slice(0, 6).map((t: any) => {
+                  const inbound = accounts.some((a: any) => a.id === t.toAccountId);
+                  return (
+                    <div key={t.id} className="px-4 py-3.5 flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${inbound ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-white/60"}`}>
+                        {inbound ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{t.description || t.type}</p>
+                        <p className="text-[11px] text-white/35">{t.timestamp ? format(new Date(t.timestamp), "MMM d · h:mm a") : ""}</p>
+                      </div>
+                      <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : "text-white"}`}>
+                        {inbound ? "+" : "−"}{formatMoney(t.amountReceived ?? t.amount)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {view === "send" && (
+          <form onSubmit={sendNow} className="max-w-lg space-y-5">
+            <h2 className="text-2xl font-black">Send money</h2>
+            <label className="block text-xs font-bold text-white/40 uppercase">From</label>
+            <select value={sendFrom} onChange={(e) => setSendFrom(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm">
+              {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName} · {formatMoney(a.balance)}</option>)}
+            </select>
+            <label className="block text-xs font-bold text-white/40 uppercase">To account ID</label>
+            <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder="acc_…" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-mono" required />
+            <label className="block text-xs font-bold text-white/40 uppercase">Amount</label>
+            <input value={sendAmt} onChange={(e) => setSendAmt(e.target.value)} type="number" step="0.01" min="0.01" placeholder="0.00" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-2xl font-black tabular-nums" required />
+            <div className="flex rounded-2xl bg-white/5 p-1 text-xs font-bold">
+              <button type="button" onClick={() => setFeeMode("from_payment")} className={`flex-1 py-2 rounded-xl ${feeMode === "from_payment" ? "bg-white/10 text-white" : "text-white/40"}`}>Fees from payment</button>
+              <button type="button" onClick={() => setFeeMode("sender_covers")} className={`flex-1 py-2 rounded-xl ${feeMode === "sender_covers" ? "bg-white/10 text-white" : "text-white/40"}`}>I cover fees</button>
+            </div>
+            <div className="rounded-2xl border border-white/10 p-4 text-sm space-y-1.5 min-h-[96px]">
+              {quoting && <p className="text-white/40 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Quoting…</p>}
+              {quoteErr && <p className="text-rose-300 text-xs">{quoteErr}</p>}
+              {quote && (
+                <>
+                  <div className="flex justify-between"><span className="text-white/40">You send</span><span className="font-mono font-bold">{formatMoney(quote.submittedCents)}</span></div>
+                  <div className="flex justify-between"><span className="text-white/40">They receive</span><span className="font-mono font-bold text-emerald-300">{formatMoney(quote.receivedCents)}</span></div>
+                  {quote.lines?.map((l: any) => (
+                    <div key={l.code} className="flex justify-between text-xs"><span className="text-white/35">{l.label}</span><span className="font-mono text-white/60">{formatMoney(l.amountCents)}</span></div>
+                  ))}
+                </>
+              )}
+              {!quoting && !quote && !quoteErr && <p className="text-white/30 text-xs">Enter an amount to see city tax and bank fees before you confirm.</p>}
+            </div>
+            <input value={sendMemo} onChange={(e) => setSendMemo(e.target.value)} placeholder="Memo (optional)" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm" />
+            <button disabled={actionPending || suspended} className="w-full py-3.5 rounded-2xl font-bold text-white disabled:opacity-50" style={btnBrand}>
+              {actionPending ? "Sending…" : "Confirm send"}
+            </button>
+          </form>
+        )}
+
+        {view === "activity" && (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-black">Activity</h2>
+            <div className="rounded-2xl border border-white/10 divide-y divide-white/5">
+              {tx.length === 0 && <p className="p-6 text-white/40 text-sm">Nothing here yet.</p>}
+              {tx.map((t: any) => {
+                const inbound = accounts.some((a: any) => a.id === t.toAccountId);
+                return (
+                  <div key={t.id} className="px-4 py-3.5 flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${inbound ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5"}`}>
+                      {inbound ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{t.description || t.type}</p>
+                      <p className="text-[11px] text-white/35">{t.timestamp ? format(new Date(t.timestamp), "MMM d, yyyy · h:mm a") : ""}</p>
+                    </div>
+                    <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : ""}`}>{inbound ? "+" : "−"}{formatMoney(t.amountReceived ?? t.amount)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {view === "borrow" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-black">Loans</h2>
+              {settings.enableLoans !== false && (
+                <button onClick={() => setView("apply")} className="text-xs font-bold px-3 py-2 rounded-xl" style={btnBrand}>Apply</button>
+              )}
+            </div>
+            {activeLoans.length === 0 && <p className="text-white/40 text-sm">No loans. Apply any time from the Apply tab.</p>}
+            {activeLoans.map((l: any) => (
+              <div key={l.id} className="rounded-2xl border border-white/10 p-5 space-y-3">
+                <div className="flex justify-between">
+                  <p className="font-bold">#{l.id.slice(0, 8)}</p>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-white/50">{l.status}</span>
+                </div>
+                <p className="text-2xl font-black tabular-nums">{formatMoney(l.remainingAmount ?? l.remainingBalance)}</p>
+                <p className="text-xs text-white/40">of {formatMoney(l.principalAmount || l.amount)} · {(l.interestRate / 100).toFixed(2)}% APR</p>
+                {["active", "delinquent", "defaulted"].includes(l.status) && (
+                  <button onClick={() => setRepayingLoan(l)} className="text-sm font-bold" style={{ color: brand }}>Pay installment</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {view === "cards" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-black">Cards</h2>
+              {settings.enableCards !== false && <button onClick={() => setView("apply")} className="text-xs font-bold px-3 py-2 rounded-xl border border-white/10">Request</button>}
+            </div>
+            {cards.length === 0 && <p className="text-white/40 text-sm">No cards yet.</p>}
+            <div className="grid sm:grid-cols-2 gap-3">
+              {cards.map((c: any) => (
+                <div key={c.id} className="rounded-2xl p-5 border border-white/10" style={{ background: `linear-gradient(160deg, ${withAlpha(brand, 0.35)}, #0c0c12)` }}>
+                  <p className="text-[11px] uppercase tracking-widest text-white/50">{c.type} · {c.accountName}</p>
+                  <p className="font-mono text-lg mt-4 tracking-widest">{c.cardNumber || "••••"}</p>
+                  <p className="text-xs text-white/40 mt-2">Exp {c.expiryDate}</p>
+                  <button onClick={() => toggleCard(c.id, !c.isLocked)} className="mt-4 text-xs font-bold flex items-center gap-1">
+                    {c.isLocked ? <Unlock size={12} /> : <Lock size={12} />}
+                    {c.isLocked ? "Unlock" : "Lock"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {view === "bills" && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-black">Pay</h2>
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white/40">Invoices</h3>
+              {invoices.length === 0 && <p className="text-sm text-white/40">No unpaid invoices.</p>}
+              {invoices.map((inv: any) => (
+                <div key={inv.id} className="rounded-2xl border border-white/10 p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-sm">{inv.description || "Invoice"}</p>
+                    <p className="text-xs text-white/40">{formatMoney(inv.amount)}</p>
+                  </div>
+                  <select className="bg-white/5 border border-white/10 rounded-xl text-xs px-2 py-2" onChange={(e) => { if (e.target.value) payInvoice(inv.id, e.target.value); }}>
+                    <option value="">Pay from…</option>
+                    {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            {merchants.length > 0 && (
+              <form onSubmit={payMerchant} className="rounded-2xl border border-white/10 p-5 space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-white/40">Pay a merchant</h3>
+                <select name="sourceAccountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                </select>
+                <select name="merchantId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  <option value="">Merchant…</option>
+                  {merchants.map((m: any) => <option key={m.id} value={m.id}>{m.name}{m.bankName ? ` · ${m.bankName}` : ""}</option>)}
+                </select>
+                <input name="amount" type="number" step="0.01" min="0.01" required placeholder="Amount" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono" />
+                <input name="description" placeholder="Memo" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm" />
+                <button disabled={actionPending} className="w-full py-2.5 rounded-xl font-bold text-sm" style={btnBrand}>Pay</button>
+              </form>
+            )}
+          </div>
+        )}
+
+        {view === "apply" && (
+          <div className="space-y-8">
+            <h2 className="text-2xl font-black">Apply</h2>
+            <p className="text-sm text-white/45 -mt-6">Everything this bank offers. Nothing is hidden — apply when you need it.</p>
+
+            <form onSubmit={openAccount} className="rounded-2xl border border-white/10 p-5 space-y-3">
+              <h3 className="font-bold flex items-center gap-2"><Wallet size={16} /> Open an account</h3>
+              <input name="accountName" required placeholder="Account name" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm" />
+              <select name="accountType" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                <option value="personal_checking">Personal checking</option>
+                <option value="personal_savings">Savings</option>
+                <option value="business_checking">Business</option>
+              </select>
+              <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Open</button>
+            </form>
+
+            {settings.enableLoans !== false && (
+              <form onSubmit={applyLoan} className="rounded-2xl border border-white/10 p-5 space-y-3">
+                <h3 className="font-bold flex items-center gap-2"><Landmark size={16} /> Apply for a loan</h3>
+                <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                </select>
+                {loanProducts.length > 0 && (
+                  <select name="productId" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                    <option value="">Standard terms</option>
+                    {loanProducts.map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.name} — {(Number(p.interestRate) / (Number(p.interestRate) > 100 ? 100 : 1)).toFixed(2)}% · max {formatMoney(p.maxAmount)}</option>
+                    ))}
+                  </select>
+                )}
+                <input name="amount" type="number" step="0.01" min="10" required placeholder="Amount" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono" />
+                <select name="termMonths" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  <option value="6">6 months</option>
+                  <option value="12">12 months</option>
+                  <option value="24">24 months</option>
+                </select>
+                <input name="purpose" placeholder="Purpose" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm" />
+                <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Submit application</button>
+              </form>
+            )}
+
+            {settings.enableCards !== false && (
+              <form onSubmit={requestCard} className="rounded-2xl border border-white/10 p-5 space-y-3">
+                <h3 className="font-bold flex items-center gap-2"><CreditCard size={16} /> Request a card</h3>
+                <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                </select>
+                <select name="cardType" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  <option value="debit">Debit</option>
+                  <option value="credit">Credit</option>
+                </select>
+                <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Request card</button>
+              </form>
+            )}
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              {settings.enableVaults !== false && (
+                <div className="rounded-2xl border border-white/10 p-5">
+                  <PiggyBank size={18} className="text-white/50 mb-2" />
+                  <p className="font-bold">Time-locked vaults</p>
+                  <p className="text-xs text-white/40 mt-1">Ask staff to open a vault, or use the city-wide citizen gateway.</p>
+                  <Link to="/portal" className="text-xs font-bold mt-3 inline-block" style={{ color: brand }}>Citizen gateway →</Link>
+                </div>
+              )}
+              <button onClick={() => setView("cards")} className="rounded-2xl border border-white/10 p-5 text-left">
+                <CreditCard size={18} className="text-white/50 mb-2" />
+                <p className="font-bold">Manage cards</p>
+                <p className="text-xs text-white/40 mt-1">Lock or unlock issued cards.</p>
+              </button>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <nav className="fixed bottom-0 inset-x-0 z-30 border-t border-white/10 bg-[#07070b]/90 backdrop-blur-xl">
+        <div className="max-w-5xl mx-auto grid grid-cols-4">
+          {nav.map((n) => {
+            const Icon = n.icon;
+            const on = view === n.id || (n.id === "home" && ["bills", "borrow", "cards"].includes(view) === false && view !== "send" && view !== "activity" && view !== "apply");
+            return (
+              <button key={n.id} onClick={() => setView(n.id)} className={`py-3 text-[11px] font-bold flex flex-col items-center gap-1 ${on ? "text-white" : "text-white/35"}`}>
+                <Icon size={18} color={on ? brand : undefined} />
+                {n.label}
+              </button>
+            );
           })}
         </div>
-      )}
+      </nav>
+
+      <AnimatePresence>
+        {repayingLoan && (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4">
+            <motion.form initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} onSubmit={payLoan} className="bg-[#111118] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4">
+              <div className="flex justify-between">
+                <h3 className="font-bold">Pay loan #{repayingLoan.id.slice(0, 8)}</h3>
+                <button type="button" onClick={() => setRepayingLoan(null)}><X size={16} /></button>
+              </div>
+              <p className="text-sm text-white/50">Remaining {formatMoney(repayingLoan.remainingAmount ?? repayingLoan.remainingBalance)}</p>
+              <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName} · {formatMoney(a.balance)}</option>)}
+              </select>
+              <input name="amount" type="number" step="0.01" min="0.01" required defaultValue={((repayingLoan.remainingAmount ?? 0) / 100).toFixed(2)} className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 font-mono" />
+              <button disabled={actionPending} className="w-full py-3 rounded-xl font-bold" style={btnBrand}>Pay</button>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ opacity: 0 }} className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-white text-black text-sm font-bold px-4 py-2.5 rounded-full shadow-2xl">
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

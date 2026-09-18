@@ -8,9 +8,13 @@ import { portalRouter } from "./routes/portal.js";
 import { onyxRouter } from "./routes/onyx.js";
 import { botRouter } from "./routes/bot.js";
 import { webhooksRouter } from "./routes/webhooks.js";
+import { opsRouter } from "./routes/ops.js";
+import { deskRouter } from "./routes/desk.js";
 
 export function registerAllRoutes(app: express.Express, ctx?: any) {
     app.use('/', v1Router);
+    app.use('/', opsRouter);
+    app.use('/', deskRouter);
     app.use('/', banksRouter);
     app.use('/', globalRouter);
     app.use('/', citizenRouter);

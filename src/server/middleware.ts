@@ -111,19 +111,33 @@ export const authenticateApiRequest = async (req: express.Request, res: express.
   const { db } = await import("../db/index.js");
   const { banks } = await import("../db/schema.js");
   try {
-    const { decryptSecret } = await import("../lib/encryption.js");
+    const { verifyPresentedKey, hashApiKey, last4OfKey } = await import("../lib/api_keys.js");
+    const { bankIsSuspended } = await import("../lib/tenant_guard.js");
     const all = await db.select().from(banks);
-    const tokenBuf = Buffer.from(String(token));
     const bank = all.find((b) => {
-      if (!b.apiKey) return false;
-      const plain = b.apiKey === token ? token : decryptSecret(b.apiKey);
-      if (!plain) return false;
-      const plainBuf = Buffer.from(String(plain));
-      if (plainBuf.length !== tokenBuf.length) return false;
-      try { return crypto.timingSafeEqual(plainBuf, tokenBuf); } catch { return false; }
+      const result = verifyPresentedKey({
+        presented: token,
+        storedHash: (b as any).apiKeyHash,
+        storedEncrypted: b.apiKey,
+      });
+      return result.ok;
     });
     if (!bank) {
       return res.status(401).json({ error: "Invalid API key" });
+    }
+    const verified = verifyPresentedKey({
+      presented: token,
+      storedHash: (bank as any).apiKeyHash,
+      storedEncrypted: bank.apiKey,
+    });
+    if (verified.needsBackfill) {
+      await db.update(banks).set({
+        apiKeyHash: hashApiKey(token),
+        apiKeyLast4: last4OfKey(token),
+      } as any).where((await import("drizzle-orm")).eq(banks.id, bank.id));
+    }
+    if (bankIsSuspended(bank)) {
+      return res.status(403).json({ error: "This bank is suspended. API access is frozen." });
     }
     (req as any).bank = bank;
     next();

@@ -10,6 +10,7 @@ export function BankDeveloper() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   
   const [apiKey, setApiKey] = useState("");
+  const [apiKeyLast4, setApiKeyLast4] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [loading, setLoading] = useState(true);
@@ -18,7 +19,8 @@ export function BankDeveloper() {
     try {
       const res = await fetch(`/api/banks/${bank.id}/developer`);
       const data = await res.json();
-      setApiKey(data.apiKey);
+      setApiKey(data.apiKey || "");
+        setApiKeyLast4(data.apiKeyLast4 || (data.apiKey ? String(data.apiKey).slice(-4) : ""));
         setWebhookSecret(data.webhookSecret);
         setWebhookUrl(data.apiWebhookUrl || "");
     } catch (e) {
@@ -38,9 +40,10 @@ export function BankDeveloper() {
        try {
          const res = await fetch(`/api/banks/${bank.id}/developer/roll`, { method: "POST" });
          const data = await res.json();
-         setApiKey(data.apiKey);
+         setApiKey(data.apiKey || "");
+         setApiKeyLast4(data.apiKeyLast4 || (data.apiKey ? String(data.apiKey).slice(-4) : ""));
          setWebhookSecret(data.webhookSecret);
-         alert("Secret keys have been rolled successfully.");
+         alert("Copy the new API key now — it is shown only once.");
        } catch (e) {
          console.error(e);
        } finally {
@@ -74,7 +77,7 @@ export function BankDeveloper() {
               <h3 className="text-xl font-bold">API Credentials</h3>
             </div>
             <p className="text-white/60 text-sm mb-8">
-              Use these keys to authenticate API requests. Keep your secret keys safe and do not share them publicly.
+              API keys are stored as hashes. The full secret is shown only when you roll it. Copy it immediately.
             </p>
 
             <div className="space-y-6">
@@ -82,7 +85,7 @@ export function BankDeveloper() {
                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Live Secret Key</label>
                 <div className="flex bg-[#1a1a24] border border-white/10 rounded-lg overflow-hidden">
                   <div className="flex-1 px-4 py-3 font-mono text-sm flex items-center">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin text-white/50" /> : (apiKeyVisible ? apiKey : "sk_live_" + "•".repeat(32))}
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin text-white/50" /> : (apiKey ? (apiKeyVisible ? apiKey : "sk_live_" + "•".repeat(32)) : `hashed · last4 ${apiKeyLast4 || "????"} — roll to issue a new key`)}
                   </div>
                   <button disabled={loading} onClick={() => setApiKeyVisible(!apiKeyVisible)} className="px-4 text-white/50 hover:text-white border-l border-white/10 transition-colors">
                     {apiKeyVisible ? <EyeOff size={18} /> : <Eye size={18} />}

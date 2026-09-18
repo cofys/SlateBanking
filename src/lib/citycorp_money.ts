@@ -310,6 +310,13 @@ export async function executeSameBankBookTransfer(opts: {
     throw new MoneyRailError("Destination account is frozen or inactive.");
   }
 
+  {
+    const { bankBlocksCustomerMoney } = await import("./tenant_guard");
+    const liveBank = await loadBank(opts.sourceAccount.bankId);
+    const block = bankBlocksCustomerMoney(liveBank);
+    if (block.blocked) throw new MoneyRailError(block.reason);
+  }
+
   const mode = parseFeePayerMode(opts.mode, "from_payment");
   let quote: FeeQuote;
   let sourceBank: BankRow;

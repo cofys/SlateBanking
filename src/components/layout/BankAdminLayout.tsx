@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Routes, Route, Link, Outlet, useLocation } from "react-router-dom";
-import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, Shield, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText, Percent, Layers } from "lucide-react";
+import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, Shield, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText, Percent, Layers, Inbox, UserRound, ShieldAlert } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { ErrorBoundary } from "../ErrorBoundary";
 
@@ -183,6 +183,9 @@ export function BankAdminLayout() {
       title: "Core",
       links: [
         { name: "Dashboard", path: `/bank/${bankId}`, icon: LayoutDashboard },
+        { name: "Needs attention", path: `/bank/${bankId}/queue`, icon: Inbox },
+        { name: "Teller", path: `/bank/${bankId}/teller`, icon: UserRound },
+        { name: "Collections", path: `/bank/${bankId}/collections`, icon: ShieldAlert },
         { name: "Analytics", path: `/bank/${bankId}/analytics`, icon: BarChart3 },
       ]
     },
