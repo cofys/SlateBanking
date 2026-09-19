@@ -2,7 +2,6 @@ import { globalAudit } from './src/server/globalAudit.js';
 import express from "express";
 import { randomInt } from "crypto";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
@@ -204,6 +203,7 @@ async function startServer() {
     registerAllRoutes(app, { getRedirectUri, requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET,  });
 
 if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false, allowedHosts: true },
       appType: "spa",
