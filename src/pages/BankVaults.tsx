@@ -103,10 +103,10 @@ export function BankVaults() {
         <div>
           <h1 className="text-3xl font-black tracking-tight mb-2 text-white flex items-center gap-3">
             <Lock className="text-amber-400" size={32} />
-            Savings Vaults
+            Savings Bonds
           </h1>
           <p className="text-white/60 text-sm font-medium">
-            Time-locked institutional deposit structures and staking pools
+            Time-locked bonds. Customers buy them from Apply if you offer terms.
           </p>
         </div>
         <div className="flex items-center gap-3 self-start sm:self-auto">
@@ -114,7 +114,7 @@ export function BankVaults() {
             onClick={() => setShowAddModal(true)}
             className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-lg shadow-amber-600/20"
           >
-            <Plus size={16} /> Open Vault
+            <Plus size={16} /> Issue Bond
           </button>
         </div>
       </header>
@@ -127,7 +127,7 @@ export function BankVaults() {
             <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
               <Lock size={16} />
             </div>
-            <span className="text-xs font-bold uppercase tracking-widest">Active Vaults</span>
+            <span className="text-xs font-bold uppercase tracking-widest">Active Bonds</span>
           </div>
           <p className="text-3xl font-black text-white">{activeVaults.length}</p>
         </div>
@@ -160,9 +160,9 @@ export function BankVaults() {
           <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
             <Lock className="text-white/20" size={32} />
           </div>
-          <h3 className="text-lg font-bold text-white mb-2">No Active Vaults</h3>
+          <h3 className="text-lg font-bold text-white mb-2">No Active Bonds</h3>
           <p className="text-zinc-500 max-w-sm mb-6 font-medium">
-            Create time-locked savings vaults to lock up funds for a designated period while earning high-yield interest.
+            Offer bond terms in Bank Settings. Customers can buy them from Apply, or you can issue one here.
           </p>
           <button 
             onClick={() => setShowAddModal(true)}

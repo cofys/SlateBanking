@@ -13,14 +13,14 @@ export function DashboardLayout() {
   }, [location.pathname]);
 
   const navItems = [
-  { path: "/security", label: "Security Suite", icon: ShieldAlert },
     { name: "Overview", path: "/", icon: Activity },
     { name: "Network Health", path: "/health", icon: Eye },
     { name: "Bank Instances", path: "/banks", icon: Building2 },
+    { name: "Oversight", path: "/oversight", icon: ShieldAlert },
     { name: "Global Transactions", path: "/transactions", icon: Activity },
     { name: "Onyx Network (PSP)", path: "/onyx", icon: Shield },
     { name: "CityCorp Network", path: "/citycorp", icon: Settings },
-    { name: "Eye of God", path: "/eye-of-god", icon: Eye },
+    { name: "Security Suite", path: "/security", icon: ShieldAlert },
   ];
 
   if (isLoading) {
@@ -207,7 +207,7 @@ export function DashboardLayout() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden relative w-full">
+      <div className="flex-1 flex flex-col overflow-hidden relative w-full min-w-0">
         <header className="h-14 md:h-16 border-b border-white/10 flex items-center justify-between px-4 md:px-8 bg-[#0a0a0c] sticky top-0 z-30 shrink-0">
           <div className="flex items-center gap-4">
             <button className="md:hidden text-white/60 hover:text-white" onClick={() => setMobileMenuOpen(true)}>
@@ -224,7 +224,7 @@ export function DashboardLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
+        <main className="flex-1 overflow-y-auto overflow-x-auto p-4 sm:p-6 md:p-8 min-w-0">
           <Outlet />
         </main>
       </div>

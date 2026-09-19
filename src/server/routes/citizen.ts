@@ -1017,9 +1017,10 @@ citizenRouter.delete("/api/citizen/accounts/:accountId/members/:memberId", requi
 
 citizenRouter.post("/api/citizen/transfer/quote", requireAuth, async (req: express.Request, res: express.Response) => {
     try {
-      const { fromAccountId, toAccountId, amount } = req.body;
+      const { fromAccountId, toAccountId, toQuery, amount } = req.body;
       const discordId = (req as any).user.discordId;
-      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+      const destRaw = toAccountId || toQuery;
+      if (!fromAccountId || !destRaw || fromAccountId === destRaw) {
         return res.status(400).json({ error: "Invalid account selection" });
       }
       const parsedAmount = Math.round(parseFloat(amount) * 100);
@@ -1050,8 +1051,9 @@ citizenRouter.post("/api/citizen/transfer/quote", requireAuth, async (req: expre
         }
       }
 
-      const destAccount = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId)).get();
-      if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
+      const destResolved = await (await import("../../lib/account_lookup.js")).resolvePayableAccount(destRaw, { preferBankId: sourceAccount.bankId, excludeId: sourceAccount.id });
+      if (!destResolved.account) return res.status(404).json({ error: destResolved.error || "Destination account not found. Use the in-game account name.", matches: destResolved.matches });
+      const destAccount = destResolved.account;
 
       const settings = await loadSettings(sourceAccount.bankId);
       const feeMode = parseFeePayerMode(req.body?.feePayerMode || req.body?.feeMode, (settings?.defaultFeePayerMode as any) || "from_payment");
@@ -1067,6 +1069,7 @@ citizenRouter.post("/api/citizen/transfer/quote", requireAuth, async (req: expre
         quote,
         sameBank: sourceAccount.bankId === destAccount.bankId,
         sourceCard: !!sourceCard,
+        destination: { id: destAccount.id, accountName: destAccount.accountName, bankName: (destAccount as any).bankName },
         defaultFeePayerMode: settings?.defaultFeePayerMode || "from_payment",
       });
     } catch (e: any) {
@@ -1082,8 +1085,8 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
     const { v4: uuidv4 } = await import("uuid");
 
     try {
-      const { fromAccountId, toAccountId, amount } = req.body; const discordId = (req as any).user.discordId;
-      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+      const { fromAccountId, toAccountId, toQuery, amount } = req.body; const discordId = (req as any).user.discordId;
+      if (!fromAccountId || !(toAccountId || toQuery) || fromAccountId === toAccountId) {
         return res.status(400).json({ error: "Invalid account selection" });
       }
 
@@ -1123,8 +1126,9 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
           if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
       }
 
-      const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId));
-      if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
+      const destResolved = await (await import("../../lib/account_lookup.js")).resolvePayableAccount(toAccountId || toQuery, { preferBankId: sourceAccount.bankId, excludeId: sourceAccount.id });
+      if (!destResolved.account) return res.status(404).json({ error: destResolved.error || "Destination account not found", matches: destResolved.matches });
+      const destAccount = destResolved.account;
       if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
       const fromBank = sourceAccount.bankId;

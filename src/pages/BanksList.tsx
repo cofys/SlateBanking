@@ -345,7 +345,7 @@ export function BanksList() {
           <h1 className="text-2xl font-semibold tracking-tight">Bank Instances</h1>
           <p className="text-white/50 mt-1">Manage active Discord bot instances and network maintenance modes.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button 
             onClick={() => handleToggleAllMaintenance(true)}
             className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer"
@@ -459,7 +459,28 @@ export function BanksList() {
             className="w-full max-w-md bg-[#16161d] border border-white/10 rounded-md py-2 px-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-500"
           />
         </div>
-        <table className="w-full text-left text-sm">
+        <div className="md:hidden p-3 space-y-3">
+          {loading && <div className="py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-400" /></div>}
+          {!loading && filteredBanks.length === 0 && <p className="text-center text-white/40 py-8 text-sm">No bank instances found.</p>}
+          {filteredBanks.map((bank) => (
+            <div key={bank.id} className="rounded-xl border border-white/10 bg-[#0d0d14] p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-bold truncate">{bank.name}</p>
+                  <p className="text-[11px] text-white/40 font-mono truncate">{bank.customDomain || bank.id.slice(0, 8)}</p>
+                </div>
+                <span className={`text-[10px] font-bold uppercase ${bank.status === "online" ? "text-emerald-400" : "text-rose-400"}`}>{bank.status}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Link to={`/bank/${bank.id}`} className="text-center text-xs font-bold py-2 rounded-lg bg-indigo-600 text-white">Open desk</Link>
+                <Link to={bank.customDomain ? `https://${bank.customDomain}` : `/portal/${bank.id}`} className="text-center text-xs font-bold py-2 rounded-lg border border-white/10">Portal</Link>
+                <button onClick={() => setShowManageModal(bank.id)} className="col-span-2 text-xs font-bold py-2 rounded-lg bg-white/10">Manage</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="hidden md:block overflow-x-auto">
+        <table className="w-full text-left text-sm min-w-[860px]">
           <thead className="bg-[#0a0a0c] border-b border-white/10 text-white/50">
             <tr>
               <th className="px-6 py-4 font-medium">Bank ID</th>
@@ -539,7 +560,8 @@ export function BanksList() {
                       {bank.maintenanceMode ? '⚠️ Maintenance On' : '🟢 Active'}
                     </button>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-4 text-right space-x-3 whitespace-nowrap">
+                    <Link to={`/bank/${bank.id}`} className="text-white/60 hover:text-white font-medium">Desk</Link>
                     <button 
                       onClick={() => setShowManageModal(bank.id)}
                       className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
@@ -552,6 +574,7 @@ export function BanksList() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {showAddModal && (

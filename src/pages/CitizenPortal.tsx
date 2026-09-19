@@ -49,11 +49,14 @@ export function CitizenPortal() {
         const res = await fetch("/api/citizen/transfer/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, amount: sendAmt, feePayerMode: feeMode }),
+          body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, toQuery: sendTo, amount: sendAmt, feePayerMode: feeMode }),
         });
         const d = await res.json();
         if (!res.ok) { setQuote(null); setQuoteErr(d.error || "Quote failed"); }
-        else setQuote(d.quote);
+        else {
+          setQuote(d.quote);
+          if (d.destination?.id && d.destination.id !== sendTo) setSendTo(d.destination.id);
+        }
       } catch { setQuoteErr("Quote failed"); }
       setQuoting(false);
     }, 350);
@@ -129,7 +132,7 @@ export function CitizenPortal() {
       const res = await fetch("/api/citizen/transfer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, amount: sendAmt, feePayerMode: feeMode }),
+        body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, toQuery: sendTo, amount: sendAmt, feePayerMode: feeMode }),
       });
       const d = await res.json();
       if (!res.ok) flash(d.error || "Transfer failed");
@@ -265,7 +268,7 @@ export function CitizenPortal() {
             <select value={sendFrom} onChange={(e) => setSendFrom(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm">
               {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.bankName} · {a.accountName} · {formatMoney(a.balance)}</option>)}
             </select>
-            <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder="Destination account ID" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-mono" required />
+            <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder="Account name (in-game)" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm" required />
             <input value={sendAmt} onChange={(e) => setSendAmt(e.target.value)} type="number" step="0.01" min="0.01" placeholder="0.00" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-2xl font-black" required />
             <div className="flex rounded-2xl bg-white/5 p-1 text-xs font-bold">
               <button type="button" onClick={() => setFeeMode("from_payment")} className={`flex-1 py-2 rounded-xl ${feeMode === "from_payment" ? "bg-white/10" : "text-white/40"}`}>Fees from payment</button>
@@ -303,7 +306,7 @@ export function CitizenPortal() {
             {loanBankId && (
               <>
                 <Link to={`/portal/${loanBankId}`} className="block rounded-2xl border border-white/10 p-4 text-sm hover:border-white/20">
-                  Open {byBank.find(b => b.bank.id === loanBankId)?.bank.name} portal for cards, vaults, and bills →
+                  Open {byBank.find(b => b.bank.id === loanBankId)?.bank.name} portal for cards, bonds, and bills →
                 </Link>
                 <form onSubmit={applyLoan} className="rounded-2xl border border-white/10 p-5 space-y-3">
                   <h3 className="font-bold flex items-center gap-2"><Landmark size={16} /> Loan</h3>

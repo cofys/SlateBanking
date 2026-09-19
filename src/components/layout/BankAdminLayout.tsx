@@ -202,7 +202,7 @@ export function BankAdminLayout() {
       title: "Products & Services",
       links: [
         settings?.enableLoans !== false && { name: "Loans", path: `/bank/${bankId}/loans`, icon: Landmark },
-        settings?.enableVaults !== false && { name: "Vaults", path: `/bank/${bankId}/vaults`, icon: Lock },
+        settings?.enableVaults !== false && { name: "Bonds", path: `/bank/${bankId}/vaults`, icon: Lock },
         settings?.enableCards !== false && { name: "Cards", path: `/bank/${bankId}/cards`, icon: CreditCard },
         settings?.enablePayroll !== false && { name: "Payroll", path: `/bank/${bankId}/payroll`, icon: Briefcase },
         settings?.enableSubscriptions !== false && { name: "Subscriptions", path: `/bank/${bankId}/subscriptions`, icon: Repeat },

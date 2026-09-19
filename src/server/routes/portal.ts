@@ -171,7 +171,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bank.id)).get();
       const publicSettings = settings ? {
         bankId: settings.bankId,
-        logoUrl: settings.logoUrl,
+        logoUrl: settings.logoUrl || bank.logoUrl,
         colorScheme: settings.colorScheme,
         requireKyc: settings.requireKyc,
         enableAccountTiers: settings.enableAccountTiers,
@@ -350,7 +350,10 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
          cardNumber: cards.cardNumber,
          expiryDate: cards.expiryDate,
          isLocked: cards.isLocked,
-         type: cards.type
+         type: cards.type,
+         creditLimit: cards.creditLimit,
+         creditUsed: cards.creditUsed,
+         productId: cards.productId,
       })
       .from(cards)
       .leftJoin(banks, eq(cards.bankId, banks.id))
@@ -453,11 +456,11 @@ portalRouter.post("/api/portal/:bankId/transfer/quote", requireAuth, async (req:
     const { bankAccounts, banks } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
     try {
-      const { fromAccountId, toAccountId, amount, feePayerMode } = req.body;
+      const { fromAccountId, toAccountId, toQuery, amount, feePayerMode } = req.body;
       const bankId = req.params.bankId;
       const candidateIds = await getUserCandidateIdentifiers(req, bankId);
       const cents = Math.round(parseFloat(amount) * 100);
-      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+      if (!fromAccountId || !(toAccountId || toQuery) || fromAccountId === toAccountId) {
         return res.status(400).json({ error: "Invalid account selection" });
       }
       if (!Number.isFinite(cents) || cents <= 0) return res.status(400).json({ error: "Invalid amount" });
@@ -465,13 +468,15 @@ portalRouter.post("/api/portal/:bankId/transfer/quote", requireAuth, async (req:
       if (!sourceAccount || !(await isUserAccountOwnerOrMember(sourceAccount, candidateIds))) {
         return res.status(404).json({ error: "Source account not found or unauthorized" });
       }
-      const destAccount = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId)).get();
-      if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
+      const { resolvePayableAccount } = await import("../../lib/account_lookup.js");
+      const resolved = await resolvePayableAccount(toAccountId || toQuery, { preferBankId: bankId, excludeId: fromAccountId });
+      if (!resolved.account) return res.status(404).json({ error: resolved.error || "Destination account not found", matches: resolved.matches });
+      const destAccount = resolved.account;
       const { quoteBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
       const settings = await loadSettings(bankId);
       const mode = parseFeePayerMode(feePayerMode, (settings?.defaultFeePayerMode as any) || "from_payment");
       const { quote } = await quoteBookTransfer({ sourceAccount, destAccount, desiredCents: cents, mode });
-      res.json({ success: true, quote, sameBank: sourceAccount.bankId === destAccount.bankId, defaultFeePayerMode: settings?.defaultFeePayerMode || "from_payment" });
+      res.json({ success: true, quote, sameBank: sourceAccount.bankId === destAccount.bankId, destination: { id: destAccount.id, accountName: destAccount.accountName, bankId: destAccount.bankId, bankName: destAccount.bankName }, defaultFeePayerMode: settings?.defaultFeePayerMode || "from_payment" });
     } catch (e: any) {
       res.status(400).json({ error: e.message || "Quote failed" });
     }
@@ -483,7 +488,7 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
     const { eq, and } = await import("drizzle-orm");
 
     try {
-      const { fromAccountId, toAccountId, amount, feePayerMode } = req.body;
+      const { fromAccountId, toAccountId, toQuery, amount, feePayerMode } = req.body;
       const bankId = req.params.bankId;
       const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
@@ -495,7 +500,7 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
         }
       }
 
-      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+      if (!fromAccountId || !(toAccountId || toQuery) || fromAccountId === toAccountId) {
         return res.status(400).json({ error: "Invalid account selection" });
       }
 
@@ -513,27 +518,27 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
       if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
       if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
 
-      const [destAccount] = await db.select().from(bankAccounts).where(
-        and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bankId))
-      );
-      if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
+      const { resolvePayableAccount } = await import("../../lib/account_lookup.js");
+      const resolved = await resolvePayableAccount(toAccountId || toQuery, { preferBankId: bankId, excludeId: sourceAccount.id });
+      if (!resolved.account) return res.status(404).json({ error: resolved.error || "Destination account not found", matches: resolved.matches });
+      const destAccount = resolved.account;
       if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
-      const { executeSameBankBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
+      const { executeBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
       const settings = await loadSettings(bankId);
       const mode = parseFeePayerMode(feePayerMode, (settings?.defaultFeePayerMode as any) || "from_payment");
-      const moved = await executeSameBankBookTransfer({
+      const moved = await executeBookTransfer({
         sourceAccount,
         destAccount,
         desiredCents: amnt,
         mode,
-        description: `Citizen Portal Transfer to ${destAccount.accountName}`,
+        description: req.body.description || `Citizen Portal Transfer to ${destAccount.accountName}`,
         type: "transfer",
       });
 
       import("../../lib/customer_notify.js").then(({ notifyTransferReceived }) =>
         notifyTransferReceived({
-          bankId,
+          bankId: destAccount.bankId,
           destOwnerDiscordId: destAccount.ownerDiscordId,
           destAccountName: destAccount.accountName,
           receivedCents: moved.quote.receivedCents,
@@ -541,7 +546,7 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
         })
       ).catch(() => {});
 
-      res.json({ success: true, quote: moved.quote, txId: moved.txId });
+      res.json({ success: true, quote: moved.quote, txId: moved.txId, destination: { id: destAccount.id, accountName: destAccount.accountName, bankName: destAccount.bankName } });
     } catch (e: any) {
       console.error(e);
       if (e?.name === "MoneyRailError") {
@@ -948,13 +953,13 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
 
 portalRouter.post("/api/portal/:bankId/request-card", requireAuth, async (req, res) => {
   const { db } = await import("../../db/index.js");
-  const { cards, bankAccounts, banks } = await import("../../db/schema.js");
+  const { cards, bankAccounts, banks, creditProducts, creditApplications, bankSettings } = await import("../../db/schema.js");
   const { eq, and } = await import("drizzle-orm");
   const { v4: uuidv4 } = await import("uuid");
   const { randomInt } = await import("crypto");
 
   try {
-    const { accountId, cardType } = req.body;
+    const { accountId, cardType, productId } = req.body;
     const bankId = req.params.bankId;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
     if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
@@ -964,40 +969,73 @@ portalRouter.post("/api/portal/:bankId/request-card", requireAuth, async (req, r
 
     const [acc] = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId)));
     if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
-      return res.status(404).json({ error: "Destination account not found or unauthorized" });
+      return res.status(404).json({ error: "Account not found or unauthorized" });
     }
 
-    const cardNumber = Array.from({length: 16}, () => randomInt(0, 10)).join('');
-    const cvv = Array.from({length: 3}, () => randomInt(0, 10)).join('');
-    
-    const nextYear = new Date();
-    nextYear.setFullYear(nextYear.getFullYear() + 4);
-    const expiryDate = `${(nextYear.getMonth() + 1).toString().padStart(2, '0')}/${nextYear.getFullYear().toString().slice(-2)}`;
+    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    if (settings?.enableCards === false) return res.status(400).json({ error: "This bank is not issuing cards." });
 
-    const cardId = `crd_${uuidv4().substring(0, 8)}`;
-    const type = cardType === 'credit' ? 'credit' : 'debit';
-    if (type === 'credit') {
-      return res.status(400).json({ error: "Credit cards must be issued by bank staff. Request a debit card or apply for credit through the bank." });
+    let product: any = null;
+    if (productId) {
+      product = await db.select().from(creditProducts).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId), eq(creditProducts.isActive, true))).get();
+      if (!product) return res.status(400).json({ error: "That card product is not available." });
     }
-      const creditLimit = 0;
-      const apr = 0;
 
-    await db.insert(cards).values({
-      id: cardId,
-      bankId,
-      accountId,
-      cardNumber,
-      cvv,
-      expiryDate,
-      type,
-      creditLimit,
-      creditUsed: 0,
-      apr,
-      isLocked: false,
-      createdAt: new Date(),
-    });
+    const kind = product?.cardKind || (cardType === "credit" ? "credit" : "debit");
+    const issueNow = () => {
+      const cardNumber = Array.from({length: 16}, () => randomInt(0, 10)).join("");
+      const cvv = Array.from({length: 3}, () => randomInt(0, 10)).join("");
+      const nextYear = new Date();
+      nextYear.setFullYear(nextYear.getFullYear() + 4);
+      const expiryDate = `${(nextYear.getMonth() + 1).toString().padStart(2, "0")}/${nextYear.getFullYear().toString().slice(-2)}`;
+      const creditLimit = product ? Number(product.maxLimit) || 0 : 0;
+      const apr = product ? Math.round(Number(product.interestRate) * 100) : 0;
+      return {
+        id: `crd_${uuidv4().substring(0, 8)}`,
+        bankId,
+        accountId,
+        cardNumber,
+        cvv,
+        expiryDate,
+        type: kind === "debit" ? "debit" : "credit",
+        creditLimit,
+        creditUsed: 0,
+        apr,
+        isLocked: false,
+        productId: product?.id || null,
+        createdAt: new Date(),
+        nextPaymentDate: kind === "credit" ? (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })() : null,
+      };
+    };
 
-    res.json({ success: true, cardId });
+    let autoApprove = kind === "debit";
+    if (settings?.autoApproveCreditCards) autoApprove = true;
+    if (settings?.enableAccountTiers && acc.tierId && settings.accountTiers) {
+      const tier = (settings.accountTiers as any[]).find((t) => t.id === acc.tierId);
+      if (tier?.autoApproveCreditCards) autoApprove = true;
+    }
+    if (product?.tierId && acc.tierId && product.tierId !== acc.tierId) autoApprove = false;
+
+    if (!autoApprove) {
+      const appId = uuidv4();
+      await db.insert(creditApplications).values({
+        id: appId,
+        bankId,
+        discordId: candidateIds[0],
+        accountId,
+        requestedLimit: product ? Number(product.maxLimit) : 0,
+        monthlyIncome: 0,
+        purpose: product ? `Apply: ${product.name}` : "Card request",
+        status: "pending",
+        productId: product?.id || null,
+        createdAt: new Date(),
+      } as any);
+      return res.json({ success: true, pending: true, message: "Application submitted. Staff will review." });
+    }
+
+    const card = issueNow();
+    await db.insert(cards).values(card as any);
+    res.json({ success: true, cardId: card.id, issued: true, creditLimit: card.creditLimit });
   } catch (e: any) {
     console.error("Issue card error:", e);
     res.status(500).json({ error: e.message || "Failed to issue card." });
@@ -1114,5 +1152,136 @@ portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: exp
   } catch (e: any) {
     console.error("[LoanRepayAPI] Error:", e);
     return res.status(400).json({ error: e.message || "Loan repayment failed" });
+  }
+});
+
+portalRouter.get("/api/portal/:bankId/payees", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const q = String(req.query.q || "");
+    const { suggestPayees } = await import("../../lib/account_lookup.js");
+    const matches = await suggestPayees(q, { preferBankId: req.params.bankId, limit: 8 });
+    res.json(matches);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Lookup failed" });
+  }
+});
+
+portalRouter.get("/api/portal/:bankId/catalog", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { loanProducts, creditProducts, bankSettings } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+  try {
+    const bankId = req.params.bankId;
+    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    const loans = settings?.enableLoans === false ? [] : await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, bankId), eq(loanProducts.isActive, true)));
+    const cards = settings?.enableCards === false ? [] : await db.select().from(creditProducts).where(and(eq(creditProducts.bankId, bankId), eq(creditProducts.isActive, true)));
+    const bonds = settings?.enableVaults === false ? [] : (settings?.vaultTiers || []);
+    res.json({ loans, cards, bonds, enableLoans: settings?.enableLoans !== false, enableCards: settings?.enableCards !== false, enableBonds: settings?.enableVaults !== false });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Failed to load catalog" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/bonds", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { vaultDeposits, bankAccounts, bankSettings } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+  try {
+    const bankId = req.params.bankId;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const { accountId, amount, lockDays } = req.body;
+    const parsedAmount = Math.round(parseFloat(amount) * 100);
+    const days = parseInt(lockDays, 10);
+    if (!accountId || !Number.isFinite(parsedAmount) || parsedAmount <= 0 || !days) {
+      return res.status(400).json({ error: "Invalid bond application" });
+    }
+    const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
+    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
+      return res.status(404).json({ error: "Account not found or unauthorized" });
+    }
+    if (acc.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
+    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+    if (settings?.enableVaults === false) return res.status(400).json({ error: "This bank is not offering bonds." });
+    const tiers = settings?.vaultTiers || [];
+    const tier = (tiers as any[]).find((t) => Number(t.lockDays) === days);
+    if (!tier) return res.status(400).json({ error: "That bond term is not offered." });
+
+    const { holdInSystemAccount } = await import("../../lib/citycorp_money.js");
+    await holdInSystemAccount({
+      fromAccount: acc,
+      amountCents: parsedAmount,
+      systemAccountName: "VAULT",
+      systemCategory: "vault",
+      description: `Bond purchase (${days} days @ ${(Number(tier.interestRate) / 100).toFixed(2)}%)`,
+      type: "vault",
+    });
+    const lockedUntil = new Date();
+    lockedUntil.setDate(lockedUntil.getDate() + days);
+    const bond = {
+      id: uuidv4(),
+      bankId,
+      accountId: acc.id,
+      amount: parsedAmount,
+      lockedUntil,
+      interestRate: Number(tier.interestRate),
+      status: "locked",
+      createdAt: new Date(),
+    };
+    await db.insert(vaultDeposits).values(bond);
+    res.json({ success: true, bond });
+  } catch (e: any) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "Could not buy bond" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/cards/:cardId/cash-advance", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { cards, bankAccounts, creditProducts } = await import("../../db/schema.js");
+  const { eq, and, sql } = await import("drizzle-orm");
+  try {
+    const bankId = req.params.bankId;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const amountCents = Math.round(parseFloat(req.body.amount) * 100);
+    if (!Number.isFinite(amountCents) || amountCents <= 0) return res.status(400).json({ error: "Invalid amount" });
+
+    const card = await db.select().from(cards).where(and(eq(cards.id, req.params.cardId), eq(cards.bankId, bankId))).get();
+    if (!card) return res.status(404).json({ error: "Card not found" });
+    if (card.isLocked) return res.status(400).json({ error: "Card is locked" });
+    if (card.type !== "credit") return res.status(400).json({ error: "Cash advances are for credit cards." });
+
+    const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
+    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    let product: any = null;
+    if ((card as any).productId) {
+      product = await db.select().from(creditProducts).where(eq(creditProducts.id, (card as any).productId)).get();
+    }
+    if (product && product.cashAdvanceEnabled === false) {
+      return res.status(400).json({ error: "Cash advances are disabled on this card." });
+    }
+
+    const feeBps = product?.cashAdvanceFeePercent ?? 300;
+    const fee = Math.floor(amountCents * (feeBps / 10000));
+    const charged = amountCents + fee;
+    if ((card.creditUsed || 0) + charged > (card.creditLimit || 0)) {
+      return res.status(400).json({ error: "Exceeds available credit." });
+    }
+
+    const { disburseFromPoolOrOperating } = await import("../../lib/citycorp_money.js");
+    await disburseFromPoolOrOperating({
+      bankId,
+      toAccount: acc,
+      amountCents,
+      description: `Cash advance · card ${String(card.cardNumber || "").slice(-4)}`,
+    });
+    await db.update(cards).set({ creditUsed: sql`${cards.creditUsed} + ${charged}` }).where(eq(cards.id, card.id));
+    res.json({ success: true, advancedCents: amountCents, feeCents: fee, creditUsed: (card.creditUsed || 0) + charged });
+  } catch (e: any) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "Cash advance failed" });
   }
 });

@@ -1,4 +1,4 @@
-import { EyeOfGod } from './pages/EyeOfGod';
+import { Oversight } from './pages/Oversight';
 import { BankProducts } from "./pages/BankProducts";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
@@ -156,7 +156,8 @@ function App() {
           <Route path="transactions" element={<TransactionsList />} />
           <Route path="onyx" element={<OnyxSettings />} />
           <Route path="citycorp" element={<CityCorpLogs />} />
-          <Route path="eye-of-god" element={<EyeOfGod />} />
+          <Route path="oversight" element={<Oversight />} />
+          <Route path="eye-of-god" element={<Navigate to="/oversight" replace />} />
           <Route path="settings" element={<GlobalSettings />} />
           <Route path="security" element={<GlobalSecurity />} />
         </Route>

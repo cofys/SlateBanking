@@ -1451,6 +1451,7 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
       }
       res.json({
         ...settings,
+        logoUrl: settings.logoUrl || bank?.logoUrl || "",
         customDomain: bank?.customDomain || "",
         brandingColor: bank?.brandingColor || "#4f46e5",
         discordClientId: bank?.discordClientId || "",
@@ -1485,7 +1486,10 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
          }
       }
       if (req.body.logoUrl !== undefined) {
-         await db.update(banks).set({ logoUrl: req.body.logoUrl }).where(eq(banks.id, bId));
+         const logo = String(req.body.logoUrl || "").trim();
+         if (logo) {
+           await db.update(banks).set({ logoUrl: logo }).where(eq(banks.id, bId));
+         }
       }
       if (req.body.customDomain !== undefined) {
          await db.update(banks).set({ customDomain: req.body.customDomain }).where(eq(banks.id, bId));
@@ -1746,7 +1750,7 @@ banksRouter.post("/api/banks/:bankId/products", requireBankStaff, async (req: ex
     
     try {
       const bankId = req.params.bankId;
-      const { type, name, interestRate, maxLimit, termDays, rewardsPercent } = req.body;
+      const { type, name, interestRate, maxLimit, termDays, rewardsPercent, tierId, cashAdvanceEnabled, cashAdvanceFeePercent, annualFee, cardKind } = req.body;
       
       if (!name || isNaN(interestRate) || isNaN(maxLimit)) {
         return res.status(400).json({ error: "Invalid product data" });
@@ -1771,8 +1775,13 @@ banksRouter.post("/api/banks/:bankId/products", requireBankStaff, async (req: ex
           interestRate: Number(interestRate),
           maxLimit: Number(maxLimit) * 100,
           rewardsPercent: Number(rewardsPercent) || 0,
+          tierId: tierId || null,
+          cashAdvanceEnabled: cashAdvanceEnabled !== false,
+          cashAdvanceFeePercent: Math.round((parseFloat(cashAdvanceFeePercent) || 3) * 100),
+          annualFeeCents: Math.round((parseFloat(annualFee) || 0) * 100),
+          cardKind: cardKind === "debit" ? "debit" : "credit",
           createdAt: new Date()
-        });
+        } as any);
       }
       
       res.json({ success: true });
@@ -1794,7 +1803,7 @@ banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, asyn
       }
       
       const { bankId, productId } = req.params;
-      const { type, name, interestRate, maxLimit, termDays, rewardsPercent, isActive } = req.body;
+      const { type, name, interestRate, maxLimit, termDays, rewardsPercent, isActive, tierId, cashAdvanceEnabled, cashAdvanceFeePercent, annualFee, cardKind } = req.body;
       
       if (!name || isNaN(interestRate) || isNaN(maxLimit)) {
         return res.status(400).json({ error: "Invalid product data" });
@@ -1815,8 +1824,13 @@ banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, asyn
           interestRate: Number(interestRate),
           maxLimit: Number(maxLimit) * 100,
           rewardsPercent: Number(rewardsPercent) || 0,
-          isActive: isActive !== undefined ? isActive : true
-        }).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId)));
+          isActive: isActive !== undefined ? isActive : true,
+          tierId: tierId || null,
+          cashAdvanceEnabled: cashAdvanceEnabled !== false,
+          cashAdvanceFeePercent: Math.round((parseFloat(cashAdvanceFeePercent) || 3) * 100),
+          annualFeeCents: Math.round((parseFloat(annualFee) || 0) * 100),
+          cardKind: cardKind === "debit" ? "debit" : "credit",
+        } as any).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId)));
       }
       
       res.json({ success: true });
@@ -3788,6 +3802,12 @@ banksRouter.put("/api/banks/:bankId/credit-applications/:appId", requireBankStaf
       if (!capp || capp.bankId !== req.params.bankId) return res.status(404).json({ error: "App not found" });
 
       if (capp.status === "pending" && status === "approved") {
+          const { creditProducts } = await import("../../db/schema");
+          const { randomInt } = await import("crypto");
+          let product: any = null;
+          if ((capp as any).productId) {
+            product = await db.select().from(creditProducts).where(eq(creditProducts.id, (capp as any).productId)).get();
+          }
           function generateCC() {
             let cc = "";
                    for(let i=0; i<16; i++) cc += randomInt(0, 10).toString();
@@ -3805,13 +3825,14 @@ banksRouter.put("/api/banks/:bankId/credit-applications/:appId", requireBankStaf
             cvv,
             expiryDate: `${(expiry.getMonth()+1).toString().padStart(2, '0')}/${expiry.getFullYear().toString().slice(-2)}`,
             isLocked: false,
-            type: "credit",
-            creditLimit: capp.requestedLimit,
+            type: product?.cardKind === "debit" ? "debit" : "credit",
+            creditLimit: product?.maxLimit || capp.requestedLimit,
             creditUsed: 0,
-            apr: 1999, // default
+            apr: product ? Math.round(Number(product.interestRate) * 100) : 1999,
+            productId: (capp as any).productId || null,
             nextPaymentDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })(),
             createdAt: new Date(),
-          });
+          } as any);
       }
       
       await db.update(creditApplications).set({ status }).where(eq(creditApplications.id, req.params.appId));
@@ -4006,6 +4027,9 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
          expiryDate: cards.expiryDate,
          isLocked: cards.isLocked,
          type: cards.type,
+         creditLimit: cards.creditLimit,
+         creditUsed: cards.creditUsed,
+         productId: cards.productId,
          createdAt: cards.createdAt,
          accountId: cards.accountId,
          accountName: bankAccounts.accountName,
@@ -4046,7 +4070,7 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
     const { v4: uuidv4 } = await import("uuid");
     const { randomInt } = await import("crypto");
     try {
-       const { accountId, creditLimit, creditApr } = req.body;
+       const { accountId, creditLimit, creditApr, productId } = req.body;
        if (!accountId) return res.status(400).json({ error: "Missing fields" });
        
        // check account exists in bank
@@ -4072,6 +4096,7 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
          creditUsed: 0,
          apr: creditApr ? parseInt(creditApr) : 1999,
          isLocked: false,
+         productId: productId || null,
          nextPaymentDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })(),
          createdAt: new Date(),
        }).returning().get();

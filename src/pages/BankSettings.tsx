@@ -279,9 +279,13 @@ export function BankSettings() {
                 name="logoUrl" 
                 type="text" 
                 placeholder="https://example.com/logo.png"
-                defaultValue={settings?.logoUrl || ""} 
+                defaultValue={settings?.logoUrl || bank?.logoUrl || ""} 
                 className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
+              {(settings?.logoUrl || bank?.logoUrl) && (
+                <img src={settings?.logoUrl || bank?.logoUrl} alt="logo preview" referrerPolicy="no-referrer" className="mt-2 h-12 w-12 rounded-lg object-contain bg-black/40 border border-white/10" />
+              )}
+              <p className="text-xs text-white/40 mt-1.5">HTTPS image URL. Saving an empty field will not wipe a logo already on the bank.</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Login Background Image URL</label>
@@ -855,7 +859,7 @@ export function BankSettings() {
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableVaults ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
                <input type="checkbox" name="enableVaults" className="hidden" defaultChecked={settings?.enableVaults} onChange={(e) => setSettings({...settings, enableVaults: e.target.checked})} />
-               <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Savings Vaults</span>
+               <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Bonds</span>
             </label>
             <label className="flex items-center gap-4 cursor-pointer group">
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableCards ? 'bg-pink-500' : 'bg-white/10'}`}>
@@ -900,6 +904,34 @@ export function BankSettings() {
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Custom Account Tiers</span>
             </label>
           </div>
+
+          {settings?.enableVaults !== false && (
+            <div className="pt-6 border-t border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-md font-semibold text-white/80">Bond terms</p>
+                  <p className="text-xs text-white/40 mt-1">Shown on Apply. Lock days, yield (percent × 100, so 500 = 5.00%), early-exit penalty.</p>
+                </div>
+                <button type="button" onClick={() => setVaultTiers([...vaultTiers, { lockDays: 30, interestRate: 300, penaltyPercent: 20 }])} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white/10">Add term</button>
+              </div>
+              <div className="space-y-2">
+                {vaultTiers.map((t, i) => (
+                  <div key={i} className="grid grid-cols-3 sm:grid-cols-4 gap-2 items-end">
+                    <label className="text-[11px] text-white/40">Days
+                      <input type="number" value={t.lockDays} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], lockDays: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                    </label>
+                    <label className="text-[11px] text-white/40">Yield (bps)
+                      <input type="number" value={t.interestRate} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], interestRate: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                    </label>
+                    <label className="text-[11px] text-white/40">Early penalty %
+                      <input type="number" value={t.penaltyPercent} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], penaltyPercent: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                    </label>
+                    <button type="button" onClick={() => setVaultTiers(vaultTiers.filter((_, j) => j !== i))} className="text-xs text-rose-300 py-1.5">Remove</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {!settings?.enableAccountTiers && (settings?.enableLoans || settings?.enableCards) && (
             <>

@@ -53,6 +53,10 @@ export function BankProducts() {
       maxLimit: Number(formData.get('maxLimit')),
       termDays: formData.get('termDays') ? Number(formData.get('termDays')) : undefined,
       rewardsPercent: formData.get('rewardsPercent') ? Number(formData.get('rewardsPercent')) : undefined,
+      cashAdvanceFeePercent: formData.get('cashAdvanceFeePercent'),
+      annualFee: formData.get('annualFee'),
+      tierId: String(formData.get('tierId') || '').trim() || null,
+      cashAdvanceEnabled: formData.get('cashAdvanceEnabled') === 'on',
       isActive: editingProduct ? !!editingProduct.isActive : true,
     };
 
@@ -134,6 +138,7 @@ export function BankProducts() {
                        <span>{credit.interestRate}% APR</span>
                        <span>Limit {formatMoney(credit.maxLimit)}</span>
                        {credit.rewardsPercent > 0 && <span>{credit.rewardsPercent}% Cashback</span>}
+                       {credit.cashAdvanceEnabled !== false && <span>Cash advance</span>}
                      </div>
                    </div>
                    <div className="flex items-center gap-3">
@@ -196,10 +201,31 @@ export function BankProducts() {
                   <input required name="termDays" type="number" defaultValue={editingProduct?.termDays} className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" placeholder="30" />
                 </div>
               ) : (
+                <>
                 <div>
                   <label className="block text-sm font-medium text-white/70 mb-1">Rewards Percent (%)</label>
                   <input name="rewardsPercent" type="number" step="0.1" defaultValue={editingProduct?.rewardsPercent || 0} className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" placeholder="1.5" />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-white/70 mb-1">Cash advance fee (%)</label>
+                    <input name="cashAdvanceFeePercent" type="number" step="0.01" defaultValue={editingProduct ? ((editingProduct.cashAdvanceFeePercent || 300) / 100) : 3} className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-white/70 mb-1">Annual fee ($)</label>
+                    <input name="annualFee" type="number" step="0.01" defaultValue={editingProduct ? ((editingProduct.annualFeeCents || 0) / 100) : 0} className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1">Optional account tier</label>
+                  <input name="tierId" type="text" defaultValue={editingProduct?.tierId || ""} placeholder="Leave blank = any account can apply" className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" />
+                  <p className="text-[11px] text-white/35 mt-1">Not a hard gate. If set, that tier auto-qualifies; others still apply for staff review.</p>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-white/70">
+                  <input type="checkbox" name="cashAdvanceEnabled" defaultChecked={editingProduct?.cashAdvanceEnabled !== false} />
+                  Allow cash advances
+                </label>
+                </>
               )}
               
               {editingProduct && (

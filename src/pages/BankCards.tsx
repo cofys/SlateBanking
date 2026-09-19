@@ -79,7 +79,11 @@ export function BankCards() {
       const res = await fetch(`/api/banks/${bankId}/cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: newCardAccountId, type: newCardType, creditLimit: Math.round(parseFloat(newCardLimit)*100), creditApr: Math.round(parseFloat(newCardApr)*100) })
+        body: JSON.stringify({
+          accountId: newCardAccountId,
+          creditLimit: Math.round(parseFloat(newCardLimit || "0") * 100),
+          creditApr: Math.round(parseFloat(newCardApr || "0") * 100),
+        }),
       });
       if (res.ok) {
         setShowAddModal(false);
@@ -362,6 +366,11 @@ export function BankCards() {
                            <div className="text-sm font-mono font-semibold text-white tracking-widest">
                              {card.expiryDate || `${card.expiryMonth?.toString().padStart(2, '0')}/${card.expiryYear?.toString().slice(-2)}`}
                            </div>
+                           {isCredit && (
+                             <div className="text-[10px] font-mono text-white/60 mt-1">
+                               {formatMoney(card.creditUsed || 0)} / {formatMoney(card.creditLimit || 0)}
+                             </div>
+                           )}
                          </div>
                          <div className="text-right">
                            <div className="text-[9px] font-bold text-white/50 uppercase tracking-widest mb-1">CVC</div>

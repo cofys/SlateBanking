@@ -44,8 +44,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [toast, setToast] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [loanProducts, setLoanProducts] = useState<any[]>([]);
+  const [cardProducts, setCardProducts] = useState<any[]>([]);
+  const [bondProducts, setBondProducts] = useState<any[]>([]);
   const [merchants, setMerchants] = useState<any[]>([]);
   const [repayingLoan, setRepayingLoan] = useState<any | null>(null);
+  const [logoBroken, setLogoBroken] = useState(false);
+  const [destMatches, setDestMatches] = useState<any[]>([]);
+  const [destHint, setDestHint] = useState("");
+  const [advanceCard, setAdvanceCard] = useState<any | null>(null);
 
   const [sendFrom, setSendFrom] = useState("");
   const [sendTo, setSendTo] = useState("");
@@ -123,13 +129,19 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         const res = await fetch(`/api/portal/${bankId}/transfer/quote`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, amount: sendAmt, feePayerMode: feeMode }),
+          body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, toQuery: sendTo, amount: sendAmt, feePayerMode: feeMode }),
         });
         const d = await res.json();
         if (!res.ok) {
           setQuote(null);
           setQuoteErr(d.error || "Could not quote");
-        } else setQuote(d.quote);
+          setDestMatches(d.matches || []);
+        } else {
+          setQuote(d.quote);
+          setDestHint(d.destination ? `${d.destination.accountName}${d.destination.bankName ? " · " + d.destination.bankName : ""}` : "");
+          if (d.destination?.id && d.destination.id !== sendTo) setSendTo(d.destination.id);
+          setDestMatches([]);
+        }
       } catch {
         setQuoteErr("Quote failed");
       }
@@ -140,10 +152,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
   useEffect(() => {
     if ((view === "borrow" || view === "apply") && bankId) {
-      fetch(`/api/portal/${bankId}/loan-products`)
+      fetch(`/api/portal/${bankId}/catalog`)
         .then((r) => r.json())
-        .then((d) => setLoanProducts(Array.isArray(d) ? d : []))
-        .catch(() => setLoanProducts([]));
+        .then((d) => {
+          setLoanProducts(Array.isArray(d.loans) ? d.loans : []);
+          setCardProducts(Array.isArray(d.cards) ? d.cards : []);
+          setBondProducts(Array.isArray(d.bonds) ? d.bonds : []);
+        })
+        .catch(() => {});
     }
   }, [view, bankId]);
 
@@ -195,7 +211,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       const res = await fetch(`/api/portal/${bankId}/transfer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, amount: sendAmt, feePayerMode: feeMode, description: sendMemo }),
+        body: JSON.stringify({ fromAccountId: sendFrom, toAccountId: sendTo, toQuery: sendTo, amount: sendAmt, feePayerMode: feeMode, description: sendMemo }),
       });
       const d = await res.json();
       if (!res.ok) flash(d.error || "Transfer failed");
@@ -276,17 +292,64 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       const res = await fetch(`/api/portal/${bankId}/request-card`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: fd.get("accountId"), cardType: fd.get("cardType") }),
+        body: JSON.stringify({ accountId: fd.get("accountId"), cardType: fd.get("cardType"), productId: fd.get("productId") || undefined }),
       });
       const d = await res.json();
       if (!res.ok) flash(d.error || "Card request failed");
       else {
-        flash("Card issued.");
+        flash(d.pending ? "Application submitted for review." : d.issued ? "Card issued." : "Card issued.");
         setView("cards");
         handleSearch();
       }
     } catch {
       flash("Card request failed");
+    }
+    setActionPending(false);
+  };
+
+  const buyBond = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fd = new FormData(e.target as HTMLFormElement);
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/bonds`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: fd.get("accountId"), amount: fd.get("amount"), lockDays: fd.get("lockDays") }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Could not buy bond");
+      else {
+        flash("Bond purchased. Funds are locked until maturity.");
+        setView("home");
+        handleSearch();
+      }
+    } catch {
+      flash("Could not buy bond");
+    }
+    setActionPending(false);
+  };
+
+  const cashAdvance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!advanceCard) return;
+    const fd = new FormData(e.target as HTMLFormElement);
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/cards/${advanceCard.id}/cash-advance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: fd.get("amount") }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Advance failed");
+      else {
+        flash(`Advanced ${formatMoney(d.advancedCents)}${d.feeCents ? ` · fee ${formatMoney(d.feeCents)}` : ""}.`);
+        setAdvanceCard(null);
+        handleSearch();
+      }
+    } catch {
+      flash("Advance failed");
     }
     setActionPending(false);
   };
@@ -376,8 +439,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(600px 400px at 80% 120%, ${withAlpha(brand, 0.18)}, transparent)` }} />
         <div className="relative z-10 max-w-md mx-auto px-5 py-16 space-y-10">
           <div className="text-center space-y-5">
-            {settings.logoUrl || bank.logoUrl ? (
-              <img src={settings.logoUrl || bank.logoUrl} alt="" className="w-20 h-20 rounded-3xl mx-auto object-contain bg-black/40 border border-white/10 p-2 shadow-2xl" />
+            {((settings.logoUrl || bank.logoUrl) && !logoBroken) ? (
+              <img src={settings.logoUrl || bank.logoUrl} alt="" referrerPolicy="no-referrer" onError={() => setLogoBroken(true)} className="w-20 h-20 rounded-3xl mx-auto object-contain bg-black/40 border border-white/10 p-2 shadow-2xl" />
             ) : (
               <div className="w-20 h-20 rounded-3xl mx-auto flex items-center justify-center text-3xl font-black shadow-2xl" style={{ background: brand }}>
                 {bank.name.slice(0, 1)}
@@ -423,8 +486,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       <header className="sticky top-0 z-30 backdrop-blur-xl border-b border-white/5 bg-[#07070b]/70">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            {settings.logoUrl || bank.logoUrl ? (
-              <img src={settings.logoUrl || bank.logoUrl} className="w-9 h-9 rounded-xl object-contain bg-black/30 border border-white/10" alt="" />
+            {((settings.logoUrl || bank.logoUrl) && !logoBroken) ? (
+              <img src={settings.logoUrl || bank.logoUrl} className="w-9 h-9 rounded-xl object-contain bg-black/30 border border-white/10" alt="" referrerPolicy="no-referrer" onError={() => setLogoBroken(true)} />
             ) : (
               <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black" style={{ background: brand }}>{bank.name.slice(0, 1)}</div>
             )}
@@ -576,8 +639,19 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             <select value={sendFrom} onChange={(e) => setSendFrom(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm">
               {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName} · {formatMoney(a.balance)}</option>)}
             </select>
-            <label className="block text-xs font-bold text-white/40 uppercase">To account ID</label>
-            <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder="acc_…" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-mono" required />
+            <label className="block text-xs font-bold text-white/40 uppercase">To</label>
+            <input value={sendTo} onChange={(e) => { setSendTo(e.target.value); setDestHint(""); fetch(`/api/portal/${bankId}/payees?q=${encodeURIComponent(e.target.value)}`).then(r => r.json()).then(d => setDestMatches(Array.isArray(d) ? d : [])).catch(() => {}); }} placeholder="Account name (in-game)" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm" required autoComplete="off" />
+            {destHint && <p className="text-xs text-emerald-300 -mt-3">{destHint}</p>}
+            {destMatches.length > 0 && (
+              <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden -mt-2">
+                {destMatches.map((m: any) => (
+                  <button type="button" key={m.id} onClick={() => { setSendTo(m.id); setDestHint(`${m.accountName}${m.bankName ? " · " + m.bankName : ""}`); setDestMatches([]); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-white/5">
+                    <span className="font-semibold">{m.accountName}</span>
+                    <span className="text-white/40 text-xs ml-2">{m.bankName}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <label className="block text-xs font-bold text-white/40 uppercase">Amount</label>
             <input value={sendAmt} onChange={(e) => setSendAmt(e.target.value)} type="number" step="0.01" min="0.01" placeholder="0.00" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-2xl font-black tabular-nums" required />
             <div className="flex rounded-2xl bg-white/5 p-1 text-xs font-bold">
@@ -664,13 +738,25 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             <div className="grid sm:grid-cols-2 gap-3">
               {cards.map((c: any) => (
                 <div key={c.id} className="rounded-2xl p-5 border border-white/10" style={{ background: `linear-gradient(160deg, ${withAlpha(brand, 0.35)}, #0c0c12)` }}>
-                  <p className="text-[11px] uppercase tracking-widest text-white/50">{c.type} · {c.accountName}</p>
-                  <p className="font-mono text-lg mt-4 tracking-widest">{c.cardNumber || "••••"}</p>
+                  <p className="text-[11px] uppercase tracking-widest text-white/50">{c.type} · {c.accountName || ""}</p>
+                  <p className="font-mono text-lg mt-4 tracking-widest">{c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : "••••"}</p>
                   <p className="text-xs text-white/40 mt-2">Exp {c.expiryDate}</p>
-                  <button onClick={() => toggleCard(c.id, !c.isLocked)} className="mt-4 text-xs font-bold flex items-center gap-1">
-                    {c.isLocked ? <Unlock size={12} /> : <Lock size={12} />}
-                    {c.isLocked ? "Unlock" : "Lock"}
-                  </button>
+                  {c.type === "credit" && (
+                    <div className="mt-3 text-xs space-y-1">
+                      <div className="flex justify-between"><span className="text-white/40">Limit</span><span className="font-mono">{formatMoney(c.creditLimit)}</span></div>
+                      <div className="flex justify-between"><span className="text-white/40">Used</span><span className="font-mono">{formatMoney(c.creditUsed)}</span></div>
+                      <div className="flex justify-between"><span className="text-white/40">Available</span><span className="font-mono text-emerald-300">{formatMoney(Math.max(0, (c.creditLimit || 0) - (c.creditUsed || 0)))}</span></div>
+                    </div>
+                  )}
+                  <div className="flex gap-3 mt-4">
+                    <button onClick={() => toggleCard(c.id, !c.isLocked)} className="text-xs font-bold flex items-center gap-1">
+                      {c.isLocked ? <Unlock size={12} /> : <Lock size={12} />}
+                      {c.isLocked ? "Unlock" : "Lock"}
+                    </button>
+                    {c.type === "credit" && !c.isLocked && (
+                      <button type="button" onClick={() => setAdvanceCard(c)} className="text-xs font-bold" style={{ color: brand }}>Cash advance</button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -761,27 +847,47 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
                   {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
                 </select>
-                <select name="cardType" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                  <option value="debit">Debit</option>
-                  <option value="credit">Credit</option>
-                </select>
+                {cardProducts.length > 0 ? (
+                  <select name="productId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                    {cardProducts.map((p: any) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} · {p.cardKind === "debit" ? "debit" : "credit"} · limit {formatMoney(p.maxLimit)} · {Number(p.interestRate).toFixed(2)}% APR
+                        {p.tierId ? " · optional tier" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select name="cardType" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                    <option value="debit">Debit</option>
+                  </select>
+                )}
+                <p className="text-[11px] text-white/35">Credit cards have a set limit for Onyx and cash advances. Tiers are optional — not required to apply.</p>
                 <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Request card</button>
               </form>
             )}
 
+            {settings.enableVaults !== false && bondProducts.length > 0 && (
+              <form onSubmit={buyBond} className="rounded-2xl border border-white/10 p-5 space-y-3">
+                <h3 className="font-bold flex items-center gap-2"><PiggyBank size={16} /> Buy a bond</h3>
+                <p className="text-xs text-white/40">Time-locked deposits. You earn the advertised yield if you hold to maturity.</p>
+                <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName} · {formatMoney(a.balance)}</option>)}
+                </select>
+                <select name="lockDays" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  {bondProducts.map((t: any) => (
+                    <option key={t.lockDays} value={t.lockDays}>{t.lockDays} days · {(Number(t.interestRate) / 100).toFixed(2)}% · {t.penaltyPercent ?? 20}% early penalty</option>
+                  ))}
+                </select>
+                <input name="amount" type="number" step="0.01" min="1" required placeholder="Amount to lock" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono" />
+                <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Buy bond</button>
+              </form>
+            )}
+
             <div className="grid sm:grid-cols-2 gap-3">
-              {settings.enableVaults !== false && (
-                <div className="rounded-2xl border border-white/10 p-5">
-                  <PiggyBank size={18} className="text-white/50 mb-2" />
-                  <p className="font-bold">Time-locked vaults</p>
-                  <p className="text-xs text-white/40 mt-1">Ask staff to open a vault, or use the city-wide citizen gateway.</p>
-                  <Link to="/portal" className="text-xs font-bold mt-3 inline-block" style={{ color: brand }}>Citizen gateway →</Link>
-                </div>
-              )}
               <button onClick={() => setView("cards")} className="rounded-2xl border border-white/10 p-5 text-left">
                 <CreditCard size={18} className="text-white/50 mb-2" />
                 <p className="font-bold">Manage cards</p>
-                <p className="text-xs text-white/40 mt-1">Lock or unlock issued cards.</p>
+                <p className="text-xs text-white/40 mt-1">Lock, unlock, or take a cash advance.</p>
               </button>
             </div>
           </div>
@@ -817,6 +923,22 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               </select>
               <input name="amount" type="number" step="0.01" min="0.01" required defaultValue={((repayingLoan.remainingAmount ?? 0) / 100).toFixed(2)} className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 font-mono" />
               <button disabled={actionPending} className="w-full py-3 rounded-xl font-bold" style={btnBrand}>Pay</button>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {advanceCard && (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4">
+            <motion.form initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} onSubmit={cashAdvance} className="bg-[#111118] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4">
+              <div className="flex justify-between">
+                <h3 className="font-bold">Cash advance</h3>
+                <button type="button" onClick={() => setAdvanceCard(null)}><X size={16} /></button>
+              </div>
+              <p className="text-sm text-white/50">Available {formatMoney(Math.max(0, (advanceCard.creditLimit || 0) - (advanceCard.creditUsed || 0)))}. Posted to your linked account. A cash-advance fee may apply.</p>
+              <input name="amount" type="number" step="0.01" min="0.01" required placeholder="Amount" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 font-mono" />
+              <button disabled={actionPending} className="w-full py-3 rounded-xl font-bold" style={btnBrand}>Draw</button>
             </motion.form>
           </div>
         )}

@@ -306,6 +306,13 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("invoices", "status", "TEXT DEFAULT 'pending'");
   checkAndAddColumn("loan_products", "is_active", "INTEGER DEFAULT 1");
   checkAndAddColumn("credit_products", "is_active", "INTEGER DEFAULT 1");
+  checkAndAddColumn("credit_products", "tier_id", "TEXT");
+  checkAndAddColumn("credit_products", "cash_advance_enabled", "INTEGER DEFAULT 1");
+  checkAndAddColumn("credit_products", "cash_advance_fee_percent", "INTEGER DEFAULT 300");
+  checkAndAddColumn("credit_products", "annual_fee_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("credit_products", "card_kind", "TEXT DEFAULT 'credit'");
+  checkAndAddColumn("cards", "product_id", "TEXT");
+  checkAndAddColumn("credit_applications", "product_id", "TEXT");
   checkAndAddColumn("recurring_transfers", "is_active", "INTEGER DEFAULT 1");
   checkAndAddColumn("recurring_transfers", "description", "TEXT");
   checkAndAddColumn("payment_links", "is_active", "INTEGER DEFAULT 1");

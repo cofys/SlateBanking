@@ -313,6 +313,7 @@ export const creditApplications = sqliteTable("credit_applications", {
   monthlyIncome: integer("monthly_income").notNull(),
   purpose: text("purpose"),
   status: text("status").default("pending"), // pending, approved, rejected
+  productId: text("product_id"),
   contractUrl: text("contract_url"),
   contractText: text("contract_text"),
   clientSignedAt: integer("client_signed_at", { mode: "timestamp" }),
@@ -349,6 +350,7 @@ export const cards = sqliteTable("cards", {
   apr: integer("apr").default(0), // Interest rate * 100
   minimumPayment: integer("minimum_payment").default(0),
   nextPaymentDate: integer("next_payment_date", { mode: "timestamp" }),
+  productId: text("product_id"),
   
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
@@ -513,6 +515,12 @@ export const creditProducts = sqliteTable("credit_products", {
   maxLimit: integer("max_limit").notNull(),
   rewardsPercent: integer("rewards_percent").default(0),
   isActive: integer("is_active", { mode: "boolean" }).default(true),
+  // Optional attachment to an account tier. Null = available to any account.
+  tierId: text("tier_id"),
+  cashAdvanceEnabled: integer("cash_advance_enabled", { mode: "boolean" }).default(true),
+  cashAdvanceFeePercent: integer("cash_advance_fee_percent").default(300), // 3.00% as percent * 100
+  annualFeeCents: integer("annual_fee_cents").default(0),
+  cardKind: text("card_kind").default("credit"), // credit | debit
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
