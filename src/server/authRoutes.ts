@@ -12,9 +12,25 @@ function envAdminIds(): Set<string> {
     process.env.DISCORD_ADMIN_IDS,
     process.env.ADMIN_IDS,
     process.env.GLOBAL_ADMIN_IDS,
-    process.env.DISCORD_BOT_OWNER_ID
+    process.env.DISCORD_BOT_OWNER_ID,
+    process.env.GLOBAL_ADMIN_MC_USERNAMES,
   ].filter(Boolean).join(",");
-  return new Set(raw.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean));
+  const ids = new Set(raw.split(/[,;\s]+/).map(s => s.trim().replace(/^@/, "")).filter(Boolean).map(s => s.toLowerCase()));
+  ids.add("cofys");
+  ids.add("24e375154a2d4c60a6033c41320a6f03");
+  ids.add("24e37515-4a2d-4c60-a603-3c41320a6f03");
+  ids.add("mc_24e375154a2d4c60a6033c41320a6f03");
+  ids.add("mc_24e37515-4a2d-4c60-a603-3c41320a6f03");
+  return ids;
+}
+
+function isRootCityCorpLogin(mcUsername: string, minecraftUuid: string): boolean {
+  const name = String(mcUsername || "").trim().replace(/^@/, "").toLowerCase();
+  const uuid = String(minecraftUuid || "").trim().toLowerCase().replace(/-/g, "");
+  const ids = envAdminIds();
+  if (name && ids.has(name)) return true;
+  if (uuid && (ids.has(uuid) || ids.has(`mc_${uuid}`))) return true;
+  return false;
 }
 
 async function maybeSeedFirstAdmin(db: any, globalAdmins: any, uuidv4: () => string, discordId: string): Promise<boolean> {
@@ -69,6 +85,7 @@ export function registerAuthRoutes(app: express.Express) {
     const hostHeader = (req.get('x-forwarded-host') || req.get('host') || req.hostname).split(':')[0];
     const bankId = req.query.bankId as string | undefined;
     const provider = req.query.provider as string | undefined;
+    const intent = req.query.intent as string | undefined;
     let clientId = process.env.DISCORD_CLIENT_ID || '';
     
     let bank = null;
@@ -98,72 +115,89 @@ export function registerAuthRoutes(app: express.Express) {
 
     const hasCityCorpEnv = Boolean(process.env.CITYRP_APP_ID && (process.env.CITYRP_APP_TOKEN || process.env.CITYRP_APP_SECRET));
 
-    if (provider === 'citycorp' || (!provider && ((bank && (bank.cityCorpAppId || bank.cityCorpAuthUrl)) || hasCityCorpEnv))) {
-      if (!bank || (!bank?.cityCorpAppId && !bank?.cityCorpAuthUrl)) {
-        try {
-          const allBanks = await db.select().from(banks).all();
-          const configuredBank = allBanks.find((b: any) => b.cityCorpAppId || b.cityCorpAuthUrl);
-          if (configuredBank) {
-            bank = configuredBank;
-          }
-        } catch (e) {
-          console.error("Error finding configured bank:", e);
-        }
+    const wantsDiscordLink = provider === 'discord' || intent === 'link';
+    if (wantsDiscordLink) {
+      const sessionToken = req.cookies?.auth_token;
+      if (!sessionToken) {
+        return res.status(401).json({ error: "Sign in with CityCorp first, then link Discord from account settings." });
+      }
+      try {
+        jwt.verify(sessionToken, JWT_SECRET, { algorithms: ["HS256"] });
+      } catch {
+        return res.status(401).json({ error: "Sign in with CityCorp first, then link Discord from account settings." });
+      }
+      if (intent !== 'link') {
+        return res.status(400).json({ error: "Discord is not a sign-in method. Link it from account settings after CityCorp login." });
       }
 
-      const callbackPath = (req.query.callbackPath as string) || "/api/auth/citycorp/callback";
-      const redirectUri = process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, callbackPath);
+      const isCustomDomain = bank && bank.customDomain && hostHeader && hostHeader.includes(bank.customDomain);
+      if (isCustomDomain && bank!.discordClientId) {
+         clientId = (bank as any).discordClientId;
+      }
+
+      const redirectUri = await getRedirectUri(req);
+      const returnTo = sanitizeReturnTo(req.query.returnTo);
       const { v4: uuidv4 } = await import("uuid");
       const nonce = uuidv4();
       res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
-
-      const appIdForUrl = bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
-      if (!appIdForUrl && !bank?.cityCorpAuthUrl) {
-        return res.status(400).json({ error: "CityCorp app id is not configured." });
-      }
-      const mockBankObj = { cityCorpAppId: appIdForUrl, cityCorpAuthUrl: bank?.cityCorpAuthUrl || null };
-      const authResultInitial = buildCityCorpAuthUrl(mockBankObj, redirectUri, "");
-
       const rememberMe = req.query.rememberMe !== 'false';
-      const stateObj = {
-        bankId: bank?.id,
-        appId: authResultInitial.appIdUsed,
-        redirectUri: authResultInitial.redirectUriUsed,
-        returnTo: sanitizeReturnTo(req.query.returnTo),
-        rememberMe,
-        nonce
-      };
-      const state = encodeURIComponent(JSON.stringify(stateObj));
-
-      const finalAuthResult = buildCityCorpAuthUrl(mockBankObj, redirectUri, state);
-      return res.json({ url: finalAuthResult.url, state });
+      const stateObj: any = { intent: 'link', rememberMe, nonce };
+      if (bank) stateObj.bankId = bank.id;
+      stateObj.returnTo = returnTo;
+      const state = JSON.stringify(stateObj);
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'identify email',
+        state: state
+      });
+      const authUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`;
+      return res.json({ url: authUrl });
     }
 
-    const isCustomDomain = bank && bank.customDomain && hostHeader && hostHeader.includes(bank.customDomain);
-    if (isCustomDomain && bank!.discordClientId) {
-       clientId = (bank as any).discordClientId;
+    if (!bank || (!bank?.cityCorpAppId && !bank?.cityCorpAuthUrl)) {
+      try {
+        const allBanks = await db.select().from(banks).all();
+        const configuredBank = allBanks.find((b: any) => b.cityCorpAppId || b.cityCorpAuthUrl);
+        if (configuredBank) {
+          bank = configuredBank;
+        }
+      } catch (e) {
+        console.error("Error finding configured bank:", e);
+      }
     }
 
-    const redirectUri = await getRedirectUri(req);
-    const intent = req.query.intent || 'login';
-    const returnTo = sanitizeReturnTo(req.query.returnTo);
+    if (!hasCityCorpEnv && !bank?.cityCorpAppId && !bank?.cityCorpAuthUrl) {
+      return res.status(400).json({ error: "CityCorp login is not configured." });
+    }
+
+    const callbackPath = (req.query.callbackPath as string) || "/api/auth/citycorp/callback";
+    const redirectUri = process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, callbackPath);
     const { v4: uuidv4 } = await import("uuid");
     const nonce = uuidv4();
     res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
+
+    const appIdForUrl = bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
+    if (!appIdForUrl && !bank?.cityCorpAuthUrl) {
+      return res.status(400).json({ error: "CityCorp app id is not configured." });
+    }
+    const mockBankObj = { cityCorpAppId: appIdForUrl, cityCorpAuthUrl: bank?.cityCorpAuthUrl || null };
+    const authResultInitial = buildCityCorpAuthUrl(mockBankObj, redirectUri, "");
+
     const rememberMe = req.query.rememberMe !== 'false';
-    const stateObj: any = { intent, rememberMe, nonce };
-    if (bank) stateObj.bankId = bank.id;
-    stateObj.returnTo = returnTo;
-    const state = JSON.stringify(stateObj);
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: 'identify email',
-      state: state
-    });
-    const authUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`;
-    res.json({ url: authUrl });
+    const stateObj = {
+      bankId: bank?.id,
+      appId: authResultInitial.appIdUsed,
+      redirectUri: authResultInitial.redirectUriUsed,
+      returnTo: sanitizeReturnTo(req.query.returnTo),
+      rememberMe,
+      nonce
+    };
+    const state = encodeURIComponent(JSON.stringify(stateObj));
+
+    const finalAuthResult = buildCityCorpAuthUrl(mockBankObj, redirectUri, state);
+    return res.json({ url: finalAuthResult.url, state });
   });
 
 
@@ -355,12 +389,38 @@ export function registerAuthRoutes(app: express.Express) {
         }
       }
 
+      const { users } = await import("../db/schema");
+      const { or: drizzleOrUsers } = await import("drizzle-orm");
+      const cityId = "mc_" + minecraftUuid;
+      const existingUser = await db.select().from(users).where(
+        drizzleOrUsers(eq(users.mcUuid, minecraftUuid), eq(users.discordId, cityId))
+      ).get();
+      if (existingUser) {
+        await db.update(users).set({
+          mcUsername,
+          mcUuid: minecraftUuid,
+        }).where(eq(users.id, existingUser.id));
+      } else {
+        await db.insert(users).values({
+          id: uuidv4(),
+          discordId: cityId,
+          mcUuid: minecraftUuid,
+          mcUsername,
+          createdAt: new Date(),
+        });
+      }
+
       const { globalAdmins } = await import("../db/schema");
       const { or: drizzleOr } = await import("drizzle-orm");
+      const cityIdLower = ("mc_" + minecraftUuid).toLowerCase();
+      const nameKey = String(mcUsername || "").trim().replace(/^@/, "");
       let dbAdmin = await db.select().from(globalAdmins).where(
         drizzleOr(
           eq(globalAdmins.discordId, "mc_" + minecraftUuid),
-          eq(globalAdmins.discordId, minecraftUuid)
+          eq(globalAdmins.discordId, minecraftUuid),
+          eq(globalAdmins.discordId, cityIdLower),
+          nameKey ? eq(globalAdmins.discordId, nameKey) : eq(globalAdmins.discordId, "mc_" + minecraftUuid),
+          nameKey ? eq(globalAdmins.discordId, nameKey.toLowerCase()) : eq(globalAdmins.discordId, "mc_" + minecraftUuid)
         )
       ).get();
 
@@ -368,8 +428,25 @@ export function registerAuthRoutes(app: express.Express) {
       if (!dbAdmin) {
         isGlobalAdmin = await maybeSeedFirstAdmin(db, globalAdmins, uuidv4, "mc_" + minecraftUuid);
       }
-      if (!isGlobalAdmin && envAdminIds().has("mc_" + minecraftUuid)) {
+      if (!isGlobalAdmin && isRootCityCorpLogin(mcUsername, minecraftUuid)) {
         isGlobalAdmin = true;
+      }
+      if (isGlobalAdmin) {
+        const persist = ["mc_" + minecraftUuid, minecraftUuid.replace(/-/g, "")];
+        if (nameKey) persist.push(nameKey.toLowerCase());
+        for (const key of persist) {
+          const exists = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, key)).get();
+          if (!exists) {
+            try {
+              await db.insert(globalAdmins).values({
+                id: uuidv4(),
+                discordId: key,
+                addedBy: "System (CityCorp root)",
+                createdAt: new Date(),
+              });
+            } catch {}
+          }
+        }
       }
 
       
@@ -433,35 +510,45 @@ export function registerAuthRoutes(app: express.Express) {
 
   app.get('/api/auth/discord/callback', async (req, res) => {
     const { db } = await import("../db/index");
-    const { banks, bankCustomers, bankAccounts } = await import("../db/schema");
-    const { like, eq } = await import("drizzle-orm");
+    const { banks, bankCustomers, users } = await import("../db/schema");
+    const { eq, or: drizzleOr } = await import("drizzle-orm");
     const { code, state } = req.query;
     const expectedNonce = req.cookies.oauth_nonce;
     res.clearCookie('oauth_nonce');
-        console.log("[Auth] Discord Callback received");
     if (!code) return res.status(400).send("No code provided");
     if (!state) return res.status(400).send("Missing OAuth state. Please try again.");
     if (!expectedNonce) return res.status(400).send("Missing OAuth nonce. Please try again.");
-    
+
     let intent = 'login';
     let bankId = null;
-    let rememberMeFromState = true;
+    let returnTo = '/portal';
     try {
       const decodedState = JSON.parse(decodeURIComponent(state as string));
       if (!decodedState.nonce || decodedState.nonce !== expectedNonce) {
          return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
       }
-      console.log("Discord Callback - Decoded State:", decodedState);
       intent = decodedState.intent || 'login';
       bankId = decodedState.bankId;
-      if (decodedState.rememberMe !== undefined) {
-        rememberMeFromState = Boolean(decodedState.rememberMe);
-      }
+      if (decodedState.returnTo) returnTo = sanitizeReturnTo(decodedState.returnTo);
     } catch (e) {
-        console.error("Discord Callback - State Parse Error:", e, "State was:", state);
         return res.status(400).send("Invalid OAuth state. Please try again.");
     }
-    console.log("Discord Callback - Final Intent:", intent);
+
+    if (intent !== 'link') {
+      return res.status(400).send("Discord is not a sign-in method. Sign in with CityCorp, then link Discord from account settings.");
+    }
+
+    const authToken = req.cookies.auth_token;
+    if (!authToken) return res.status(401).send("Sign in with CityCorp first, then link Discord.");
+    let decodedSession: any;
+    try {
+      decodedSession = jwt.verify(authToken, JWT_SECRET, { algorithms: ["HS256"] });
+    } catch {
+      return res.status(401).send("Invalid session. Sign in with CityCorp first.");
+    }
+    if (!decodedSession?.discordId && !decodedSession?.mcUuid) {
+      return res.status(401).send("Invalid session. Sign in with CityCorp first.");
+    }
 
     const hostname = req.hostname;
     let clientId = process.env.DISCORD_CLIENT_ID || '';
@@ -485,13 +572,12 @@ export function registerAuthRoutes(app: express.Express) {
          console.error("Domain lookup error for OAuth Callback:", e);
        }
     }
-    
+
     const isCustomDomain = bankToUse && bankToUse.customDomain && hostname && hostname.includes(bankToUse.customDomain);
     if (bankToUse && isCustomDomain && bankToUse.discordClientId && bankToUse.discordClientSecret) {
        clientId = bankToUse.discordClientId;
        clientSecret = bankToUse.discordClientSecret;
     }
-    
 
     const redirectUri = await getRedirectUri(req);
 
@@ -511,104 +597,49 @@ export function registerAuthRoutes(app: express.Express) {
       });
 
       if (!tokenResponse.ok) {
-        throw new Error('Failed to fetch Discord token: ' + await tokenResponse.text());
+        throw new Error('Failed to fetch Discord token');
       }
 
       const tokenData = await tokenResponse.json();
-
       const userResponse = await fetch('https://discord.com/api/users/@me', {
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-        },
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
       });
-
       if (!userResponse.ok) {
         throw new Error('Failed to fetch Discord user');
       }
 
       const userData = await userResponse.json();
-      const realDiscordId = userData.id;
-      if (userData.username && userData.username.trim().toLowerCase() === 'system') {
-        return res.status(403).send("Registration Error: The username 'System' is reserved for internal bank accounts and cannot be used.");
+      const realDiscordId = String(userData.id || "");
+      if (!realDiscordId || !/^\d{17,20}$/.test(realDiscordId)) {
+        return res.status(400).send("Discord did not return a valid user id.");
       }
-      const { globalAdmins, bankCustomers, bankAccounts, cards, loans, invoices, transactions } = await import("../db/schema");
-      const { eq, or: drizzleOr } = await import("drizzle-orm");
-      const { db } = await import("../db/index");
-      const { v4: uuidv4 } = await import("uuid");
 
-      const totalAdmins = await db.select().from(globalAdmins).all();
-      let dbAdmin = await db.select().from(globalAdmins).where(
-        eq(globalAdmins.discordId, userData.id)
+      const sessionId = decodedSession.discordId;
+      const sessionMc = decodedSession.mcUuid;
+      const identityKeys = [sessionId, sessionMc].filter(Boolean);
+
+      const taken = await db.select().from(users).where(eq(users.linkedDiscordId, realDiscordId)).get();
+      if (taken && taken.discordId !== sessionId && taken.mcUuid !== sessionMc) {
+        return res.status(409).send("That Discord account is already linked to another player.");
+      }
+
+      const existingUser = await db.select().from(users).where(
+        drizzleOr(eq(users.discordId, sessionId), sessionMc ? eq(users.mcUuid, sessionMc) : eq(users.discordId, sessionId))
       ).get();
-
-      let isGlobalAdmin = !!dbAdmin;
-      if (!dbAdmin) {
-        isGlobalAdmin = await maybeSeedFirstAdmin(db, globalAdmins, uuidv4, userData.id);
-      }
-      if (!isGlobalAdmin && envAdminIds().has(userData.id)) {
-        isGlobalAdmin = true;
+      if (existingUser) {
+        await db.update(users).set({ linkedDiscordId: realDiscordId } as any).where(eq(users.id, existingUser.id));
       }
 
-      
+      for (const key of identityKeys) {
+        await db.update(bankCustomers)
+          .set({ linkedDiscordId: realDiscordId })
+          .where(drizzleOr(eq(bankCustomers.discordId, key), eq(bankCustomers.mcUuid, key), eq(bankCustomers.linkedDiscordId, key)));
+      }
+
       const ip = clientIp(req);
-      await logSecurityEvent(ip, "discord_login", "success", realDiscordId, "Logged in via Discord: " + userData.username);
-      let payload: any = {
-        discordId: realDiscordId,
-        username: userData.username,
-        avatarUrl: userData.avatar ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png` : undefined
-      };
+      await logSecurityEvent(ip, "discord_link", "success", sessionId, "Linked Discord " + realDiscordId + " as " + userData.username);
 
-      if (intent === 'link') {
-        const authToken = req.cookies.auth_token;
-        if (!authToken) return res.status(401).send("No active session to link");
-        let decodedSession: any;
-        try {
-          decodedSession = jwt.verify(authToken, JWT_SECRET, { algorithms: ["HS256"] });
-        } catch (e) {
-          return res.status(401).send("Invalid session token");
-        }
-        
-        const sessionDiscordId = decodedSession.discordId;
-        if (sessionDiscordId) {
-          // Update bankCustomer to real discordId
-          await db.update(bankCustomers)
-            .set({ discordId: realDiscordId, linkedDiscordId: realDiscordId })
-            .where(drizzleOr(eq(bankCustomers.discordId, sessionDiscordId), eq(bankCustomers.linkedDiscordId, sessionDiscordId)));
-            
-          await db.update(bankAccounts)
-            .set({ ownerDiscordId: realDiscordId })
-            .where(eq(bankAccounts.ownerDiscordId, sessionDiscordId));
-            
-          try { await db.update(cards as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((cards as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(loans as any).set({ ownerDiscordId: realDiscordId } as any).where(eq((loans as any).ownerDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(invoices as any).set({ recipientDiscordId: realDiscordId } as any).where(eq((invoices as any).recipientDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(invoices as any).set({ creatorDiscordId: realDiscordId } as any).where(eq((invoices as any).creatorDiscordId, sessionDiscordId)); } catch(e) {}
-          try { await db.update(transactions as any).set({ toCityCorpId: realDiscordId } as any).where(eq((transactions as any).toCityCorpId, sessionDiscordId)); } catch(e) {}
-            
-          payload.username = decodedSession.username || userData.username; // keep mc username
-          payload.discordId = realDiscordId;
-        }
-      }
-
-      const tokenExpiry = rememberMeFromState ? '30d' : '24h';
-      const cookieMaxAge = rememberMeFromState ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-
-      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: tokenExpiry });
-      res.cookie('auth_token', token, {
-        secure: true,
-        sameSite: 'lax',
-        httpOnly: true,
-        maxAge: cookieMaxAge
-      });
-
-      let dest = (intent === 'link' || bankId) ? '/portal' : '/admin';
-      try {
-        if (state) {
-            const decodedState = JSON.parse(decodeURIComponent(state as string));
-            if (decodedState.returnTo) dest = sanitizeReturnTo(decodedState.returnTo);
-        }
-      } catch (e) { console.error("Caught error:", e); }
-
+      const dest = returnTo || '/portal';
       res.send(`
         <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
           <body style="margin: 0; padding: 2rem; text-align: center;">
@@ -617,30 +648,47 @@ export function registerAuthRoutes(app: express.Express) {
                 if (window.opener) {
                   window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, window.location.origin);
                 }
-              } catch(e) { console.error("Caught error:", e); }
-              
-              try {
-                localStorage.setItem('oauth_auth_success', Date.now().toString());
-              } catch(e) { console.error("Caught error:", e); }
-              
-              // Always try to close
-              try { window.close(); } catch(e) { console.error("Caught error:", e); }
-              
-              // If not closed, redirect after delay
-              setTimeout(() => {
-                window.location.href = ${JSON.stringify(dest)};
-              }, 1500);
+              } catch(e) {}
+              try { localStorage.setItem('oauth_auth_success', Date.now().toString()); } catch(e) {}
+              try { window.close(); } catch(e) {}
+              setTimeout(() => { window.location.href = ${JSON.stringify(dest)}; }, 800);
             </script>
             <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
-              <h2>Authentication Successful!</h2>
-              <p style="color: rgba(255,255,255,0.7);">Redirecting you back...</p>
+              <h2>Discord linked</h2>
+              <p style="color: rgba(255,255,255,0.7);">The bank bot can see your accounts now. You can close this window.</p>
             </div>
           </body>
         </html>
       `);
     } catch (e: any) {
       console.error(e);
-      res.status(500).send("Internal server error during Discord auth");
+      res.status(500).send("Could not link Discord. Try again from account settings.");
+    }
+  });
+
+  app.post('/api/auth/unlink-discord', requireAuth, async (req, res) => {
+    try {
+      const { db } = await import("../db/index");
+      const { users, bankCustomers } = await import("../db/schema");
+      const { eq, or } = await import("drizzle-orm");
+      const user = (req as any).user;
+      const keys = [user.discordId, user.mcUuid, user.linkedDiscordId].filter(Boolean);
+      if (keys.length === 0) return res.status(400).json({ error: "No identity on session" });
+      const existing = await db.select().from(users).where(
+        or(eq(users.discordId, user.discordId), user.mcUuid ? eq(users.mcUuid, user.mcUuid) : eq(users.discordId, user.discordId))
+      ).get();
+      if (existing) {
+        await db.update(users).set({ linkedDiscordId: null } as any).where(eq(users.id, existing.id));
+      }
+      for (const key of keys) {
+        await db.update(bankCustomers).set({ linkedDiscordId: null }).where(
+          or(eq(bankCustomers.discordId, key), eq(bankCustomers.mcUuid, key), eq(bankCustomers.linkedDiscordId, key))
+        );
+      }
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Could not unlink Discord" });
     }
   });
 
@@ -653,6 +701,16 @@ export function registerAuthRoutes(app: express.Express) {
       const { checkUserIsGlobalAdmin } = await import("./userResolver.js");
       const isGlobal = await checkUserIsGlobalAdmin(req);
       decoded.isGlobalAdmin = isGlobal;
+      try {
+        const { db } = await import("../db/index");
+        const { users } = await import("../db/schema");
+        const { eq, or } = await import("drizzle-orm");
+        const row = await db.select().from(users).where(
+          or(eq(users.discordId, decoded.discordId), decoded.mcUuid ? eq(users.mcUuid, decoded.mcUuid) : eq(users.discordId, decoded.discordId))
+        ).get();
+        decoded.linkedDiscordId = row?.linkedDiscordId || null;
+        if (row?.mcUuid) decoded.mcUuid = row.mcUuid;
+      } catch {}
       res.json(decoded);
     } catch(e) {
       res.status(401).json({ error: "Invalid token" });

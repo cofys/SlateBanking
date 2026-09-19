@@ -117,7 +117,7 @@ export function GlobalSettings() {
                   type="text" 
                   value={settings.platformName}
                   onChange={(e) => setSettings({...settings, platformName: e.target.value})}
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500 transition-colors"
                 />
               </div>
               
@@ -190,7 +190,7 @@ export function GlobalSettings() {
                       value={newAdminId}
                       onChange={e => setNewAdminId(e.target.value)}
                       placeholder="Discord ID..."
-                      className="flex-1 bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-rose-500 text-sm"
+                      className="flex-1 bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-rose-500 text-sm"
                     />
                     <button 
                       onClick={handleAddAdmin}
@@ -208,7 +208,7 @@ export function GlobalSettings() {
                   type="number" 
                   value={settings.globalRateLimit}
                   onChange={(e) => setSettings({...settings, globalRateLimit: parseInt(e.target.value) || 100})}
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-rose-500 transition-colors"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-rose-500 transition-colors"
                 />
                 <p className="text-xs text-white/40 mt-1">Applies globally across all public endpoints.</p>
               </div>
@@ -427,7 +427,7 @@ function SaasBillingManager() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#12121a] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
             <h4 className="text-base font-bold text-white">Generate SaaS Invoice</h4>
             <form onSubmit={handleCreateInvoice} className="space-y-3">
               <div>
@@ -435,7 +435,7 @@ function SaasBillingManager() {
                 <select
                   value={formData.bankId}
                   onChange={(e) => handleBankSelect(e.target.value)}
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                   required
                 >
                   <option value="">Select a bank...</option>
@@ -461,7 +461,7 @@ function SaasBillingManager() {
                   type="text"
                   value={formData.period}
                   onChange={(e) => setFormData({ ...formData, period: e.target.value })}
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
@@ -473,7 +473,7 @@ function SaasBillingManager() {
                   step="0.01"
                   value={formData.amount}
                   onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
@@ -484,7 +484,7 @@ function SaasBillingManager() {
                   type="date"
                   value={formData.dueDate}
                   onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
@@ -533,7 +533,7 @@ function BotFleetManagerPanel() {
   };
 
   return (
-    <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 mt-8">
+    <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 mt-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2 text-lg font-semibold text-white">
           <Globe className="text-blue-400" size={20} />
@@ -627,7 +627,7 @@ function GlobalAnnouncementsPanel() {
   };
 
   return (
-    <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 mt-8">
+    <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 mt-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2 text-lg font-semibold text-white">
           <Bell className="text-yellow-400" size={20} />
@@ -665,16 +665,16 @@ function GlobalAnnouncementsPanel() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#12121a] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
             <h4 className="text-base font-bold text-white">Broadcast Announcement</h4>
             <form onSubmit={handleCreate} className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-white/70 mb-1">Title</label>
-                <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-white/70 mb-1">Type</label>
-                <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
                   <option value="info">Info</option>
                   <option value="warning">Warning</option>
                   <option value="alert">Alert</option>
@@ -682,7 +682,7 @@ function GlobalAnnouncementsPanel() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-white/70 mb-1">Content</label>
-                <textarea required rows={4} value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
+                <textarea required rows={4} value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setShowModal(false)} className="px-3 py-1.5 text-xs text-white/60 hover:text-white">Cancel</button>
@@ -744,7 +744,7 @@ function GlobalSanctionsPanel() {
   };
 
   return (
-    <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 mt-8">
+    <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 mt-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2 text-lg font-semibold text-white">
           <Shield className="text-red-400" size={20} />
@@ -793,20 +793,20 @@ function GlobalSanctionsPanel() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#12121a] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 max-w-md w-full space-y-4">
             <h4 className="text-base font-bold text-white">Issue Global Sanction</h4>
             <form onSubmit={handleCreate} className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-white/70 mb-1">Discord ID</label>
-                <input type="text" value={formData.discordId} onChange={e => setFormData({...formData, discordId: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. 123456789012345678" />
+                <input type="text" value={formData.discordId} onChange={e => setFormData({...formData, discordId: e.target.value})} className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. 123456789012345678" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-white/70 mb-1">Minecraft UUID</label>
-                <input type="text" value={formData.mcUuid} onChange={e => setFormData({...formData, mcUuid: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. ffffffff-ffff-ffff-ffff-ffffffffffff" />
+                <input type="text" value={formData.mcUuid} onChange={e => setFormData({...formData, mcUuid: e.target.value})} className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. ffffffff-ffff-ffff-ffff-ffffffffffff" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-white/70 mb-1">Reason</label>
-                <textarea required rows={3} value={formData.reason} onChange={e => setFormData({...formData, reason: e.target.value})} className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
+                <textarea required rows={3} value={formData.reason} onChange={e => setFormData({...formData, reason: e.target.value})} className="w-full bg-[var(--bg)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setShowModal(false)} className="px-3 py-1.5 text-xs text-white/60 hover:text-white">Cancel</button>
@@ -841,7 +841,7 @@ function GlobalClearinghousePanel() {
   };
 
   return (
-    <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 mt-8">
+    <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 mt-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2 text-lg font-semibold text-white">
           <Globe className="text-indigo-400" size={20} />

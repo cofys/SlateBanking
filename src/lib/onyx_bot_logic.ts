@@ -17,7 +17,7 @@ import {
 } from 'discord.js';
 import { db } from '../db/index';
 import { banks, bankAccounts, transactions, onyxSettings, onyxMerchants, clearinghouseSettlements, onyxMerchantProducts, onyxQuotes } from '../db/schema';
-import { eq, and, sql, desc, or } from 'drizzle-orm';
+import { eq, and, sql, desc, or, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { dispatchDiscordWebhook } from './webhook_dispatcher';
@@ -357,8 +357,15 @@ async function handleOnyxCrossBankPayment(
   await interaction.deferReply({ ephemeral: true });
   const amountCents = Math.round(amount * 100);
 
+  const { getCandidateIdsForDiscordSnowflake } = await import("../server/userResolver");
+  const ids = await getCandidateIdsForDiscordSnowflake(interaction.user.id);
+  if (ids.length === 0) {
+    await interaction.editReply({ content: "Link Discord in the bank portal first (CityCorp login → Link Discord). Then Onyx can see your accounts." });
+    return;
+  }
+
   // 1. Locate sender's bank account across ALL banks
-  let senderAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.ownerDiscordId, interaction.user.id));
+  let senderAccounts = await db.select().from(bankAccounts).where(inArray(bankAccounts.ownerDiscordId, ids));
   if (senderAccounts.length === 0) {
     await interaction.editReply({ content: '❌ You do not have any registered bank accounts in the system.' });
     return;
@@ -460,6 +467,13 @@ async function handleOnyxRegisterMerchantModal(
 ) {
   await interaction.deferReply({ ephemeral: true });
 
+  const { getCandidateIdsForDiscordSnowflake } = await import("../server/userResolver");
+  const ids = await getCandidateIdsForDiscordSnowflake(interaction.user.id);
+  if (ids.length === 0) {
+    await interaction.editReply({ content: "Link Discord in the bank portal first. Onyx shops must be owned by a linked CityCorp player." });
+    return;
+  }
+
   const b = await db.select().from(banks).where(eq(banks.id, bankId));
   if (b.length === 0) {
     await interaction.editReply({ content: `❌ Bank **${bankId}** does not exist.` });
@@ -471,8 +485,13 @@ async function handleOnyxRegisterMerchantModal(
     await interaction.editReply({ content: `❌ Account **${accName}** not found in bank **${b[0].name}**.` });
     return;
   }
+  if (!ids.includes(accs[0].ownerDiscordId)) {
+    await interaction.editReply({ content: "You can only register a shop against an account you own." });
+    return;
+  }
 
-  const apiKey = 'onyx_live_' + crypto.randomBytes(20).toString('hex');
+  const { hashApiKey, last4OfKey, generateMerchantApiKey } = await import("./api_keys.js");
+  const apiKey = generateMerchantApiKey();
   const merchantId = uuidv4();
 
   await db.insert(onyxMerchants).values({
@@ -480,7 +499,10 @@ async function handleOnyxRegisterMerchantModal(
     name: storeName,
     bankId,
     destinationAccount: accs[0].id,
-    apiKey,
+    apiKey: `hashed:${hashApiKey(apiKey)}`,
+    apiKeyHash: hashApiKey(apiKey),
+    apiKeyLast4: last4OfKey(apiKey),
+    ownerDiscordId: accs[0].ownerDiscordId,
     createdAt: new Date()
   });
 
@@ -502,7 +524,13 @@ async function handleOnyxCreatePayLinkModal(
   await interaction.deferReply({ ephemeral: true });
 
   // Find user's primary bank account
-  const userAccs = await db.select().from(bankAccounts).where(eq(bankAccounts.ownerDiscordId, interaction.user.id));
+  const { getCandidateIdsForDiscordSnowflake } = await import("../server/userResolver");
+  const ids = await getCandidateIdsForDiscordSnowflake(interaction.user.id);
+  if (ids.length === 0) {
+    await interaction.editReply({ content: "Link Discord in the bank portal first." });
+    return;
+  }
+  const userAccs = await db.select().from(bankAccounts).where(inArray(bankAccounts.ownerDiscordId, ids));
   if (userAccs.length === 0) {
     await interaction.editReply({ content: '❌ You must open a bank account at any member bank before generating payment links.' });
     return;

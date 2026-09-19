@@ -66,7 +66,7 @@ export function BankCompliance() {
               <AlertTriangle className="text-amber-500" size={18} />
               Flagged Transactions (Suspicious Activity)
             </h2>
-            <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden">
+            <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden">
               {flaggedTransactions.length === 0 ? (
                 <div className="p-8 text-center text-white/50 text-sm">No flagged transactions.</div>
               ) : (
@@ -110,7 +110,7 @@ export function BankCompliance() {
               <XCircle className="text-red-500" size={18} />
               Frozen Accounts
             </h2>
-            <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden">
+            <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden">
               {frozenAccounts.length === 0 ? (
                 <div className="p-8 text-center text-white/50 text-sm">No frozen accounts.</div>
               ) : (

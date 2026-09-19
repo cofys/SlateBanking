@@ -327,7 +327,7 @@ export function OnyxSettings() {
               </div>
               <div>
                 <h2 className="font-medium text-lg">Merchants</h2>
-                <p className="text-sm text-white/50">API Integrations</p>
+                <p className="text-sm text-white/50">Shops can also self-serve at /accept</p>
               </div>
             </div>
             <button 
@@ -347,7 +347,7 @@ export function OnyxSettings() {
               <p className="text-sm text-white/50 text-center py-4">No merchants registered yet.</p>
             ) : (
               merchants.map(m => (
-                <div key={m.id} className="p-3 bg-[#0a0a0c] border border-white/10 rounded-lg">
+                <div key={m.id} className="p-3 bg-[var(--bg)] border border-white/10 rounded-lg">
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="font-medium text-sm text-white/90">{m.name}</p>
@@ -389,8 +389,32 @@ export function OnyxSettings() {
           </div>
         </div>
 
+        <div className="bg-[var(--bg-elevated)] p-4 rounded-lg border border-emerald-500/20 space-y-3 mt-6">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-300">Onyx CityCorp corporation</h4>
+          <p className="text-xs text-white/60">Onyx has its own CityCorp corp — separate from any bank. Paste the corp ID, API UUID, and API key. Merchants never see these.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input
+              defaultValue={settings?.corpId || ""}
+              placeholder="Corp ID"
+              className="w-full bg-[#1a1a2a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono"
+              onBlur={(e) => handleUpdateSettings({ corpId: e.target.value })}
+            />
+            <input
+              defaultValue={settings?.corpApiUuid || ""}
+              placeholder="Corp API UUID"
+              className="w-full bg-[#1a1a2a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono"
+              onBlur={(e) => handleUpdateSettings({ corpApiUuid: e.target.value })}
+            />
+            <input
+              type="password"
+              placeholder={settings?.hasCorpApiKey ? "API key saved — paste to replace" : "Corp API key"}
+              className="w-full bg-[#1a1a2a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono"
+              onBlur={(e) => { if (e.target.value) handleUpdateSettings({ corpApiKey: e.target.value }); }}
+            />
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-          <div className="bg-[#151522] p-4 rounded-lg border border-white/10 space-y-3">
+          <div className="bg-[var(--bg-elevated)] p-4 rounded-lg border border-white/10 space-y-3">
             <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-300">Onyx Discord Bot Configuration</h4>
             <p className="text-xs text-white/60">Provide the Discord Bot Token for the dedicated Onyx PSP Bot.</p>
             
@@ -435,7 +459,7 @@ export function OnyxSettings() {
             </div>
           </div>
 
-          <div className="bg-[#151522] p-4 rounded-lg border border-white/10 space-y-3">
+          <div className="bg-[var(--bg-elevated)] p-4 rounded-lg border border-white/10 space-y-3">
             <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-300">Interactive Onyx PSP Channel Spawner</h4>
             <p className="text-xs text-white/60">Spawn the global interactive Onyx PSP button embed directly in your community Discord server!</p>
             
@@ -538,7 +562,7 @@ export function OnyxSettings() {
       
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 max-w-md w-full">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 max-w-md w-full">
             <h2 className="text-xl font-semibold mb-1">Generate Onyx Access</h2>
             <p className="text-sm text-white/50 mb-6">Create a new PSP identity for a merchant integration.</p>
             
@@ -550,7 +574,7 @@ export function OnyxSettings() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Premium Dealership"
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
                 />
               </div>
               <div>
@@ -559,7 +583,7 @@ export function OnyxSettings() {
                   required
                   value={bankId}
                   onChange={(e) => setBankId(e.target.value)}
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 appearance-none"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 appearance-none"
                 >
                   <option value="" disabled>Select a participating bank...</option>
                   {banks.map(b => (
@@ -574,7 +598,7 @@ export function OnyxSettings() {
                   value={destinationAccount}
                   onChange={(e) => setDestinationAccount(e.target.value)}
                   placeholder="e.g. corp_dealership"
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
                 />
                 <p className="text-[10px] text-white/40 mt-1">Funds processed via this key will settle here.</p>
               </div>

@@ -6,6 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local SQLite ledgers — never commit customer data
+data/
 *.db
 *.sqlite
 *.sqlite3

@@ -52,28 +52,28 @@ export function BankAnalytics() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-5">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-5">
           <div className="flex items-center gap-3 text-white/50 mb-2">
             <DollarSign size={16} />
             <h3 className="text-sm font-medium">Assets Under Custody</h3>
           </div>
           <div className="text-2xl font-extrabold text-white tracking-tight font-mono">{formatMoney(stats?.totalBalance || 0)}</div>
         </div>
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-5">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-5">
           <div className="flex items-center gap-3 text-white/50 mb-2">
             <Users size={16} />
             <h3 className="text-sm font-medium">Total Customers</h3>
           </div>
           <div className="text-2xl font-bold text-white">{stats?.totalCustomers}</div>
         </div>
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-5">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-5">
           <div className="flex items-center gap-3 text-white/50 mb-2">
             <TrendingUp size={16} />
             <h3 className="text-sm font-medium">Total Accounts</h3>
           </div>
           <div className="text-2xl font-bold text-white">{stats?.totalAccounts}</div>
         </div>
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-5">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-5">
           <div className="flex items-center gap-3 text-white/50 mb-2">
             <ArrowRightLeft size={16} />
             <h3 className="text-sm font-medium">Total Transactions</h3>
@@ -84,7 +84,7 @@ export function BankAnalytics() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Cash Flow Chart */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <h3 className="font-semibold text-lg mb-6">14-Day Capital Flow</h3>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -113,7 +113,7 @@ export function BankAnalytics() {
         </div>
 
         {/* Growth Chart */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <h3 className="font-semibold text-lg mb-6">14-Day Account Growth</h3>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">

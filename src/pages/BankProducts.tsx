@@ -93,7 +93,7 @@ export function BankProducts() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <h3 className="text-lg font-medium mb-4 flex items-center gap-2"><DollarSign size={18} className="text-emerald-400"/> Loan Products</h3>
           {loans.length === 0 ? (
             <p className="text-white/40 text-sm">No loan products configured. Click 'New Product' to create one.</p>
@@ -124,7 +124,7 @@ export function BankProducts() {
           )}
         </div>
 
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <h3 className="text-lg font-medium mb-4 flex items-center gap-2"><Percent size={18} className="text-blue-400"/> Credit Card Products</h3>
           {credits.length === 0 ? (
             <p className="text-white/40 text-sm">No credit products configured.</p>

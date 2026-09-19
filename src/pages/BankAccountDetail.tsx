@@ -308,7 +308,7 @@ export function BankAccountDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Settings/Info */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
             <h3 className="font-semibold mb-6 flex items-center gap-2">
               <Activity className="text-emerald-400" size={18} />
               Quick Action
@@ -340,7 +340,7 @@ export function BankAccountDetail() {
                         required
                         value={wireToBankId}
                         onChange={e => setWireToBankId(e.target.value)}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 mb-4"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 mb-4"
                       >
                         <option value="">Select a bank...</option>
                         {networkBanks.filter(b => b.id !== bank.id).map(b => (
@@ -356,7 +356,7 @@ export function BankAccountDetail() {
                         required
                         value={wireToAccountName}
                         onChange={e => setWireToAccountName(e.target.value)}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 mb-4"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 mb-4"
                         placeholder="e.g. Main Checking"
                       />
                     </div>
@@ -375,7 +375,7 @@ export function BankAccountDetail() {
                       min="0.01"
                       value={txAmount}
                       onChange={e => setTxAmount(e.target.value)}
-                      className="w-full bg-[#1a1a24] border border-white/10 rounded-lg pl-8 pr-4 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg pl-8 pr-4 py-2 text-white focus:outline-none focus:border-indigo-500"
                       placeholder="0.00"
                       autoFocus={txMode !== 'wire'}
                     />
@@ -393,7 +393,7 @@ export function BankAccountDetail() {
             )}
           </div>
 
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
             <h3 className="font-semibold mb-6 flex items-center gap-2">
               <CreditCard className="text-indigo-400" size={18} />
               Account Details
@@ -414,7 +414,7 @@ export function BankAccountDetail() {
             </div>
           </div>
 
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold flex items-center gap-2 text-white">
                 <DollarSign className="text-amber-400" size={18} />
@@ -489,7 +489,7 @@ export function BankAccountDetail() {
             </div>
           </div>
 
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
             <h3 className="font-semibold mb-6 flex items-center gap-2">
               <Lock className="text-pink-400" size={18} />
               Security & Admin
@@ -525,7 +525,7 @@ export function BankAccountDetail() {
 
         {/* Transactions */}
         <div className="lg:col-span-2">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden h-full flex flex-col">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden h-full flex flex-col">
             <div className="p-6 border-b border-white/10 flex items-center justify-between">
               <h3 className="font-semibold flex items-center gap-2">
                 <Activity className="text-emerald-400" size={18} />
@@ -600,9 +600,9 @@ export function BankAccountDetail() {
               }
             }
           `}} />
-          <div className="bg-[#0f0f15] border border-white/10 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] print:max-h-none print:border-0 print:shadow-none print:w-full print:bg-white print:rounded-none">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] print:max-h-none print:border-0 print:shadow-none print:w-full print:bg-white print:rounded-none">
             {/* Header controls (hidden on print) */}
-            <div className="bg-[#0a0a0c] border-b border-white/10 px-6 py-4 flex justify-between items-center print:hidden">
+            <div className="bg-[var(--bg)] border-b border-white/10 px-6 py-4 flex justify-between items-center print:hidden">
               <div className="flex items-center gap-2">
                 <FileText className="text-indigo-400" size={18} />
                 <span className="font-semibold text-white">Official Bank Statement (PDF Preview)</span>
@@ -731,7 +731,7 @@ export function BankAccountDetail() {
       {/* Account Deletion Modal */}
       {showCloseModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1a1a24] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+          <div className="bg-[var(--bg-subtle)] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="p-6 border-b border-white/10 flex justify-between items-center bg-red-500/5">
               <h2 className="text-lg font-bold text-red-400 flex items-center gap-2">
                 <Trash2 size={18} /> Close Account
@@ -741,7 +741,7 @@ export function BankAccountDetail() {
               </button>
             </div>
             <div className="p-6 space-y-5">
-              <div className="bg-[#0f0f15] p-4 rounded-xl border border-white/5 text-center">
+              <div className="bg-[var(--bg-elevated)] p-4 rounded-xl border border-white/5 text-center">
                 <p className="text-sm text-white/50 mb-1">Current Balance</p>
                 <p className="text-2xl font-mono font-bold text-white">{formatMoney(account.balance)}</p>
               </div>
@@ -756,7 +756,7 @@ export function BankAccountDetail() {
                         className={`py-3 px-4 rounded-xl border text-sm font-medium transition-all ${
                           closeAction === 'forfeit' 
                             ? 'bg-indigo-600 border-indigo-500 text-white' 
-                            : 'bg-[#0f0f15] border-white/10 text-white/50 hover:bg-white/5'
+                            : 'bg-[var(--bg-elevated)] border-white/10 text-white/50 hover:bg-white/5'
                         }`}
                       >
                         Forfeit to Bank
@@ -766,7 +766,7 @@ export function BankAccountDetail() {
                         className={`py-3 px-4 rounded-xl border text-sm font-medium transition-all ${
                           closeAction === 'return' 
                             ? 'bg-emerald-600 border-emerald-500 text-white' 
-                            : 'bg-[#0f0f15] border-white/10 text-white/50 hover:bg-white/5'
+                            : 'bg-[var(--bg-elevated)] border-white/10 text-white/50 hover:bg-white/5'
                         }`}
                       >
                         Return to Owner
@@ -783,7 +783,7 @@ export function BankAccountDetail() {
                           value={closeDestAccount}
                           onChange={e => setCloseDestAccount(e.target.value)}
                           placeholder={bank.corpId ? "Minecraft Username (e.g. Notch)" : "Account Name"}
-                          className="w-full bg-[#0f0f15] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 focus:outline-none focus:border-emerald-500 transition-colors"
+                          className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 focus:outline-none focus:border-emerald-500 transition-colors"
                         />
                       </div>
                       <div>
@@ -796,7 +796,7 @@ export function BankAccountDetail() {
                             step="0.1"
                             value={closeFee}
                             onChange={e => setCloseFee(e.target.value)}
-                            className="w-full bg-[#0f0f15] border border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-white focus:outline-none focus:border-emerald-500 transition-colors font-mono"
+                            className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-white focus:outline-none focus:border-emerald-500 transition-colors font-mono"
                           />
                           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30">%</span>
                         </div>
@@ -819,7 +819,7 @@ export function BankAccountDetail() {
             <div className="p-6 border-t border-white/10 bg-white/5 flex gap-3">
               <button 
                 onClick={() => setShowCloseModal(false)}
-                className="flex-1 px-4 py-2.5 bg-[#0f0f15] hover:bg-white/5 text-white/70 border border-white/10 rounded-lg font-medium transition-colors"
+                className="flex-1 px-4 py-2.5 bg-[var(--bg-elevated)] hover:bg-white/5 text-white/70 border border-white/10 rounded-lg font-medium transition-colors"
                 disabled={isClosing}
               >
                 Cancel

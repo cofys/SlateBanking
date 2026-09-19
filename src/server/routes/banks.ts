@@ -89,7 +89,7 @@ banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Reques
   });
 
 // Bulk Enable/Disable Maintenance Mode for ALL banks across the platform
-banksRouter.get("/api/banks/corp-finder", requireAuth, async (req: express.Request, res: express.Response) => {
+banksRouter.get("/api/banks/corp-finder", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { banks, bankAccounts } = await import("../../db/schema");
     const { isNotNull, like, or, eq } = await import("drizzle-orm");
@@ -676,7 +676,39 @@ banksRouter.post("/api/banks/:id/bot-status", requireGlobalAdmin, async (req: ex
     }
   });
 
-banksRouter.get("/api/banks", requireAuth, async (req: express.Request, res: express.Response) => {
+banksRouter.get("/api/banks/directory", async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks, bankSettings } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    try {
+      const all = await db.select({
+        id: banks.id,
+        name: banks.name,
+        customDomain: banks.customDomain,
+        brandingColor: banks.brandingColor,
+        logoUrl: banks.logoUrl,
+      }).from(banks);
+      const settings = await db.select({
+        bankId: bankSettings.bankId,
+        logoUrl: bankSettings.logoUrl,
+        tagline: bankSettings.tagline,
+      }).from(bankSettings);
+      const byId = new Map(settings.map((s) => [s.bankId, s]));
+      res.json(all.map((b) => ({
+        id: b.id,
+        name: b.name,
+        customDomain: b.customDomain,
+        brandingColor: b.brandingColor,
+        logoUrl: byId.get(b.id)?.logoUrl || b.logoUrl,
+        tagline: byId.get(b.id)?.tagline || null,
+        portalPath: b.customDomain ? `https://${String(b.customDomain).replace(/^https?:\/\//, "")}` : `/portal/${b.id}`,
+      })));
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to list banks" });
+    }
+  });
+
+banksRouter.get("/api/banks", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { banks } = await import("../../db/schema");
     try {
@@ -688,7 +720,7 @@ banksRouter.get("/api/banks", requireAuth, async (req: express.Request, res: exp
 
       const enrichedBanks = allBanks.map(b => {
         if (isGlobalAdmin) {
-          const { discordToken, discordClientSecret, corpApiKey, cityCorpAppSecret, apiKey, webhookSecret, ...safeBank } = b;
+          const { discordToken, discordClientSecret, corpApiKey, cityCorpAppSecret, apiKey, webhookSecret, apiKeyHash, ...safeBank } = b as any;
           return {
             ...safeBank,
             hasDiscordToken: !!discordToken,
@@ -1432,7 +1464,7 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
           withdrawFeePercent: 0,
           depositFeePercent: 0,
           transferFeePercent: 0,
-          colorScheme: "indigo",
+          colorScheme: "slate",
           logoUrl: null,
           supportEmail: null,
           discordWebhookUrl: null,
@@ -2869,10 +2901,13 @@ banksRouter.post("/api/banks/:bankId/subscriptions/:subId/charge", requireBankSt
       const customer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, sub.customerAccountId)).get();
 
       if (!biller || !customer) return res.status(400).json({ error: "Accounts invalid" });
+      if (biller.bankId !== req.params.bankId || customer.bankId !== req.params.bankId) {
+        return res.status(400).json({ error: "Subscription charge stays inside this bank." });
+      }
       if (customer.balance < sub.amount) return res.status(400).json({ error: "Customer has insufficient funds" });
 
-      const { executeBookTransfer } = await import("../../lib/citycorp_money");
-      await executeBookTransfer({
+      const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
+      await executeSameBankBookTransfer({
         sourceAccount: customer,
         destAccount: biller,
         desiredCents: sub.amount,
@@ -2991,10 +3026,13 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
       const employee = await db.select().from(bankAccounts).where(eq(bankAccounts.id, job.employeeAccountId)).get();
 
       if (!employer || !employee) return res.status(400).json({ error: "Accounts invalid" });
+      if (employer.bankId !== req.params.bankId || employee.bankId !== req.params.bankId) {
+        return res.status(400).json({ error: "Payroll stays inside this bank." });
+      }
       if (employer.balance < job.amount) return res.status(400).json({ error: "Employer has insufficient funds to run payroll" });
 
-      const { executeBookTransfer } = await import("../../lib/citycorp_money");
-      await executeBookTransfer({
+      const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
+      await executeSameBankBookTransfer({
         sourceAccount: employer,
         destAccount: employee,
         desiredCents: job.amount,
@@ -4050,8 +4088,12 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
          if (!ownerName && c.ownerDiscordId && !/^\d{17,20}$/.test(c.ownerDiscordId)) {
            ownerName = c.ownerDiscordId;
          }
+         const last4 = c.cardNumber ? String(c.cardNumber).slice(-4) : null;
          return {
            ...c,
+           cardNumber: last4 ? `•••• ${last4}` : null,
+           last4,
+           cvv: undefined,
            resolvedOwnerName: ownerName || c.ownerDiscordId
          };
        });
@@ -4059,7 +4101,30 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
        res.json(enrichedCards);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: (e as any).message });
+      res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/cards/:cardId/reveal", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { cards, auditLogs } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+    try {
+      const card = await db.select().from(cards).where(and(eq(cards.id, req.params.cardId), eq(cards.bankId, req.params.bankId))).get();
+      if (!card) return res.status(404).json({ error: "Card not found" });
+      await db.insert(auditLogs).values({
+        id: uuidv4(),
+        bankId: req.params.bankId,
+        userDiscordId: (req as any).user?.discordId || "staff",
+        action: "card_reveal",
+        details: `Revealed PAN for card ${card.id.slice(0, 8)} last4 ${String(card.cardNumber).slice(-4)}`,
+        timestamp: new Date(),
+      });
+      res.json({ cardNumber: card.cardNumber, cvv: card.cvv, expiryDate: card.expiryDate });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Internal Error" });
     }
   });
 
@@ -4168,7 +4233,8 @@ banksRouter.get("/api/banks/:bankId/developer", [requireBankStaff, requireRole([
         apiKey: plaintextApi,
         apiKeyLast4: (bank as any).apiKeyLast4 || (plaintextApi ? plaintextApi.slice(-4) : null),
         hasApiKey: Boolean((bank as any).apiKeyHash || bank.apiKey),
-        webhookSecret: bank.webhookSecret,
+        webhookSecret: plaintextApi ? bank.webhookSecret : undefined,
+        hasWebhookSecret: Boolean(bank.webhookSecret),
         apiWebhookUrl: bank.apiWebhookUrl,
       });
     } catch (e: any) {
@@ -5037,19 +5103,19 @@ banksRouter.post("/api/banks/:bankId/tools/seed-demo", [requireBankStaff, requir
 
       // 3. Define and Insert Bank Accounts
       const accountsToCreate = [
-        { id: "acc_vance_checking", ownerDiscordId: "1048576", accountName: "Main Checking", accountType: "personal", balance: 1425000 },
-        { id: "acc_vance_savings", ownerDiscordId: "1048576", accountName: "High-Yield Vault", accountType: "personal", balance: 7500000 },
-        { id: "acc_vance_escrow", ownerDiscordId: "1048576", accountName: "Onyx Escrow Buffer", accountType: "business", balance: 500000 },
+        { id: "acc_vance_checking", ownerDiscordId: "1048576", accountName: "Main Checking", accountType: "personal", balance: 0 },
+        { id: "acc_vance_savings", ownerDiscordId: "1048576", accountName: "High-Yield Vault", accountType: "personal", balance: 0 },
+        { id: "acc_vance_escrow", ownerDiscordId: "1048576", accountName: "Onyx Escrow Buffer", accountType: "business", balance: 0 },
         
-        { id: "acc_clara_checking", ownerDiscordId: "2097152", accountName: "Standard Checking", accountType: "personal", balance: 234050 },
-        { id: "acc_clara_savings", ownerDiscordId: "2097152", accountName: "Emerald Savings", accountType: "personal", balance: 1280000 },
+        { id: "acc_clara_checking", ownerDiscordId: "2097152", accountName: "Standard Checking", accountType: "personal", balance: 0 },
+        { id: "acc_clara_savings", ownerDiscordId: "2097152", accountName: "Emerald Savings", accountType: "personal", balance: 0 },
         
-        { id: "acc_marcus_checking", ownerDiscordId: "3145728", accountName: "Oak Lumber Corp", accountType: "business", balance: 18500000 },
-        { id: "acc_marcus_payroll", ownerDiscordId: "3145728", accountName: "Payroll Clearing", accountType: "payroll", balance: 4500000 },
+        { id: "acc_marcus_checking", ownerDiscordId: "3145728", accountName: "Oak Lumber Corp", accountType: "business", balance: 0 },
+        { id: "acc_marcus_payroll", ownerDiscordId: "3145728", accountName: "Payroll Clearing", accountType: "payroll", balance: 0 },
         
-        { id: "acc_sarah_checking", ownerDiscordId: "4194304", accountName: "Tactical Checking", accountType: "personal", balance: 85025 },
+        { id: "acc_sarah_checking", ownerDiscordId: "4194304", accountName: "Tactical Checking", accountType: "personal", balance: 0 },
         
-        { id: "acc_john_savings", ownerDiscordId: "5242880", accountName: "Savings Portfolio", accountType: "personal", balance: 15000000 }
+        { id: "acc_john_savings", ownerDiscordId: "5242880", accountName: "Savings Portfolio", accountType: "personal", balance: 0 }
       ];
 
       for (const acc of accountsToCreate) {

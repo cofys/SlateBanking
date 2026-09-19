@@ -7,6 +7,7 @@ import { Overview } from "./pages/Overview";
 import { BanksList } from "./pages/BanksList";
 import { OnyxSettings } from "./pages/OnyxSettings";
 import { OnyxCheckout } from "./pages/OnyxCheckout";
+import { OnyxAccept } from "./pages/OnyxAccept";
 import { CityCorpLogs } from "./pages/CityCorpLogs";
 import { TransactionsList } from "./pages/TransactionsList";
 import { CitizenPortal } from "./pages/CitizenPortal";
@@ -49,6 +50,7 @@ import { NetworkHealth } from "./pages/NetworkHealth";
 import { BankQueue } from "./pages/BankQueue";
 import { BankTeller } from "./pages/BankTeller";
 import { BankCollections } from "./pages/BankCollections";
+import { ScreenLoader } from "./components/ui/chrome";
 import { useState, useEffect } from "react";
 
 const bankStaffRoutes = (
@@ -106,11 +108,7 @@ function App() {
   }, []);
 
   if (checkingDomain) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center text-white">
-         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-      </div>
-    );
+    return <ScreenLoader label="Resolving bank" />;
   }
 
   if (customBankId) {
@@ -123,12 +121,13 @@ function App() {
           <Route path="/bank" element={<Navigate to={`/bank/${customBankId}`} replace />} />
           <Route path="/admin" element={<Navigate to={`/bank/${customBankId}`} replace />} />
           <Route path="/staff" element={<Navigate to={`/bank/${customBankId}`} replace />} />
-          <Route path="/portal" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal overrideBankId={customBankId} /></div>} />
-          <Route path="/portal/:bankId" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal /></div>} />
+          <Route path="/portal" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><BankPortal overrideBankId={customBankId} /></div>} />
+          <Route path="/portal/:bankId" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><BankPortal /></div>} />
           <Route path="/docs" element={<PublicDocs />} />
           <Route path="/pay/:linkId" element={<PayLink />} />
-        <Route path="/onyx/checkout" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><OnyxCheckout /></div>} />
-          <Route path="/" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal overrideBankId={customBankId} /></div>} />
+        <Route path="/onyx/checkout" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><OnyxCheckout /></div>} />
+          <Route path="/accept" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><OnyxAccept /></div>} />
+          <Route path="/" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><BankPortal overrideBankId={customBankId} /></div>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
@@ -140,10 +139,11 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/docs" element={<PublicDocs />} />
-        <Route path="/portal" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><CitizenPortal /></div>} />
-        <Route path="/portal/:bankId" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><BankPortal /></div>} />
+        <Route path="/portal" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><CitizenPortal /></div>} />
+        <Route path="/portal/:bankId" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><BankPortal /></div>} />
         <Route path="/pay/:linkId" element={<PayLink />} />
-        <Route path="/onyx/checkout" element={<div className="min-h-screen bg-[#0a0a0c] text-white overflow-y-auto"><OnyxCheckout /></div>} />
+        <Route path="/onyx/checkout" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><OnyxCheckout /></div>} />
+        <Route path="/accept" element={<div className="min-h-screen bg-[var(--bg)] text-white overflow-y-auto"><OnyxAccept /></div>} />
         
         <Route path="/bank/:bankId" element={<BankAdminLayout />}>
           {bankStaffRoutes}

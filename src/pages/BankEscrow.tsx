@@ -246,7 +246,7 @@ export function BankEscrow() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-[#0b0b12] border border-white/10 rounded-2xl p-4 shadow-xl">
+      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 shadow-xl">
         <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
           <button
             onClick={() => setFilterTab("all")}
@@ -307,14 +307,14 @@ export function BankEscrow() {
             placeholder="Search asset terms, buyer, or seller..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#11111a] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500 transition-colors font-medium"
+            className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500 transition-colors font-medium"
           />
         </div>
       </div>
 
       {/* Escrow Holds Table */}
       {filteredEscrows.length === 0 ? (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-16 flex flex-col items-center justify-center text-center shadow-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-16 flex flex-col items-center justify-center text-center shadow-2xl">
           <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
             <ShieldCheck className="text-white/20" size={32} />
           </div>
@@ -332,7 +332,7 @@ export function BankEscrow() {
           </button>
         </div>
       ) : (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[950px]">
               <thead>
@@ -491,9 +491,9 @@ export function BankEscrow() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#0b0b12] border border-white/10 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl"
+              className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl"
             >
-              <div className="p-6 border-b border-white/5 bg-[#11111a] flex justify-between items-center">
+              <div className="p-6 border-b border-white/5 bg-[var(--bg-subtle)] flex justify-between items-center">
                 <div>
                   <h2 className="text-xl font-black text-white flex items-center gap-2">
                     <ShieldCheck className="text-cyan-400" size={20} />
@@ -519,7 +519,7 @@ export function BankEscrow() {
                       required
                       value={buyerAccountId}
                       onChange={(e) => setBuyerAccountId(e.target.value)}
-                      className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-medium"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-medium"
                     >
                       <option value="">Select funding buyer...</option>
                       {accounts.map(acc => (
@@ -538,7 +538,7 @@ export function BankEscrow() {
                       required
                       value={sellerAccountId}
                       onChange={(e) => setSellerAccountId(e.target.value)}
-                      className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-medium"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-medium"
                     >
                       <option value="">Select receiving seller...</option>
                       {accounts.filter(a => a.id !== buyerAccountId).map(acc => (
@@ -565,7 +565,7 @@ export function BankEscrow() {
                         value={amount}
                         onChange={(e) => setAmount(e.target.value)}
                         placeholder="0.00"
-                        className="w-full bg-[#11111a] border border-white/10 rounded-xl py-3 pl-8 pr-4 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-mono"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl py-3 pl-8 pr-4 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-mono"
                       />
                     </div>
                   </div>
@@ -579,7 +579,7 @@ export function BankEscrow() {
                       value={contractUrl}
                       onChange={(e) => setContractUrl(e.target.value)}
                       placeholder="https://docs.google.com/document/..."
-                      className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-medium"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-medium"
                     />
                   </div>
                 </div>
@@ -594,7 +594,7 @@ export function BankEscrow() {
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="e.g., Commercial Real Estate Deed Plot #409, Enterprise Fleet Transfer"
-                    className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-medium"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors font-medium"
                   />
                 </div>
 

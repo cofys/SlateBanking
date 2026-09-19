@@ -171,6 +171,7 @@ function ensureDatabaseSchemaSynced() {
   // Users table
   checkAndAddColumn("users", "rp_name", "TEXT");
   checkAndAddColumn("users", "address", "TEXT");
+  checkAndAddColumn("users", "linked_discord_id", "TEXT");
 
   // Bank Settings table
   checkAndAddColumn("bank_settings", "withdraw_fee_percent", "INTEGER DEFAULT 0");
@@ -323,6 +324,9 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("discord_webhooks", "is_active", "INTEGER DEFAULT 1");
   checkAndAddColumn("onyx_merchants", "api_key_hash", "TEXT");
   checkAndAddColumn("onyx_merchants", "api_key_last4", "TEXT");
+  checkAndAddColumn("onyx_merchants", "owner_mc_uuid", "TEXT");
+  checkAndAddColumn("onyx_merchants", "owner_discord_id", "TEXT");
+  checkAndAddColumn("onyx_merchants", "slug", "TEXT");
 
   createTableIfNotExists("platform_alerts", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT, severity TEXT NOT NULL DEFAULT 'warning', code TEXT NOT NULL, message TEXT NOT NULL, is_open INTEGER DEFAULT 1, created_at INTEGER NOT NULL, resolved_at INTEGER, resolved_by TEXT");
   createTableIfNotExists("used_payment_tokens", "token_hash TEXT PRIMARY KEY NOT NULL, merchant_id TEXT, discord_id TEXT, amount_cents INTEGER, used_at INTEGER NOT NULL");
@@ -337,6 +341,9 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("onyx_settings", "settlement_schedule", "TEXT DEFAULT 'weekly'");
   checkAndAddColumn("onyx_settings", "last_net_settlement_at", "INTEGER");
   checkAndAddColumn("onyx_settings", "settlement_min_cents", "INTEGER DEFAULT 10000");
+  checkAndAddColumn("onyx_settings", "corp_id", "INTEGER");
+  checkAndAddColumn("onyx_settings", "corp_api_uuid", "TEXT");
+  checkAndAddColumn("onyx_settings", "corp_api_key", "TEXT");
 
   // Ensure high-performance indexes exist
   createIndexIfNotExists("idx_bank_accounts_bank_id", "bank_accounts", "bank_id");
@@ -379,6 +386,33 @@ try {
   ensureDatabaseSchemaSynced();
 } catch (e) {
   console.error("Schema sync error:", e);
+}
+
+// Root operator Cofys (CityCorp / Minecraft). Login is mc_<uuid>; staff tables may still store the name.
+function seedRootAdmins() {
+  const keys = [
+    "cofys",
+    "24e375154a2d4c60a6033c41320a6f03",
+    "24e37515-4a2d-4c60-a603-3c41320a6f03",
+    "mc_24e375154a2d4c60a6033c41320a6f03",
+    "mc_24e37515-4a2d-4c60-a603-3c41320a6f03",
+  ];
+  const now = Date.now();
+  const insert = sqlite.prepare(
+    "INSERT OR IGNORE INTO global_admins (id, discord_id, added_by, created_at) VALUES (?, ?, ?, ?)"
+  );
+  for (const key of keys) {
+    try {
+      insert.run(`root-${key}`.slice(0, 64), key, "System (root Cofys)", now);
+    } catch (e) {
+      console.error("[DB] Failed to seed root admin", key, e);
+    }
+  }
+}
+try {
+  seedRootAdmins();
+} catch (e) {
+  console.error("[DB] Root admin seed error:", e);
 }
 
 // Automatically apply migrations if missing

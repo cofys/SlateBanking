@@ -1,7 +1,8 @@
 import { Activity, Building2, Users, ArrowUpRight, Search, Loader2, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { format } from 'date-fns';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { format } from "date-fns";
+import { PageIntro, StatCard } from "../components/ui/chrome";
 
 export function Overview() {
   const [statsData, setStatsData] = useState({
@@ -11,10 +12,7 @@ export function Overview() {
     totalPlatformVolumeCents: 0,
     timeline: [] as any[],
   });
-
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
-
-  // Corp ID Finder State
   const [corpSearchQuery, setCorpSearchQuery] = useState("");
   const [corpSearchResult, setCorpSearchResult] = useState<number | null>(null);
   const [corpSearchLoading, setCorpSearchLoading] = useState(false);
@@ -44,121 +42,93 @@ export function Overview() {
     const fetchStats = async () => {
       try {
         const res = await fetch("/api/stats");
-        if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) return;
-        const data = await res.json();
-        setStatsData(data);
+        if (!res.ok || !res.headers.get("content-type")?.includes("application/json")) return;
+        setStatsData(await res.json());
       } catch (e) {
         console.error("Stats fetch error:", e);
       }
     };
-
     const fetchTransactions = async () => {
       try {
         const res = await fetch("/api/transactions/recent");
-        if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) return;
+        if (!res.ok || !res.headers.get("content-type")?.includes("application/json")) return;
         const data = await res.json();
-        setRecentTransactions(data.slice(0, 10)); // Show top 10
+        setRecentTransactions(data.slice(0, 10));
       } catch (e) {
         console.error("Transactions fetch error:", e);
       }
     };
-
     fetchStats();
     fetchTransactions();
   }, []);
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val / 100);
-  };
-
-  const formatNumber = (val: number) => {
-    return new Intl.NumberFormat('en-US').format(val);
-  };
-
-  const stats = [
-    { label: "Active Bank Bots", value: formatNumber(statsData.bankCount), icon: Building2, trend: "+1 this week" },
-    { label: "Total Platform Volume", value: formatCurrency(statsData.totalPlatformVolumeCents), icon: Activity, trend: "Overall processed" },
-    { label: "Onyx Processed", value: formatCurrency(statsData.onyxProcessedCents), icon: ArrowUpRight, trend: "API gateway" },
-    { label: "Connected Open Accounts", value: formatNumber(statsData.userCount), icon: Users, trend: "+5 this week" }
-  ];
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val / 100);
+  const formatNumber = (val: number) => new Intl.NumberFormat("en-US").format(val);
 
   return (
     <div className="max-w-6xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Platform Overview</h1>
-        <p className="text-white/50 mt-1">Monitor the Slate Banking SaaS ecosystem.</p>
+      <PageIntro
+        kicker="Network"
+        title="Platform overview"
+        description="Live volume, tenants, and clearinghouse activity across Slate."
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 stagger-in">
+        <StatCard label="Active banks" value={formatNumber(statsData.bankCount)} hint="Connected tenants" icon={<Building2 size={16} />} delay={0} />
+        <StatCard label="Platform volume" value={formatCurrency(statsData.totalPlatformVolumeCents)} hint="All processed funds" icon={<Activity size={16} />} delay={0.05} />
+        <StatCard label="Onyx processed" value={formatCurrency(statsData.onyxProcessedCents)} hint="Cross-bank rails" icon={<ArrowUpRight size={16} />} delay={0.1} />
+        <StatCard label="Open accounts" value={formatNumber(statsData.userCount)} hint="Across the network" icon={<Users size={16} />} delay={0.15} />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, i) => {
-          const Icon = stat.icon;
-          return (
-            <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/10 transition-colors">
-              <div className="flex justify-between items-start">
-                <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center">
-                  <Icon size={18} className="text-white/60" />
-                </div>
-              </div>
-              <div className="mt-4">
-                <p className="text-3xl font-semibold tracking-tight">{stat.value}</p>
-                <p className="text-sm font-medium text-white/50 mt-1">{stat.label}</p>
-                <p className="text-xs text-indigo-400 mt-3">{stat.trend}</p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Global Corp ID Finder */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+      <div className="surface-quiet p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-            <Search size={20} className="text-blue-400" />
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: "color-mix(in oklab, var(--accent) 14%, transparent)", color: "var(--accent)" }}>
+            <Search size={18} />
           </div>
           <div>
-            <h2 className="font-medium text-lg">Global Corp ID Finder</h2>
-            <p className="text-sm text-white/50">Look up a registered CityCorp Corporation ID.</p>
+            <h2 className="font-semibold">Corp ID finder</h2>
+            <p className="text-sm" style={{ color: "var(--fg-muted)" }}>Look up a registered CityCorp corporation.</p>
           </div>
         </div>
-        
         <div className="flex flex-col md:flex-row items-end gap-4 max-w-3xl">
           <div className="flex-1 w-full">
-            <label className="block text-xs font-medium text-white/70 mb-2 uppercase tracking-wide">
-              Corporation Name
+            <label className="block text-[11px] font-semibold uppercase tracking-[0.12em] mb-2" style={{ color: "var(--fg-subtle)" }}>
+              Corporation name
             </label>
-            <input 
-              type="text" 
-              value={corpSearchQuery} 
+            <input
+              type="text"
+              value={corpSearchQuery}
               onChange={(e) => setCorpSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCorpSearch()}
-              placeholder="Enter exact or partial corp name..."
-              className="w-full bg-[#0a0a0c] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors" 
+              onKeyDown={(e) => e.key === "Enter" && handleCorpSearch()}
+              placeholder="Exact or partial name"
+              className="w-full border rounded-xl px-4 py-2.5 text-sm"
+              style={{ background: "var(--bg)", borderColor: "var(--border)" }}
             />
           </div>
-          <button 
+          <button
             onClick={handleCorpSearch}
             disabled={corpSearchLoading || !corpSearchQuery.trim()}
-            className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 h-[42px]"
+            className="w-full md:w-auto px-6 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 h-[42px]"
+            style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
           >
             {corpSearchLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
             Find ID
           </button>
         </div>
-
         {corpSearchResult !== null && (
-          <div className="mt-4 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between max-w-3xl gap-4">
+          <div className="mt-4 p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between max-w-3xl gap-4" style={{ background: "color-mix(in oklab, var(--ok) 10%, transparent)", borderColor: "color-mix(in oklab, var(--ok) 25%, transparent)" }}>
             <div>
-              <p className="text-emerald-400 font-medium text-sm">Corporation Found</p>
-              <p className="text-white/70 text-xs mt-1">The Corporation ID for this search is:</p>
+              <p className="font-medium text-sm" style={{ color: "var(--ok)" }}>Corporation found</p>
+              <p className="text-xs mt-1" style={{ color: "var(--fg-muted)" }}>Corporation ID</p>
             </div>
-            <div className="text-3xl font-mono font-bold text-white bg-black/40 px-6 py-2 rounded-lg border border-white/5 text-center">
+            <div className="text-3xl font-mono font-semibold num px-6 py-2 rounded-lg border text-center" style={{ background: "var(--bg)", borderColor: "var(--border)" }}>
               {corpSearchResult}
             </div>
           </div>
         )}
-
         {corpSearchError && (
-          <div className="mt-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center gap-2 text-rose-400 text-sm max-w-3xl">
+          <div className="mt-4 p-3 rounded-xl border flex items-center gap-2 text-sm max-w-3xl" style={{ color: "var(--danger)", background: "color-mix(in oklab, var(--danger) 10%, transparent)", borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)" }}>
             <XCircle size={16} />
             {corpSearchError}
           </div>
@@ -166,75 +136,66 @@ export function Overview() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white/5 border border-white/10 rounded-xl p-6 h-[400px] flex flex-col">
-          <h3 className="font-medium text-sm text-white/80">Platform Volume (30D)</h3>
+        <div className="lg:col-span-2 surface-quiet p-6 h-[400px] flex flex-col">
+          <h3 className="font-medium text-sm" style={{ color: "var(--fg-muted)" }}>Platform volume · 30 days</h3>
           <div className="flex-1 mt-6 text-sm">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={statsData.timeline} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#c5cad3" stopOpacity={0.28} />
+                    <stop offset="95%" stopColor="#c5cad3" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="rgba(255,255,255,0.3)" 
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(244,244,245,0.06)" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  stroke="rgba(244,244,245,0.25)"
                   tickFormatter={(val: any) => {
-                    try { return format(new Date(val), 'MMM d'); } catch { return String(val); }
+                    try { return format(new Date(val), "MMM d"); } catch { return String(val); }
                   }}
-                  tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                  tick={{ fill: "rgba(244,244,245,0.45)", fontSize: 12 }}
                   tickLine={false}
                   axisLine={false}
                   dy={10}
                 />
-                <YAxis 
-                  stroke="rgba(255,255,255,0.3)" 
+                <YAxis
+                  stroke="rgba(244,244,245,0.25)"
                   tickFormatter={(val) => `$${val}`}
-                  tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                  tick={{ fill: "rgba(244,244,245,0.45)", fontSize: 12 }}
                   tickLine={false}
                   axisLine={false}
                 />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#0f0f15', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#111114", border: "1px solid rgba(244,244,245,0.1)", borderRadius: "12px" }}
                   labelFormatter={(val: any) => {
-                    try {
-                      if (val) {
-                        return format(new Date(val), 'MMM d, yyyy');
-                      }
-                      return '';
-                    } catch { return String(val); }
+                    try { return val ? format(new Date(val), "MMM d, yyyy") : ""; } catch { return String(val); }
                   }}
-                  formatter={(value: any) => [`$${value}`, 'Volume']}
+                  formatter={(value: any) => [`$${value}`, "Volume"]}
                 />
-                <Area type="monotone" dataKey="volume" stroke="#818cf8" strokeWidth={2} fillOpacity={1} fill="url(#colorVolume)" />
+                <Area type="monotone" dataKey="volume" stroke="#c5cad3" strokeWidth={2} fillOpacity={1} fill="url(#colorVolume)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
-        
-        <div className="bg-white/5 border border-white/10 rounded-xl p-6 h-[400px] flex flex-col">
-          <h3 className="font-medium text-sm text-white/80">Live Ledger Activity</h3>
-          <div className="mt-4 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
+
+        <div className="surface-quiet p-6 h-[400px] flex flex-col">
+          <h3 className="font-medium text-sm" style={{ color: "var(--fg-muted)" }}>Live ledger</h3>
+          <div className="mt-4 space-y-2 overflow-y-auto pr-1">
             {recentTransactions.length === 0 ? (
-              <p className="text-xs text-white/50">No transactions recorded yet.</p>
+              <p className="text-xs" style={{ color: "var(--fg-subtle)" }}>No transactions yet.</p>
             ) : (
               recentTransactions.map((tx, i) => (
-                <div key={tx.id || i} className="flex justify-between items-center p-3 rounded bg-[#0a0a0c] border border-white/10">
+                <div key={tx.id || i} className="flex justify-between items-center p-3 rounded-xl border" style={{ background: "var(--bg)", borderColor: "var(--border)" }}>
                   <div className="min-w-0 flex-1 mr-3">
-                    <p className="text-xs font-mono text-white/80 truncate">
-                      {tx.type} • {tx.bankName || 'Unknown Bank'}
+                    <p className="text-xs font-mono truncate" style={{ color: "var(--fg-muted)" }}>
+                      {tx.type} · {tx.bankName || "Unknown"}
                     </p>
-                    <p className="text-[11px] text-white/40 truncate">
-                      <tspan className="text-white/60">{tx.description || '-'}</tspan>
-                    </p>
+                    <p className="text-[11px] truncate" style={{ color: "var(--fg-subtle)" }}>{tx.description || "—"}</p>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className={`text-sm font-mono font-medium ${tx.type === 'deposit' || tx.type === 'onyx_payment' ? 'text-green-400' : 'text-zinc-300'}`}>
-                      {tx.type === 'deposit' || tx.type === 'onyx_payment' ? '+' : '-'}{formatCurrency(tx.amount || 0)}
-                    </p>
-                  </div>
+                  <p className={`text-sm font-mono font-medium num ${tx.type === "deposit" || tx.type === "onyx_payment" ? "text-emerald-400" : ""}`}>
+                    {tx.type === "deposit" || tx.type === "onyx_payment" ? "+" : "−"}{formatCurrency(tx.amount || 0)}
+                  </p>
                 </div>
               ))
             )}

@@ -183,7 +183,7 @@ export function BankTreasury() {
 
       {/* Corporate Account Card & Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-[#0b0b12] border border-indigo-500/20 rounded-2xl p-6 relative overflow-hidden shadow-xl">
+        <div className="bg-[var(--bg-elevated)] border border-indigo-500/20 rounded-2xl p-6 relative overflow-hidden shadow-xl">
           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
           <div className="flex items-center justify-between mb-4">
             <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
@@ -205,7 +205,7 @@ export function BankTreasury() {
           </p>
         </div>
 
-        <div className="bg-[#0b0b12] border border-emerald-500/20 rounded-2xl p-6 relative overflow-hidden shadow-xl">
+        <div className="bg-[var(--bg-elevated)] border border-emerald-500/20 rounded-2xl p-6 relative overflow-hidden shadow-xl">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
           <div className="flex items-center justify-between mb-4">
             <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
@@ -224,7 +224,7 @@ export function BankTreasury() {
           </p>
         </div>
 
-        <div className="bg-[#0b0b12] border border-blue-500/20 rounded-2xl p-6 relative overflow-hidden shadow-xl">
+        <div className="bg-[var(--bg-elevated)] border border-blue-500/20 rounded-2xl p-6 relative overflow-hidden shadow-xl">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
           <div className="flex items-center justify-between mb-4">
             <span className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
@@ -250,7 +250,7 @@ export function BankTreasury() {
         <motion.div 
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="lg:col-span-2 bg-[#0b0b12] border border-white/10 rounded-2xl p-6 lg:p-8 relative overflow-hidden shadow-2xl"
+          className="lg:col-span-2 bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 lg:p-8 relative overflow-hidden shadow-2xl"
         >
           <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
           <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 flex items-center gap-2">
@@ -412,7 +412,7 @@ export function BankTreasury() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15 }}
-        className="bg-[#0b0b12] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6"
+        className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -436,7 +436,7 @@ export function BankTreasury() {
             <div 
               key={item.type}
               onClick={() => setSelectedFeeFilter(selectedFeeFilter === item.type ? "all" : item.type)}
-              className={`bg-[#11111a] border rounded-xl p-4 flex flex-col justify-between transition-all cursor-pointer ${selectedFeeFilter === item.type ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500' : 'border-white/5 hover:border-indigo-500/30'}`}
+              className={`bg-[var(--bg-subtle)] border rounded-xl p-4 flex flex-col justify-between transition-all cursor-pointer ${selectedFeeFilter === item.type ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500' : 'border-white/5 hover:border-indigo-500/30'}`}
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -472,7 +472,7 @@ export function BankTreasury() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18 }}
-        className="bg-[#0b0b12] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6"
+        className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6"
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -493,7 +493,7 @@ export function BankTreasury() {
                 placeholder="Search memo or description..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-[#11111a] border border-white/10 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 w-52"
+                className="bg-[var(--bg-subtle)] border border-white/10 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 w-52"
               />
             </div>
 
@@ -501,7 +501,7 @@ export function BankTreasury() {
             <select
               value={selectedFeeFilter}
               onChange={(e) => setSelectedFeeFilter(e.target.value)}
-              className="bg-[#11111a] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
+              className="bg-[var(--bg-subtle)] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
               <option value="all">All Fee Types</option>
               <option value="transfer_fee">Transfer Fees</option>
@@ -574,7 +574,7 @@ export function BankTreasury() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="bg-[#0b0b12] border border-white/10 rounded-2xl p-6 shadow-2xl"
+        className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 shadow-2xl"
       >
         <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-6 flex items-center gap-2">
           <AreaChartIcon size={16} className="text-indigo-400" /> Capital Flow (7-Day Volume)

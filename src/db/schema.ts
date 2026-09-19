@@ -20,6 +20,7 @@ export const users = sqliteTable("users", {
   mcUsername: text("mc_username").notNull(),
   rpName: text("rp_name"),
   address: text("address"),
+  linkedDiscordId: text("linked_discord_id"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
@@ -37,7 +38,7 @@ export const banks = sqliteTable("banks", {
   cityCorpAppSecret: encryptedText("city_corp_app_secret"),
   cityCorpAuthUrl: text("city_corp_auth_url"),
   customDomain: text("custom_domain"),
-  brandingColor: text("branding_color").default("#4f46e5"), // indigo-600
+  brandingColor: text("branding_color").default("#8b95a5"),
   logoUrl: text("logo_url"),
   apiKey: encryptedText("api_key"),
   webhookSecret: encryptedText("webhook_secret"),
@@ -120,6 +121,9 @@ export const onyxMerchants = sqliteTable("onyx_merchants", {
   apiKeyLast4: text("api_key_last4"),
   bankId: text("bank_id").references(() => banks.id).notNull(), // The routing bank
   destinationAccount: text("destination_account").notNull(),
+  ownerMcUuid: text("owner_mc_uuid"),
+  ownerDiscordId: text("owner_discord_id"),
+  slug: text("slug"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
@@ -129,7 +133,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   depositFeePercent: integer("deposit_fee_percent").default(0),
   transferFeePercent: integer("transfer_fee_percent").default(0),
   interBankWireThreshold: integer("inter_bank_wire_threshold").default(5000000), // Default $50,000 before requiring manual wire
-  colorScheme: text("color_scheme").default("indigo"),
+  colorScheme: text("color_scheme").default("slate"),
   logoUrl: text("logo_url"),
   supportEmail: text("support_email"),
   discordWebhookUrl: text("discord_webhook_url"),
@@ -444,6 +448,9 @@ export const onyxSettings = sqliteTable("onyx_settings", {
   settlementSchedule: text("settlement_schedule").default("weekly"), // manual, weekly, biweekly, monthly
   lastNetSettlementAt: integer("last_net_settlement_at", { mode: "timestamp" }),
   settlementMinCents: integer("settlement_min_cents").default(10000), // $100 dust floor
+  corpId: integer("corp_id"),
+  corpApiUuid: text("corp_api_uuid"),
+  corpApiKey: encryptedText("corp_api_key"),
 });
 
 export const cityCorpLogs = sqliteTable("city_corp_logs", {

@@ -148,12 +148,17 @@ onyxRouter.get("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
     try {
       let settings = await db.select().from(onyxSettings).get();
       if (!settings) {
-        const initial = { id: "global", b2bApiFeePercent: 200, clearinghouseEnabled: true, globalBotMaintenance: false, botToken: null, guiChannelId: null, guiMessageId: null, settlementSchedule: "weekly", lastNetSettlementAt: null, settlementMinCents: 10000 };
+        const initial = { id: "global", b2bApiFeePercent: 200, clearinghouseEnabled: true, globalBotMaintenance: false, botToken: null, guiChannelId: null, guiMessageId: null, settlementSchedule: "weekly", lastNetSettlementAt: null, settlementMinCents: 10000, corpId: null, corpApiUuid: null, corpApiKey: null };
         await db.insert(onyxSettings).values(initial);
         settings = initial;
       }
-      const { botToken, ...safeSettings } = settings as any;
-      res.json({ ...safeSettings, hasBotToken: !!botToken });
+      const { botToken, corpApiKey, ...safeSettings } = settings as any;
+      res.json({
+        ...safeSettings,
+        hasBotToken: !!botToken,
+        hasCorpApiKey: !!corpApiKey,
+        corpApiKey: undefined,
+      });
     } catch(e) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
@@ -168,7 +173,7 @@ onyxRouter.put("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
     const { db } = await import("../../db/index");
     const { onyxSettings } = await import("../../db/schema");
     try {
-      const { b2bApiFeePercent, clearinghouseEnabled, globalBotMaintenance, botToken, guiChannelId, guiMessageId, settlementSchedule, settlementMinCents } = req.body;
+      const { b2bApiFeePercent, clearinghouseEnabled, globalBotMaintenance, botToken, guiChannelId, guiMessageId, settlementSchedule, settlementMinCents, corpId, corpApiUuid, corpApiKey } = req.body;
       const data = { 
         id: "global", 
         b2bApiFeePercent, 
@@ -179,6 +184,9 @@ onyxRouter.put("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
         ...(guiMessageId !== undefined && { guiMessageId }),
         ...(settlementSchedule !== undefined && { settlementSchedule }),
         ...(settlementMinCents !== undefined && { settlementMinCents }),
+        ...(corpId !== undefined && { corpId: corpId === "" || corpId === null ? null : Number(corpId) }),
+        ...(corpApiUuid !== undefined && { corpApiUuid: corpApiUuid || null }),
+        ...(corpApiKey !== undefined && corpApiKey !== "" && { corpApiKey }),
       };
       const exists = await db.select().from(onyxSettings).get();
       const { eq } = await import("drizzle-orm");
@@ -199,8 +207,8 @@ onyxRouter.put("/api/onyx/settings", requireGlobalAdmin, async (req: express.Req
         }
       }
       
-      const { botToken: _bt, ...safe } = data as any;
-      res.json({ ...safe, hasBotToken: !!(botToken || exists?.botToken) });
+      const { botToken: _bt, corpApiKey: _ck, ...safe } = data as any;
+      res.json({ ...safe, hasBotToken: !!(botToken || exists?.botToken), hasCorpApiKey: !!(corpApiKey || exists?.corpApiKey) });
     } catch(e) {
       console.error(e);
       res.status(500).json({ error: "Internal Error" });
@@ -280,51 +288,38 @@ onyxRouter.post("/api/onyx/refresh-bot-gui", requireGlobalAdmin, async (req: exp
 
 onyxRouter.get("/api/onyx/merchants", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { onyxMerchants, banks, bankStaff, bankAccounts } = await import("../../db/schema");
-    const { eq, inArray } = await import("drizzle-orm");
+    const { onyxMerchants, banks } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
     try {
       const user = (req as any).user;
       const requestedBankId = typeof req.query.bankId === "string" ? req.query.bankId : undefined;
+      const isAdmin = !!user?.isGlobalAdmin;
 
-      let allowedBankIds: string[] | null = null;
-      if (!user?.isGlobalAdmin) {
-        const { getUserCandidateIdentifiers } = await import("../userResolver.js");
-        const candidateIds = await getUserCandidateIdentifiers(req);
-        const ids = new Set<string>();
-        if (candidateIds.length > 0) {
-          const staffRows = await db.select({ bankId: bankStaff.bankId }).from(bankStaff).where(inArray(bankStaff.discordId, candidateIds));
-          const accRows = await db.select({ bankId: bankAccounts.bankId }).from(bankAccounts).where(inArray(bankAccounts.ownerDiscordId, candidateIds));
-          staffRows.forEach((r) => ids.add(r.bankId));
-          accRows.forEach((r) => ids.add(r.bankId));
-        }
-        allowedBankIds = Array.from(ids);
-      }
+      const rows = requestedBankId
+        ? await db.select({
+            id: onyxMerchants.id,
+            name: onyxMerchants.name,
+            bankId: onyxMerchants.bankId,
+            createdAt: onyxMerchants.createdAt,
+            bankName: banks.name,
+            destinationAccount: onyxMerchants.destinationAccount,
+          }).from(onyxMerchants).leftJoin(banks, eq(onyxMerchants.bankId, banks.id)).where(eq(onyxMerchants.bankId, requestedBankId))
+        : await db.select({
+            id: onyxMerchants.id,
+            name: onyxMerchants.name,
+            bankId: onyxMerchants.bankId,
+            createdAt: onyxMerchants.createdAt,
+            bankName: banks.name,
+            destinationAccount: onyxMerchants.destinationAccount,
+          }).from(onyxMerchants).leftJoin(banks, eq(onyxMerchants.bankId, banks.id));
 
-      if (requestedBankId) {
-        if (allowedBankIds !== null && !allowedBankIds.includes(requestedBankId)) {
-          return res.json([]);
-        }
-        allowedBankIds = [requestedBankId];
-      }
-
-      const selectShape = {
-          id: onyxMerchants.id,
-          name: onyxMerchants.name,
-          bankId: onyxMerchants.bankId,
-          destinationAccount: onyxMerchants.destinationAccount,
-          createdAt: onyxMerchants.createdAt,
-          bankName: banks.name
-      };
-      const base = db
-        .select(selectShape)
-        .from(onyxMerchants)
-        .leftJoin(banks, eq(onyxMerchants.bankId, banks.id));
-      const merchants = allowedBankIds === null
-        ? await base
-        : allowedBankIds.length === 0
-          ? []
-          : await base.where(inArray(onyxMerchants.bankId, allowedBankIds));
-      res.json(merchants);
+      res.json(rows.map((m) => isAdmin ? m : {
+        id: m.id,
+        name: m.name,
+        bankId: m.bankId,
+        createdAt: m.createdAt,
+        bankName: m.bankName,
+      }));
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });
@@ -391,6 +386,128 @@ onyxRouter.post("/api/onyx/merchants", requireGlobalAdmin, async (req: express.R
     }
   });
 
+function slugifyShop(name: string): string {
+  const base = String(name || "shop").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || "shop";
+  return `${base}-${crypto.randomBytes(3).toString("hex")}`;
+}
+
+onyxRouter.get("/api/onyx/me", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const { db } = await import("../../db/index");
+    const { onyxMerchants, banks, bankAccounts } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { getUserCandidateIdentifiers } = await import("../userResolver.js");
+    const user = (req as any).user;
+    const candidates = await getUserCandidateIdentifiers(req);
+    const owned = [];
+    const all = await db.select().from(onyxMerchants);
+    for (const m of all) {
+      const isOwner = (user.mcUuid && m.ownerMcUuid === user.mcUuid)
+        || (m.ownerDiscordId && candidates.includes(m.ownerDiscordId));
+      if (!isOwner) continue;
+      const bank = await db.select().from(banks).where(eq(banks.id, m.bankId)).get();
+      const dest = await db.select().from(bankAccounts).where(eq(bankAccounts.id, m.destinationAccount)).get();
+      owned.push({
+        id: m.id,
+        name: m.name,
+        slug: m.slug,
+        bankId: m.bankId,
+        bankName: bank?.name,
+        destinationAccount: m.destinationAccount,
+        destinationAccountName: dest?.accountName,
+        apiKeyLast4: m.apiKeyLast4,
+        createdAt: m.createdAt,
+        checkoutPath: `/onyx/checkout?merchantId=${m.id}`,
+      });
+    }
+    res.json(owned);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+onyxRouter.post("/api/onyx/register", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const { name, destinationAccountId } = req.body || {};
+    const shopName = String(name || "").trim().slice(0, 80);
+    if (!shopName) return res.status(400).json({ error: "Give your shop a name." });
+    if (!destinationAccountId) return res.status(400).json({ error: "Pick the bank account that should receive money." });
+
+    const { db } = await import("../../db/index");
+    const { onyxMerchants, bankAccounts, banks } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { requireOwnedAccount } = await import("../userResolver.js");
+    const { hashApiKey, last4OfKey, generateMerchantApiKey } = await import("../../lib/api_keys.js");
+    const { v4: uuidv4 } = await import("uuid");
+
+    const dest = await db.select().from(bankAccounts).where(eq(bankAccounts.id, destinationAccountId)).get();
+    if (!dest || dest.isSystem) return res.status(404).json({ error: "That account was not found." });
+    if (!(await requireOwnedAccount(req, dest, true))) {
+      return res.status(403).json({ error: "You can only receive Onyx payments into an account you own." });
+    }
+    const bank = await db.select().from(banks).where(eq(banks.id, dest.bankId)).get();
+    if (!bank) return res.status(404).json({ error: "Bank not found" });
+
+    const user = (req as any).user;
+    const apiKey = generateMerchantApiKey();
+    const merchant = {
+      id: uuidv4(),
+      name: shopName,
+      bankId: dest.bankId,
+      destinationAccount: dest.id,
+      apiKey: `hashed:${hashApiKey(apiKey)}`,
+      apiKeyHash: hashApiKey(apiKey),
+      apiKeyLast4: last4OfKey(apiKey),
+      ownerMcUuid: user.mcUuid || null,
+      ownerDiscordId: user.discordId || null,
+      slug: slugifyShop(shopName),
+      createdAt: new Date(),
+    };
+    await db.insert(onyxMerchants).values(merchant);
+    res.json({
+      id: merchant.id,
+      name: merchant.name,
+      slug: merchant.slug,
+      bankId: merchant.bankId,
+      bankName: bank.name,
+      destinationAccountName: dest.accountName,
+      apiKey,
+      apiKeyLast4: merchant.apiKeyLast4,
+      checkoutPath: `/onyx/checkout?merchantId=${merchant.id}`,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not register shop" });
+  }
+});
+
+onyxRouter.post("/api/onyx/me/:id/roll-key", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const { db } = await import("../../db/index");
+    const { onyxMerchants } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { getUserCandidateIdentifiers } = await import("../userResolver.js");
+    const { hashApiKey, last4OfKey, generateMerchantApiKey } = await import("../../lib/api_keys.js");
+    const user = (req as any).user;
+    const candidates = await getUserCandidateIdentifiers(req);
+    const m = await db.select().from(onyxMerchants).where(eq(onyxMerchants.id, req.params.id)).get();
+    if (!m) return res.status(404).json({ error: "Shop not found" });
+    const isOwner = (user.mcUuid && m.ownerMcUuid === user.mcUuid) || (m.ownerDiscordId && candidates.includes(m.ownerDiscordId));
+    if (!isOwner) return res.status(403).json({ error: "Not your shop" });
+    const apiKey = generateMerchantApiKey();
+    await db.update(onyxMerchants).set({
+      apiKey: `hashed:${hashApiKey(apiKey)}`,
+      apiKeyHash: hashApiKey(apiKey),
+      apiKeyLast4: last4OfKey(apiKey),
+    } as any).where(eq(onyxMerchants.id, m.id));
+    res.json({ apiKey, apiKeyLast4: last4OfKey(apiKey) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not roll key" });
+  }
+});
+
 onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.Response) => {
     const apiKey = req.headers['x-api-key'] as string;
     if (!apiKey) return res.status(401).json({ error: "Missing x-api-key header" });
@@ -447,8 +564,11 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
           if (decoded.discordId !== userDiscordId || decoded.amount !== amountCents) {
              return res.status(403).json({ error: "Payment token does not match requested amount or user." });
           }
-          if (decoded.merchantId && decoded.merchantId !== merchant.id) {
+          if (!decoded.merchantId || decoded.merchantId !== merchant.id) {
              return res.status(403).json({ error: "Payment token is bound to a different merchant." });
+          }
+          if (decoded.sourceAccountId && sourceAccountId && decoded.sourceAccountId !== sourceAccountId) {
+             return res.status(403).json({ error: "Payment token is bound to a different funding source." });
           }
       } catch (e) {
           return res.status(403).json({ error: "Invalid or expired payment token." });

@@ -47,7 +47,7 @@ export function BankTools() {
         </div>
 
         {/* Tool Content */}
-        <div className="flex-1 bg-[#0f0f15] border border-white/10 rounded-xl p-8">
+        <div className="flex-1 bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-8">
           {activeTool === "mass-deposit" && (
             <div>
               <div className="flex items-center gap-3 mb-6">
@@ -268,20 +268,20 @@ export function BankTools() {
               }} className="max-w-md space-y-6">
                 <div>
                    <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Sender Account Name</label>
-                   <input required name="fromAccountName" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Source Account Name" />
+                   <input required name="fromAccountName" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Source Account Name" />
                 </div>
                 <div>
                    <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Recipient Account Name</label>
-                   <input required name="toAccountName" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Destination Account Name" />
+                   <input required name="toAccountName" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Destination Account Name" />
                 </div>
                 <div className="flex gap-4">
                   <div className="flex-[1]">
                      <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Amount ($)</label>
-                     <input required name="amount" min="1" type="number" step="0.01" defaultValue="100.00" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                     <input required name="amount" min="1" type="number" step="0.01" defaultValue="100.00" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                   </div>
                   <div className="flex-[2]">
                      <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Memo</label>
-                     <input required name="description" type="text" defaultValue="Wire Transfer" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                     <input required name="description" type="text" defaultValue="Wire Transfer" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                   </div>
                 </div>
 
@@ -368,7 +368,7 @@ export function BankTools() {
                 
                 <div>
                    <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Option 1: Upload SQLite Database File (.db / .sqlite / .sqlite3 / .sql)</label>
-                   <input id="sqlite-file-input" type="file" accept=".db,.sqlite,.sqlite3,.sql" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-400 hover:file:bg-emerald-500/30" />
+                   <input id="sqlite-file-input" type="file" accept=".db,.sqlite,.sqlite3,.sql" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-400 hover:file:bg-emerald-500/30" />
                    <p className="text-xs text-white/40 mt-1.5">Direct binary upload of your legacy SQLite file. We parse all tables safely on the server.</p>
                 </div>
 
@@ -382,7 +382,7 @@ export function BankTools() {
                      value={sqlScriptText}
                      onChange={(e) => setSqlScriptText(e.target.value)}
                      placeholder={`CREATE TABLE accounts (\n  account_name TEXT PRIMARY KEY,\n  discord_id TEXT NOT NULL,\n  mc_username TEXT,\n  ...\n);\n\nINSERT INTO accounts VALUES ('main_checking', '123456789', 'Steve', ...);`}
-                     className="w-full bg-[#1a1a24] border border-white/10 rounded-lg p-3 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500 leading-relaxed"
+                     className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg p-3 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500 leading-relaxed"
                    />
                 </div>
 
@@ -479,7 +479,7 @@ export function BankTools() {
               }} className="max-w-md space-y-6">
                 <div>
                    <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Select Data File (.json)</label>
-                   <input required id="migration-file" type="file" accept=".json" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-fuchsia-500" />
+                   <input required id="migration-file" type="file" accept=".json" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-fuchsia-500" />
                    <p className="text-xs text-white/40 mt-2">The AI parser will look for fields like `discordId`, `accountName`, `balance`, `transactions`, `amount`, `type`, `date`.</p>
                 </div>
 

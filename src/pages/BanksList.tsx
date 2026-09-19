@@ -1,4 +1,4 @@
-import { Plus, Server, CheckCircle, XCircle, Loader2, Database, Settings as SettingsIcon, ArrowUpRight, Search, Building2 } from "lucide-react";
+import { Plus, Server, CheckCircle, XCircle, Loader2, Database, Settings as SettingsIcon, ArrowUpRight, Search, Building2, AlertTriangle } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
@@ -351,7 +351,7 @@ export function BanksList() {
             className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer"
             title="Enable maintenance mode on all banks"
           >
-            ⚠️ Enable Maintenance (All)
+            <AlertTriangle size={14} /> Enable Maintenance (All)
           </button>
           <button 
             onClick={() => handleToggleAllMaintenance(false)}
@@ -371,8 +371,8 @@ export function BanksList() {
 
         {showBillingModal && selectedBank && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-            <div className="bg-[#0f0f15] border border-white/10 rounded-xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-200">
-              <div className="bg-[#0a0a0c] border-b border-white/10 px-6 py-4 flex justify-between items-center">
+            <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+              <div className="bg-[var(--bg)] border-b border-white/10 px-6 py-4 flex justify-between items-center">
                 <h3 className="font-semibold text-white">SaaS Configuration: {selectedBank.name}</h3>
                 <button 
                   onClick={() => setShowBillingModal(false)}
@@ -389,7 +389,7 @@ export function BanksList() {
                   <select
                     value={billingPlan}
                     onChange={e => setBillingPlan(e.target.value)}
-                    className="w-full bg-[#16161d] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                   >
                     <option value="starter">Starter Plan ($9.99/mo)</option>
                     <option value="standard">Standard Plan ($19.99/mo)</option>
@@ -403,7 +403,7 @@ export function BanksList() {
                   <select
                     value={billingStatus}
                     onChange={e => setBillingStatus(e.target.value)}
-                    className="w-full bg-[#16161d] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                   >
                     <option value="active">Active</option>
                     <option value="trialing">Trialing</option>
@@ -421,7 +421,7 @@ export function BanksList() {
                     max="100"
                     value={billingFee}
                     onChange={e => setBillingFee(e.target.value)}
-                    className="w-full bg-[#16161d] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                     placeholder="2.00"
                     required
                   />
@@ -456,7 +456,7 @@ export function BanksList() {
             placeholder="Search banks by name, guild ID, status..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full max-w-md bg-[#16161d] border border-white/10 rounded-md py-2 px-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-500"
+            className="w-full max-w-md bg-[var(--bg-elevated)] border border-white/10 rounded-md py-2 px-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-500"
           />
         </div>
         <div className="md:hidden p-3 space-y-3">
@@ -481,7 +481,7 @@ export function BanksList() {
         </div>
         <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left text-sm min-w-[860px]">
-          <thead className="bg-[#0a0a0c] border-b border-white/10 text-white/50">
+          <thead className="bg-[var(--bg)] border-b border-white/10 text-white/50">
             <tr>
               <th className="px-6 py-4 font-medium">Bank ID</th>
               <th className="px-6 py-4 font-medium">Bank Name</th>
@@ -579,7 +579,7 @@ export function BanksList() {
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 max-w-md w-full max-h-full overflow-y-auto">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 max-w-md w-full max-h-full overflow-y-auto">
             <h2 className="text-xl font-semibold mb-1">Provision New Bank</h2>
             <p className="text-sm text-white/50 mb-6">Enter details to deploy a new Slate banking instance.</p>
             
@@ -591,7 +591,7 @@ export function BanksList() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Maze Bank"
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
 
                 <p className="text-xs text-amber-400/80 mt-1 flex items-start gap-1">
@@ -607,7 +607,7 @@ export function BanksList() {
                   value={guildId}
                   onChange={(e) => setGuildId(e.target.value)}
                   placeholder="e.g. 129845729188"
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
@@ -618,18 +618,18 @@ export function BanksList() {
                   value={discordToken}
                   onChange={(e) => setDiscordToken(e.target.value)}
                   placeholder="Paste bot token here..."
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
               
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-white/70 mb-1">Discord Client ID</label>
-                  <input value={discordClientId} onChange={(e) => setDiscordClientId(e.target.value)} placeholder="e.g. 129845729188" className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                  <input value={discordClientId} onChange={(e) => setDiscordClientId(e.target.value)} placeholder="e.g. 129845729188" className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="block text-xs text-white/70 mb-1">Discord Client Secret</label>
-                  <input type="password" value={discordClientSecret} onChange={(e) => setDiscordClientSecret(e.target.value)} className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                  <input type="password" value={discordClientSecret} onChange={(e) => setDiscordClientSecret(e.target.value)} className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
                 </div>
               </div>
               <div>
@@ -638,7 +638,7 @@ export function BanksList() {
                   value={customDomain}
                   onChange={(e) => setCustomDomain(e.target.value)}
                   placeholder="e.g. maze.slate.finance"
-                  className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -654,7 +654,7 @@ export function BanksList() {
                       value={corpId}
                       onChange={(e) => setCorpId(e.target.value)}
                       placeholder="e.g. 1"
-                      className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                   <div>
@@ -664,7 +664,7 @@ export function BanksList() {
                       value={cityCorpAppId}
                       onChange={(e) => setCityCorpAppId(e.target.value)}
                       placeholder="e.g. 4"
-                      className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                 </div>
@@ -676,7 +676,7 @@ export function BanksList() {
                     value={corpApiUuid}
                     onChange={(e) => setCorpApiUuid(e.target.value)}
                     placeholder="Minecraft UUID"
-                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
@@ -692,7 +692,7 @@ export function BanksList() {
                       setCorpApiKey(val);
                     }}
                     placeholder="e.g. crp_vance_..."
-                    className="w-full bg-[#0a0a0c] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-white/20"
+                    className="w-full bg-[var(--bg)] border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-white/20"
                   />
                   <p className="text-[10px] text-white/40 mt-1">
                     CityCorp issues a single unified <strong>App Token</strong> (starting with <code className="text-indigo-300">crp_</code>). This functions as both your Bot API Key for general ledger sync and your Whitelabel OAuth Secret.
@@ -723,8 +723,8 @@ export function BanksList() {
 
       {showManageModal && selectedBank && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="bg-[#0a0a0c] border-b border-white/10 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="bg-[var(--bg)] border-b border-white/10 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
               <div>
                 <h2 
                   className="text-xl font-semibold cursor-pointer hover:text-indigo-400 transition-colors inline-block"
@@ -911,7 +911,7 @@ export function BanksList() {
                               type="text" 
                               value={editName} 
                               onChange={(e) => setEditName(e.target.value)}
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
                             />
                           </div>
                           <div>
@@ -920,7 +920,7 @@ export function BanksList() {
                               type="text" 
                               value={editGuildId} 
                               onChange={(e) => setEditGuildId(e.target.value)}
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
                             />
                           </div>
                           <div>
@@ -930,7 +930,7 @@ export function BanksList() {
                               value={editCustomDomain} 
                               onChange={(e) => setEditCustomDomain(e.target.value)}
                               placeholder="e.g. bank.yourdomain.com"
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" 
                             />
                           </div>
                           <div>
@@ -939,7 +939,7 @@ export function BanksList() {
                               type="text" 
                               value={editCorpId} 
                               onChange={(e) => setEditCorpId(e.target.value)}
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
                             />
                           </div>
                           <div>
@@ -948,7 +948,7 @@ export function BanksList() {
                               type="text" 
                               value={editCorpApiUuid} 
                               onChange={(e) => setEditCorpApiUuid(e.target.value)}
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
                             />
                           </div>
                           <div>
@@ -957,7 +957,7 @@ export function BanksList() {
                               type="text" 
                               value={editCityCorpAppId} 
                               onChange={(e) => setEditCityCorpAppId(e.target.value)}
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
                             />
                           </div>
                           <div>
@@ -967,7 +967,7 @@ export function BanksList() {
                               value={editCityCorpAppSecret} 
                               onChange={(e) => setEditCityCorpAppSecret(e.target.value)}
                               placeholder="Leave blank to keep current token"
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
                             />
                           </div>
                           <div>
@@ -977,7 +977,7 @@ export function BanksList() {
                               value={editDiscordToken} 
                               onChange={(e) => setEditDiscordToken(e.target.value)}
                               placeholder="Leave blank to keep current token"
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
                             />
                           </div>
 
@@ -987,7 +987,7 @@ export function BanksList() {
                               type="text" 
                               value={editDiscordClientId} 
                               onChange={(e) => setEditDiscordClientId(e.target.value)}
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" 
                             />
                           </div>
                           <div>
@@ -997,7 +997,7 @@ export function BanksList() {
                               value={editDiscordClientSecret} 
                               onChange={(e) => setEditDiscordClientSecret(e.target.value)}
                               placeholder="Leave blank to keep unchanged"
-                              className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
+                              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/40" 
                             />
                           </div>
 
@@ -1086,7 +1086,7 @@ export function BanksList() {
 
      {showBillingModal && selectedBankForBilling && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-6">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-6">
             <div className="flex justify-between items-start border-b border-white/10 pb-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -1113,7 +1113,7 @@ export function BanksList() {
                   <select
                     value={billingPlan}
                     onChange={(e) => setBillingPlan(e.target.value)}
-                    className="w-full bg-[#12121a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
                   >
                     <option value="starter">Starter Plan</option>
                     <option value="standard">Standard Plan</option>
@@ -1127,7 +1127,7 @@ export function BanksList() {
                   <select
                     value={billingStatus}
                     onChange={(e) => setBillingStatus(e.target.value)}
-                    className="w-full bg-[#12121a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
                   >
                     <option value="active">Active (Good Standing)</option>
                     <option value="trialing">Trialing (Free Trial)</option>
@@ -1143,7 +1143,7 @@ export function BanksList() {
                     step="0.01"
                     value={billingFee}
                     onChange={(e) => setBillingFee(e.target.value)}
-                    className="w-full bg-[#12121a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                     placeholder="2.00"
                   />
                 </div>
@@ -1181,7 +1181,7 @@ export function BanksList() {
               </div>
 
               {/* Specific Pricing Controls */}
-              <div className="bg-[#12121a] p-4 rounded-xl border border-white/10 space-y-4">
+              <div className="bg-[var(--bg-elevated)] p-4 rounded-xl border border-white/10 space-y-4">
                 <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
                   <SettingsIcon size={14} /> Pricing & Rate Parameters
                 </h3>

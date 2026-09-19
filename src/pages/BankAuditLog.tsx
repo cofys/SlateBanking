@@ -52,26 +52,26 @@ export function BankAuditLog() {
             placeholder="Search by User Discord ID, Action, or Details..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            className="w-full bg-[#0f0f15] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+            className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
           />
         </div>
         
-        <div className="flex items-center gap-2 bg-[#0f0f15] border border-white/10 rounded-xl px-3 py-2">
+        <div className="flex items-center gap-2 bg-[var(--bg-elevated)] border border-white/10 rounded-xl px-3 py-2">
           <Filter size={16} className="text-white/40" />
           <select
             value={actionFilter}
             onChange={e => setActionFilter(e.target.value)}
             className="bg-transparent text-sm text-white focus:outline-none cursor-pointer"
           >
-            <option value="all" className="bg-[#12121a]">All Actions ({logs.length})</option>
+            <option value="all" className="bg-[var(--bg-elevated)]">All Actions ({logs.length})</option>
             {actionsList.map(a => (
-              <option key={a} value={a} className="bg-[#12121a]">{a}</option>
+              <option key={a} value={a} className="bg-[var(--bg-elevated)]">{a}</option>
             ))}
           </select>
         </div>
       </div>
 
-      <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden">
+      <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden">
         {filteredLogs.length === 0 ? (
           <div className="p-12 text-center text-white/40 flex flex-col items-center justify-center">
             <ShieldCheck size={48} className="mb-4 opacity-20" />
@@ -80,7 +80,7 @@ export function BankAuditLog() {
           </div>
         ) : (
           <table className="w-full text-left text-sm">
-            <thead className="bg-[#1a1a24] text-white/50 border-b border-white/10">
+            <thead className="bg-[var(--bg-subtle)] text-white/50 border-b border-white/10">
               <tr>
                 <th className="px-6 py-4 font-medium">Timestamp</th>
                 <th className="px-6 py-4 font-medium">User (Discord ID)</th>

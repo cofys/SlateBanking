@@ -1,109 +1,102 @@
 import { db } from "../db/index.js";
-import { bankAccounts, banks } from "../db/schema.js";
-import { eq, sql } from "drizzle-orm";
+import { bankAccounts, banks, transactions } from "../db/schema.js";
+import { eq, and, or, inArray, sql } from "drizzle-orm";
 
 export type PayeeMatch = {
   id: string;
   accountName: string;
   bankId: string;
   bankName: string | null;
-  ownerDiscordId: string | null;
 };
 
 function normalize(raw: string): string {
   return String(raw || "").trim();
 }
 
-async function withBankName(row: typeof bankAccounts.$inferSelect): Promise<PayeeMatch & typeof bankAccounts.$inferSelect> {
-  const bank = await db.select({ name: banks.name }).from(banks).where(eq(banks.id, row.bankId)).get();
-  return { ...row, bankName: bank?.name || null };
-}
-
 function isPayable(row: { isActive?: boolean | null; isFrozen?: boolean | null; isSystem?: boolean | null }): boolean {
   return !!row.isActive && !row.isFrozen && !row.isSystem;
 }
 
-/** Resolve a destination from UUID, short id, or in-game account name. */
-export async function resolvePayableAccount(raw: string, opts?: {
-  preferBankId?: string;
-  excludeId?: string;
-}): Promise<{ account?: typeof bankAccounts.$inferSelect & { bankName?: string | null }; error?: string; matches?: PayeeMatch[] }> {
-  const q = normalize(raw);
-  if (!q) return { error: "Enter a destination account name." };
-
-  const exclude = opts?.excludeId;
-
-  const byId = await db.select().from(bankAccounts).where(eq(bankAccounts.id, q)).get();
-  if (byId && byId.id !== exclude) {
-    if (!isPayable(byId)) return { error: "Destination account is inactive or frozen." };
-    return { account: await withBankName(byId) };
-  }
-
-  const compact = q.replace(/-/g, "").toLowerCase();
-  if (compact.length >= 8 && /^[a-z0-9_]+$/i.test(compact)) {
-    const allIds = await db.select().from(bankAccounts);
-    const shortHit = allIds.find((a) => a.id !== exclude && a.id.replace(/-/g, "").toLowerCase().endsWith(compact));
-    if (shortHit) {
-      if (!isPayable(shortHit)) return { error: "Destination account is inactive or frozen." };
-      return { account: await withBankName(shortHit) };
-    }
-  }
-
-  const lower = q.toLowerCase();
-  const named = await db.select().from(bankAccounts).where(sql`lower(${bankAccounts.accountName}) = ${lower}`);
-  let hits = named.filter((a) => a.id !== exclude && isPayable(a));
-
-  if (hits.length === 0) {
-    const fuzzy = await db.select().from(bankAccounts).where(sql`lower(${bankAccounts.accountName}) like ${"%" + lower + "%"}`);
-    hits = fuzzy.filter((a) => a.id !== exclude && isPayable(a));
-  }
-
-  if (hits.length === 0) return { error: "Destination account not found. Use the in-game account name." };
-
-  if (hits.length > 1 && opts?.preferBankId) {
-    const sameBank = hits.filter((a) => a.bankId === opts.preferBankId);
-    if (sameBank.length === 1) return { account: await withBankName(sameBank[0]) };
-    if (sameBank.length > 1) hits = sameBank;
-  }
-
-  if (hits.length === 1) return { account: await withBankName(hits[0]) };
-
-  const matches: PayeeMatch[] = [];
-  for (const h of hits.slice(0, 8)) {
-    const bank = await db.select({ name: banks.name }).from(banks).where(eq(banks.id, h.bankId)).get();
-    matches.push({
-      id: h.id,
-      accountName: h.accountName,
-      bankId: h.bankId,
-      bankName: bank?.name || null,
-      ownerDiscordId: h.ownerDiscordId,
-    });
-  }
-  return {
-    error: `Several accounts match “${q}”. Pick one.`,
-    matches,
-  };
+async function bankName(bankId: string): Promise<string | null> {
+  const row = await db.select({ name: banks.name }).from(banks).where(eq(banks.id, bankId)).get();
+  return row?.name || null;
 }
 
-export async function suggestPayees(raw: string, opts?: { preferBankId?: string; limit?: number }): Promise<PayeeMatch[]> {
+/**
+ * Resolve a destination inside ONE bank.
+ * Exact account id or exact in-game name only — no fuzzy search, no other banks.
+ */
+export async function resolvePayableAccount(raw: string, opts: {
+  bankId: string;
+  excludeId?: string;
+}): Promise<{ account?: typeof bankAccounts.$inferSelect & { bankName?: string | null }; error?: string }> {
   const q = normalize(raw);
-  if (q.length < 2) return [];
+  if (!q) return { error: "Enter a destination account name." };
+  if (!opts.bankId) return { error: "Bank required." };
+
+  const exclude = opts.excludeId;
+
+  const byId = await db.select().from(bankAccounts).where(
+    and(eq(bankAccounts.id, q), eq(bankAccounts.bankId, opts.bankId))
+  ).get();
+  if (byId && byId.id !== exclude) {
+    if (!isPayable(byId)) return { error: "Destination account is inactive or frozen." };
+    return { account: { ...byId, bankName: await bankName(byId.bankId) } };
+  }
+
   const lower = q.toLowerCase();
-  const rows = await db.select().from(bankAccounts).where(sql`lower(${bankAccounts.accountName}) like ${"%" + lower + "%"}`);
+  const named = await db.select().from(bankAccounts).where(
+    and(eq(bankAccounts.bankId, opts.bankId), sql`lower(${bankAccounts.accountName}) = ${lower}`)
+  );
+  const hits = named.filter((a) => a.id !== exclude && isPayable(a));
+  if (hits.length === 1) {
+    return { account: { ...hits[0], bankName: await bankName(hits[0].bankId) } };
+  }
+  if (hits.length > 1) {
+    return { error: "More than one account has that name at this bank. Ask them for the exact name." };
+  }
+  return { error: "No account with that name at this bank." };
+}
+
+/** Prior counterparties at this bank — people this customer has already sent to or received from. */
+export async function suggestPayees(opts: {
+  bankId: string;
+  ownerAccountIds: string[];
+  q?: string;
+  limit?: number;
+}): Promise<PayeeMatch[]> {
+  if (!opts.bankId || !opts.ownerAccountIds.length) return [];
+  const mine = opts.ownerAccountIds;
+
+  const txs = await db.select({
+    fromAccountId: transactions.fromAccountId,
+    toAccountId: transactions.toAccountId,
+  }).from(transactions).where(
+    and(
+      eq(transactions.bankId, opts.bankId),
+      or(inArray(transactions.fromAccountId, mine), inArray(transactions.toAccountId, mine))
+    )
+  );
+
+  const otherIds = new Set<string>();
+  for (const t of txs) {
+    if (t.fromAccountId && !mine.includes(t.fromAccountId)) otherIds.add(t.fromAccountId);
+    if (t.toAccountId && !mine.includes(t.toAccountId)) otherIds.add(t.toAccountId);
+  }
+  if (otherIds.size === 0) return [];
+
+  const rows = await db.select().from(bankAccounts).where(
+    and(eq(bankAccounts.bankId, opts.bankId), inArray(bankAccounts.id, Array.from(otherIds)))
+  );
   let hits = rows.filter(isPayable);
-  if (opts?.preferBankId) {
-    hits.sort((a, b) => Number(b.bankId === opts.preferBankId) - Number(a.bankId === opts.preferBankId));
-  }
-  const out: PayeeMatch[] = [];
-  for (const h of hits.slice(0, opts?.limit || 8)) {
-    const bank = await db.select({ name: banks.name }).from(banks).where(eq(banks.id, h.bankId)).get();
-    out.push({
-      id: h.id,
-      accountName: h.accountName,
-      bankId: h.bankId,
-      bankName: bank?.name || null,
-      ownerDiscordId: h.ownerDiscordId,
-    });
-  }
-  return out;
+  const q = normalize(opts.q || "").toLowerCase();
+  if (q) hits = hits.filter((a) => a.accountName.toLowerCase().includes(q));
+
+  const name = await bankName(opts.bankId);
+  return hits.slice(0, opts.limit || 8).map((h) => ({
+    id: h.id,
+    accountName: h.accountName,
+    bankId: h.bankId,
+    bankName: name,
+  }));
 }

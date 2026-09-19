@@ -331,7 +331,7 @@ export function BankMEAReport() {
   return (
     <div className="max-w-6xl mx-auto pb-16 animate-in fade-in duration-500">
       {/* Top Action Bar (Hidden in Print View) */}
-      <div className="print:hidden mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-[#0f0f15] border border-white/10 rounded-2xl p-5 shadow-xl">
+      <div className="print:hidden mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-5 shadow-xl">
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">

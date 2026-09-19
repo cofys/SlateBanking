@@ -161,7 +161,7 @@ export function BankCustomerDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Admin Profile Controls */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6 shadow-xl">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6 shadow-xl">
             <h3 className="text-base font-semibold text-white/90 mb-4 flex items-center gap-2">
               <ShieldCheck size={18} className="text-indigo-400" />
               Administrative Profile
@@ -175,7 +175,7 @@ export function BankCustomerDetail() {
                   value={linkedDiscordId}
                   onChange={(e) => setLinkedDiscordId(e.target.value)}
                   placeholder="e.g. 123456789012345678 or @username"
-                  className="w-full bg-[#1a1a24] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
+                  className="w-full bg-[var(--bg-subtle)] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
                 />
               </div>
 
@@ -186,7 +186,7 @@ export function BankCustomerDetail() {
                   value={mcUsername}
                   onChange={(e) => setMcUsername(e.target.value)}
                   placeholder="e.g. Steve"
-                  className="w-full bg-[#1a1a24] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
+                  className="w-full bg-[var(--bg-subtle)] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
                 />
               </div>
 
@@ -195,7 +195,7 @@ export function BankCustomerDetail() {
                 <select 
                   value={kycStatus}
                   onChange={(e) => setKycStatus(e.target.value)}
-                  className="w-full bg-[#1a1a24] border border-white/15 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full bg-[var(--bg-subtle)] border border-white/15 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                 >
                   <option value="pending">🟡 Pending Verification</option>
                   <option value="approved">🟢 Verified Profile</option>
@@ -208,7 +208,7 @@ export function BankCustomerDetail() {
                 <textarea 
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full bg-[#1a1a24] border border-white/15 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20 resize-none"
+                  className="w-full bg-[var(--bg-subtle)] border border-white/15 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20 resize-none"
                   rows={4}
                   placeholder="Add administrative records, verification details, or server-role notes about this member..."
                 />
@@ -249,7 +249,7 @@ export function BankCustomerDetail() {
               {data.accounts?.map((acc: any) => (
                 <div 
                   key={acc.id} 
-                  className="bg-[#0f0f15] border border-white/10 rounded-xl p-5 flex flex-col justify-between hover:border-white/20 transition-all group"
+                  className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-5 flex flex-col justify-between hover:border-white/20 transition-all group"
                 >
                   <div>
                     <div className="flex justify-between items-start gap-2 mb-2">
@@ -298,13 +298,13 @@ export function BankCustomerDetail() {
               Recent Account Activity
             </h3>
             
-            <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden shadow-xl">
+            <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden shadow-xl">
               {data.transactions?.length === 0 ? (
                 <div className="p-8 text-center text-white/40">No recent transactions found.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm min-w-[500px]">
-                    <thead className="bg-[#1a1a24] text-white/50 border-b border-white/10">
+                    <thead className="bg-[var(--bg-subtle)] text-white/50 border-b border-white/10">
                       <tr>
                         <th className="px-6 py-4 font-medium">Type</th>
                         <th className="px-6 py-4 font-medium">From/To</th>

@@ -21,7 +21,7 @@ export function BankDeveloper() {
       const data = await res.json();
       setApiKey(data.apiKey || "");
         setApiKeyLast4(data.apiKeyLast4 || (data.apiKey ? String(data.apiKey).slice(-4) : ""));
-        setWebhookSecret(data.webhookSecret);
+        setWebhookSecret(data.webhookSecret || "");
         setWebhookUrl(data.apiWebhookUrl || "");
     } catch (e) {
       console.error(e);
@@ -71,7 +71,7 @@ export function BankDeveloper() {
         
         {/* API Keys Configuration */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-8">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-8">
             <div className="flex items-center gap-3 mb-6">
               <Key className="text-indigo-400" size={24} />
               <h3 className="text-xl font-bold">API Credentials</h3>
@@ -83,7 +83,7 @@ export function BankDeveloper() {
             <div className="space-y-6">
               <div>
                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Live Secret Key</label>
-                <div className="flex bg-[#1a1a24] border border-white/10 rounded-lg overflow-hidden">
+                <div className="flex bg-[var(--bg-subtle)] border border-white/10 rounded-lg overflow-hidden">
                   <div className="flex-1 px-4 py-3 font-mono text-sm flex items-center">
                     {loading ? <Loader2 className="w-4 h-4 animate-spin text-white/50" /> : (apiKey ? (apiKeyVisible ? apiKey : "sk_live_" + "•".repeat(32)) : `hashed · last4 ${apiKeyLast4 || "????"} — roll to issue a new key`)}
                   </div>
@@ -98,9 +98,9 @@ export function BankDeveloper() {
 
               <div>
                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Webhook Secret</label>
-                <div className="flex bg-[#1a1a24] border border-white/10 rounded-lg overflow-hidden">
+                <div className="flex bg-[var(--bg-subtle)] border border-white/10 rounded-lg overflow-hidden">
                   <div className="flex-1 px-4 py-3 font-mono text-sm flex items-center">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin text-white/50" /> : (webhookSecretVisible ? webhookSecret : "whsec_" + "•".repeat(32))}
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin text-white/50" /> : (webhookSecret ? (webhookSecretVisible ? webhookSecret : "whsec_" + "•".repeat(32)) : "Hidden — roll keys to copy a new secret")}
                   </div>
                   <button disabled={loading} onClick={() => setWebhookSecretVisible(!webhookSecretVisible)} className="px-4 text-white/50 hover:text-white border-l border-white/10 transition-colors">
                     {webhookSecretVisible ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -120,14 +120,14 @@ export function BankDeveloper() {
             </div>
           </div>
 
-          <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-8">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-8">
             <div className="flex items-center gap-3 mb-6">
               <Server className="text-emerald-400" size={24} />
               <h3 className="text-xl font-bold">Webhooks</h3>
             </div>
             
             
-            <div className="bg-[#1a1a24] border border-white/10 rounded-lg p-6">
+            <div className="bg-[var(--bg-subtle)] border border-white/10 rounded-lg p-6">
               <h4 className="text-sm font-bold mb-4">Webhook Endpoint URL</h4>
               <div className="flex gap-2 mb-4">
                 <input 
@@ -166,7 +166,7 @@ export function BankDeveloper() {
 
         {/* Documentation Sidebar */}
         <div className="lg:col-span-1">
-          <div className="bg-[#1a1a24] border border-white/10 rounded-xl p-6 sticky top-6">
+          <div className="bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-6 sticky top-6">
             <div className="flex items-center gap-3 mb-4">
               <Code2 className="text-indigo-400" size={20} />
               <h3 className="text-lg font-bold">API Documentation</h3>

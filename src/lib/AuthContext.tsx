@@ -4,7 +4,9 @@ export interface UserSession {
   discordId: string;
   username: string;
   avatarUrl?: string;
-  isGlobalAdmin: string | boolean; // boolean
+  isGlobalAdmin: string | boolean;
+  linkedDiscordId?: string | null;
+  mcUuid?: string | null;
 }
 
 interface AuthContextType {
@@ -12,7 +14,8 @@ interface AuthContextType {
   isLoading: boolean;
   rememberMe: boolean;
   setRememberMe: (remember: boolean) => void;
-  login: (bankId?: string, provider?: 'discord' | 'citycorp', intent?: 'login' | 'link', rememberMeOverride?: boolean) => void;
+  login: (bankId?: string, provider?: 'citycorp' | 'discord', intent?: 'login' | 'link', rememberMeOverride?: boolean) => void;
+  linkDiscord: (bankId?: string) => void;
   logout: () => void;
   checkSession: () => Promise<void>;
 }
@@ -23,6 +26,7 @@ const AuthContext = createContext<AuthContextType>({
   rememberMe: true,
   setRememberMe: () => {},
   login: () => {},
+  linkDiscord: () => {},
   logout: () => {},
   checkSession: async () => {},
 });
@@ -88,13 +92,16 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     };
   }, []);
 
-  const login = async (bankId?: string, provider?: 'discord' | 'citycorp', intent?: 'login' | 'link', rememberMeOverride?: boolean) => {
+  const login = async (bankId?: string, provider?: 'citycorp' | 'discord', intent?: 'login' | 'link', rememberMeOverride?: boolean) => {
     try {
       const finalRemember = rememberMeOverride !== undefined ? rememberMeOverride : rememberMe;
       const params = new URLSearchParams();
       if (bankId) params.append('bankId', bankId);
-      if (provider) params.append('provider', provider);
-      if (intent) params.append('intent', intent);
+      // Discord is never a login method. Linking uses linkDiscord().
+      const resolvedProvider = intent === 'link' && provider === 'discord' ? 'discord' : 'citycorp';
+      params.append('provider', resolvedProvider);
+      if (resolvedProvider === 'discord') params.append('intent', 'link');
+      else if (intent && intent !== 'link') params.append('intent', intent);
       params.append('rememberMe', String(finalRemember));
       params.append('returnTo', window.location.pathname);
       
@@ -123,6 +130,10 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     }
   };
 
+  const linkDiscord = async (bankId?: string) => {
+    await login(bankId, "discord", "link");
+  };
+
   const logout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
@@ -133,7 +144,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, rememberMe, setRememberMe, login, logout, checkSession }}>
+    <AuthContext.Provider value={{ user, isLoading, rememberMe, setRememberMe, login, linkDiscord, logout, checkSession }}>
       {children}
     </AuthContext.Provider>
   );

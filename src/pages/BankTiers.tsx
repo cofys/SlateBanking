@@ -141,7 +141,7 @@ export function BankTiers() {
         <form onSubmit={handleSave} className="space-y-6">
           <div className="grid grid-cols-1 gap-6">
             {tiers.map((tier, index) => (
-              <div key={tier.id} className="bg-[#0f0f15] border border-white/10 rounded-2xl overflow-hidden relative group">
+              <div key={tier.id} className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl overflow-hidden relative group">
                 <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
@@ -160,7 +160,7 @@ export function BankTiers() {
                         type="text"
                         value={tier.name}
                         onChange={(e) => updateTier(tier.id, "name", e.target.value)}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                         required
                         placeholder="e.g., Gold Savings"
                       />
@@ -171,7 +171,7 @@ export function BankTiers() {
                         type="text"
                         value={tier.description || ""}
                         onChange={(e) => updateTier(tier.id, "description", e.target.value)}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                         placeholder="e.g., Earn high yield on your balances"
                       />
                     </div>
@@ -181,7 +181,7 @@ export function BankTiers() {
                         <select
                           value={tier.type}
                           onChange={(e) => updateTier(tier.id, "type", e.target.value)}
-                          className="bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                          className="bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                         >
                           <option value="personal">Personal</option>
                           <option value="business">Business</option>
@@ -193,7 +193,7 @@ export function BankTiers() {
                             type="checkbox"
                             checked={tier.isDefault}
                             onChange={(e) => updateTier(tier.id, "isDefault", e.target.checked)}
-                            className="rounded bg-[#1a1a24] border-white/10 text-indigo-500 focus:ring-indigo-500"
+                            className="rounded bg-[var(--bg-subtle)] border-white/10 text-indigo-500 focus:ring-indigo-500"
                           />
                           <span className="text-sm text-white/80">Default for {tier.type} accounts</span>
                         </label>
@@ -202,7 +202,7 @@ export function BankTiers() {
                             type="checkbox"
                             checked={tier.isPrivate || false}
                             onChange={(e) => updateTier(tier.id, "isPrivate", e.target.checked)}
-                            className="rounded bg-[#1a1a24] border-white/10 text-indigo-500 focus:ring-indigo-500"
+                            className="rounded bg-[var(--bg-subtle)] border-white/10 text-indigo-500 focus:ring-indigo-500"
                           />
                           <span className="text-sm text-white/80" title="Hidden from customers. Staff must assign manually.">Private (Staff Only)</span>
                         </label>
@@ -219,7 +219,7 @@ export function BankTiers() {
                         step="0.01"
                         value={tier.monthlyFee ? (tier.monthlyFee / 100) : 0}
                         onChange={(e) => updateTier(tier.id, "monthlyFee", Math.floor(parseFloat(e.target.value || "0") * 100))}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                       />
                     </div>
                     <div>
@@ -230,7 +230,7 @@ export function BankTiers() {
                         step="0.01"
                         value={tier.apyPercent ? (tier.apyPercent / 100) : ""}
                         onChange={(e) => updateTier(tier.id, "apyPercent", e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null)}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                         placeholder="Uses bank default if empty"
                       />
                     </div>
@@ -242,7 +242,7 @@ export function BankTiers() {
                         step="0.01"
                         value={tier.minBalance ? (tier.minBalance / 100) : 0}
                         onChange={(e) => updateTier(tier.id, "minBalance", Math.floor(parseFloat(e.target.value || "0") * 100))}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -256,7 +256,7 @@ export function BankTiers() {
                         step="0.01"
                         value={tier.creditLimit ? (tier.creditLimit / 100) : 0}
                         onChange={(e) => updateTier(tier.id, "creditLimit", Math.floor(parseFloat(e.target.value || "0") * 100))}
-                        className="w-full bg-[#1a1a24] border border-emerald-500/30 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-emerald-500/30 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
                         placeholder="0 = No Credit Card"
                       />
                     </div>
@@ -268,7 +268,7 @@ export function BankTiers() {
                         step="0.01"
                         value={tier.creditApr !== undefined && tier.creditApr !== null ? (tier.creditApr / 100) : 19.99}
                         onChange={(e) => updateTier(tier.id, "creditApr", e.target.value ? Math.round(parseFloat(e.target.value) * 100) : 1999)}
-                        className="w-full bg-[#1a1a24] border border-emerald-500/30 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-emerald-500/30 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -282,7 +282,7 @@ export function BankTiers() {
                         step="0.01"
                         value={tier.transferFeePercent !== null ? (tier.transferFeePercent / 100) : ""}
                         onChange={(e) => updateTier(tier.id, "transferFeePercent", e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null)}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                         placeholder="Bank default"
                       />
                     </div>
@@ -294,7 +294,7 @@ export function BankTiers() {
                         step="0.01"
                         value={tier.depositFeePercent !== null ? (tier.depositFeePercent / 100) : ""}
                         onChange={(e) => updateTier(tier.id, "depositFeePercent", e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null)}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                         placeholder="Bank default"
                       />
                     </div>
@@ -306,7 +306,7 @@ export function BankTiers() {
                         step="0.01"
                         value={tier.withdrawFeePercent !== null ? (tier.withdrawFeePercent / 100) : ""}
                         onChange={(e) => updateTier(tier.id, "withdrawFeePercent", e.target.value ? Math.round(parseFloat(e.target.value) * 100) : null)}
-                        className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                         placeholder="Bank default"
                       />
                     </div>

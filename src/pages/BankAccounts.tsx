@@ -234,7 +234,7 @@ export function BankAccounts() {
               placeholder="Search accounts..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-[#1a1a24] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors w-full sm:w-64"
+              className="bg-[var(--bg-subtle)] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors w-full sm:w-64"
             />
           </div>
 
@@ -268,17 +268,17 @@ export function BankAccounts() {
       </div>
 
       {showAdd && (
-        <div className="bg-[#0f0f15] border border-white/10 p-6 rounded-xl mb-8 flex flex-col items-start gap-4 shadow-xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 p-6 rounded-xl mb-8 flex flex-col items-start gap-4 shadow-xl">
           <h3 className="text-lg font-medium text-white/90">Provision New Account</h3>
           <form onSubmit={handleAdd} className="w-full flex gap-4 md:items-end flex-col md:flex-row">
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Account Name</label>
-              <input name="accountName" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="e.g. Checking" />
+              <input name="accountName" required type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="e.g. Checking" />
             </div>
             {bank.settings?.enableAccountTiers && (
               <div className="flex-1 w-full">
                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Account Tier</label>
-                <select name="tierId" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors">
+                <select name="tierId" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors">
                   <option value="">(No Tier / Default)</option>
                   {(bank.settings?.accountTiers || []).map((t: any) => (
                     <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
@@ -288,15 +288,15 @@ export function BankAccounts() {
             )}
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Owner Username / Discord ID</label>
-              <input name="ownerDiscordId" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="123456789" />
+              <input name="ownerDiscordId" required type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="123456789" />
             </div>
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">MC Username</label>
-              <input name="minecraftUsername" required type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="Notch" />
+              <input name="minecraftUsername" required type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="Notch" />
             </div>
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Initial Balance ($)</label>
-              <input name="initialBalance" type="number" step="0.01" defaultValue="0.00" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="initialBalance" type="number" step="0.01" defaultValue="0.00" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
             <div className="flex gap-2 w-full md:w-auto mt-4 md:mt-0">
               <button disabled={submitting} type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white whitespace-nowrap px-6 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
@@ -313,7 +313,7 @@ export function BankAccounts() {
       {/* Adjust Balance Modal — local mint disabled */}
       {adjustingAcc && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#12121a] border border-white/10 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+          <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
             <button onClick={() => setAdjustingAcc(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5">
               <X size={18} />
             </button>
@@ -368,7 +368,7 @@ export function BankAccounts() {
         </div>
       )}
 
-      <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden overflow-x-auto shadow-2xl">
+      <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden overflow-x-auto shadow-2xl">
         {loading ? (
            <div className="p-8 text-center text-white/50">Loading accounts...</div>
         ) : accounts.length === 0 ? (

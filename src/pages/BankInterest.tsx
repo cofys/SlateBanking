@@ -121,7 +121,7 @@ export function BankInterest() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <form onSubmit={handleSave} className="bg-[#0f0f15] border border-white/10 rounded-2xl overflow-hidden">
+          <form onSubmit={handleSave} className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-white/10">
               <h2 className="text-lg font-medium text-white">Yield Configuration</h2>
               <p className="text-sm text-white/50">Define the global rules for interest accrual.</p>
@@ -137,7 +137,7 @@ export function BankInterest() {
                       type="number"
                       step="0.01"
                       defaultValue={settings?.savingsApyPercent ? (settings.savingsApyPercent / 100) : 3.0}
-                      className="w-full bg-[#1a1a24] border border-white/10 rounded-lg pl-4 pr-8 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg pl-4 pr-8 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                       required
                     />
                     <Percent className="absolute right-3 top-2.5 text-white/30" size={16} />
@@ -150,7 +150,7 @@ export function BankInterest() {
                   <select
                     name="interestTargetAccounts"
                     defaultValue={settings?.interestTargetAccounts || "savings_only"}
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   >
                     <option value="savings_only">Savings Accounts Only (Recommended)</option>
                     <option value="personal_only">Personal Accounts Only</option>
@@ -164,7 +164,7 @@ export function BankInterest() {
                   <select
                     name="interestPaymentSchedule"
                     defaultValue={settings?.interestPaymentSchedule || "manual"}
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   >
                     <option value="manual">Manual Trigger Only</option>
                     <option value="daily">Daily</option>
@@ -179,7 +179,7 @@ export function BankInterest() {
                   <select
                     name="interestCalculationMethod"
                     defaultValue={settings?.interestCalculationMethod || "current_balance"}
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   >
                     <option value="current_balance">Current balance at payout</option>
                     <option value="average_daily_balance">Average daily balance</option>
@@ -191,7 +191,7 @@ export function BankInterest() {
                   <select
                     name="interestDaysInYear"
                     defaultValue={settings?.interestDaysInYear === 360 ? "360" : "365"}
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   >
                     <option value="365">365 (actual / 52 weeks)</option>
                     <option value="360">360 (bank year)</option>
@@ -205,7 +205,7 @@ export function BankInterest() {
                     type="text"
                     defaultValue={settings?.interestPoolAccount || ""}
                     placeholder="e.g. interest_reserve"
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   />
                   <p className="text-[11px] text-white/40 mt-1">Payouts book-transfer from this named subaccount. Empty = skip (never mint).</p>
                 </div>
@@ -220,7 +220,7 @@ export function BankInterest() {
                       step="0.01"
                       min="0"
                       defaultValue={settings?.interestMinBalance ? (settings.interestMinBalance / 100) : 0}
-                      className="w-full bg-[#1a1a24] border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                     />
                   </div>
                 </div>
@@ -235,7 +235,7 @@ export function BankInterest() {
                       step="0.01"
                       min="0"
                       defaultValue={settings?.interestMaxAccountBalance ? (settings.interestMaxAccountBalance / 100) : ""}
-                      className="w-full bg-[#1a1a24] border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                       placeholder="No limit"
                     />
                   </div>
@@ -251,7 +251,7 @@ export function BankInterest() {
                       min="1"
                       step="1"
                       defaultValue={settings?.interestRequiresActivityDays || ""}
-                      className="w-full bg-[#1a1a24] border border-white/10 rounded-lg pl-4 pr-12 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg pl-4 pr-12 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                       placeholder="Any activity"
                     />
                     <span className="absolute right-4 top-2.5 text-white/30 text-sm">days</span>
@@ -267,7 +267,7 @@ export function BankInterest() {
                     min="0"
                     step="1"
                     defaultValue={settings?.interestMinAccountAgeDays || 0}
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   />
                   <p className="text-[11px] text-white/40 mt-1">Accounts younger than this earn nothing.</p>
                 </div>

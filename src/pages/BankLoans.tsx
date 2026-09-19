@@ -335,7 +335,7 @@ export function BankLoans() {
 
       {/* Underwriting KPI Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-[#0b0b12] border border-white/10 p-4 rounded-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 p-4 rounded-2xl">
           <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total Originated Book</p>
           <p className="text-xl font-black text-white font-mono mt-1">
             ${(metrics.totalBook / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -343,7 +343,7 @@ export function BankLoans() {
           <p className="text-xs text-zinc-500 mt-0.5">{loans.length} total loans issued</p>
         </div>
 
-        <div className="bg-[#0b0b12] border border-white/10 p-4 rounded-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 p-4 rounded-2xl">
           <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Active Performing Balance</p>
           <p className="text-xl font-black text-emerald-400 font-mono mt-1">
             ${(metrics.activeOutstanding / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -351,7 +351,7 @@ export function BankLoans() {
           <p className="text-xs text-emerald-500/80 mt-0.5">Generating continuous yield</p>
         </div>
 
-        <div className="bg-[#0b0b12] border border-white/10 p-4 rounded-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 p-4 rounded-2xl">
           <p className="text-[11px] font-bold text-rose-400 uppercase tracking-wider">Delinquency Exposure</p>
           <p className="text-xl font-black text-rose-400 font-mono mt-1">
             ${(metrics.delinquentRisk / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -359,7 +359,7 @@ export function BankLoans() {
           <p className="text-xs text-rose-500/80 mt-0.5">Overdue & Defaulted</p>
         </div>
 
-        <div className="bg-[#0b0b12] border border-white/10 p-4 rounded-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 p-4 rounded-2xl">
           <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Collateral Pledged</p>
           <p className="text-xl font-black text-amber-300 font-mono mt-1">
             ${(metrics.totalCollateral / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -369,7 +369,7 @@ export function BankLoans() {
       </div>
 
       {/* Triage Tabs & Search Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0b0b12] border border-white/10 p-3 rounded-2xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[var(--bg-elevated)] border border-white/10 p-3 rounded-2xl">
         <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
           <button
             onClick={() => setFilterTab("all")}
@@ -421,7 +421,7 @@ export function BankLoans() {
       </div>
 
       {loans.length === 0 ? (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-12 text-center">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-12 text-center">
           <Landmark className="mx-auto h-12 w-12 text-white/20 mb-4" />
           <h3 className="text-lg font-medium text-white mb-2">No loans recorded</h3>
           <p className="text-white/60 max-w-sm mx-auto mb-6">
@@ -436,7 +436,7 @@ export function BankLoans() {
           </button>
         </div>
       ) : filteredLoans.length === 0 ? (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-12 text-center text-zinc-400">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-12 text-center text-zinc-400">
           <AlertCircle size={36} className="mx-auto mb-2 opacity-30 text-white" />
           <p className="text-sm font-semibold text-white">No loans match the active triage filter.</p>
           <button 
@@ -447,10 +447,10 @@ export function BankLoans() {
           </button>
         </div>
       ) : (
-        <div className="overflow-x-auto bg-[#0b0b12] border border-white/10 rounded-2xl shadow-2xl">
+        <div className="overflow-x-auto bg-[var(--bg-elevated)] border border-white/10 rounded-2xl shadow-2xl">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-white/10 text-xs uppercase tracking-wider text-zinc-400 bg-[#11111a]">
+              <tr className="border-b border-white/10 text-xs uppercase tracking-wider text-zinc-400 bg-[var(--bg-subtle)]">
                 <th className="p-4 font-semibold">Borrower</th>
                 <th className="p-4 font-semibold">Principal</th>
                 <th className="p-4 font-semibold">Remaining Bal</th>

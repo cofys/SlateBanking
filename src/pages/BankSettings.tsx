@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Building2,  AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search, Landmark, Percent  } from "lucide-react";
+import { SchemeSwatches } from "../components/ui/chrome";
+import { SCHEME_HEX, accentForeground, type ColorSchemeId } from "../lib/theme";
 
 export function BankSettings() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -8,6 +10,8 @@ export function BankSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [vaultTiers, setVaultTiers] = useState<any[]>([{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}]);
+  const [schemeId, setSchemeId] = useState<ColorSchemeId>("slate");
+  const [brandHex, setBrandHex] = useState("#8b95a5");
 
   useEffect(() => {
     if (bank?.id) {
@@ -17,6 +21,8 @@ export function BankSettings() {
         .then(data => {
           setSettings(data);
           if (data.vaultTiers) setVaultTiers(data.vaultTiers);
+          setSchemeId((data.colorScheme as ColorSchemeId) || "slate");
+          setBrandHex(data.brandingColor || SCHEME_HEX[data.colorScheme] || "#8b95a5");
           setLoading(false);
         });
     }
@@ -143,7 +149,7 @@ export function BankSettings() {
       <form onSubmit={handleSave} className="space-y-8">
         
         {/* Fees & Rates */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Wallet className="text-indigo-400" size={20} />
             Fees & Risk Management
@@ -157,7 +163,7 @@ export function BankSettings() {
                 type="number" 
                 step="0.01"
                 defaultValue={settings?.depositFeePercent || 0} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
             <div>
@@ -167,7 +173,7 @@ export function BankSettings() {
                 type="number" 
                 step="0.01"
                 defaultValue={settings?.withdrawFeePercent || 0} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
             <div>
@@ -177,7 +183,7 @@ export function BankSettings() {
                 type="number" 
                 step="0.01"
                 defaultValue={settings?.transferFeePercent || 0} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
             <div>
@@ -187,7 +193,7 @@ export function BankSettings() {
                 type="number" 
                 step="0.01"
                 defaultValue={settings?.savingsApyPercent ? (settings.savingsApyPercent / 100) : 3.0} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
             <div>
@@ -197,7 +203,7 @@ export function BankSettings() {
                 type="number" 
                 step="1"
                 defaultValue={settings?.interBankWireThreshold ? Math.floor(settings.interBankWireThreshold / 100) : 50000} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
           </div>
@@ -206,7 +212,7 @@ export function BankSettings() {
               type="checkbox" 
               id="overwriteCustomAccountFees"
               name="overwriteCustomAccountFees"
-              className="w-4 h-4 rounded bg-[#1a1a24] border-white/20 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              className="w-4 h-4 rounded bg-[var(--bg-subtle)] border-white/20 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
             />
             <label htmlFor="overwriteCustomAccountFees" className="text-xs sm:text-sm text-white/80 font-medium cursor-pointer">
               Apply these fee rates to accounts with custom fee overrides (overwrite existing custom account fees)
@@ -216,50 +222,52 @@ export function BankSettings() {
         </div>
 
         {/* Branding & Visuals */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
-            <Paintbrush className="text-pink-400" size={20} />
+            <Paintbrush style={{ color: "var(--accent)" }} size={20} />
             Brand Identity
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Brand Color Scheme</label>
-              <select 
-                name="colorScheme" 
-                defaultValue={settings?.colorScheme || "indigo"} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                style={{ WebkitAppearance: "none", MozAppearance: "none", appearance: "none" }}
-              >
-                <option value="indigo">Indigo</option>
-                <option value="emerald">Emerald</option>
-                <option value="rose">Rose</option>
-                <option value="amber">Gold</option>
-                <option value="zinc">Monochrome</option>
-              </select>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-medium text-white/50 mb-3 uppercase tracking-wide">Color scheme</label>
+              <SchemeSwatches
+                value={schemeId}
+                onChange={(id, hex) => {
+                  setSchemeId(id);
+                  setBrandHex(hex);
+                }}
+              />
+              <p className="text-xs text-white/40 mt-3">Applies to staff chrome, the client portal, Discord embeds, and action buttons.</p>
             </div>
             <div>
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Accent Color</label>
-              <div className="flex items-center gap-3 bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2">
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Custom accent</label>
+              <div className="flex items-center gap-3 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2">
                 <input
                   name="brandingColor"
                   type="color"
-                  defaultValue={settings?.brandingColor || "#4f46e5"}
+                  value={brandHex}
+                  onChange={(e) => setBrandHex(e.target.value)}
                   className="h-8 w-10 rounded border-0 bg-transparent cursor-pointer"
                 />
                 <input
                   type="text"
-                  defaultValue={settings?.brandingColor || "#4f46e5"}
-                  onInput={(e) => {
-                    const hex = (e.target as HTMLInputElement).value;
-                    const color = (e.currentTarget.parentElement?.querySelector('input[name="brandingColor"]') as HTMLInputElement);
-                    if (color && /^#[0-9a-fA-F]{6}$/.test(hex)) color.value = hex;
+                  value={brandHex}
+                  onChange={(e) => {
+                    const hex = e.target.value;
+                    if (/^#[0-9a-fA-F]{0,6}$/.test(hex)) setBrandHex(hex);
                   }}
-                  placeholder="#4f46e5"
+                  placeholder="#8b95a5"
                   className="flex-1 bg-transparent text-sm text-white font-mono focus:outline-none"
                 />
               </div>
-              <p className="text-xs text-white/40 mt-1.5">Used on Discord embeds, the citizen portal, and staff chrome. The named scheme above still drives Tailwind accents.</p>
+              <p className="text-xs text-white/40 mt-1.5">Optional override. Picking a scheme above fills this for you.</p>
+              <div
+                className="mt-3 h-11 rounded-lg flex items-center justify-center text-xs font-semibold tracking-wide"
+                style={{ background: brandHex, color: accentForeground(brandHex) }}
+              >
+                Live preview
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Tagline</label>
@@ -269,7 +277,7 @@ export function BankSettings() {
                 maxLength={120}
                 placeholder="The bank of the city."
                 defaultValue={settings?.tagline || ""}
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
               />
               <p className="text-xs text-white/40 mt-1.5">Shown on the citizen portal header and Discord panels.</p>
             </div>
@@ -280,7 +288,7 @@ export function BankSettings() {
                 type="text" 
                 placeholder="https://example.com/logo.png"
                 defaultValue={settings?.logoUrl || bank?.logoUrl || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
               {(settings?.logoUrl || bank?.logoUrl) && (
                 <img src={settings?.logoUrl || bank?.logoUrl} alt="logo preview" referrerPolicy="no-referrer" className="mt-2 h-12 w-12 rounded-lg object-contain bg-black/40 border border-white/10" />
@@ -294,14 +302,14 @@ export function BankSettings() {
                 type="text" 
                 placeholder="https://images.unsplash.com/photo-1550751827-4bd374c3f58b"
                 defaultValue={settings?.loginBgUrl || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
           </div>
           
           <div className="mt-6">
             <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Custom Domain</label>
-            <div className="flex bg-[#1a1a24] border border-white/10 rounded-lg overflow-hidden group focus-within:border-indigo-500 transition-colors">
+            <div className="flex bg-[var(--bg-subtle)] border border-white/10 rounded-lg overflow-hidden group focus-within:border-indigo-500 transition-colors">
               <span className="px-4 py-2.5 text-white/40 border-r border-white/10 text-sm flex items-center bg-black/20">https://</span>
               <input 
                 name="customDomain" 
@@ -315,53 +323,44 @@ export function BankSettings() {
           </div>
 
             <div>
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Discord Client ID</label>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Discord app ID (bot linking only)</label>
               <input 
                 name="discordClientId" 
                 type="text" 
-                placeholder="For custom domain OAuth overrides"
+                placeholder="Not a login method — used so customers can attach Discord to an existing CityCorp session"
                 defaultValue={settings?.discordClientId || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Discord Client Secret</label>
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Discord app secret (bot linking only)</label>
               <input 
                 name="discordClientSecret" 
                 type="password" 
                 placeholder="Leave blank to keep unchanged"
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
             </div>
 
-            {/* OAuth Redirect URIs Helper Box */}
-            <div className="col-span-1 md:col-span-2 bg-[#14141e] border border-indigo-500/20 rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-400 uppercase tracking-wide">
-                🔑 Required OAuth Redirect URIs for External Portals
+            <div className="col-span-1 md:col-span-2 bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--fg-muted)" }}>
+                CityCorp login callback
               </div>
-              <p className="text-xs text-white/60">
-                Register these exact Callback URIs in your <strong>Discord Developer Portal</strong> and <strong>CityCorp Developer Dashboard</strong> for seamless authentication:
+              <p className="text-xs" style={{ color: "var(--fg-subtle)" }}>
+                Customers and staff sign in with CityCorp only. Register this callback in the CityCorp developer dashboard. Discord is not a login method.
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
-                <div className="bg-[#0a0a0f] p-2.5 rounded-lg border border-white/10">
-                  <span className="text-indigo-300 font-sans block text-[10px] uppercase mb-1">Discord OAuth Redirect URI</span>
-                  <code className="text-emerald-400 select-all block break-all">
-                    {`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/discord/callback`}
-                  </code>
-                </div>
-                <div className="bg-[#0a0a0f] p-2.5 rounded-lg border border-white/10">
-                  <span className="text-indigo-300 font-sans block text-[10px] uppercase mb-1">CityCorp OAuth Redirect URI</span>
-                  <code className="text-amber-400 select-all block break-all">
-                    {`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/citycorp/callback`}
-                  </code>
-                </div>
+              <div className="bg-[var(--bg)] p-2.5 rounded-lg border border-white/10">
+                <span className="font-sans block text-[10px] uppercase mb-1" style={{ color: "var(--fg-subtle)" }}>CityCorp OAuth redirect URI</span>
+                <code className="text-sm select-all block break-all" style={{ color: "var(--ok)" }}>
+                  {`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/citycorp/callback`}
+                </code>
               </div>
             </div>
 
         </div>
 
         {/* Support & Alerts */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Bell className="text-blue-400" size={20} />
             Alerts & Support
@@ -375,7 +374,7 @@ export function BankSettings() {
                 type="text" 
                 placeholder="support@mybank.com"
                 defaultValue={settings?.supportEmail || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
             <div>
@@ -385,14 +384,14 @@ export function BankSettings() {
                 type="text" 
                 placeholder="https://discord.com/api/webhooks/..."
                 defaultValue={settings?.discordWebhookUrl || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
           </div>
         </div>
 
         {/* Discord Bot GUI Channels */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-2">
             <Bot className="text-indigo-400" size={20} />
             Discord
@@ -410,7 +409,7 @@ export function BankSettings() {
                 maxLength={500}
                 placeholder="Welcome to the bank. Open your dashboard, send a transfer, or visit the web portal."
                 defaultValue={settings?.discordWelcome || ""}
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors resize-y min-h-[80px]"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors resize-y min-h-[80px]"
               />
             </div>
             <div>
@@ -421,7 +420,7 @@ export function BankSettings() {
                 maxLength={80}
                 placeholder={bank?.name || "Your bank"}
                 defaultValue={settings?.discordFooter || ""}
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
               />
             </div>
             <div>
@@ -432,7 +431,7 @@ export function BankSettings() {
                 maxLength={80}
                 placeholder={`/bank · ${bank?.name || "Bank"}`}
                 defaultValue={settings?.discordBotActivity || ""}
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
               />
               <p className="text-xs text-white/40 mt-1.5">What the bot shows as its Discord presence when the bank is open.</p>
             </div>
@@ -466,7 +465,7 @@ export function BankSettings() {
                   type="text" 
                   placeholder="Discord Channel ID"
                   defaultValue={settings?.guiChannelId || ""} 
-                  className="flex-1 bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                  className="flex-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" 
                 />
                 <button
                   type="button"
@@ -504,7 +503,7 @@ export function BankSettings() {
                   type="text" 
                   placeholder="Discord Channel ID"
                   defaultValue={settings?.staffChannelId || ""} 
-                  className="flex-1 bg-[#1a1a24] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" 
+                  className="flex-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" 
                 />
                 <button
                   type="button"
@@ -551,7 +550,7 @@ export function BankSettings() {
         </div>
         
         {/* CityCorp Integrations */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Settings className="text-indigo-400" size={20} />
             Discord Interop & Roles (Optional)
@@ -566,7 +565,7 @@ export function BankSettings() {
                 type="text" 
                 placeholder="e.g. 112233445566778899"
                 defaultValue={settings?.discordVerifiedRoleId || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
               <p className="text-xs text-white/40 mt-1.5">Automatically assigned when a user is KYC approved / verified.</p>
             </div>
@@ -579,7 +578,7 @@ export function BankSettings() {
                 type="text" 
                 placeholder="e.g. 112233445566778899"
                 defaultValue={settings?.discordClientRoleId || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
               <p className="text-xs text-white/40 mt-1.5">Assigned when a user successfully opens an account.</p>
             </div>
@@ -592,7 +591,7 @@ export function BankSettings() {
                 type="text" 
                 placeholder="https://dashboard.cityrp.org/authorize?app_id=..."
                 defaultValue={settings?.cityCorpAuthUrl || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
               <p className="text-xs text-white/40 mt-1.5">
                 If provided, this exact URL will be used for logging in users via CityCorp.
@@ -603,7 +602,7 @@ export function BankSettings() {
         </div>
 
         {/* Compliance */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Shield className="text-emerald-400" size={20} />
             Security & KYC
@@ -642,7 +641,7 @@ export function BankSettings() {
          </div>
 
         {/* Whitelabel CityCorp Integration */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Layers className="text-amber-400" size={20} />
             Whitelabel CityCorp OAuth Integration
@@ -657,7 +656,7 @@ export function BankSettings() {
                 type="text" 
                 placeholder="e.g. 4"
                 defaultValue={settings?.cityCorpAppId || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
               <p className="text-xs text-white/40 mt-1.5">Your registered application ID on the CityCorp Developer Portal.</p>
             </div>
@@ -670,7 +669,7 @@ export function BankSettings() {
                 type="password" 
                 placeholder="e.g. crp_vance_..."
                 defaultValue={settings?.cityCorpAppSecret || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
               <p className="text-xs text-white/40 mt-1.5">
                 CityCorp issues a single unified <strong>App Token</strong> (starting with <code className="text-indigo-300">crp_</code>) which functions as both your Bot API Key and your Whitelabel OAuth Secret.
@@ -685,7 +684,7 @@ export function BankSettings() {
                 type="text" 
                 placeholder="https://dashboard.cityrp.org/authorize?app_id=..."
                 defaultValue={settings?.cityCorpAuthUrl || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
               <p className="text-xs text-white/40 mt-1.5">
                 If provided, this exact URL will be used for logging in users via CityCorp.
@@ -700,7 +699,7 @@ export function BankSettings() {
                 type="text" 
                 placeholder="e.g. Main"
                 defaultValue={settings?.defaultCorpAccount || ""} 
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-white/20" 
               />
               <p className="text-xs text-white/40 mt-1.5">
                 The bank's default named operating subaccount. Used as the loan disbursement source when Loan Pool is empty. This is not corp treasury.
@@ -715,7 +714,7 @@ export function BankSettings() {
               You must copy the following URL and paste it into the <strong>Redirect URIs</strong> field of your CityCorp application in the Developer Dashboard. Without this exact URL, CityCorp logins will fail with a 404 error.
             </p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white/90 overflow-x-auto whitespace-nowrap">
+              <code className="flex-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white/90 overflow-x-auto whitespace-nowrap">
                 {(() => {
                   const hostDomain = (settings?.customDomain || window.location.hostname).replace(/^https?:\/\//, '');
                   return `https://${hostDomain}/api/auth/citycorp/callback`;
@@ -744,7 +743,7 @@ export function BankSettings() {
         </div>
 
         {/* Google Docs Contract Integration */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2 text-lg font-semibold">
               <Settings className="text-emerald-400" size={20} />
@@ -779,7 +778,7 @@ export function BankSettings() {
                     type="url" 
                     placeholder="https://docs.google.com/document/d/YOUR_DOC_ID/edit"
                     defaultValue={settings?.googleDocsLoanTemplateUrl || ""} 
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
                   />
                 </div>
                 <div>
@@ -789,7 +788,7 @@ export function BankSettings() {
                     type="url" 
                     placeholder="https://docs.google.com/document/d/YOUR_CREDIT_DOC_ID/edit"
                     defaultValue={settings?.googleDocsCreditTemplateUrl || ""} 
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
                   />
                 </div>
                 <div>
@@ -799,7 +798,7 @@ export function BankSettings() {
                     type="url" 
                     placeholder="https://docs.google.com/document/d/YOUR_ESCROW_DOC_ID/edit"
                     defaultValue={settings?.googleDocsEscrowTemplateUrl || ""} 
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
                   />
                 </div>
                 <div>
@@ -809,12 +808,12 @@ export function BankSettings() {
                     type="url" 
                     placeholder="https://drive.google.com/drive/folders/YOUR_FOLDER_ID"
                     defaultValue={settings?.googleDocsFolderUrl || ""} 
-                    className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20" 
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-4 bg-[#14141e] p-4 rounded-xl border border-white/5">
+              <div className="flex items-center justify-between pt-4 bg-[var(--bg-subtle)] p-4 rounded-xl border border-white/5">
                 <div>
                   <div className="text-sm font-medium text-white/90">Auto-Generate Contract Links</div>
                   <div className="text-xs text-white/50">Automatically inject contract links into loan, credit, and escrow originations.</div>
@@ -841,7 +840,7 @@ export function BankSettings() {
         </div>
 
         {/* Feature Toggles */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Layers className="text-pink-400" size={20} />
             Enabled Modules
@@ -918,13 +917,13 @@ export function BankSettings() {
                 {vaultTiers.map((t, i) => (
                   <div key={i} className="grid grid-cols-3 sm:grid-cols-4 gap-2 items-end">
                     <label className="text-[11px] text-white/40">Days
-                      <input type="number" value={t.lockDays} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], lockDays: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                      <input type="number" value={t.lockDays} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], lockDays: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
                     </label>
                     <label className="text-[11px] text-white/40">Yield (bps)
-                      <input type="number" value={t.interestRate} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], interestRate: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                      <input type="number" value={t.interestRate} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], interestRate: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
                     </label>
                     <label className="text-[11px] text-white/40">Early penalty %
-                      <input type="number" value={t.penaltyPercent} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], penaltyPercent: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                      <input type="number" value={t.penaltyPercent} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], penaltyPercent: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
                     </label>
                     <button type="button" onClick={() => setVaultTiers(vaultTiers.filter((_, j) => j !== i))} className="text-xs text-rose-300 py-1.5">Remove</button>
                   </div>
@@ -962,7 +961,7 @@ export function BankSettings() {
                       type="number"
                       step="0.01"
                       defaultValue={settings?.maxAutoApproveLoanAmount ? settings.maxAutoApproveLoanAmount / 100 : 10000} 
-                      className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
                     />
                     <p className="text-xs text-white/40 mt-1.5">Dollar cap for instant auto-approval. Credit-card auto-approve uses half this value.</p>
                   </div>
@@ -972,7 +971,7 @@ export function BankSettings() {
         </div>
 
         {/* Lending Policy */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-2">
             <Landmark className="text-emerald-400" size={20} />
             Lending Policy
@@ -1038,23 +1037,23 @@ export function BankSettings() {
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Default APR (%)</label>
               <div className="relative">
-                <input name="defaultLoanApr" type="number" step="0.01" min="0" defaultValue={((settings?.defaultLoanApr ?? 500) / 100).toFixed(2)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                <input name="defaultLoanApr" type="number" step="0.01" min="0" defaultValue={((settings?.defaultLoanApr ?? 500) / 100).toFixed(2)} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
                 <Percent className="absolute right-3 top-2.5 text-white/30" size={14} />
               </div>
               <p className="text-[10px] text-zinc-500 mt-1">Used when no loan product is selected.</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Default term (months)</label>
-              <input name="defaultLoanTermMonths" type="number" min="1" step="1" defaultValue={settings?.defaultLoanTermMonths || 12} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="defaultLoanTermMonths" type="number" min="1" step="1" defaultValue={settings?.defaultLoanTermMonths || 12} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Global max loan ($)</label>
-              <input name="maxLoanAmount" type="number" step="0.01" min="0" defaultValue={((settings?.maxLoanAmountCents || 0) / 100) || ""} placeholder="No cap" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="maxLoanAmount" type="number" step="0.01" min="0" defaultValue={((settings?.maxLoanAmountCents || 0) / 100) || ""} placeholder="No cap" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
               <p className="text-[10px] text-zinc-500 mt-1">0 or blank = no global cap (product max still applies).</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Min installment ($)</label>
-              <input name="loanMinInstallment" type="number" step="0.01" min="0.01" defaultValue={((settings?.loanMinInstallmentCents ?? 100) / 100).toFixed(2)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="loanMinInstallment" type="number" step="0.01" min="0.01" defaultValue={((settings?.loanMinInstallmentCents ?? 100) / 100).toFixed(2)} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
           </div>
 
@@ -1062,7 +1061,7 @@ export function BankSettings() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Accrual cadence</label>
-              <select name="loanInterestAccrual" defaultValue={settings?.loanInterestAccrual || "daily"} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+              <select name="loanInterestAccrual" defaultValue={settings?.loanInterestAccrual || "daily"} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                 <option value="daily">Daily compounding</option>
                 <option value="monthly">Monthly compounding</option>
                 <option value="none">Do not accrue (principal only)</option>
@@ -1070,14 +1069,14 @@ export function BankSettings() {
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Days in year</label>
-              <select name="loanDaysInYear" defaultValue={settings?.loanDaysInYear === 360 ? "360" : "365"} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+              <select name="loanDaysInYear" defaultValue={settings?.loanDaysInYear === 360 ? "360" : "365"} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                 <option value="365">365 (actual)</option>
                 <option value="360">360 (bank year)</option>
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Payment period (days)</label>
-              <input name="loanPaymentPeriodDays" type="number" min="1" step="1" defaultValue={settings?.loanPaymentPeriodDays || 30} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="loanPaymentPeriodDays" type="number" min="1" step="1" defaultValue={settings?.loanPaymentPeriodDays || 30} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
               <p className="text-[10px] text-zinc-500 mt-1">Days between installments (7 weekly, 14 biweekly, 30 monthly).</p>
             </div>
           </div>
@@ -1086,31 +1085,31 @@ export function BankSettings() {
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Late fee floor ($)</label>
-              <input name="loanLateFeeFlat" type="number" step="0.01" min="0" defaultValue={((settings?.loanLateFeeFlatCents ?? 2500) / 100).toFixed(2)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="loanLateFeeFlat" type="number" step="0.01" min="0" defaultValue={((settings?.loanLateFeeFlatCents ?? 2500) / 100).toFixed(2)} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Late fee (% of installment)</label>
-              <input name="loanLateFeePercent" type="number" step="0.01" min="0" defaultValue={((settings?.loanLateFeePercent ?? 500) / 100).toFixed(2)} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="loanLateFeePercent" type="number" step="0.01" min="0" defaultValue={((settings?.loanLateFeePercent ?? 500) / 100).toFixed(2)} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
               <p className="text-[10px] text-zinc-500 mt-1">Charged as max(floor, % of installment).</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Grace period (days)</label>
-              <input name="loanGracePeriodDays" type="number" min="0" step="1" defaultValue={settings?.loanGracePeriodDays || 0} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="loanGracePeriodDays" type="number" min="0" step="1" defaultValue={settings?.loanGracePeriodDays || 0} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Retry after miss (days)</label>
-              <input name="loanRetryDays" type="number" min="1" step="1" defaultValue={settings?.loanRetryDays || 7} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="loanRetryDays" type="number" min="1" step="1" defaultValue={settings?.loanRetryDays || 7} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Misses until default</label>
-              <input name="loanMissesToDefault" type="number" min="1" step="1" defaultValue={settings?.loanMissesToDefault || 3} className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <input name="loanMissesToDefault" type="number" min="1" step="1" defaultValue={settings?.loanMissesToDefault || 3} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
           </div>
         </div>
 
           
         {/* Treasury Routing */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Building2 className="text-emerald-400" size={20} />
             Institutional Treasury Pools
@@ -1126,7 +1125,7 @@ export function BankSettings() {
                 name="loanPoolAccount" 
                 defaultValue={settings?.loanPoolAccount || ""} 
                 placeholder="e.g. loan_reserve"
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
               />
               <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Required to fund new loans. Disbursements are a CityCorp book transfer from this subaccount. Leave empty to fall back to Default Corp Account (still a named subaccount, not treasury).</p>
             </div>
@@ -1136,7 +1135,7 @@ export function BankSettings() {
                 name="feeCollectionAccount" 
                 defaultValue={settings?.feeCollectionAccount || ""} 
                 placeholder="e.g. fee_revenue"
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
               />
               <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Account where general platform fees, wire fees, and transaction charges are deposited.</p>
             </div>
@@ -1146,14 +1145,14 @@ export function BankSettings() {
                 name="interestPoolAccount" 
                 defaultValue={settings?.interestPoolAccount || ""} 
                 placeholder="e.g. interest_reserve"
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
               />
               <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Account where system interest payments to users are withdrawn from.</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl p-6">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
           <div className="flex items-center gap-2 text-lg font-semibold mb-6">
             <Building2 className="text-amber-400" size={20} />
             Interbank Settlement Float
@@ -1168,7 +1167,7 @@ export function BankSettings() {
                 name="settlementAccount"
                 defaultValue={settings?.settlementAccount || "SETTLEMENT"}
                 placeholder="SETTLEMENT"
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
               />
               <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Created in CityCorp on save with 0% withdraw/deposit fees.</p>
             </div>
@@ -1177,7 +1176,7 @@ export function BankSettings() {
               <select
                 name="defaultFeePayerMode"
                 defaultValue={settings?.defaultFeePayerMode || "from_payment"}
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
               >
                 <option value="from_payment">Fees from payment (recipient gets less)</option>
                 <option value="sender_covers">Sender covers fees (recipient gets the quoted amount)</option>
@@ -1191,7 +1190,7 @@ export function BankSettings() {
                 step="0.01"
                 min="0"
                 defaultValue={((settings?.settlementFloorCents || 0) / 100).toFixed(2)}
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
               />
               <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Refuse inbound Onyx payouts that would leave settlement cash below this amount.</p>
             </div>
@@ -1203,7 +1202,7 @@ export function BankSettings() {
                 step="0.01"
                 min="0"
                 defaultValue={((settings?.settlementWarnCents || 0) / 100).toFixed(2)}
-                className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
               />
               <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">Discord alert when live SETTLEMENT cash drops under this threshold.</p>
             </div>
@@ -1211,19 +1210,14 @@ export function BankSettings() {
         </div>
 
 
-          <div className="mt-8 bg-[#5865F2]/10 border border-[#5865F2]/20 rounded-xl p-4">
-            <h4 className="text-sm font-medium text-[#5865F2] mb-2">Required Discord OAuth Redirect URI</h4>
-            <p className="text-xs text-[#5865F2]/70 mb-3">
-              If using a Custom Domain with your own Discord Application, you must add this URL to the <strong>Redirects</strong> list in the Discord Developer Portal.
+          <div className="mt-8 border rounded-xl p-4" style={{ borderColor: "var(--border)", background: "color-mix(in oklab, var(--fg) 3%, transparent)" }}>
+            <h4 className="text-sm font-medium mb-2">Discord bot linking callback (optional)</h4>
+            <p className="text-xs mb-3" style={{ color: "var(--fg-subtle)" }}>
+              Not a login. Customers already signed in with CityCorp can attach Discord so /bank works. Add this URL only if you use a custom Discord application.
             </p>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-xs text-white/90 overflow-x-auto whitespace-nowrap">
-                  {`https://${settings?.customDomain || window.location.hostname}/api/auth/discord/callback`}
-                </code>
-              </div>
-
-            </div>
+            <code className="flex-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-xs overflow-x-auto whitespace-nowrap block">
+              {`https://${settings?.customDomain || window.location.hostname}/api/auth/discord/callback`}
+            </code>
           </div>
 
         <div className="flex justify-end pt-4 pb-12">

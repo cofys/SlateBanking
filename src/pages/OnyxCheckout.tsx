@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ShieldCheck, ArrowRight, CreditCard, Wallet, Lock, Building, DollarSign } from "lucide-react";
+import { ShieldCheck, Lock, LogIn } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
 import { formatMoney } from "../lib/utils";
+import { AuthScreen, BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
 
 export function OnyxCheckout() {
   const [searchParams] = useSearchParams();
@@ -11,7 +12,7 @@ export function OnyxCheckout() {
   const description = searchParams.get("description") || "Onyx Network Purchase";
   const callbackUrl = searchParams.get("callbackUrl");
 
-  const { user } = useAuth();
+  const { user, login, rememberMe, setRememberMe } = useAuth();
   const [merchant, setMerchant] = useState<any>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [cards, setCards] = useState<any[]>([]);
@@ -39,7 +40,7 @@ export function OnyxCheckout() {
 
   useEffect(() => {
     if (user) {
-      fetch('/api/citizen/lookup')
+      fetch("/api/citizen/lookup")
         .then(r => r.json())
         .then(d => {
           if (d.accounts) setAccounts(d.accounts);
@@ -53,24 +54,43 @@ export function OnyxCheckout() {
       alert("Please select a funding source.");
       return;
     }
-    
+
     setApproving(true);
     try {
+      const cents = parseInt(amount as string, 10);
       const res = await fetch("/api/citizen/onyx-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: parseFloat(amount as string) / 100 })
+        body: JSON.stringify({
+          amount: (cents / 100).toFixed(2),
+          merchantId,
+          sourceAccountId: selectedSource,
+        }),
       });
       const data = await res.json();
-      
+
       if (data.error) {
         alert(data.error);
         setApproving(false);
         return;
       }
-      
+
       if (callbackUrl) {
-        const url = new URL(callbackUrl);
+        let url: URL;
+        try {
+          url = callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
+            ? new URL(callbackUrl, window.location.origin)
+            : new URL(callbackUrl);
+        } catch {
+          alert("Invalid merchant callback.");
+          setApproving(false);
+          return;
+        }
+        if (url.protocol !== "https:" && url.protocol !== "http:") {
+          alert("Invalid merchant callback.");
+          setApproving(false);
+          return;
+        }
         url.searchParams.set("token", data.paymentToken);
         url.searchParams.set("sourceAccountId", selectedSource);
         window.location.href = url.toString();
@@ -85,104 +105,107 @@ export function OnyxCheckout() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-8">
-         <div className="max-w-md w-full bg-[#151522] border border-white/10 rounded-2xl p-8 text-center">
-            <ShieldCheck className="mx-auto text-indigo-400 mb-4" size={48} />
-            <h2 className="text-2xl font-bold text-white mb-2">Login Required</h2>
-            <p className="text-white/60 mb-6">Please log in to your Onyx / Slate account to approve this transaction.</p>
-            <a href="/" className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-medium transition-colors">
-               Go to Login <ArrowRight size={18} />
-            </a>
-         </div>
-      </div>
+      <AuthScreen
+        mark={<BrandMark letter="O" color="#c5cad3" />}
+        title="Onyx checkout"
+        subtitle="Sign in with CityCorp to approve this charge"
+      >
+        <div className="space-y-4">
+          <label className="flex items-center justify-center gap-2 cursor-pointer text-xs select-none" style={{ color: "var(--fg-muted)" }}>
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="w-4 h-4 rounded"
+            />
+            Remember this device
+          </label>
+          <PrimaryButton onClick={() => login(undefined, "citycorp")}>
+            <LogIn size={16} /> Continue with CityCorp
+          </PrimaryButton>
+        </div>
+      </AuthScreen>
     );
   }
 
-  if (loading) return (
-     <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-     </div>
-  );
+  if (loading) return <ScreenLoader label="Preparing checkout" />;
 
-  if (error) return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-8">
-       <div className="max-w-md w-full bg-[#151522] border border-red-500/20 rounded-2xl p-8 text-center space-y-4">
-          <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-2">
-             <Lock className="text-red-400" size={32} />
-          </div>
-          <h2 className="text-xl font-bold text-white">Checkout Error</h2>
-          <p className="text-red-400/80 text-sm">{error}</p>
-       </div>
-    </div>
-  );
+  if (error) {
+    return (
+      <AuthScreen
+        mark={<BrandMark letter="O" color="#d46a6a" />}
+        title="Checkout error"
+        subtitle={error}
+      >
+        <p className="text-xs" style={{ color: "var(--fg-subtle)" }}>Return to the merchant and try again.</p>
+      </AuthScreen>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-4 sm:p-8 relative overflow-hidden">
-      {/* Background FX */}
-      <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none"></div>
-      <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none"></div>
-
-      <div className="max-w-md w-full bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-xl relative z-10 shadow-2xl">
-        <div className="p-8 border-b border-white/5 bg-black/20 text-center">
-           <div className="w-16 h-16 bg-gradient-to-br from-indigo-500/20 to-emerald-500/20 border border-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-             <Building className="text-indigo-400" size={28} />
-           </div>
-           <h1 className="text-xl font-bold text-white mb-1">{merchant?.name || "Merchant"}</h1>
-           <p className="text-xs text-white/50 flex items-center justify-center gap-1">
-              <ShieldCheck size={12} className="text-emerald-400" /> Secure Onyx Network Checkout
-           </p>
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-8 page-enter">
+      <div className="max-w-md w-full surface overflow-hidden">
+        <div className="p-8 border-b text-center" style={{ borderColor: "var(--border)", background: "var(--bg-subtle)" }}>
+          <div className="mx-auto mb-4 w-fit">
+            <BrandMark letter={merchant?.name || "O"} color="#c5cad3" size={56} />
+          </div>
+          <h1 className="text-xl font-semibold tracking-tight mb-1">{merchant?.name || "Merchant"}</h1>
+          <p className="text-xs flex items-center justify-center gap-1" style={{ color: "var(--fg-subtle)" }}>
+            <ShieldCheck size={12} style={{ color: "var(--ok)" }} /> Secure Onyx checkout
+          </p>
         </div>
-        
-        <div className="p-8 space-y-6">
-           <div className="text-center">
-              <div className="text-sm text-white/50 mb-1 uppercase tracking-wider font-semibold">Total Amount</div>
-              <div className="text-4xl font-black text-white tracking-tight">{formatMoney(parseInt(amount as string))}</div>
-              <div className="text-sm text-white/60 mt-3 p-3 bg-white/5 rounded-xl border border-white/5 inline-block">
-                {description}
-              </div>
-           </div>
 
-           <div className="space-y-3">
-              <label className="text-xs font-bold text-white/50 uppercase tracking-wider pl-1">Funding Source</label>
-              <select 
-                value={selectedSource}
-                onChange={(e) => setSelectedSource(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-white appearance-none focus:outline-none focus:border-indigo-500/50 transition-colors cursor-pointer"
-              >
-                <option value="" disabled>Select an account or card...</option>
-                
-                {accounts.length > 0 && <optgroup label="Bank Accounts">
+        <div className="p-8 space-y-6">
+          <div className="text-center">
+            <div className="text-sm font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--fg-subtle)" }}>Total</div>
+            <div className="text-4xl font-semibold tracking-tight num">{formatMoney(parseInt(amount as string))}</div>
+            <div className="text-sm mt-3 p-3 surface-quiet inline-block">{description}</div>
+          </div>
+
+          <div className="space-y-3">
+            <label className="text-xs font-semibold uppercase tracking-wider pl-1" style={{ color: "var(--fg-subtle)" }}>Funding source</label>
+            <select
+              value={selectedSource}
+              onChange={(e) => setSelectedSource(e.target.value)}
+              className="w-full bg-[var(--bg-subtle)] border p-4 appearance-none min-h-11"
+              style={{ borderColor: "var(--border)", borderRadius: "var(--radius-md)" }}
+            >
+              <option value="" disabled>Select an account or card…</option>
+              {accounts.length > 0 && (
+                <optgroup label="Bank Accounts">
                   {accounts.map((a: any) => (
                     <option key={a.id} value={a.id} disabled={a.balance < parseInt(amount as string)}>
                       {a.accountName} - {formatMoney(a.balance)} {a.balance < parseInt(amount as string) ? "(Insufficient)" : ""}
                     </option>
                   ))}
-                </optgroup>}
-
-                {cards.length > 0 && <optgroup label="Credit Cards">
+                </optgroup>
+              )}
+              {cards.length > 0 && (
+                <optgroup label="Credit Cards">
                   {cards.map((c: any) => {
                     const available = (c.creditLimit || 0) - (c.creditUsed || 0);
                     return (
                       <option key={c.id} value={c.id} disabled={available < parseInt(amount as string)}>
                         Credit Card (..{c.cardNumber.slice(-4)}) - Avail: {formatMoney(available)}
                       </option>
-                    )
+                    );
                   })}
-                </optgroup>}
-              </select>
-           </div>
+                </optgroup>
+              )}
+            </select>
+          </div>
 
-           <button 
-             disabled={!selectedSource || approving}
-             onClick={handleApprove}
-             className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white p-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-indigo-500/20"
-           >
-             {approving ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> : <><Lock size={18} /> Approve Payment</>}
-           </button>
-           
-           <p className="text-[10px] text-white/40 text-center px-4 leading-relaxed">
-             By approving this payment, you authorize {merchant?.name || "this merchant"} to charge the selected funding source via the Onyx PSP network.
-           </p>
+          <PrimaryButton disabled={!selectedSource || approving} onClick={handleApprove}>
+            {approving ? (
+              <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <><Lock size={16} /> Approve payment</>
+            )}
+          </PrimaryButton>
+
+          <p className="text-[10px] text-center px-4 leading-relaxed" style={{ color: "var(--fg-subtle)" }}>
+            By approving, you authorize {merchant?.name || "this merchant"} to charge the selected source on the Onyx network.
+          </p>
         </div>
       </div>
     </div>

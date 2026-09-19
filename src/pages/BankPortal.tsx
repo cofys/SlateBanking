@@ -7,20 +7,13 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowDownLeft, ArrowUpRight, Building2, Check, ChevronRight, Copy, CreditCard,
   FileText, Landmark, Loader2, Lock, LogIn, LogOut, Plus, Send, ShieldCheck,
-  Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock
+  Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock, Link2
 } from "lucide-react";
+import { accentForeground, hexOr, withAlpha } from "../lib/theme";
+import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
 
 type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply";
 
-function hexOr(raw: any, fallback = "#6366f1") {
-  const h = String(raw || "").trim();
-  return /^#[0-9a-fA-F]{6}$/.test(h) ? h : fallback;
-}
-function withAlpha(hex: string, a: number) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  return `rgba(${r},${g},${b},${a})`;
-}
 function greet() {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -31,7 +24,7 @@ function greet() {
 export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const params = useParams();
   const bankId = overrideBankId || params.bankId;
-  const { user, login, logout, isLoading, rememberMe, setRememberMe } = useAuth();
+  const { user, login, linkDiscord, logout, isLoading, rememberMe, setRememberMe } = useAuth();
 
   const [bank, setBank] = useState<any>(null);
   const [bankNotFound, setBankNotFound] = useState(false);
@@ -63,6 +56,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [quoting, setQuoting] = useState(false);
 
   const brand = hexOr(bank?.brandingColor || bank?.settings?.brandingColor);
+  const brandFg = accentForeground(brand);
   const settings = bank?.settings || {};
 
   const flash = (msg: string) => {
@@ -188,20 +182,20 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     );
   }
   if (isLoading || !bank) {
-    return (
-      <div className="min-h-screen bg-[#07070b] text-white/50 flex items-center justify-center">
-        <Loader2 className="animate-spin" />
-      </div>
-    );
+    return <ScreenLoader label="Opening your bank" />;
   }
 
   const shell = {
-    background: `radial-gradient(1200px 500px at 20% -10%, ${withAlpha(brand, 0.22)}, transparent 55%), #07070b`,
+    background: `radial-gradient(1000px 480px at 18% -12%, ${withAlpha(brand, 0.16)}, transparent 55%), var(--bg)`,
+    ["--accent" as any]: brand,
+    ["--accent-fg" as any]: brandFg,
+    color: "var(--fg)",
   } as const;
 
   const btnBrand = {
-    background: `linear-gradient(180deg, ${withAlpha(brand, 1)} 0%, ${withAlpha(brand, 0.82)} 100%)`,
-    boxShadow: `0 12px 40px ${withAlpha(brand, 0.28)}`,
+    background: brand,
+    color: brandFg,
+    boxShadow: `0 8px 28px ${withAlpha(brand, 0.22)}`,
   };
 
   const sendNow = async (e: React.FormEvent) => {
@@ -435,38 +429,30 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
   if (!user) {
     return (
-      <div className="min-h-screen text-white relative overflow-hidden" style={shell}>
-        <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(600px 400px at 80% 120%, ${withAlpha(brand, 0.18)}, transparent)` }} />
-        <div className="relative z-10 max-w-md mx-auto px-5 py-16 space-y-10">
+      <div className="min-h-screen relative overflow-hidden" style={shell}>
+        <div className="relative z-10 max-w-md mx-auto px-5 py-16 space-y-10 page-enter">
           <div className="text-center space-y-5">
             {((settings.logoUrl || bank.logoUrl) && !logoBroken) ? (
-              <img src={settings.logoUrl || bank.logoUrl} alt="" referrerPolicy="no-referrer" onError={() => setLogoBroken(true)} className="w-20 h-20 rounded-3xl mx-auto object-contain bg-black/40 border border-white/10 p-2 shadow-2xl" />
+              <img src={settings.logoUrl || bank.logoUrl} alt="" referrerPolicy="no-referrer" onError={() => setLogoBroken(true)} className="w-20 h-20 rounded-3xl mx-auto object-contain border p-2" style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }} />
             ) : (
-              <div className="w-20 h-20 rounded-3xl mx-auto flex items-center justify-center text-3xl font-black shadow-2xl" style={{ background: brand }}>
-                {bank.name.slice(0, 1)}
-              </div>
+              <BrandMark letter={bank.name} color={brand} size={72} />
             )}
             <div>
-              <h1 className="text-3xl font-black tracking-tight">{bank.name}</h1>
-              <p className="text-white/50 text-sm mt-2">{settings.tagline || "Private banking for the city."}</p>
+              <h1 className="text-3xl font-semibold tracking-tight" style={{ letterSpacing: "-0.03em" }}>{bank.name}</h1>
+              <p className="text-sm mt-2" style={{ color: "var(--fg-muted)" }}>{settings.tagline || "Private banking for the city."}</p>
             </div>
           </div>
-          <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-6 space-y-4 shadow-2xl">
-            <label className="flex items-center justify-center gap-2 text-xs text-white/40">
+          <div className="border p-6 space-y-4" style={{ borderRadius: "var(--radius-xl)", borderColor: "var(--border)", background: "color-mix(in oklab, var(--fg) 3%, transparent)" }}>
+            <label className="flex items-center justify-center gap-2 text-xs" style={{ color: "var(--fg-muted)" }}>
               <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded" />
               Remember this device
             </label>
-            {bank.cityCorpAppId && (
-              <button onClick={() => login(bankId, "citycorp")} className="w-full py-3.5 rounded-2xl font-bold text-sm text-white" style={btnBrand}>
-                Continue with CityCorp
-              </button>
-            )}
-            <button onClick={() => login(bankId, "discord")} className="w-full py-3.5 rounded-2xl font-bold text-sm bg-[#5865F2] hover:bg-[#4752C4] text-white flex items-center justify-center gap-2">
-              <LogIn size={16} /> Continue with Discord
+            <button onClick={() => login(bankId, "citycorp")} className="w-full py-3.5 rounded-xl font-semibold text-sm" style={btnBrand}>
+              Continue with CityCorp
             </button>
           </div>
-          <div className="text-center text-xs text-white/30">
-            Staff? <Link to={`/bank/${bankId}`} className="text-white/70 hover:text-white">Open the desk</Link>
+          <div className="text-center text-xs" style={{ color: "var(--fg-subtle)" }}>
+            Staff? <Link to={`/bank/${bankId}`} className="hover:underline" style={{ color: "var(--fg-muted)" }}>Open the desk</Link>
           </div>
         </div>
       </div>
@@ -482,30 +468,30 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   ];
 
   return (
-    <div className="min-h-screen text-white" style={shell}>
-      <header className="sticky top-0 z-30 backdrop-blur-xl border-b border-white/5 bg-[#07070b]/70">
+    <div className="min-h-screen" style={shell}>
+      <header className="sticky top-0 z-30" style={{ borderBottom: "1px solid var(--border)", background: "color-mix(in oklab, var(--bg) 78%, transparent)", backdropFilter: "blur(16px)" }}>
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {((settings.logoUrl || bank.logoUrl) && !logoBroken) ? (
-              <img src={settings.logoUrl || bank.logoUrl} className="w-9 h-9 rounded-xl object-contain bg-black/30 border border-white/10" alt="" referrerPolicy="no-referrer" onError={() => setLogoBroken(true)} />
+              <img src={settings.logoUrl || bank.logoUrl} className="w-9 h-9 rounded-xl object-contain border" style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }} alt="" referrerPolicy="no-referrer" onError={() => setLogoBroken(true)} />
             ) : (
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black" style={{ background: brand }}>{bank.name.slice(0, 1)}</div>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center font-semibold" style={{ background: brand, color: brandFg }}>{bank.name.slice(0, 1)}</div>
             )}
             <div className="min-w-0">
-              <p className="font-bold truncate leading-tight">{bank.name}</p>
-              <p className="text-[11px] text-white/40 truncate">{settings.tagline || "Online banking"}</p>
+              <p className="font-semibold truncate leading-tight">{bank.name}</p>
+              <p className="text-[11px] truncate" style={{ color: "var(--fg-subtle)" }}>{settings.tagline || "Online banking"}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {(userData?.isStaff || user.isGlobalAdmin) && (
-              <Link to={`/bank/${bankId}`} className="hidden sm:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-white/10 text-white/70 hover:text-white">
+              <Link to={`/bank/${bankId}`} className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border" style={{ borderColor: "var(--border)", color: "var(--fg-muted)" }}>
                 <ShieldCheck size={13} /> Desk
               </Link>
             )}
-            <button onClick={logout} className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5" title="Sign out">
+            <button onClick={logout} className="p-2.5 rounded-xl" title="Sign out" style={{ color: "var(--fg-subtle)" }}>
               <LogOut size={16} />
             </button>
-            <div className="w-9 h-9 rounded-xl overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center text-xs font-bold">
+            <div className="w-9 h-9 rounded-xl overflow-hidden border flex items-center justify-center text-xs font-semibold" style={{ borderColor: "var(--border)", background: "var(--bg-subtle)" }}>
               {user.avatarUrl && !avatarError ? (
                 <img src={user.avatarUrl} alt="" onError={() => setAvatarError(true)} className="w-full h-full object-cover" />
               ) : displayName?.slice(0, 2).toUpperCase()}
@@ -530,11 +516,17 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
         {view === "home" && (
           <div className="space-y-6">
-            <div className="rounded-[28px] p-7 relative overflow-hidden border border-white/10" style={{ background: `linear-gradient(145deg, ${withAlpha(brand, 0.45)} 0%, #0c0c12 55%)` }}>
-              <p className="text-white/60 text-sm">{greet()}, {displayName}</p>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/40 mt-5">Available</p>
-              <p className="text-4xl sm:text-5xl font-black tracking-tight mt-1 tabular-nums">{formatMoney(netWorth)}</p>
-              <p className="text-white/40 text-xs mt-2">{accounts.length} account{accounts.length === 1 ? "" : "s"}</p>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="rounded-[28px] p-7 relative overflow-hidden border"
+              style={{ background: `linear-gradient(155deg, ${withAlpha(brand, 0.28)} 0%, var(--bg-elevated) 62%)`, borderColor: "var(--border)" }}
+            >
+              <p className="text-sm" style={{ color: "var(--fg-muted)" }}>{greet()}, {displayName}</p>
+              <p className="text-[11px] uppercase tracking-[0.18em] mt-5" style={{ color: "var(--fg-subtle)" }}>Available</p>
+              <p className="text-4xl sm:text-5xl font-semibold tracking-tight mt-1 tabular-nums num" style={{ letterSpacing: "-0.03em" }}>{formatMoney(netWorth)}</p>
+              <p className="text-xs mt-2" style={{ color: "var(--fg-subtle)" }}>{accounts.length} account{accounts.length === 1 ? "" : "s"}</p>
               <div className="grid grid-cols-4 gap-2 mt-7">
                 {[
                   { id: "send" as View, label: "Send", icon: Send },
@@ -542,14 +534,27 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   { id: "borrow" as View, label: "Loans", icon: Landmark },
                   { id: "apply" as View, label: "Apply", icon: Plus },
                 ].map((a) => (
-                  <button key={a.id} onClick={() => setView(a.id)} className="flex flex-col items-center gap-2 py-3 rounded-2xl bg-black/25 hover:bg-black/40 border border-white/10 text-xs font-semibold">
+                  <button key={a.id} onClick={() => setView(a.id)} className="flex flex-col items-center gap-2 py-3 rounded-2xl border text-xs font-semibold" style={{ background: "color-mix(in oklab, var(--fg) 5%, transparent)", borderColor: "var(--border)" }}>
                     <a.icon size={16} />
                     {a.label}
                   </button>
                 ))}
               </div>
-            </div>
+            </motion.div>
 
+            {!user.linkedDiscordId && (
+              <button
+                onClick={() => linkDiscord(bankId)}
+                className="w-full text-left rounded-2xl border p-4 flex items-center justify-between"
+                style={{ borderColor: "var(--border)", background: "color-mix(in oklab, var(--fg) 3%, transparent)" }}
+              >
+                <div>
+                  <p className="text-sm font-semibold flex items-center gap-2"><Link2 size={14} /> Connect Discord for the bank bot</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--fg-subtle)" }}>Optional. Sign-in stays CityCorp. The /bank bot only works after this link.</p>
+                </div>
+                <ChevronRight size={16} style={{ color: "var(--fg-subtle)" }} />
+              </button>
+            )}
             {activeLoans.some((l: any) => l.status === "delinquent" || l.isDelinquent) && (
               <button onClick={() => setView("borrow")} className="w-full text-left rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-center justify-between">
                 <div>
@@ -640,14 +645,35 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName} · {formatMoney(a.balance)}</option>)}
             </select>
             <label className="block text-xs font-bold text-white/40 uppercase">To</label>
-            <input value={sendTo} onChange={(e) => { setSendTo(e.target.value); setDestHint(""); fetch(`/api/portal/${bankId}/payees?q=${encodeURIComponent(e.target.value)}`).then(r => r.json()).then(d => setDestMatches(Array.isArray(d) ? d : [])).catch(() => {}); }} placeholder="Account name (in-game)" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm" required autoComplete="off" />
+            <input
+              value={sendTo}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSendTo(v);
+                setDestHint("");
+                fetch(`/api/portal/${bankId}/payees?q=${encodeURIComponent(v)}`)
+                  .then((r) => r.json())
+                  .then((d) => setDestMatches(Array.isArray(d) ? d : []))
+                  .catch(() => {});
+              }}
+              onFocus={() => {
+                fetch(`/api/portal/${bankId}/payees`)
+                  .then((r) => r.json())
+                  .then((d) => setDestMatches(Array.isArray(d) ? d : []))
+                  .catch(() => {});
+              }}
+              placeholder="Exact account name (in-game)"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm"
+              required
+              autoComplete="off"
+            />
+            <p className="text-[11px] text-white/35 -mt-3">Suggestions are only people you have already sent money to or received from at this bank. To pay someone new, type their exact account name. Cross-bank payments use Onyx.</p>
             {destHint && <p className="text-xs text-emerald-300 -mt-3">{destHint}</p>}
             {destMatches.length > 0 && (
               <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden -mt-2">
                 {destMatches.map((m: any) => (
                   <button type="button" key={m.id} onClick={() => { setSendTo(m.id); setDestHint(`${m.accountName}${m.bankName ? " · " + m.bankName : ""}`); setDestMatches([]); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-white/5">
                     <span className="font-semibold">{m.accountName}</span>
-                    <span className="text-white/40 text-xs ml-2">{m.bankName}</span>
                   </button>
                 ))}
               </div>
@@ -894,13 +920,13 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         )}
       </main>
 
-      <nav className="fixed bottom-0 inset-x-0 z-30 border-t border-white/10 bg-[#07070b]/90 backdrop-blur-xl">
+      <nav className="fixed bottom-0 inset-x-0 z-30" style={{ borderTop: "1px solid var(--border)", background: "color-mix(in oklab, var(--bg) 88%, transparent)", backdropFilter: "blur(16px)", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="max-w-5xl mx-auto grid grid-cols-4">
           {nav.map((n) => {
             const Icon = n.icon;
             const on = view === n.id || (n.id === "home" && ["bills", "borrow", "cards"].includes(view) === false && view !== "send" && view !== "activity" && view !== "apply");
             return (
-              <button key={n.id} onClick={() => setView(n.id)} className={`py-3 text-[11px] font-bold flex flex-col items-center gap-1 ${on ? "text-white" : "text-white/35"}`}>
+              <button key={n.id} onClick={() => setView(n.id)} className="py-3 min-h-[52px] text-[11px] font-semibold flex flex-col items-center gap-1" style={{ color: on ? "var(--fg)" : "var(--fg-subtle)" }}>
                 <Icon size={18} color={on ? brand : undefined} />
                 {n.label}
               </button>
@@ -946,7 +972,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
       <AnimatePresence>
         {toast && (
-          <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ opacity: 0 }} className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-white text-black text-sm font-bold px-4 py-2.5 rounded-full shadow-2xl">
+          <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ opacity: 0, y: 8 }} className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 text-sm font-semibold px-4 py-2.5 rounded-full shadow-xl" style={{ background: "var(--fg)", color: "var(--bg)" }}>
             {toast}
           </motion.div>
         )}

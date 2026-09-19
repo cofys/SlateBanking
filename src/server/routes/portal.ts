@@ -236,7 +236,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           or(
             inArray(bankCustomers.discordId, candidateIds),
             inArray(bankCustomers.linkedDiscordId, candidateIds),
-            inArray(bankCustomers.mcUsername, candidateIds)
+            inArray(bankCustomers.mcUuid, candidateIds)
           )
         )
       ).get();
@@ -430,9 +430,12 @@ portalRouter.post("/api/portal/:bankId/pay-invoice", requireAuth, async (req: ex
 
       const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, inv.billerAccountId));
       if (!destAccount) return res.status(404).json({ error: "Destination biller account not found" });
+      if (destAccount.bankId !== bankId || sourceAccount.bankId !== bankId) {
+        return res.status(400).json({ error: "Invoice payments stay inside this bank. Use Onyx to pay another bank." });
+      }
 
-      const { executeBookTransfer } = await import("../../lib/citycorp_money");
-      await executeBookTransfer({
+      const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
+      await executeSameBankBookTransfer({
         sourceAccount,
         destAccount,
         desiredCents: inv.amount,
@@ -469,14 +472,15 @@ portalRouter.post("/api/portal/:bankId/transfer/quote", requireAuth, async (req:
         return res.status(404).json({ error: "Source account not found or unauthorized" });
       }
       const { resolvePayableAccount } = await import("../../lib/account_lookup.js");
-      const resolved = await resolvePayableAccount(toAccountId || toQuery, { preferBankId: bankId, excludeId: fromAccountId });
-      if (!resolved.account) return res.status(404).json({ error: resolved.error || "Destination account not found", matches: resolved.matches });
+      const resolved = await resolvePayableAccount(toAccountId || toQuery, { bankId, excludeId: fromAccountId });
+      if (!resolved.account) return res.status(404).json({ error: resolved.error || "Destination account not found" });
       const destAccount = resolved.account;
+      if (destAccount.bankId !== bankId) return res.status(400).json({ error: "Transfers stay inside this bank. Use Onyx to pay another bank." });
       const { quoteBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
       const settings = await loadSettings(bankId);
       const mode = parseFeePayerMode(feePayerMode, (settings?.defaultFeePayerMode as any) || "from_payment");
       const { quote } = await quoteBookTransfer({ sourceAccount, destAccount, desiredCents: cents, mode });
-      res.json({ success: true, quote, sameBank: sourceAccount.bankId === destAccount.bankId, destination: { id: destAccount.id, accountName: destAccount.accountName, bankId: destAccount.bankId, bankName: destAccount.bankName }, defaultFeePayerMode: settings?.defaultFeePayerMode || "from_payment" });
+      res.json({ success: true, quote, sameBank: true, destination: { id: destAccount.id, accountName: destAccount.accountName, bankId: destAccount.bankId, bankName: destAccount.bankName }, defaultFeePayerMode: settings?.defaultFeePayerMode || "from_payment" });
     } catch (e: any) {
       res.status(400).json({ error: e.message || "Quote failed" });
     }
@@ -519,20 +523,21 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
       if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
 
       const { resolvePayableAccount } = await import("../../lib/account_lookup.js");
-      const resolved = await resolvePayableAccount(toAccountId || toQuery, { preferBankId: bankId, excludeId: sourceAccount.id });
-      if (!resolved.account) return res.status(404).json({ error: resolved.error || "Destination account not found", matches: resolved.matches });
+      const resolved = await resolvePayableAccount(toAccountId || toQuery, { bankId, excludeId: sourceAccount.id });
+      if (!resolved.account) return res.status(404).json({ error: resolved.error || "Destination account not found" });
       const destAccount = resolved.account;
+      if (destAccount.bankId !== bankId) return res.status(400).json({ error: "Transfers stay inside this bank. Use Onyx to pay another bank." });
       if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
-      const { executeBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
+      const { executeSameBankBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
       const settings = await loadSettings(bankId);
       const mode = parseFeePayerMode(feePayerMode, (settings?.defaultFeePayerMode as any) || "from_payment");
-      const moved = await executeBookTransfer({
+      const moved = await executeSameBankBookTransfer({
         sourceAccount,
         destAccount,
         desiredCents: amnt,
         mode,
-        description: req.body.description || `Citizen Portal Transfer to ${destAccount.accountName}`,
+        description: req.body.description || `Portal transfer to ${destAccount.accountName}`,
         type: "transfer",
       });
 
@@ -1158,8 +1163,16 @@ portalRouter.post("/api/portal/:bankId/repay-loan", requireAuth, async (req: exp
 portalRouter.get("/api/portal/:bankId/payees", requireAuth, async (req: express.Request, res: express.Response) => {
   try {
     const q = String(req.query.q || "");
+    const bankId = req.params.bankId;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const { db } = await import("../../db/index.js");
+    const { bankAccounts } = await import("../../db/schema.js");
+    const { eq, and, inArray } = await import("drizzle-orm");
+    const mine = candidateIds.length
+      ? await db.select({ id: bankAccounts.id }).from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, candidateIds)))
+      : [];
     const { suggestPayees } = await import("../../lib/account_lookup.js");
-    const matches = await suggestPayees(q, { preferBankId: req.params.bankId, limit: 8 });
+    const matches = await suggestPayees({ bankId, ownerAccountIds: mine.map((a) => a.id), q, limit: 8 });
     res.json(matches);
   } catch (e: any) {
     res.status(500).json({ error: e.message || "Lookup failed" });

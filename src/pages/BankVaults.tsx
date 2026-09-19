@@ -156,7 +156,7 @@ export function BankVaults() {
       </div>
 
       {vaults.length === 0 ? (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-16 flex flex-col items-center justify-center text-center shadow-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-16 flex flex-col items-center justify-center text-center shadow-2xl">
           <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
             <Lock className="text-white/20" size={32} />
           </div>
@@ -201,7 +201,7 @@ export function BankVaults() {
                  initial={{ opacity: 0, scale: 0.95 }}
                  animate={{ opacity: 1, scale: 1 }}
                  exit={{ opacity: 0, scale: 0.9 }}
-                 className="relative group bg-[#0b0b12] border border-white/10 hover:border-amber-500/30 rounded-2xl p-6 overflow-hidden flex flex-col justify-between shadow-xl transition-all duration-300"
+                 className="relative group bg-[var(--bg-elevated)] border border-white/10 hover:border-amber-500/30 rounded-2xl p-6 overflow-hidden flex flex-col justify-between shadow-xl transition-all duration-300"
                >
                  <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/[0.02] rounded-full blur-2xl pointer-events-none group-hover:bg-amber-500/[0.05] transition-colors" />
                  
@@ -228,7 +228,7 @@ export function BankVaults() {
                    </div>
                  </div>
 
-                 <div className="relative z-10 mb-6 bg-[#11111a] border border-white/5 rounded-xl p-5 shadow-inner">
+                 <div className="relative z-10 mb-6 bg-[var(--bg-subtle)] border border-white/5 rounded-xl p-5 shadow-inner">
                    <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Principal Value</div>
                    <div className="text-3xl font-black font-mono text-white tracking-tight flex items-baseline">
                      {formatMoney(vault.amount)}
@@ -240,7 +240,7 @@ export function BankVaults() {
                          <span>Maturity Progress</span>
                          <span className="text-amber-400">{progressPercent.toFixed(0)}%</span>
                        </div>
-                       <div className="w-full bg-[#0b0b12] border border-white/5 h-2 rounded-full overflow-hidden shadow-inner">
+                       <div className="w-full bg-[var(--bg-elevated)] border border-white/5 h-2 rounded-full overflow-hidden shadow-inner">
                          <div 
                            className="bg-gradient-to-r from-amber-600 to-amber-400 h-full rounded-full transition-all duration-500 relative"
                            style={{ width: `${progressPercent}%` }}
@@ -305,9 +305,9 @@ export function BankVaults() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#0b0b12] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
+              className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
             >
-              <div className="p-6 border-b border-white/5 bg-[#11111a]">
+              <div className="p-6 border-b border-white/5 bg-[var(--bg-subtle)]">
                 <h3 className="text-lg font-black text-white flex items-center gap-2">
                   <Lock size={20} className="text-amber-400" />
                   Open Term Deposit
@@ -321,7 +321,7 @@ export function BankVaults() {
                     required
                     value={accountId}
                     onChange={(e) => setAccountId(e.target.value)}
-                    className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors appearance-none font-medium"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors appearance-none font-medium"
                   >
                     <option value="">Select source account...</option>
                     {accounts.map(acc => (
@@ -343,7 +343,7 @@ export function BankVaults() {
                       step="0.01"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
-                      className="w-full bg-[#11111a] border border-white/10 rounded-xl py-3 pl-8 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors font-mono"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl py-3 pl-8 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors font-mono"
                       placeholder="0.00"
                     />
                   </div>
@@ -358,7 +358,7 @@ export function BankVaults() {
                       min="1"
                       value={durationDays}
                       onChange={(e) => setDurationDays(e.target.value)}
-                      className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors font-mono"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors font-mono"
                     />
                   </div>
                   <div>
@@ -370,7 +370,7 @@ export function BankVaults() {
                       step="0.01"
                       value={interestRate}
                       onChange={(e) => setInterestRate(e.target.value)}
-                      className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors font-mono"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors font-mono"
                     />
                   </div>
                 </div>

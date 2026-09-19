@@ -1,17 +1,26 @@
 import { REST, Routes, Interaction, CacheType, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, ModalSubmitInteraction, ButtonInteraction, StringSelectMenuBuilder, Client, EmbedBuilder } from 'discord.js';
 import { db } from '../db/index';
 import { banks, bankAccounts, transactions, users, bankCustomers, loans, bankSettings, bankStaff, auditLogs, globalAdmins, loanProducts } from '../db/schema';
-import { eq, and, sql, or, desc } from 'drizzle-orm';
+import { eq, and, sql, or, desc, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { CityCorpClient } from './citycorp_api';
+import { getCandidateIdsForDiscordSnowflake } from '../server/userResolver';
+import { SCHEME_HEX } from './theme';
 
-const SCHEME_HEX: Record<string, string> = {
-  indigo: '#4f46e5',
-  emerald: '#059669',
-  rose: '#e11d48',
-  amber: '#d97706',
-  zinc: '#71717a',
-};
+const LINK_DISCORD_MSG = "Link Discord in your bank portal first. Sign in with CityCorp, then tap **Link Discord**. The bot only works after that.";
+
+async function requireLinkedIds(interaction: any): Promise<string[] | null> {
+  const ids = await getCandidateIdsForDiscordSnowflake(interaction.user.id);
+  if (!ids.length) {
+    const content = LINK_DISCORD_MSG;
+    try {
+      if (interaction.deferred || interaction.replied) await interaction.followUp({ content, ephemeral: true });
+      else if (interaction.isRepliable?.() || interaction.reply) await interaction.reply({ content, ephemeral: true });
+    } catch {}
+    return null;
+  }
+  return ids;
+}
 
 function money(cents: number): string {
   return `$${(Number(cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -36,7 +45,7 @@ function parseBrandColor(hex?: string | null): number | null {
 function brandColor(bank: { brandingColor?: string | null }, settings?: { colorScheme?: string | null } | null): number {
   return parseBrandColor(bank.brandingColor)
     ?? parseBrandColor(settings?.colorScheme ? SCHEME_HEX[settings.colorScheme] : null)
-    ?? 0x4f46e5;
+    ?? 0x8b95a5;
 }
 
 function bankPublicOrigin(bank: { customDomain?: string | null }): string | null {
@@ -381,15 +390,17 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
   const logo = httpsUrl(settings?.logoUrl || bank.logoUrl);
   const portalUrl = citizenPortalUrl(bank);
 
+  const ids = await requireLinkedIds(interaction);
+  if (!ids) return;
   const accounts = await db.select().from(bankAccounts).where(
     and(
       eq(bankAccounts.bankId, bankId), 
-      eq(bankAccounts.ownerDiscordId, interaction.user.id),
+      inArray(bankAccounts.ownerDiscordId, ids),
       eq(bankAccounts.isSystem, false)
     )
   );
 
-  const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
+  const userMap = await db.select().from(users).where(inArray(users.linkedDiscordId, ids));
   const isLinked = userMap.length > 0;
 
   if (accounts.length === 0) {
@@ -560,14 +571,14 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     const bank = b[0];
     const portalUrl = citizenPortalUrl(bank);
 
-    const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
-    const isLinked = userMap.length > 0;
+    const ids = await getCandidateIdsForDiscordSnowflake(interaction.user.id);
+    const isLinked = ids.length > 0;
 
     if (!isLinked) {
       await safeReplyOrUpdate(interaction, { 
-        content: `Your Minecraft character isn't linked yet.\n\n` +
-          `1. Open the **${bank.name}** ${portalUrl ? `[web portal](${portalUrl})` : 'web portal'} and sign in.\n` +
-          `2. Link your CityCorp / Minecraft character.\n` +
+        content: `Your Discord isn't linked yet.\n\n` +
+          `1. Open the **${bank.name}** ${portalUrl ? `[web portal](${portalUrl})` : 'web portal'} and sign in with CityCorp.\n` +
+          `2. Tap **Link Discord**.\n` +
           `3. Come back and tap **Sync**.`,
         components: [backButtonRow]
       });
@@ -577,7 +588,7 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     const accounts = await db.select().from(bankAccounts).where(
       and(
         eq(bankAccounts.bankId, bankId), 
-        eq(bankAccounts.ownerDiscordId, interaction.user.id),
+        inArray(bankAccounts.ownerDiscordId, ids),
         eq(bankAccounts.isSystem, false)
       )
     );
@@ -585,7 +596,6 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     if (accounts.length === 0) {
       await safeReplyOrUpdate(interaction, {
         content: `No **${bank.name}** account is linked to this Discord yet.\n\n` +
-          `Your Minecraft character is **${userMap[0].mcUsername}**.\n` +
           `Open ${portalUrl ? `the **[web portal](${portalUrl})**` : 'the web portal'}, create an account, then tap **Sync**.`,
         components: [backButtonRow]
       });
@@ -600,8 +610,10 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
       await showMainMenu(bankId, interaction, true);
     }
   } else if (cid === 'bank_open_business_modal') {
-    const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
-    const isLinked = userMap.length > 0;
+    const userMap = await db.select().from(users).where(
+      or(eq(users.linkedDiscordId, interaction.user.id), eq(users.discordId, interaction.user.id))
+    );
+    const isLinked = userMap.length > 0 || (await getCandidateIdsForDiscordSnowflake(interaction.user.id)).length > 0;
 
     if (!isLinked) {
       await interaction.reply({ content: 'Link your Minecraft character on the web portal before opening a business account.', ephemeral: true });
@@ -838,10 +850,12 @@ const backButtonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
 );
 
 async function handleBalance(bankId: string, interaction: ButtonInteraction) {
+  const ids = await requireLinkedIds(interaction);
+  if (!ids) return;
   const accounts = await db.select().from(bankAccounts).where(
     and(
       eq(bankAccounts.bankId, bankId), 
-      eq(bankAccounts.ownerDiscordId, interaction.user.id)
+      inArray(bankAccounts.ownerDiscordId, ids)
     )
   );
 
@@ -857,69 +871,28 @@ async function handleBalance(bankId: string, interaction: ButtonInteraction) {
   });
 }
 
-async function handleOpenAccount(bankId: string, interaction: ModalSubmitInteraction, name: string, type: string = 'personal') {
+async function handleOpenAccount(bankId: string, interaction: ModalSubmitInteraction, _name: string, _type: string = 'personal') {
   await interaction.deferReply({ ephemeral: true });
-
-  let mcUuidToLink: string | null = null;
-  const userMap = await db.select().from(users).where(eq(users.discordId, interaction.user.id));
-  if (userMap.length > 0) {
-    mcUuidToLink = userMap[0].mcUuid;
-  }
-
-  const client = await getBankClient(bankId);
-  if (client) {
-    const res = await client.createAccount(name);
-    if (!res.success) {
-      await interaction.editReply({ content: `Failed to create account in CityCorp: ${res.message}` });
-      return;
-    }
-
-    if (mcUuidToLink) {
-      const resUuid = await client.addSubuser(name, mcUuidToLink);
-      if (!resUuid.success) {
-        console.error(`Failed to link subuser ${mcUuidToLink} to account ${name}`);
-      }
-    }
-  }
-
-  await db.insert(bankAccounts).values({
-    id: uuidv4(),
-    bankId,
-    ownerDiscordId: interaction.user.id,
-    accountName: name,
-    accountType: type,
-    balance: 0,
-    createdAt: new Date(),
-  });
-
-  // Attempt to assign the Discord Client Role
-  try {
-    const { bankSettings } = await import('../db/schema');
-    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-    if (settings?.discordClientRoleId && interaction.guild) {
-      const member = await interaction.guild.members.fetch(interaction.user.id);
-      if (member) {
-        await member.roles.add(settings.discordClientRoleId);
-      }
-    }
-  } catch (err) {
-    console.error("Failed to assign Discord client role:", err);
-  }
-
-  await interaction.editReply({ content: `✅ Successfully opened your account: **${name}**!`, components: [backButtonRow] });
+  const ids = await requireLinkedIds(interaction);
+  if (!ids) return;
+  await interaction.editReply({ content: 'Open new accounts in the bank portal after signing in with CityCorp. Discord only operates accounts you already hold.', components: [backButtonRow] });
 }
 
 async function handleTransfer(bankId: string, interaction: ModalSubmitInteraction, toAccountName: string, amount: number, sourceAccId?: string | null) {
   await interaction.deferReply({ ephemeral: true });
   const amountInCents = Math.round(amount * 100);
 
-  // Source accounts
+  const ids = await requireLinkedIds(interaction);
+  if (!ids) return;
+
+  // Source accounts — must belong to this bank and this user
   let sourceAccount;
   if (sourceAccId) {
     const accs = await db.select().from(bankAccounts).where(
       and(
         eq(bankAccounts.id, sourceAccId),
-        eq(bankAccounts.ownerDiscordId, interaction.user.id)
+        eq(bankAccounts.bankId, bankId),
+        inArray(bankAccounts.ownerDiscordId, ids)
       )
     );
     if (accs.length > 0) sourceAccount = accs[0];
@@ -929,7 +902,7 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
     const sourceAccounts = await db.select().from(bankAccounts).where(
       and(
         eq(bankAccounts.bankId, bankId), 
-        eq(bankAccounts.ownerDiscordId, interaction.user.id)
+        inArray(bankAccounts.ownerDiscordId, ids)
       )
     );
     if (sourceAccounts.length === 0) {
@@ -944,20 +917,13 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
     return;
   }
 
-  // Find destination account purely by name within this bank
-  const destAccounts = await db.select().from(bankAccounts).where(
-    and(
-      eq(bankAccounts.bankId, bankId),
-      eq(bankAccounts.accountName, toAccountName)
-    )
-  );
-
-  if (destAccounts.length === 0) {
-    await interaction.editReply({ content: `Destination account **${toAccountName}** not found.` });
+  const { resolvePayableAccount } = await import('./account_lookup');
+  const destResolved = await resolvePayableAccount(toAccountName, { bankId, excludeId: sourceAccount.id });
+  if (!destResolved.account) {
+    await interaction.editReply({ content: destResolved.error || `Destination account **${toAccountName}** not found at this bank.` });
     return;
   }
-
-  const destAccount = destAccounts[0];
+  const destAccount = destResolved.account;
 
   if (sourceAccount.id === destAccount.id) {
     await interaction.editReply({ content: 'Cannot transfer to the same account.' });
@@ -987,9 +953,11 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
 
 async function handleHistory(bankId: string, interaction: ButtonInteraction) {
   const { or, desc } = await import('drizzle-orm');
+  const ids = await requireLinkedIds(interaction);
+  if (!ids) return;
   
   const myAccounts = await db.select().from(bankAccounts)
-    .where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, interaction.user.id)));
+    .where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, ids)));
     
   if (myAccounts.length === 0) {
     await safeReplyOrUpdate(interaction, { content: 'You have no accounts in this bank.', components: [backButtonRow] });
@@ -1113,7 +1081,9 @@ async function handleApplyLoanModal(bankId: string, interaction: ModalSubmitInte
     return;
   }
 
-  const userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.ownerDiscordId, interaction.user.id)));
+  const ids = await requireLinkedIds(interaction);
+  if (!ids) return;
+  const userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, ids)));
   const liveAccs = userAccs.filter(a => a.isActive && !a.isFrozen && a.existsInGame !== false);
   if (liveAccs.length === 0) {
     await interaction.editReply({ content: '❌ You need an existing CityCorp-linked account at this bank before applying for a loan. Open an account first.' });
@@ -1356,7 +1326,11 @@ async function handleStaffTellerTxModal(bankId: string, interaction: ModalSubmit
     accountId: acc.id,
     client,
   });
-  const newBalance = live ?? (type === 'deposit' ? acc.balance + amountCents : acc.balance - amountCents);
+  if (live == null) {
+    await interaction.editReply({ content: 'CityCorp did not confirm the new balance. No local funds were created. Try again.' });
+    return;
+  }
+  const newBalance = live;
 
   await db.insert(transactions).values({
     id: uuidv4(),

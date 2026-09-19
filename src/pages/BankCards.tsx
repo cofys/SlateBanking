@@ -18,6 +18,7 @@ export function BankCards() {
   const [newCardApr, setNewCardApr] = useState("19.99");
   
   const [visibleNumber, setVisibleNumber] = useState<Record<string, boolean>>({});
+  const [revealed, setRevealed] = useState<Record<string, { cardNumber: string; cvv: string }>>({});
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -95,8 +96,22 @@ export function BankCards() {
     }
   };
 
-  const toggleVisibility = (id: string) => {
-    setVisibleNumber(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleVisibility = async (id: string) => {
+    if (visibleNumber[id]) {
+      setVisibleNumber(prev => ({ ...prev, [id]: false }));
+      return;
+    }
+    if (!revealed[id]) {
+      try {
+        const res = await fetch(`/api/banks/${bankId}/cards/${id}/reveal`, { method: "POST" });
+        if (!res.ok) return;
+        const data = await res.json();
+        setRevealed(prev => ({ ...prev, [id]: { cardNumber: data.cardNumber, cvv: data.cvv } }));
+      } catch {
+        return;
+      }
+    }
+    setVisibleNumber(prev => ({ ...prev, [id]: true }));
   };
 
   const formatCardNumber = (num: string, visible: boolean) => {
@@ -118,6 +133,7 @@ export function BankCards() {
   const activeCards = cards.filter(c => !c.isLocked).length;
   const frozenCards = cards.filter(c => c.isLocked).length;
   const filteredCards = cards.filter(c => 
+    c.last4?.includes(searchQuery) ||
     c.cardNumber?.includes(searchQuery) || 
     c.accountName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.resolvedOwnerName?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -182,8 +198,8 @@ export function BankCards() {
       </div>
 
       {apps && apps.length > 0 && (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
-          <div className="p-5 border-b border-white/5 bg-[#11111a] flex items-center justify-between">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div className="p-5 border-b border-white/5 bg-[var(--bg-subtle)] flex items-center justify-between">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <AlertCircle size={16} className="text-amber-400" /> Pending Credit Applications
             </h3>
@@ -266,13 +282,13 @@ export function BankCards() {
             placeholder="Search by card number or account..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#0b0b12] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
+            className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
           />
         </div>
       </div>
 
       {cards.length === 0 ? (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-16 flex flex-col items-center justify-center text-center shadow-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-16 flex flex-col items-center justify-center text-center shadow-2xl">
           <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
             <CardIcon className="text-white/20" size={32} />
           </div>
@@ -344,7 +360,7 @@ export function BankCards() {
                      <div className="relative z-10 mt-auto">
                        <div className="flex items-center justify-between mb-4">
                          <div className="font-mono text-xl sm:text-2xl font-semibold tracking-widest text-white/90 drop-shadow-md">
-                           {formatCardNumber(card.cardNumber, visibleNumber[card.id])}
+                           {formatCardNumber(visibleNumber[card.id] && revealed[card.id] ? revealed[card.id].cardNumber : (card.last4 ? `************${card.last4}` : card.cardNumber), visibleNumber[card.id])}
                          </div>
                          <button 
                            onClick={() => toggleVisibility(card.id)}
@@ -375,7 +391,7 @@ export function BankCards() {
                          <div className="text-right">
                            <div className="text-[9px] font-bold text-white/50 uppercase tracking-widest mb-1">CVC</div>
                            <div className="text-sm font-mono font-semibold text-white tracking-widest">
-                             {visibleNumber[card.id] ? card.cvv : '•••'}
+                             {visibleNumber[card.id] && revealed[card.id] ? revealed[card.id].cvv : '•••'}
                            </div>
                          </div>
                        </div>
@@ -383,7 +399,7 @@ export function BankCards() {
                    </div>
 
                    {/* Management Controls */}
-                   <div className="mt-4 bg-[#0b0b12] border border-white/5 rounded-xl p-3 flex items-center justify-between shadow-lg">
+                   <div className="mt-4 bg-[var(--bg-elevated)] border border-white/5 rounded-xl p-3 flex items-center justify-between shadow-lg">
                      <div className="flex gap-2 w-full">
                        <button
                          onClick={() => toggleCardLock(card.id, card.isLocked)}
@@ -420,9 +436,9 @@ export function BankCards() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#0b0b12] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
+              className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
             >
-              <div className="p-6 border-b border-white/5 bg-[#11111a]">
+              <div className="p-6 border-b border-white/5 bg-[var(--bg-subtle)]">
                 <h3 className="text-lg font-black text-white flex items-center gap-2">
                   <Plus size={20} className="text-indigo-400" />
                   Issue New Card
@@ -436,7 +452,7 @@ export function BankCards() {
                     required
                     value={newCardAccountId}
                     onChange={(e) => setNewCardAccountId(e.target.value)}
-                    className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-colors appearance-none font-medium"
+                    className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-colors appearance-none font-medium"
                   >
                     <option value="">Select an account...</option>
                     {accounts.map(acc => (
@@ -448,11 +464,11 @@ export function BankCards() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">Credit Limit ($)</label>
-                    <input type="number" step="0.01" min="0" required value={newCardLimit} onChange={e => setNewCardLimit(e.target.value)} className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-colors font-medium" />
+                    <input type="number" step="0.01" min="0" required value={newCardLimit} onChange={e => setNewCardLimit(e.target.value)} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-colors font-medium" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">APR (%)</label>
-                    <input type="number" step="0.01" min="0" required value={newCardApr} onChange={e => setNewCardApr(e.target.value)} className="w-full bg-[#11111a] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-colors font-medium" />
+                    <input type="number" step="0.01" min="0" required value={newCardApr} onChange={e => setNewCardApr(e.target.value)} className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-colors font-medium" />
                   </div>
                 </div>
 

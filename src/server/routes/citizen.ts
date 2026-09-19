@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET, getRedirectUri } from "../middleware.js";
 import { botManager } from "../../lib/bot_manager.js";
-import { getUserCandidateIdentifiers, isUserAccountOwnerOrMember } from "../userResolver.js";
+import { getUserCandidateIdentifiers, isUserAccountOwnerOrMember, requireOwnedAccount, requireAccountOwner } from "../userResolver.js";
 import * as crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { randomInt } from "crypto";
@@ -282,7 +282,7 @@ citizenRouter.post("/api/citizen/loans/apply", requireAuth, async (req: express.
       if (!bankId || !discordId || !accountId || !principalAmount) return res.status(400).json({ error: "Missing fields" });
 
       const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
-      if (!account || account.ownerDiscordId !== discordId || account.bankId !== bankId) {
+      if (!account || account.bankId !== bankId || !(await requireOwnedAccount(req, account))) {
         return res.status(403).json({ error: "Unauthorized account" });
       }
 
@@ -327,7 +327,7 @@ citizenRouter.post("/api/citizen/credit/apply", requireAuth, async (req: express
        if (!bankId || !discordId || !accountId || !requestedLimit || !monthlyIncome) return res.status(400).json({ error: "Missing fields" });
 
        const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
-       if (!account || account.ownerDiscordId !== discordId || account.bankId !== bankId) {
+       if (!account || account.bankId !== bankId || !(await requireOwnedAccount(req, account))) {
          return res.status(403).json({ error: "Unauthorized account" });
        }
 
@@ -412,15 +412,22 @@ citizenRouter.post("/api/citizen/credit/apply", requireAuth, async (req: express
 
 citizenRouter.get("/api/citizen/cards/:cardId/reveal", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { cards, bankAccounts } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { cards, bankAccounts, accountMembers } = await import("../../db/schema");
+    const { eq, and, inArray } = await import("drizzle-orm");
     try {
-      const discordId = (req as any).user.discordId;
+      const candidateIds = await getUserCandidateIdentifiers(req);
       const card = await db.select().from(cards).where(eq(cards.id, req.params.cardId)).get();
       if (!card) return res.status(404).json({ error: "Card not found" });
       
-      const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, card.accountId), eq(bankAccounts.ownerDiscordId, discordId))).get();
+      const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
       if (!acc) return res.status(403).json({ error: "Unauthorized" });
+      const isOwner = acc.ownerDiscordId && candidateIds.includes(acc.ownerDiscordId);
+      let isManager = false;
+      if (!isOwner && candidateIds.length) {
+        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, acc.id), inArray(accountMembers.discordId, candidateIds))).get();
+        isManager = membership?.role === "manager";
+      }
+      if (!isOwner && !isManager) return res.status(403).json({ error: "Unauthorized" });
       
       res.json({ cardNumber: card.cardNumber, cvv: card.cvv, expiryDate: card.expiryDate });
     } catch(e) { console.error("Caught error:", e); res.status(500).json({ error: "Internal error" }); }
@@ -438,7 +445,7 @@ citizenRouter.patch("/api/citizen/cards/:cardId/lock", requireAuth, async (req: 
       if (!card) return res.status(404).json({ error: "Card not found" });
 
       const [account] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId));
-      if (!account || account.ownerDiscordId !== discordId) {
+      if (!account || !(await requireOwnedAccount(req, account, true))) {
          return res.status(403).json({ error: "Unauthorized" });
       }
 
@@ -689,14 +696,23 @@ citizenRouter.post("/api/citizen/pay-invoice", requireAuth, async (req: express.
 
 citizenRouter.post("/api/citizen/onyx-token", requireAuth, async (req: express.Request, res: express.Response) => {
     try {
-      const { amount } = req.body;
+      const { amount, merchantId, sourceAccountId } = req.body;
       const parsedAmount = Math.round(parseFloat(amount) * 100);
-      if (parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
-      
-      const jwt = require('jsonwebtoken');
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
+      if (!merchantId || typeof merchantId !== "string") return res.status(400).json({ error: "merchantId required" });
+
+      const { db } = await import("../../db/index.js");
+      const { onyxMerchants } = await import("../../db/schema.js");
+      const { eq } = await import("drizzle-orm");
+      const merchant = await db.select({ id: onyxMerchants.id }).from(onyxMerchants).where(eq(onyxMerchants.id, merchantId)).get();
+      if (!merchant) return res.status(404).json({ error: "Merchant not found" });
+
       const discordId = (req as any).user.discordId;
-      const merchantId = req.body?.merchantId || null;
-      const paymentToken = jwt.sign({ discordId, amount: parsedAmount, merchantId }, process.env.JWT_SECRET, { expiresIn: '15m' });
+      const paymentToken = jwt.sign(
+        { discordId, amount: parsedAmount, merchantId, sourceAccountId: sourceAccountId || null },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "15m", algorithm: "HS256" }
+      );
       
       res.json({ paymentToken });
     } catch (e) {
@@ -726,11 +742,8 @@ citizenRouter.post("/api/citizen/pay-merchant", requireAuth, async (req: express
       if (!dest) return res.status(404).json({ error: "Merchant destination missing" });
       const source = await db.select().from(bankAccounts).where(eq(bankAccounts.id, sourceAccountId)).get();
       if (!source) return res.status(404).json({ error: "Source account not found" });
-      if (source.ownerDiscordId !== discordId) {
-        const { accountMembers } = await import("../../db/schema.js");
-        const { and } = await import("drizzle-orm");
-        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, source.id), eq(accountMembers.discordId, discordId))).get();
-        if (!membership || membership.role !== "manager") return res.status(403).json({ error: "Unauthorized" });
+      if (!(await requireOwnedAccount(req, source, true))) {
+        return res.status(403).json({ error: "Unauthorized" });
       }
       const srcBank = await db.select().from(banks).where(eq(banks.id, source.bankId)).get();
       const block = bankBlocksCustomerMoney(srcBank);
@@ -771,7 +784,11 @@ citizenRouter.post("/api/citizen/address-book", requireAuth, async (req: express
       if (!contactAccountId || !nickname) return res.status(400).json({ error: "Missing required fields" });
       
       const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, contactAccountId)).get();
-      if (!acc) return res.status(404).json({ error: "Account not found" });
+      if (!acc) return res.status(400).json({ error: "Could not save that contact." });
+      const mine = await db.select({ bankId: bankAccounts.bankId }).from(bankAccounts).where(eq(bankAccounts.ownerDiscordId, discordId));
+      if (!mine.some((a) => a.bankId === acc.bankId)) {
+        return res.status(400).json({ error: "Contacts must be at a bank where you have an account." });
+      }
 
       await db.insert(addressBook).values({
         id: uuidv4(),
@@ -808,6 +825,10 @@ citizenRouter.post("/api/citizen/recurring-transfers", requireAuth, async (req: 
       
       const source = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.ownerDiscordId, discordId))).get();
       if (!source) return res.status(403).json({ error: "Source account not found or unauthorized" });
+      const dest = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId)).get();
+      if (!dest || dest.bankId !== source.bankId) {
+        return res.status(400).json({ error: "Recurring transfers stay inside one bank. Use Onyx to pay another bank." });
+      }
       
       let nextRun = new Date();
       if (frequency === "daily") nextRun.setDate(nextRun.getDate() + 1);
@@ -961,12 +982,8 @@ citizenRouter.post("/api/citizen/accounts/:accountId/members", requireAuth, asyn
       const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
       if (!account) return res.status(404).json({ error: "Account not found" });
 
-      // Check if user is owner or manager
-      if (account.ownerDiscordId !== discordId) {
-        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.discordId, discordId))).get();
-        if (!membership || membership.role !== "manager") {
-          return res.status(403).json({ error: "Unauthorized to add members" });
-        }
+      if (!(await requireOwnedAccount(req, account, true))) {
+        return res.status(403).json({ error: "Unauthorized to add members" });
       }
 
       // Check if already a member
@@ -1003,7 +1020,7 @@ citizenRouter.delete("/api/citizen/accounts/:accountId/members/:memberId", requi
       const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
       if (!account) return res.status(404).json({ error: "Account not found" });
 
-      if (account.ownerDiscordId !== discordId) {
+      if (!(await requireAccountOwner(req, account))) {
         return res.status(403).json({ error: "Only account owner can remove members" });
       }
 
@@ -1043,17 +1060,14 @@ citizenRouter.post("/api/citizen/transfer/quote", requireAuth, async (req: expre
         sourceAccount = await db.select().from(bankAccounts).where(eq(bankAccounts.id, fromAccountId)).get();
       }
       if (!sourceAccount) return res.status(404).json({ error: "Source account not found" });
-      if (sourceAccount.ownerDiscordId !== discordId) {
-        const { accountMembers } = await import("../../db/schema.js");
-        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, sourceAccount.id), eq(accountMembers.discordId, discordId))).get();
-        if (!membership || membership.role !== "manager") {
-          return res.status(403).json({ error: "Unauthorized to quote this account" });
-        }
+      if (!(await requireOwnedAccount(req, sourceAccount, true))) {
+        return res.status(403).json({ error: "Unauthorized to quote this account" });
       }
 
-      const destResolved = await (await import("../../lib/account_lookup.js")).resolvePayableAccount(destRaw, { preferBankId: sourceAccount.bankId, excludeId: sourceAccount.id });
-      if (!destResolved.account) return res.status(404).json({ error: destResolved.error || "Destination account not found. Use the in-game account name.", matches: destResolved.matches });
+      const destResolved = await (await import("../../lib/account_lookup.js")).resolvePayableAccount(destRaw, { bankId: sourceAccount.bankId, excludeId: sourceAccount.id });
+      if (!destResolved.account) return res.status(404).json({ error: destResolved.error || "No account with that name at this bank." });
       const destAccount = destResolved.account;
+      if (destAccount.bankId !== sourceAccount.bankId) return res.status(400).json({ error: "Transfers stay inside one bank. Use Onyx to pay another bank." });
 
       const settings = await loadSettings(sourceAccount.bankId);
       const feeMode = parseFeePayerMode(req.body?.feePayerMode || req.body?.feeMode, (settings?.defaultFeePayerMode as any) || "from_payment");
@@ -1108,12 +1122,8 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
 
       if (!sourceAccount) return res.status(404).json({ error: "Source account not found" });
 
-      if (sourceAccount.ownerDiscordId !== discordId) {
-        const { accountMembers } = await import("../../db/schema.js");
-        const membership = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, sourceAccount.id), eq(accountMembers.discordId, discordId))).get();
-        if (!membership || membership.role !== "manager") {
-          return res.status(403).json({ error: "Unauthorized to transfer from this account" });
-        }
+      if (!(await requireOwnedAccount(req, sourceAccount, true))) {
+        return res.status(403).json({ error: "Unauthorized to transfer from this account" });
       }
       
       if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
@@ -1126,22 +1136,17 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
           if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
       }
 
-      const destResolved = await (await import("../../lib/account_lookup.js")).resolvePayableAccount(toAccountId || toQuery, { preferBankId: sourceAccount.bankId, excludeId: sourceAccount.id });
-      if (!destResolved.account) return res.status(404).json({ error: destResolved.error || "Destination account not found", matches: destResolved.matches });
+      const destResolved = await (await import("../../lib/account_lookup.js")).resolvePayableAccount(toAccountId || toQuery, { bankId: sourceAccount.bankId, excludeId: sourceAccount.id });
+      if (!destResolved.account) return res.status(404).json({ error: destResolved.error || "No account with that name at this bank." });
       const destAccount = destResolved.account;
+      if (destAccount.bankId !== sourceAccount.bankId) return res.status(400).json({ error: "Transfers stay inside one bank. Use Onyx to pay another bank." });
       if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
 
       const fromBank = sourceAccount.bankId;
       const toBank = destAccount.bankId;
 
       const { sql, gte } = await import("drizzle-orm");
-      const {
-        executeSameBankBookTransfer,
-        executeCrossBankSettledTransfer,
-        parseFeePayerMode,
-        loadSettings,
-        disburseFromPoolOrOperating,
-      } = await import("../../lib/citycorp_money");
+      const { executeSameBankBookTransfer, parseFeePayerMode, loadSettings, disburseFromPoolOrOperating } = await import("../../lib/citycorp_money");
       const sourceSettings = await loadSettings(sourceAccount.bankId);
       const feeMode = parseFeePayerMode(
         req.body?.feePayerMode || req.body?.feeMode,
@@ -1186,25 +1191,7 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
         const { botManager } = await import("../../lib/bot_manager");
         botManager.sendNotification(sourceAccount.bankId, `💸 **Citizen Transfer**: <@${discordId}> transferred ${(parsedAmount/100).toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}**.`);
       } else {
-         if (sourceCard) {
-            return res.status(400).json({ error: "Credit cards cannot be used for inter-bank Onyx transfers." });
-         }
-         try {
-            const moved = await executeCrossBankSettledTransfer({
-              sourceAccount,
-              destAccount,
-              desiredCents: parsedAmount,
-              mode: feeMode,
-              description: `Onyx transfer to ${destAccount.accountName}`,
-            });
-            resultQuote = moved.quote;
-         } catch (err: any) {
-            return res.status(400).json({ error: err.message || "Inter-bank transfer failed" });
-         }
-
-         const { botManager } = await import("../../lib/bot_manager");
-         botManager.sendNotification(fromBank, `💸 **Onyx Transfer Out**: <@${discordId}> transferred ${(parsedAmount/100).toFixed(2)} to a foreign bank account.`);
-         botManager.sendNotification(toBank, `💸 **Onyx Transfer In**: Received ${(parsedAmount/100).toFixed(2)} via clearinghouse.`);
+         return res.status(400).json({ error: "Transfers stay inside one bank. Use Onyx to pay another bank." });
       }
 
       import("../../lib/customer_notify.js").then(({ notifyTransferReceived }) =>
@@ -1265,7 +1252,7 @@ citizenRouter.post("/api/citizen/vaults", requireAuth, async (req: express.Reque
         
         const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
         if (!account) return res.status(404).json({ error: "Account not found" });
-        if (account.ownerDiscordId !== discordId) return res.status(403).json({ error: "Unauthorized" });
+        if (!(await requireOwnedAccount(req, account))) return res.status(403).json({ error: "Unauthorized" });
         if (!account.isActive || account.isFrozen) return res.status(400).json({ error: "Account is inactive or frozen" });
         if (account.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
         
@@ -1324,7 +1311,7 @@ citizenRouter.post("/api/citizen/vaults/:id/withdraw", requireAuth, async (req: 
         if (vault.status !== 'locked') return res.status(400).json({ error: "Vault is already withdrawn" });
         
         const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, vault.accountId)).get();
-        if (!account || account.ownerDiscordId !== discordId) return res.status(403).json({ error: "Unauthorized" });
+        if (!account || !(await requireOwnedAccount(req, account))) return res.status(403).json({ error: "Unauthorized" });
         
         const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, vault.bankId)).get();
         const tiers = settings?.vaultTiers || [{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}];
@@ -1425,7 +1412,10 @@ citizenRouter.post("/api/citizen/sync-balances", requireAuth, async (req: expres
 citizenRouter.get("/api/citizen/sync-job/:jobId", requireAuth, async (req: express.Request, res: express.Response) => {
     const { getSyncJob } = await import("../sync_jobs");
     const job = getSyncJob(req.params.jobId);
-    if (!job) return res.status(404).json({ error: "Job not found or expired" });
+    const candidateIds = await getUserCandidateIdentifiers(req);
+    if (!job || job.type !== "citizen" || !job.discordId || !candidateIds.includes(job.discordId)) {
+      return res.status(404).json({ error: "Job not found or expired" });
+    }
     res.json(job);
 });
 
@@ -1521,7 +1511,7 @@ citizenRouter.post("/api/citizen/escrows/:escrowId/fund", requireAuth, async (re
       if (escrow.status !== "pending") return res.status(400).json({ error: "Escrow not pending" });
 
       const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
-      if (!buyer || buyer.ownerDiscordId !== discordId) {
+      if (!buyer || !(await requireAccountOwner(req, buyer))) {
         return res.status(403).json({ error: "Only the buyer can fund this escrow." });
       }
 

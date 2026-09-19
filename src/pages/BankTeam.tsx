@@ -260,7 +260,7 @@ export function BankTeam() {
               className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
                 roleFilter === key 
                   ? "bg-indigo-500/10 border-indigo-500/40 ring-1 ring-indigo-500/30" 
-                  : "bg-[#0b0b12] border-white/10 hover:border-white/20"
+                  : "bg-[var(--bg-elevated)] border-white/10 hover:border-white/20"
               }`}
             >
               <div className="flex items-center justify-between">
@@ -286,7 +286,7 @@ export function BankTeam() {
               Staff Portal Direct Access URL
             </p>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Staff members can sign in directly using their Discord, Minecraft username, or CityCorp ID. Access privileges are strictly governed by their assigned RBAC tier.
+              Staff sign in with CityCorp only. Access is the RBAC role on this team (Minecraft username or UUID). Discord is not a login.
             </p>
           </div>
         </div>
@@ -309,7 +309,7 @@ export function BankTeam() {
 
       {/* Permission Matrix Drawer */}
       {showMatrix && (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-6 space-y-4 animate-in fade-in duration-300">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-4 animate-in fade-in duration-300">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <SlidersHorizontal className="text-indigo-400" size={18} /> Granular Role Permission Matrix
@@ -410,7 +410,7 @@ export function BankTeam() {
 
       {/* Add Staff Modal */}
       {showAdd && (
-        <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-6 mb-6 shadow-2xl">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 mb-6 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-white text-base">Invite / Provision Staff Member</h3>
             <button onClick={() => setShowAdd(false)} className="text-zinc-500 hover:text-white text-xs">Cancel</button>
@@ -422,7 +422,7 @@ export function BankTeam() {
                 name="discordId" 
                 required 
                 type="text" 
-                className="w-full bg-[#14141e] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono" 
                 placeholder="123456789, notch, or UUID" 
               />
             </div>
@@ -431,7 +431,7 @@ export function BankTeam() {
               <select 
                 name="role" 
                 defaultValue="teller"
-                className="w-full bg-[#14141e] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
               >
                 <option value="teller">Bank Teller (Counter deposits, withdrawals, transfers)</option>
                 <option value="loan_officer">Loan & Underwriting Officer (Loans, collateral, credit)</option>
@@ -454,7 +454,7 @@ export function BankTeam() {
       )}
 
       {/* Staff Roster Table */}
-      <div className="bg-[#0b0b12] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+      <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
         {/* Table Controls */}
         <div className="p-4 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -509,7 +509,7 @@ export function BankTeam() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-[#11111a] text-zinc-400 border-b border-white/10 text-xs uppercase tracking-wider">
+              <thead className="bg-[var(--bg-subtle)] text-zinc-400 border-b border-white/10 text-xs uppercase tracking-wider">
                 <tr>
                   <th className="px-6 py-3.5 font-semibold">Identifier (Discord / MC / UUID)</th>
                   <th className="px-6 py-3.5 font-semibold">Assigned Role</th>

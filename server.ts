@@ -29,7 +29,14 @@ async function startServer() {
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'", "https://api.cityrp.org", "wss://api.cityrp.org", "https://discord.com", "https://cdn.discordapp.com"],
+        connectSrc: [
+          "'self'",
+          "https://api.cityrp.org",
+          "wss://api.cityrp.org",
+          "https://discord.com",
+          "https://cdn.discordapp.com",
+          ...(process.env.NODE_ENV !== "production" ? ["ws:", "wss:"] : []),
+        ],
         frameSrc: ["'none'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
@@ -146,29 +153,35 @@ async function startServer() {
     credentials: true
   }));
 
+  const limiterValidate = { xForwardedForHeader: false, forwardedHeader: false };
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, 
     max: 1000, 
     standardHeaders: true, 
-    legacyHeaders: false, 
+    legacyHeaders: false,
+    validate: limiterValidate,
   });
   
   const authLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
     max: 10,
-    message: "Too many authentication attempts, please try again later."
+    message: "Too many authentication attempts, please try again later.",
+    validate: limiterValidate,
   });
   
   const transferLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
     max: 10,
-    message: "Too many transfer requests, please try again later."
+    message: "Too many transfer requests, please try again later.",
+    validate: limiterValidate,
   });
   
   app.use('/api/', globalLimiter);
   app.use('/api/auth/', authLimiter);
   app.use('/api/portal/:bankId/transfer', transferLimiter);
   app.use('/api/citizen/transfer', transferLimiter);
+  app.use('/api/citizen/pay-merchant', transferLimiter);
+  app.use('/api/citizen/onyx-token', transferLimiter);
   app.use('/api/v1/transfers', transferLimiter);
   app.use('/api/onyx/checkout', transferLimiter);
 

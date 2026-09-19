@@ -47,14 +47,8 @@ export function startCronJobs() {
                 description: "Automated Payroll Transfer",
               });
             } else {
-              const { executeCrossBankSettledTransfer } = await import("./citycorp_money");
-              await executeCrossBankSettledTransfer({
-                sourceAccount: empAcc,
-                destAccount: eeAcc,
-                desiredCents: job.amount,
-                mode: "sender_covers",
-                description: "Automated Payroll Transfer",
-              });
+              console.error("[Cron] payroll skipped: employee account is at another bank. Transfers stay inside one bank; use Onyx for cross-bank.");
+              continue;
             }
          } catch (e) {
             console.error("[Cron] payroll failed", e);
@@ -77,7 +71,7 @@ export function startCronJobs() {
          if (!custAcc || !bAcc) continue;
          if (custAcc.balance < sub.amount) continue;
          try {
-            const { executeSameBankBookTransfer, executeCrossBankSettledTransfer } = await import("./citycorp_money");
+            const { executeSameBankBookTransfer } = await import("./citycorp_money");
             if (custAcc.bankId === bAcc.bankId) {
               await executeSameBankBookTransfer({
                 sourceAccount: custAcc,
@@ -87,13 +81,8 @@ export function startCronJobs() {
                 description: sub.description || "Automated Subscription Billing",
               });
             } else {
-              await executeCrossBankSettledTransfer({
-                sourceAccount: custAcc,
-                destAccount: bAcc,
-                desiredCents: sub.amount,
-                mode: "sender_covers",
-                description: sub.description || "Automated Subscription Billing",
-              });
+              console.error("[Cron] subscription skipped: biller is at another bank. Transfers stay inside one bank; use Onyx for cross-bank.");
+              continue;
             }
          } catch (e) {
             console.error("[Cron] subscription failed", e);
@@ -338,9 +327,12 @@ setInterval(async () => {
        const target = await db.select().from(bankAccounts).where(eq(bankAccounts.id, rt.toAccountId)).get();
        
        if (source && target && source.balance >= rt.amount) {
+          if (source.bankId !== target.bankId) {
+            console.error("[Cron] recurring transfer skipped: destination is at another bank.");
+          } else {
           try {
-            const { executeBookTransfer } = await import("./citycorp_money");
-            await executeBookTransfer({
+            const { executeSameBankBookTransfer } = await import("./citycorp_money");
+            await executeSameBankBookTransfer({
               sourceAccount: source,
               destAccount: target,
               desiredCents: rt.amount,
@@ -350,6 +342,7 @@ setInterval(async () => {
             });
           } catch (e) {
             console.error("[Cron] recurring transfer failed", e);
+          }
           }
        }
        

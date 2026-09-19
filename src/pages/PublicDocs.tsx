@@ -13,20 +13,19 @@ export function PublicDocs() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-white font-sans selection:bg-blue-500/30">
-      {/* Navbar */}
-      <nav className="sticky top-0 z-50 bg-[#0a0a0c]/80 backdrop-blur-md border-b border-white/5">
+    <div className="min-h-screen text-[var(--fg)] font-sans page-enter">
+      <nav className="sticky top-0 z-50 backdrop-blur-md border-b" style={{ background: "color-mix(in oklab, var(--bg) 82%, transparent)", borderColor: "var(--border)" }}>
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-               <BookOpen size={16} className="text-white" />
+             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--accent)", color: "var(--accent-fg)" }}>
+               <BookOpen size={16} />
              </div>
-             <span className="font-bold text-lg tracking-tight">Slate Developer API</span>
+             <span className="font-semibold text-lg tracking-tight">Slate Developer API</span>
           </div>
           <div className="flex items-center gap-4">
-             <Link to="/portal" className="text-sm font-medium text-white/60 hover:text-white transition-colors">Citizen Portal</Link>
+             <Link to="/portal" className="text-sm font-medium text-white/60 hover:text-white transition-colors">Customer Portal</Link>
              <Link to="/" className="text-sm font-medium text-white/60 hover:text-white transition-colors">SaaS Gateway</Link>
-             <a href="mailto:support@slate.saas" className="text-sm font-medium bg-white/10 hover:bg-white/15 px-4 py-2 rounded-lg transition-colors">Get API Key</a>
+             <a href="mailto:support@slate.saas" className="text-sm font-semibold btn-accent px-4 py-2 min-h-11 inline-flex items-center">Get API Key</a>
           </div>
         </div>
       </nav>
@@ -80,12 +79,12 @@ export function PublicDocs() {
                   </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-                     <div className="bg-[#121216] border border-white/5 rounded-2xl p-6 hover:border-blue-500/30 transition-colors">
+                     <div className="bg-[var(--bg-elevated)] border border-white/5 rounded-2xl p-6 hover:border-blue-500/30 transition-colors">
                         <Terminal className="text-blue-400 mb-4" size={24} />
                         <h3 className="text-lg font-bold mb-2">Restful Architecture</h3>
                         <p className="text-sm text-white/50 leading-relaxed">Standard HTTP endpoints utilizing JSON payloads and Bearer token / API Key authentication headers.</p>
                      </div>
-                     <div className="bg-[#121216] border border-white/5 rounded-2xl p-6 hover:border-indigo-500/30 transition-colors">
+                     <div className="bg-[var(--bg-elevated)] border border-white/5 rounded-2xl p-6 hover:border-indigo-500/30 transition-colors">
                         <Zap className="text-indigo-400 mb-4" size={24} />
                         <h3 className="text-lg font-bold mb-2">Onyx Cross-Routing</h3>
                         <p className="text-sm text-white/50 leading-relaxed">Process checkouts and charge customers regardless of what participating bank they use via the central Onyx Network.</p>
@@ -110,7 +109,7 @@ export function PublicDocs() {
                   </p>
 
                   <div className="space-y-8">
-                     <div className="bg-[#121216] border border-white/5 rounded-2xl p-8">
+                     <div className="bg-[var(--bg-elevated)] border border-white/5 rounded-2xl p-8">
                         <div className="flex items-center gap-3 mb-6 border-b border-white/5 pb-6">
                            <Shield className="text-indigo-400" size={24} />
                            <div>
@@ -126,7 +125,7 @@ export function PublicDocs() {
                         </div>
                      </div>
 
-                     <div className="bg-[#121216] border border-white/5 rounded-2xl p-8">
+                     <div className="bg-[var(--bg-elevated)] border border-white/5 rounded-2xl p-8">
                         <div className="flex items-center gap-3 mb-6 border-b border-white/5 pb-6">
                            <Code2 className="text-emerald-400" size={24} />
                            <div>
@@ -156,7 +155,7 @@ export function PublicDocs() {
                   </p>
 
                   <h3 className="text-lg font-bold mb-4 border-b border-white/5 pb-2">Request Body (JSON)</h3>
-                  <div className="bg-[#121216] border border-white/10 rounded-xl overflow-hidden mb-8">
+                  <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden mb-8">
                      <table className="w-full text-sm text-left">
                         <thead className="bg-white/5 text-white/50 text-xs uppercase tracking-wider">
                            <tr>
@@ -195,7 +194,7 @@ export function PublicDocs() {
                      <div className="absolute top-4 right-4 z-10 flex gap-2">
                         <span className="text-xs font-mono uppercase text-white/40 bg-white/5 px-2 py-1 rounded">cURL</span>
                      </div>
-                     <pre className="bg-[#121216] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono leading-relaxed">
+                     <pre className="bg-[var(--bg-elevated)] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono leading-relaxed">
 <span className="text-emerald-400">curl</span> -X POST https://api.slate.saas/api/onyx/checkout \
   -H <span className="text-amber-400">"Content-Type: application/json"</span> \
   -H <span className="text-amber-400">"x-api-key: onyx_live_728b9c..."</span> \
@@ -208,7 +207,7 @@ export function PublicDocs() {
                   </div>
 
                   <h3 className="text-lg font-bold mb-4 border-b border-white/5 pb-2">Response</h3>
-                  <pre className="bg-[#121216] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono text-emerald-300 leading-relaxed">
+                  <pre className="bg-[var(--bg-elevated)] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono text-emerald-300 leading-relaxed">
 {'{'}
   "success": true,
   "transactionId": "tx_9d8f7a...",
@@ -230,7 +229,7 @@ export function PublicDocs() {
                   </p>
 
                   <div className="relative mb-12">
-                     <pre className="bg-[#121216] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono leading-relaxed">
+                     <pre className="bg-[var(--bg-elevated)] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono leading-relaxed">
 <span className="text-emerald-400">curl</span> https://api.slate.saas/api/v1/accounts \
   -H <span className="text-amber-400">"Authorization: Bearer sk_live_..."</span>
                      </pre>
@@ -245,7 +244,7 @@ export function PublicDocs() {
                   </p>
 
                   <div className="relative mb-12">
-                     <pre className="bg-[#121216] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono leading-relaxed">
+                     <pre className="bg-[var(--bg-elevated)] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono leading-relaxed">
 <span className="text-emerald-400">curl</span> -X POST https://api.slate.saas/api/v1/accounts \
   -H <span className="text-amber-400">"Content-Type: application/json"</span> \
   -H <span className="text-amber-400">"Authorization: Bearer sk_live_..."</span> \
@@ -271,7 +270,7 @@ export function PublicDocs() {
                   </p>
 
                   <div className="relative mb-12">
-                     <pre className="bg-[#121216] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono leading-relaxed">
+                     <pre className="bg-[var(--bg-elevated)] border border-white/10 p-6 rounded-xl overflow-x-auto text-sm font-mono leading-relaxed">
 <span className="text-emerald-400">curl</span> -X POST https://api.slate.saas/api/v1/transfers \
   -H <span className="text-amber-400">"Content-Type: application/json"</span> \
   -H <span className="text-amber-400">"Authorization: Bearer sk_live_..."</span> \

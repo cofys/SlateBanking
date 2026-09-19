@@ -37,7 +37,7 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
   - **Daily Interest Accrual & Compounding**: Loan APR interest is accrued and compounded daily basis points: `(remainingAmount * (interestRate / 10000) * daysElapsed) / 365`. Accrued interest atomically increases the loan's `remainingAmount` and records an interest charge in system logs.
   - **Delinquency, Late Fees & Default Handling**: If an automated repayment debit fails due to insufficient borrower funds, the loan transitions to `isDelinquent = true`, increments `missedPaymentsCount`, assesses a flat late fee penalty ($25.00), and adds it to `remainingAmount`. Upon 3 consecutive missed payment attempts, the system automatically transitions the loan status to `defaulted` and seizes any pledged collateral asset.
   - **Collateral Asset Tracking & Seizure**: Borrowers can pledge collateral assets during loan applications (`collateralDescription`, `collateralValue`, `collateralStatus`). Pledged collateral statuses transition from `none` -> `pledged` -> `seized` (on loan default) or `released` (upon full principal payoff). Bank staff can update asset valuations and manually adjust collateral status via the Bank Loans portal.
-  - **Credit Applications**: Citizens can apply for specialized lines of credit via the Citizen Gateway with custom collateral declarations. Bank staff review, evaluate collateral, and approve/reject applications. 
+  - **Credit Applications**: Citizens can apply for specialized lines of credit via the customer portal with custom collateral declarations. Bank staff review, evaluate collateral, and approve/reject applications. 
   - **Auto-Approval**: In `Bank Settings`, banks may toggle `autoApproveLoans` and `autoApproveCreditCards` along with a threshold `maxAutoApproveLoanAmount`. When toggled, requests falling under the safe limit are instantly generated (funds deposited or cards provisioned) without staff intervention.
   - **Google Docs Contract Integration**: Configurable Google Docs legal agreement templates for loans, credit applications, and escrow agreements. When enabled, the system auto-generates or attaches dynamic Google Docs contract links populated with variable tags (`{BANK_NAME}`, `{CLIENT_DISCORD}`, `{AMOUNT}`, `{INTEREST_RATE}`, `{CONTRACT_ID}`, `{DATE}`) and provides direct document links in the staff portal and citizen gateway (`contractUrl`).
 - **Cards**: Generated debit and credit card objects (Card Number, CVV, Expiry, Locked state) tied directly to a bank account. Lock states toggle true/false.
@@ -102,7 +102,7 @@ The SaaS Admin Dashboard acts as the superuser control panel for managing the en
 Onyx is a Stripe-like processing layer bridging funds across entirely different banks. 
 - **Onyx Merchants**: Entities can register external API keys to route collected funds dynamically into a designated destination account.
 - **Onyx Checkout API**: Stateless checkout routing allowing third-party tools (like Minecraft plugin gateways) to post payments securely across the entire Slate infrastructure. The API accepts an optional `sourceAccountId` for bypassing the default routing logic matching only the routing bank.
-- **Onyx Quick Pay**: Available in both the global Citizen Gateway and bank-specific Portals, allowing any account holder across the entire Slate network to easily select a merchant from a connected dropdown list and issue a direct cross-bank B2B payment securely from their dashboard.
+- **Onyx Quick Pay**: Available in the bank customer portal, allowing an account holder to pick a network merchant and pay them. Same-bank book transfer when the merchant is at this bank; Onyx settlement when they are not.
 - **Onyx Global Settings**: Controlled via the SaaS Admin dashboard, settings include a global B2B API Transaction Fee tax and global toggles for clearinghouse routing.
 
 ### Central Clearinghouse & Inter-Bank Wires
@@ -216,7 +216,7 @@ Every bank defined in the platform can attach a unique Discord Bot Token to its 
 - **Dynamic OAuth Redirect URIs**: `getRedirectUri` in `middleware.ts` inspects incoming `x-forwarded-host` and `host` headers to dynamically match the deployment domain (e.g., custom domains or subdomains), ensuring OAuth callbacks match host configurations precisely.
 - **Fallback Minecraft Identity Resolution**: `authRoutes.ts` resolves usernames and avatars from CityCorp player info, falling back to Crafatar and Mojang Session APIs for seamless player identification.
 
-### Citizen Gateway (Authentication: Discord Cookie)
+### Customer portal (Authentication: Discord Cookie)
 - `GET /api/citizen/lookup` - Resolves the current logged in citizen's portfolio across the entire platform.
 
 ---
@@ -947,12 +947,12 @@ CityCorp in-game accounts are the source of truth. Slate is a cache + product la
 ## Customer portals, ops desk, and tenant kill switch
 
 ### Customer portals
-White-label **Bank Portal** (`/portal/:bankId` and custom domains) is a branded banking home: large available balance, account cards, send with a **live fee quote** (city tax + bank fee, fees-from-payment vs sender-covers), activity, loans, cards, invoices, and an **Apply** tab for accounts / loans / cards. Feature flags still hide products the bank turned off; apply is never buried in a 10-tab dump. Hex `brandingColor` drives the UI.
+White-label **Bank Portal** (`/portal/:bankId` and custom domains) is the customer portal: branded home, send with a **live fee quote**, activity, loans, cards, invoices, and Apply. Feature flags hide products the bank turned off. Hex `brandingColor` drives the UI.
 
-**Citizen gateway** (`/portal`) is the network wallet: totals across banks, a card per bank that opens the branded portal, network send with the same quote, and apply-at-a-bank.
+`/portal` on the platform domain is only a **bank picker** (accounts you hold + directory). It is not a second product and has no network-wide send. Transfers are **bank-wide only**. Cross-bank payments go through **Onyx**.
 
 ### Honest send
-`POST /api/portal/:bankId/transfer/quote` and `/api/citizen/transfer/quote` return submitted / received / fee lines before confirm. Transfers notify the destination owner over Discord DM when the bank bot is online (`discordNotifyCustomers`, default on).
+`POST /api/portal/:bankId/transfer/quote` and `/api/citizen/transfer/quote` return submitted / received / fee lines before confirm. Destination lookup is exact in-game name (or id) **inside that bank**. Autocomplete (`/api/portal/:bankId/payees`) only lists people the customer has already sent money to or received from. Transfers notify the destination owner over Discord DM when the bank bot is online (`discordNotifyCustomers`, default on).
 
 ### Staff desk
 - **Needs attention** (`/bank/:id/queue`): pending loans, delinquent/defaulted, frozen accounts, settlement release/confirm, `RESERVE_BREACH` / platform alerts, low SETTLEMENT.
@@ -965,12 +965,81 @@ White-label **Bank Portal** (`/portal/:bankId` and custom domains) is a branded 
 
 ### Security
 - Bank and Onyx merchant **API keys are hashed** (`api_key_hash` + last4). Full secret is returned only on create/roll.
-- Onyx checkout tokens persist in `used_payment_tokens` and bind to `merchantId`.
+- Onyx checkout tokens persist in `used_payment_tokens` and **must** bind `merchantId` (and optional `sourceAccountId`). A token without a merchant cannot be charged by any other merchant.
 - Citizens pay merchants via `POST /api/citizen/pay-merchant` (merchant id, never the merchant API key in the browser).
+- Merchant directory for customers omits destination account ids. Transfers never search the full customer list; payee autocomplete is prior counterparties only.
+- Payroll, subscriptions, recurring transfers, invoices, Discord transfers, and portal/API transfers stay **inside one bank**. Cross-bank movement is Onyx only.
+- Citizen sync-job status is scoped to the caller. Card PAN/CVV reveal is owner or manager only, via identity candidates (not username).
+- Customer lookup never matches on Minecraft display name.
 
 ### Discord customer pings
 No new slash commands. The existing bank bot DMs for incoming transfer, loan applied/approved/denied/disbursed/paid/failed/due/defaulted, card lock. Due reminders run on the 15-minute cron (`notifyUpcomingLoanPayments`).
 
 ### Schema additions
 `banks.suspended_reason`, `suspended_at`, `api_key_hash`, `api_key_last4`; `onyx_merchants.api_key_hash/last4`; `loans.last_due_reminder_at`; `bank_settings.discord_notify_customers`; tables `platform_alerts`, `used_payment_tokens`.
+
+---
+
+## CityCorp-only login, Discord link, no minting, Onyx shops (Sep 2026)
+
+### Identity
+- **Sign-in is CityCorp only.** Discord is not a login method. `/api/auth/url` returns CityCorp unless `provider=discord` **and** `intent=link` with an existing session.
+- JWT `discordId` stays `mc_<minecraft_uuid>`. Linking Discord writes `users.linkedDiscordId` and `bank_customers.linked_discord_id` only. It does **not** rewrite `owner_discord_id` or mint a new session.
+- `/api/auth/me` returns `linkedDiscordId`. Unlink via `POST /api/auth/unlink-discord`.
+- Bank and Onyx Discord bots refuse users whose Discord is not linked (`getCandidateIdsForDiscordSnowflake` returns empty). Copy: sign in on the web, tap **Link Discord**.
+- Discord snowflakes never receive an `mc_` prefix (`normalizeIdentifier`).
+- Customer money paths use `requireOwnedAccount` / identity candidates, not a raw `ownerDiscordId === jwt.discordId` compare.
+
+### Funds
+- The platform never mints cash. Book transfers SET CityCorp live balances. Teller Discord cash window **fails closed** if CityCorp does not confirm the new balance (no local `balance ± amount` fallback).
+- Demo seed (non-production) creates accounts at **$0**. It does not invent balances.
+- Staff teller, payroll run, and subscription charge are **same-bank** (`executeSameBankBookTransfer`). Cross-bank is Onyx / wires only.
+
+### Cards
+- List endpoints return last4 only. Full PAN/CVV is create-once, or `POST /api/banks/:id/cards/:cardId/reveal` (staff, audit logged) / `GET /api/citizen/cards/:id/reveal` (owner or manager).
+
+### Onyx merchant self-serve
+- Public wizard: `/accept`. CityCorp login → name shop → pick a receiving account the player owns → copy checkout link and API key (shown once).
+- `POST /api/onyx/register`, `GET /api/onyx/me`, `POST /api/onyx/me/:id/roll-key`.
+- `onyx_merchants` now has `owner_mc_uuid`, `owner_discord_id`, `slug`.
+- Platform Onyx CityCorp corp lives on `onyx_settings` (`corp_id`, `corp_api_uuid`, `corp_api_key`) plus the existing Onyx Discord bot token. Merchants never see platform secrets.
+- Discord `/onyx-merchant-setup` requires a linked identity and an owned destination account; API keys are hashed.
+
+### Schema additions (this drop)
+`users.linked_discord_id`; `onyx_merchants.owner_mc_uuid`, `owner_discord_id`, `slug`; `onyx_settings.corp_id`, `corp_api_uuid`, `corp_api_key`.
+
+---
+
+## Visual language and color schemes (Sep 2026)
+
+Slate chrome is **near-neutral ink**: Instrument Sans + IBM Plex Mono, tokens in `src/index.css` (`--bg`, `--fg`, `--accent`, `--ok` / `--warn` / `--danger`). Motion is 150–250ms, `prefers-reduced-motion` disables enter animations, tap targets are ≥44px.
+
+### Bank color schemes
+Named schemes live in `src/lib/theme.ts` and drive staff chrome, the client portal, Discord embed color, and (via CSS) legacy `indigo-*` Tailwind utilities.
+
+| Id | Look |
+|---|---|
+| `slate` | Cool institutional gray (default for new banks) |
+| `ocean` | Deep water blue |
+| `forest` | Muted banking green |
+| `copper` | Warm metal |
+| `rose` | Quiet crimson |
+| `ink` | Near-white on dark |
+| `indigo` / `emerald` / `amber` / `zinc` | Legacy aliases |
+
+Staff **Brand Identity** is a swatch picker (not a dropdown). Picking a scheme also fills `brandingColor`. A custom hex still wins in `accentFor()`. Discord bots import `SCHEME_HEX` from the same module.
+
+Global Slate Control stays silver/ink. Tenant `--accent` is set on the staff and portal shells so every indigo-tinted page follows the bank's scheme.
+
+---
+
+## CityCorp-only login and root admin Cofys (Sep 2026)
+
+- **Login is CityCorp only.** Discord OAuth cannot mint a session. `/api/auth/url?provider=discord` requires an existing CityCorp cookie and `intent=link`. The Discord blurple “sign in” buttons are gone from every portal, staff desk, checkout, and pay link.
+- Discord remains an **optional bot link** after CityCorp login (`linkDiscord()`), so `/bank` can see the player. It is labeled as connecting the bot, not as a login.
+- **Root operator:** Minecraft / CityCorp username `Cofys` (UUID `24e37515-4a2d-4c60-a603-3c41320a6f03`) is a global admin. `checkUserIsGlobalAdmin` matches JWT username, UUID variants (`mc_<uuid>`), and `global_admins`. Extra names can be listed in `GLOBAL_ADMIN_MC_USERNAMES`.
+- Staff rows that store a Minecraft username (not a Discord snowflake) match the CityCorp session username, so commercial-bank desks work without Discord.
+- SQLite files under `data/` are gitignored (`*.db`, WAL/SHM, the `data/` directory). Never commit ledgers.
+
+
 

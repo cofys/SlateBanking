@@ -210,8 +210,9 @@ deskRouter.post("/api/banks/:bankId/teller/quote", requireBankStaff, async (req:
       return res.status(400).json({ error: "Invalid quote request" });
     }
     const source = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bankId))).get();
-    const dest = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId)).get();
+    const dest = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bankId))).get();
     if (!source || !dest) return res.status(404).json({ error: "Account not found" });
+    if (source.bankId !== dest.bankId) return res.status(400).json({ error: "Teller quotes stay inside this bank." });
     const settings = await loadSettings(bankId);
     const mode = parseFeePayerMode(feePayerMode, (settings?.defaultFeePayerMode as any) || "from_payment");
     const { quote } = await quoteBookTransfer({ sourceAccount: source, destAccount: dest, desiredCents: cents, mode });
@@ -225,7 +226,7 @@ deskRouter.post("/api/banks/:bankId/teller/transfer", requireBankStaff, async (r
   try {
     const { db } = await import("../../db/index.js");
     const { bankAccounts, banks, auditLogs } = await import("../../db/schema.js");
-    const { executeBookTransfer } = await import("../../lib/citycorp_money.js");
+    const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money.js");
     const bankId = req.params.bankId;
     const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
     const block = bankBlocksCustomerMoney(bank);
@@ -237,10 +238,12 @@ deskRouter.post("/api/banks/:bankId/teller/transfer", requireBankStaff, async (r
       return res.status(400).json({ error: "Invalid transfer" });
     }
     const source = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bankId))).get();
-    const dest = await db.select().from(bankAccounts).where(eq(bankAccounts.id, toAccountId)).get();
+    const dest = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bankId))).get();
     if (!source || !dest) return res.status(404).json({ error: "Account not found" });
 
-    const result = await executeBookTransfer({
+    if (source.bankId !== dest.bankId) return res.status(400).json({ error: "Teller transfers stay inside this bank. Use a wire or Onyx for another bank." });
+
+    const result = await executeSameBankBookTransfer({
       sourceAccount: source,
       destAccount: dest,
       desiredCents: cents,

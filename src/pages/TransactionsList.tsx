@@ -71,14 +71,14 @@ export function TransactionsList() {
         </button>
       </div>
 
-      <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden shadow-2xl">
+      <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden shadow-2xl">
         <div className="p-4 border-b border-white/10 flex items-center">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={16} />
             <input
               type="text"
               placeholder="Search by description, bank, or type..."
-              className="w-full bg-[#16161d] border border-white/10 rounded-md py-2 pl-9 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-500 transition-colors"
+              className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-md py-2 pl-9 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-500 transition-colors"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />

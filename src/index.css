@@ -1,31 +1,232 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-bg: #09090b;
+  --color-bg-elevated: #111114;
+  --color-bg-subtle: #18181c;
+  --color-fg: #f4f4f5;
+  --color-muted: #a1a1aa;
+  --color-subtle: #71717a;
+  --color-border: rgb(244 244 245 / 0.1);
+  --color-accent: #c5cad3;
+  --color-accent-fg: #0a0a0b;
+  --color-ok: #5dba8c;
+  --color-warn: #d4a35c;
+  --color-danger: #d46a6a;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Legacy indigo utilities follow the live --accent so every screen picks up the bank scheme. */
+  --color-indigo-300: color-mix(in oklab, var(--accent) 78%, white);
+  --color-indigo-400: var(--accent);
+  --color-indigo-500: var(--accent);
+  --color-indigo-600: color-mix(in oklab, var(--accent) 72%, #09090b);
+  --color-indigo-700: color-mix(in oklab, var(--accent) 55%, #09090b);
+  --color-indigo-800: color-mix(in oklab, var(--accent) 38%, #09090b);
+  --color-indigo-900: color-mix(in oklab, var(--accent) 22%, #09090b);
+  --color-indigo-950: color-mix(in oklab, var(--accent) 12%, #09090b);
+
+  --color-blue-400: var(--accent);
+  --color-blue-500: var(--accent);
+  --color-blue-600: color-mix(in oklab, var(--accent) 72%, #09090b);
+  --color-blue-700: color-mix(in oklab, var(--accent) 55%, #09090b);
+}
+
+:root {
+  --bg: #09090b;
+  --bg-elevated: #111114;
+  --bg-subtle: #18181c;
+  --fg: #f4f4f5;
+  --fg-muted: #a1a1aa;
+  --fg-subtle: #71717a;
+  --border: color-mix(in oklab, var(--fg) 10%, transparent);
+  --border-strong: color-mix(in oklab, var(--fg) 18%, transparent);
+  --accent: #c5cad3;
+  --accent-fg: #0a0a0b;
+  --ok: #5dba8c;
+  --warn: #d4a35c;
+  --danger: #d46a6a;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --motion-stagger: 40ms;
+  --motion-micro: 80ms;
+  --motion-quick: 150ms;
+  --motion-fast: 250ms;
+  --motion-medium: 350ms;
+  --motion-slow: 400ms;
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+html {
+  color-scheme: dark;
 }
 
 @layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html, body, #root {
+    min-height: 100%;
+  }
+
   body {
-    @apply bg-[#0a0a0c] text-white font-sans antialiased text-sm;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  a[href] {
+    cursor: pointer;
   }
 
-  ::-webkit-scrollbar-track {
-    background: transparent;
+  button:not(:disabled) {
+    transition: transform var(--motion-quick) var(--ease-out),
+      background-color var(--motion-quick) var(--ease-out),
+      border-color var(--motion-quick) var(--ease-out),
+      color var(--motion-quick) var(--ease-out),
+      opacity var(--motion-quick) var(--ease-out),
+      filter var(--motion-quick) var(--ease-out);
+  }
+  button:not(:disabled):active {
+    transform: scale(0.96);
   }
 
+  input, select, textarea {
+    font-family: inherit;
+    color: inherit;
+    transition: border-color var(--motion-quick) var(--ease-out),
+      box-shadow var(--motion-quick) var(--ease-out),
+      background-color var(--motion-quick) var(--ease-out);
+  }
+  input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible {
+    outline: none;
+  }
+  input:focus-visible, select:focus-visible, textarea:focus-visible {
+    border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+  }
+  button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 30%, transparent);
+    color: var(--fg);
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    background: color-mix(in oklab, var(--fg) 12%, transparent);
+    border-radius: 99px;
   }
-
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: color-mix(in oklab, var(--fg) 22%, transparent);
+  }
+}
+
+@keyframes slate-enter {
+  from { opacity: 0; transform: translateY(8px); filter: blur(3px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes slate-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slate-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.page-enter {
+  animation: slate-enter var(--motion-slow) var(--ease-smooth-out) both;
+}
+.stagger-in > * {
+  animation: slate-enter var(--motion-slow) var(--ease-smooth-out) both;
+}
+.stagger-in > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-in > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-in > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-in > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-in > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-in > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-in > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-in > *:nth-child(8) { animation-delay: 350ms; }
+
+.surface {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.surface-quiet {
+  background: color-mix(in oklab, var(--fg) 3%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out);
+}
+.surface-quiet:hover {
+  border-color: var(--border-strong);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+}
+.btn-accent:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.chip-accent {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--fg) 4%, transparent) 0%,
+    color-mix(in oklab, var(--fg) 10%, transparent) 50%,
+    color-mix(in oklab, var(--fg) 4%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: slate-shimmer 1.4s linear infinite;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .stagger-in > *, .skeleton {
+    animation: none !important;
+  }
+  button:not(:disabled):active {
+    transform: none;
   }
 }

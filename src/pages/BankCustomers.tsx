@@ -85,14 +85,14 @@ export function BankCustomers() {
               placeholder="Search by Discord ID or Username..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="w-full bg-[#12121a] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+              className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
             />
           </div>
           {settings?.requireKyc && (
           <select
              value={kycFilter}
              onChange={e => setKycFilter(e.target.value)}
-             className="bg-[#12121a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+             className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
           >
              <option value="all">All KYC Statuses</option>
              <option value="pending">Pending Review</option>
@@ -102,13 +102,13 @@ export function BankCustomers() {
           )}
       </div>
 
-      <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden">
+      <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden">
         {customers.length === 0 ? (
           <div className="p-8 text-center text-white/50">No customers found.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-[#1a1a24] text-white/50 border-b border-white/10">
+              <thead className="bg-[var(--bg-subtle)] text-white/50 border-b border-white/10">
                 <tr>
                   <th className="px-6 py-4 font-medium">Customer / Account Holder</th>
                   {settings?.requireKyc && <th className="px-6 py-4 font-medium">KYC Status</th>}

@@ -90,7 +90,7 @@ export function GlobalSecurity() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Ban List */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden flex flex-col h-[500px]">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden flex flex-col h-[500px]">
           <div className="p-4 border-b border-white/10 flex items-center gap-2 bg-black/20">
             <ShieldX className="text-red-400" size={18} />
             <h2 className="font-semibold text-white">Active IP Bans</h2>
@@ -122,7 +122,7 @@ export function GlobalSecurity() {
         </div>
 
         {/* Audit Logs */}
-        <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden flex flex-col h-[500px]">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden flex flex-col h-[500px]">
           <div className="p-4 border-b border-white/10 flex items-center gap-2 bg-black/20">
             <Clock className="text-indigo-400" size={18} />
             <h2 className="font-semibold text-white">Live Security Stream</h2>
@@ -162,7 +162,7 @@ export function GlobalSecurity() {
 
       {showBanModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0f0f15] border border-red-500/30 p-6 rounded-2xl w-full max-w-md shadow-2xl shadow-red-500/10">
+          <div className="bg-[var(--bg-elevated)] border border-red-500/30 p-6 rounded-2xl w-full max-w-md shadow-2xl shadow-red-500/10">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-red-500 flex items-center gap-2">
                 <ShieldBan size={20} /> Ban IP Address

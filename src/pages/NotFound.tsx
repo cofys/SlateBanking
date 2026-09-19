@@ -3,19 +3,29 @@ import { Link } from "react-router-dom";
 
 export function NotFound() {
   return (
-    <div className="min-h-screen bg-[#0a0a0c] flex flex-col items-center justify-center p-6 text-white text-center animate-in fade-in duration-500">
-      <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mb-6 text-red-400 shadow-xl">
-        <AlertCircle size={32} />
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center page-enter">
+      <div
+        className="w-16 h-16 border rounded-2xl flex items-center justify-center mb-6"
+        style={{
+          background: "color-mix(in oklab, var(--danger) 12%, transparent)",
+          borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
+          color: "var(--danger)",
+        }}
+      >
+        <AlertCircle size={28} />
       </div>
-      <h1 className="text-4xl font-extrabold tracking-tight mb-2">404 - Page Not Found</h1>
-      <p className="text-sm max-w-md text-white/60 mb-8">
-        The route or financial portal resource you are looking for does not exist or has been moved.
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style={{ color: "var(--fg-subtle)" }}>
+        404
+      </p>
+      <h1 className="text-3xl font-semibold tracking-tight mb-2">Page not found</h1>
+      <p className="text-sm max-w-md mb-8" style={{ color: "var(--fg-muted)" }}>
+        That route does not exist, or the portal resource has moved.
       </p>
       <Link
         to="/"
-        className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors shadow-lg shadow-indigo-600/20"
+        className="btn-accent inline-flex items-center gap-2 min-h-11 px-5 py-2.5 text-sm"
       >
-        <ArrowLeft size={16} /> Return to Dashboard
+        <ArrowLeft size={16} /> Return home
       </Link>
     </div>
   );

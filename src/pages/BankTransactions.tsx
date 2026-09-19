@@ -69,7 +69,7 @@ export function BankTransactions() {
               placeholder="Search descriptions, IDs..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-[#1a1a24] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors w-full sm:w-56 lg:w-64"
+              className="bg-[var(--bg-subtle)] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors w-full sm:w-56 lg:w-64"
             />
           </div>
           <button
@@ -122,7 +122,7 @@ export function BankTransactions() {
       </div>
 
       {showAdd && (
-        <div className="bg-[#0f0f15] border border-white/10 p-6 rounded-xl mb-8">
+        <div className="bg-[var(--bg-elevated)] border border-white/10 p-6 rounded-xl mb-8">
           <h3 className="text-lg font-medium mb-6">Execute Transaction</h3>
           <form onSubmit={handleTx} className="space-y-4">
             
@@ -147,13 +147,13 @@ export function BankTransactions() {
             <div className="flex flex-col md:flex-row gap-4 pt-4">
               <div className="flex-1 w-full">
                 <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Source Account Name</label>
-                <input required name="accountName" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Checking" />
+                <input required name="accountName" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Checking" />
               </div>
               
               {txType === 'transfer' && (
                 <div className="flex-1 w-full">
                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Destination Account Name</label>
-                  <input required name="toAccountName" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Savings" />
+                  <input required name="toAccountName" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Savings" />
                 </div>
               )}
             </div>
@@ -161,11 +161,11 @@ export function BankTransactions() {
             <div className="flex flex-col md:flex-row gap-4">
                <div className="flex-1 w-full">
                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Amount ($)</label>
-                  <input required name="amount" type="number" step="0.01" min="0.01" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="100.00" />
+                  <input required name="amount" type="number" step="0.01" min="0.01" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="100.00" />
                </div>
                <div className="flex-[2] w-full">
                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Memo / Description</label>
-                  <input name="description" type="text" className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="Optional notes" />
+                  <input name="description" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="Optional notes" />
                </div>
             </div>
 
@@ -181,7 +181,7 @@ export function BankTransactions() {
         </div>
       )}
 
-      <div className="bg-[#0f0f15] border border-white/10 rounded-xl overflow-hidden overflow-x-auto">
+      <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden overflow-x-auto">
         {loading ? (
            <div className="p-8 text-center text-white/50">Loading ledger...</div>
         ) : transactions.length === 0 ? (
