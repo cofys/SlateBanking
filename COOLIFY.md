@@ -20,29 +20,8 @@ The `Dockerfile` has been updated to run as root by default to avoid permission 
 
 ### 3. Deploy
 1. Click **Deploy** to rebuild and restart your container.
-2. From now on, any data written to `/app/data/slate_saas.db` will be saved on the server's persistent disk.
+2. From now on, any data written to `/app/data/slate_saas.db` will be saved on your server's persistent disk.
 3. When you deploy future updates, Coolify will re-mount the same volume to the new container, preserving your data!
-
-## If deploy fails with "no space left on device"
-
-The AWS host is full of old Docker images and build cache. Coolify cannot copy the new image until that is cleared.
-
-1. In Coolify, open the **server** (not the app) → **Docker Cleanup** / unused images.
-2. Or SSH to the host and run (do **not** prune volumes — that is the ledger):
-
-```
-docker container prune -f
-docker image prune -af
-docker builder prune -af
-```
-
-Never run `docker volume prune` or `docker system prune --volumes`. The SQLite ledger lives on a volume at `/app/data`.
-
-3. Redeploy the app after cleanup. The production image now only ships the built app plus the SQLite native addon, not the full `node_modules` tree.
-
-## Secrets
-
-Keep `JWT_SECRET`, `DISCORD_CLIENT_SECRET`, `DB_ENCRYPTION_KEY`, and CityCorp tokens as **runtime environment variables**, not build-time ARG. Coolify injecting them as Dockerfile ARG bakes them into image history.
 
 ## Alternative: PostgreSQL / MariaDB
 We strongly recommend sticking with SQLite unless your banking volume scales to thousands of concurrent transactions per second. 

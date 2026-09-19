@@ -1041,14 +1041,5 @@ Global Slate Control stays silver/ink. Tenant `--accent` is set on the staff and
 - Staff rows that store a Minecraft username (not a Discord snowflake) match the CityCorp session username, so commercial-bank desks work without Discord.
 - SQLite files under `data/` are gitignored (`*.db`, WAL/SHM, the `data/` directory). Never commit ledgers.
 
-## Production image (Sep 2026)
-
-Coolify builds from `Dockerfile`. The runner image no longer copies the full `node_modules` tree (that copy is what filled the AWS disk). Production is the Vite frontend + a single bundled `dist/server.cjs`, plus the native `better-sqlite3` addon only. Vite is a dev-only import.
-
-If Coolify reports `no space left on device`, prune unused Docker images and build cache on the **server** — never prune volumes, or the `/app/data` ledger is gone.
-
-Secrets (`JWT_SECRET`, Discord client secret, `DB_ENCRYPTION_KEY`) must be runtime env, not Dockerfile ARG.
-
-
 
 
