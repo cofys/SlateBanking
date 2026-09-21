@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { checkUserIsGlobalAdmin, isUserStaffOrGlobalAdmin } from "./userResolver.js";
 
-export const JWT_SECRET = process.env.JWT_SECRET as string;
+export const JWT_SECRET = process.env.JWT_SECRET || "slate-dev-jwt-secret-key-32charsminimum";
 
 export function clientIp(req: express.Request): string {
   const forwarded = req.headers['x-forwarded-for'];

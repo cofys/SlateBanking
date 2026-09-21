@@ -673,6 +673,13 @@ export class CityCorpClient {
     });
   }
 
+  async removeSubuser(accountName: string, subuserUuid: string) {
+    return await this.request("DELETE", "/accounts/subusers", {
+      account_name: accountName,
+      subuser_uuid: subuserUuid
+    });
+  }
+
   async listSubusers(accountName: string, page: number = 1, includeCorpOwner: boolean = false) {
     const url = new URL(`${this.baseUrl}/accounts/subusers/list`);
     url.searchParams.append("corp_id", this.corpId.toString());

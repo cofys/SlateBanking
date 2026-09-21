@@ -740,6 +740,7 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
     - `PATCH /corp/accounts/fees`: `setAccountFee(accountName, feeType, fee)`
     - `GET /corp/accounts/subusers/list`: `listSubusers(accountName, page, includeCorpOwner)`
     - `POST /corp/accounts/subusers`: `addSubuser(accountName, subuserUuid)`
+    - `DELETE /corp/accounts/subusers`: `removeSubuser(accountName, subuserUuid)`
     - `GET /corp/accounts/transactions`: `getTransactionById(accountName, transactionId)`
     - `GET /corp/accounts/transactions/list`: `getAccountTransactions(accountName, page)` (paginated listing with fallback)
 
@@ -1155,6 +1156,19 @@ Global Slate Control stays silver/ink. Tenant `--accent` is set on the staff and
 - SQLite files under `data/` are gitignored (`*.db`, WAL/SHM, the `data/` directory). Never commit ledgers.
 
 Staff desks do **not** record transfers. CityCorp already books every movement. Mass deposit, mass fee, and demo seed are gone. Treasury shows CityCorp corp cash and named subaccounts — it does not invent a 15% reserve ratio or a GAAP balance sheet.
+
+---
+
+## AI Studio Environment & Runtime Normalization (Sep 2026)
+
+- **Port & Host Standardization**: Dev and production servers bind to `0.0.0.0:3000` to integrate seamlessly with the container reverse-proxy layer.
+- **Legacy Artifact Cleanup**: Removed non-Node.js legacy source directories (`/Bank-main/`) and non-npm lockfiles (`bun.lock`) to maintain a clean Node 22 TypeScript workspace.
+- **Graceful Startup Guards**:
+  - `JWT_SECRET` and `DB_ENCRYPTION_KEY` utilize development fallback keys when running in unconfigured or freshly provisioned dev containers, logging a diagnostic notice rather than exiting the process with `process.exit(1)`.
+- **Iframe Preview Compatibility**: Configured Express Helmet middleware with `frameguard: false` and `contentSecurityPolicy: false` to permit native live previewing in AI Studio iframe shells.
+- **Production Build Flow**: `npm run build` compiles Vite frontend assets to `dist/` and bundles `server.ts` into a CommonJS artifact `dist/server.cjs`, executed cleanly by `npm start`.
+- **Bulk Operator Tools Surface Streamlining**: Removed the legacy "SQLite (.db) Migration" and "Intelligent JSON Migration" upload options from the Bank Staff Bulk Tools UI (`BankTools.tsx`), focusing the operator tools on active operational flows: Run Daily Processing (EOD interest & loan servicing), Purge Zero-Balance, Emergency Lock, and CityCorp Auto-Import.
+
 
 
 

@@ -1,14 +1,12 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Wrench, Upload, Play, AlertTriangle, Loader2, Sparkles } from "lucide-react";
+import { Wrench, Upload, Play, AlertTriangle, Loader2 } from "lucide-react";
 
 export function BankTools() {
   const { bank } = useOutletContext<{ bank: any }>();
   const [activeTool, setActiveTool] = useState<string>("daily-processing");
   const [running, setRunning] = useState(false);
   const [complete, setComplete] = useState(false);
-  const [sqliteStats, setSqliteStats] = useState<any>(null);
-  const [sqlScriptText, setSqlScriptText] = useState<string>("");
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
@@ -25,8 +23,6 @@ export function BankTools() {
             { id: "purge-zero", name: "Purge Zero-Balance" },
             { id: "freeze-all", name: "Emergency Lock" },
             { id: "auto-import", name: "Auto-Import Accounts" },
-            { id: "sqlite-migration", name: "SQLite (.db) Migration" },
-            { id: "data-migration", name: "Intelligent JSON Migration" },
           ].map(tool => (
             <button
               key={tool.id}
@@ -192,189 +188,6 @@ export function BankTools() {
                 {running ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} fill="currentColor" />}
                 {running ? "Processing..." : "Run EOD Processes"}
               </button>
-            </div>
-          )}
-
-
-          {activeTool === "sqlite-migration" && (
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Upload size={20} /></div>
-                <div>
-                  <h3 className="text-xl font-bold">SQLite (.db) Direct Database Migration</h3>
-                  <p className="text-xs text-emerald-400 font-mono mt-0.5">Supports .db, .sqlite, and .sqlite3 binary database files</p>
-                </div>
-              </div>
-              <p className="text-white/60 text-sm mb-6 max-w-xl leading-relaxed">
-                Migrating from an older bot or legacy SQLite database? Upload your raw <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">.db</code> file.
-                Our ingestion engine validates the SQLite file format and safely extracts allowlisted tables including <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">accounts</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loan_products</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loans</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loan_applications</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">transactions</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">invoices</code>, and <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">payroll_entries</code>.
-              </p>
-
-              <form onSubmit={async (e) => {
-                 e.preventDefault();
-                 setRunning(true);
-                 setComplete(false);
-                 setSqliteStats(null);
-
-                 try {
-                     const fileInput = document.getElementById("sqlite-file-input") as HTMLInputElement;
-                     const file = fileInput?.files?.[0];
-
-                     if (!file) {
-                       alert("Please select a binary .db, .sqlite, or .sqlite3 file to upload.");
-                       setRunning(false);
-                       return;
-                     }
-
-                     if (file.name.endsWith(".sql")) {
-                       alert("Raw .sql script execution is disabled for multi-tenant safety. Please upload a binary SQLite .db file.");
-                       setRunning(false);
-                       return;
-                     }
-
-                     // Read binary .db file into base64
-                     const arrayBuffer = await file.arrayBuffer();
-                     const bytes = new Uint8Array(arrayBuffer);
-                     let binary = "";
-                     for (let i = 0; i < bytes.byteLength; i++) {
-                       binary += String.fromCharCode(bytes[i]);
-                     }
-                     const payload = { dbBase64: btoa(binary) };
-
-                     const res = await fetch(`/api/banks/${bank.id}/tools/sqlite-migration`, {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify(payload)
-                     });
-
-                     const data = await res.json();
-                     if (!res.ok) {
-                       alert(data.error || "SQLite migration failed");
-                     } else {
-                       setComplete(true);
-                       setSqliteStats(data);
-                     }
-                 } catch (err: any) {
-                     alert("Error reading file or network failure: " + err.message);
-                 } finally {
-                     setRunning(false);
-                 }
-              }} className="max-w-xl space-y-6">
-                
-                <div>
-                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Upload SQLite Database File (.db / .sqlite / .sqlite3)</label>
-                   <input id="sqlite-file-input" type="file" accept=".db,.sqlite,.sqlite3" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-400 hover:file:bg-emerald-500/30" />
-                   <p className="text-xs text-white/40 mt-1.5">Direct binary upload of your legacy SQLite database. Parsed safely read-only on the server.</p>
-                </div>
-
-                {complete && sqliteStats && (
-                  <div className="p-5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs space-y-3">
-                    <p className="font-bold text-emerald-400 text-sm flex items-center gap-1.5">
-                      <Sparkles size={16} /> Migration Complete! Database successfully imported.
-                    </p>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 pt-1">
-                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
-                         <span className="text-white/50 block text-[10px] uppercase">Bank Accounts</span>
-                         <span className="text-lg font-bold text-white">{sqliteStats.accountsImported || 0}</span>
-                       </div>
-                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
-                         <span className="text-white/50 block text-[10px] uppercase">Customers</span>
-                         <span className="text-lg font-bold text-white">{sqliteStats.customersImported || 0}</span>
-                       </div>
-                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
-                         <span className="text-white/50 block text-[10px] uppercase">Transactions</span>
-                         <span className="text-lg font-bold text-white">{sqliteStats.transactionsImported || 0}</span>
-                       </div>
-                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
-                         <span className="text-white/50 block text-[10px] uppercase">Active Loans</span>
-                         <span className="text-lg font-bold text-white">{sqliteStats.loansImported || 0}</span>
-                       </div>
-                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
-                         <span className="text-white/50 block text-[10px] uppercase">Invoices</span>
-                         <span className="text-lg font-bold text-white">{sqliteStats.invoicesImported || 0}</span>
-                       </div>
-                       <div className="bg-black/30 p-2.5 rounded border border-emerald-500/20">
-                         <span className="text-white/50 block text-[10px] uppercase">Payrolls</span>
-                         <span className="text-lg font-bold text-white">{sqliteStats.payrollsImported || 0}</span>
-                       </div>
-                    </div>
-                    {sqliteStats.tablesFound && sqliteStats.tablesFound.length > 0 && (
-                      <p className="text-[11px] text-white/50 pt-1">
-                        Tables detected &amp; parsed in .db file: <span className="font-mono text-emerald-400">{sqliteStats.tablesFound.join(", ")}</span>
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <button disabled={running} type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
-                  {running ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} />}
-                  {running ? "Ingesting & Migrating SQLite Data..." : "Execute SQLite Migration"}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {activeTool === "data-migration" && (
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-fuchsia-500/20 text-fuchsia-400 rounded-lg"><Upload size={20} /></div>
-                <h3 className="text-xl font-bold">Intelligent Data Migration</h3>
-              </div>
-              <p className="text-white/60 text-sm mb-6 max-w-lg">
-                Upload unstructured or loosely-structured JSON historical data (accounts, customers, transactions, fees, taxes). The system will intelligently parse it, provision accounts, set historical balances, and backfill the audit log and transaction ledgers so that banks migrating to our platform see value instantly.
-              </p>
-              
-              <form onSubmit={async (e) => {
-                 e.preventDefault();
-                 setRunning(true);
-                 setComplete(false);
-                 
-                 try {
-                     const fileInput = document.getElementById("migration-file") as HTMLInputElement;
-                     if (!fileInput.files?.length) {
-                       alert("Please select a JSON file.");
-                       setRunning(false);
-                       return;
-                     }
-                     
-                     const file = fileInput.files[0];
-                     const text = await file.text();
-                     
-                     const res = await fetch(`/api/banks/${bank.id}/tools/data-migration`, {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({ rawData: JSON.parse(text) })
-                     });
-                     
-                     const d = await res.json();
-                     if (!res.ok) alert(d.error || 'Migration failed');
-                     else {
-                         setComplete(true);
-                         alert(`Migration successful! Created ${d.accountsImported || 0} accounts and ${d.transactionsImported || 0} transactions.`);
-                     }
-                 } catch (err) {
-                     alert("Invalid JSON format or network error.");
-                 } finally {
-                     setRunning(false);
-                 }
-              }} className="max-w-md space-y-6">
-                <div>
-                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Select Data File (.json)</label>
-                   <input required id="migration-file" type="file" accept=".json" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-fuchsia-500" />
-                   <p className="text-xs text-white/40 mt-2">The AI parser will look for fields like `discordId`, `accountName`, `balance`, `transactions`, `amount`, `type`, `date`.</p>
-                </div>
-
-                {complete && !running && (
-                  <div className="p-4 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-sm">
-                    Intelligence Migration process completed successfully. Check your analytics.
-                  </div>
-                )}
-                
-                <button disabled={running} type="submit" className="w-full bg-fuchsia-600 hover:bg-fuchsia-500 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
-                  {running ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} />}
-                  {running ? "Analyzing & Importing Data..." : "Run Intelligent Import"}
-                </button>
-              </form>
             </div>
           )}
         </div>

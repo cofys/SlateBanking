@@ -5,7 +5,8 @@ import path from "path";
 
 export default defineConfig({
   server: {
-    allowedHosts: true
+    allowedHosts: true,
+    hmr: false,
   },
   plugins: [react(), tailwindcss()],
   resolve: {

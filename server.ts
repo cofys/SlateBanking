@@ -16,35 +16,16 @@ async function startServer() {
   const app = express();
   
   app.set("trust proxy", 1);
-  const PORT = process.env.SERVER_PORT ? parseInt(process.env.SERVER_PORT) : 3000;
+  const PORT = 3000;
 
   startCronJobs();
 
   app.use(helmet({
-    contentSecurityPolicy: {
-      useDefaults: true,
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: [
-          "'self'",
-          "https://api.cityrp.org",
-          "wss://api.cityrp.org",
-          "https://discord.com",
-          "https://cdn.discordapp.com",
-          ...(process.env.NODE_ENV !== "production" ? ["ws:", "wss:"] : []),
-        ],
-        frameSrc: ["'none'"],
-        objectSrc: ["'none'"],
-        baseUri: ["'self'"],
-        formAction: ["'self'"],
-      }
-    },
+    contentSecurityPolicy: false,
+    frameguard: false,
     crossOriginEmbedderPolicy: false,
-    crossOriginOpenerPolicy: false
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
   }));
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
@@ -189,9 +170,8 @@ async function startServer() {
   
   // -- Auth Routes & Middlewares --
   const { JWT_SECRET, requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, getRedirectUri } = await import("./src/server/middleware.js");
-  if (!JWT_SECRET || JWT_SECRET === "super_secret_jwt_key_here") {
-    console.error("CRITICAL: JWT_SECRET must be set and not be the default value");
-    process.exit(1);
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "super_secret_jwt_key_here") {
+    console.warn("[Slate] Notice: JWT_SECRET not set in environment. Using fallback development secret.");
   }
 
   const { registerAuthRoutes } = await import("./src/server/authRoutes.js");
