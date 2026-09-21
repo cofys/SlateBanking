@@ -1041,5 +1041,8 @@ Global Slate Control stays silver/ink. Tenant `--accent` is set on the staff and
 - Staff rows that store a Minecraft username (not a Discord snowflake) match the CityCorp session username, so commercial-bank desks work without Discord.
 - SQLite files under `data/` are gitignored (`*.db`, WAL/SHM, the `data/` directory). Never commit ledgers.
 
+Staff desks do **not** record transfers. CityCorp already books every movement. Mass deposit, mass fee, and demo seed are gone. Treasury shows CityCorp corp cash and named subaccounts — it does not invent a 15% reserve ratio or a GAAP balance sheet.
+
+
 
 

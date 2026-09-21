@@ -113,17 +113,18 @@ export function BankTransactions() {
             Sync CityCorp
           </button>
           <button 
-            onClick={() => setShowAdd(true)}
+            onClick={() => { setTxType('deposit'); setShowAdd(true); }}
             className="flex-1 sm:flex-none justify-center bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
           >
-            <Plus size={16} /> New Transaction
+            <Plus size={16} /> Teller cash
           </button>
         </div>
       </div>
 
       {showAdd && (
         <div className="bg-[var(--bg-elevated)] border border-white/10 p-6 rounded-xl mb-8">
-          <h3 className="text-lg font-medium mb-6">Execute Transaction</h3>
+          <h3 className="text-lg font-medium mb-6">Teller cash window</h3>
+          <p className="text-xs text-white/50 mb-4">Deposit and withdraw hit CityCorp (owner wallet ↔ named account). Transfers are not entered here — they already post in-game.</p>
           <form onSubmit={handleTx} className="space-y-4">
             
             <div className="flex flex-col md:flex-row gap-4">
@@ -137,25 +138,13 @@ export function BankTransactions() {
                  <div className="font-semibold text-red-400">Withdraw</div>
                  <div className="text-xs mt-1 text-white/50">To owner's in-game wallet</div>
               </label>
-              <label className={`flex-1 p-4 rounded-xl border cursor-pointer transition-colors ${txType === 'transfer' ? 'bg-emerald-500/10 border-emerald-500' : 'bg-transparent border-white/10 opacity-60 hover:bg-white/5'}`}>
-                 <input type="radio" name="type" className="hidden" checked={txType === 'transfer'} onChange={() => setTxType('transfer')} />
-                 <div className="font-semibold text-emerald-400">Transfer</div>
-                 <div className="text-xs mt-1 text-white/50">Book transfer (same bank)</div>
-              </label>
             </div>
 
             <div className="flex flex-col md:flex-row gap-4 pt-4">
               <div className="flex-1 w-full">
-                <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Source Account Name</label>
+                <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Account name</label>
                 <input required name="accountName" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Checking" />
               </div>
-              
-              {txType === 'transfer' && (
-                <div className="flex-1 w-full">
-                  <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Destination Account Name</label>
-                  <input required name="toAccountName" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Savings" />
-                </div>
-              )}
             </div>
             
             <div className="flex flex-col md:flex-row gap-4">

@@ -4,7 +4,7 @@ import { Wrench, Upload, Play, AlertTriangle, Loader2, Sparkles } from "lucide-r
 
 export function BankTools() {
   const { bank } = useOutletContext<{ bank: any }>();
-  const [activeTool, setActiveTool] = useState<string>("mass-deposit");
+  const [activeTool, setActiveTool] = useState<string>("daily-processing");
   const [running, setRunning] = useState(false);
   const [complete, setComplete] = useState(false);
   const [sqliteStats, setSqliteStats] = useState<any>(null);
@@ -21,16 +21,12 @@ export function BankTools() {
         {/* Tools Menu */}
         <div className="w-64 space-y-2">
           {[
-            { id: "mass-deposit", name: "Mass Deposit / Stimulus" },
-            { id: "mass-charge", name: "Mass Fee / Charge" },
             { id: "daily-processing", name: "Run Daily Processing" },
-            { id: "wire-transfer", name: "Manual Wire Transfer" },
             { id: "purge-zero", name: "Purge Zero-Balance" },
             { id: "freeze-all", name: "Emergency Lock" },
             { id: "auto-import", name: "Auto-Import Accounts" },
             { id: "sqlite-migration", name: "SQLite (.db) Migration" },
             { id: "data-migration", name: "Intelligent JSON Migration" },
-            { id: "seed-demo", name: "Populate Demo Data" },
           ].map(tool => (
             <button
               key={tool.id}
@@ -48,21 +44,6 @@ export function BankTools() {
 
         {/* Tool Content */}
         <div className="flex-1 bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-8">
-          {activeTool === "mass-deposit" && (
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg"><Upload size={20} /></div>
-                <h3 className="text-xl font-bold">Mass Deposit / Stimulus Check</h3>
-              </div>
-              <p className="text-white/60 text-sm mb-6 max-w-lg">
-                Mass deposit/credit is disabled. Balance changes must go through CityCorp (teller cash window or book transfer).
-              </p>
-              <button disabled type="button" className="w-full max-w-md bg-indigo-600/40 text-white/70 py-3 rounded-lg font-medium cursor-not-allowed">
-                Disabled
-              </button>
-            </div>
-          )}
-
           {activeTool === "freeze-all" && (
             <div>
               <div className="flex items-center gap-3 mb-6">
@@ -134,21 +115,6 @@ export function BankTools() {
               >
                 {running ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} fill="currentColor" />}
                 {running ? "Importing..." : "Start Import"}
-              </button>
-            </div>
-          )}
-
-          {activeTool === "mass-charge" && (
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-red-500/20 text-red-400 rounded-lg"><Wrench size={20} /></div>
-                <h3 className="text-xl font-bold text-red-500">Mass Fee / Charge</h3>
-              </div>
-              <p className="text-white/60 text-sm mb-6 max-w-lg">
-                Mass fee/charge is disabled. Balance changes must go through CityCorp (teller cash window or book transfer).
-              </p>
-              <button disabled type="button" className="w-full max-w-md bg-red-600/40 text-white/70 py-3 rounded-lg font-medium cursor-not-allowed">
-                Disabled
               </button>
             </div>
           )}
@@ -229,75 +195,7 @@ export function BankTools() {
             </div>
           )}
 
-          {activeTool === "wire-transfer" && (
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-blue-500/20 text-blue-400 rounded-lg"><Upload size={20} /></div>
-                <h3 className="text-xl font-bold">Manual Wire Transfer</h3>
-              </div>
-              <p className="text-white/60 text-sm mb-6 max-w-lg">
-                Execute a priority wire transfer directly between user accounts using their Discord IDs.
-              </p>
-              
-              <form onSubmit={async (e) => {
-                 e.preventDefault();
-                 setRunning(true);
-                 setComplete(false);
-                 const form = e.target as HTMLFormElement;
-                 
-                 // Use the standard transaction route for wire transfers
-                 try {
-                     const res = await fetch(`/api/banks/${bank.id}/transactions`, {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({
-                         type: 'transfer',
-                         accountName: form.fromAccountName.value,
-                         toAccountName: form.toAccountName.value,
-                         amount: form.amount.value,
-                         description: form.description.value
-                       })
-                     });
-                     
-                     const d = await res.json();
-                     if (!res.ok) alert(d.error || 'Transfer failed');
-                     else setComplete(true);
-                 } finally {
-                     setRunning(false);
-                 }
-              }} className="max-w-md space-y-6">
-                <div>
-                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Sender Account Name</label>
-                   <input required name="fromAccountName" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Source Account Name" />
-                </div>
-                <div>
-                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Recipient Account Name</label>
-                   <input required name="toAccountName" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Destination Account Name" />
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex-[1]">
-                     <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Amount ($)</label>
-                     <input required name="amount" min="1" type="number" step="0.01" defaultValue="100.00" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
-                  </div>
-                  <div className="flex-[2]">
-                     <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Memo</label>
-                     <input required name="description" type="text" defaultValue="Wire Transfer" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
-                  </div>
-                </div>
 
-                {complete && !running && (
-                  <div className="p-4 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-sm">
-                    Wire transfer completed successfully.
-                  </div>
-                )}
-                
-                <button disabled={running} type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
-                  {running ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} fill="currentColor" />}
-                  {running ? "Processing..." : "Execute Wire"}
-                </button>
-              </form>
-            </div>
-          )}
           {activeTool === "sqlite-migration" && (
             <div>
               <div className="flex items-center gap-3 mb-6">
@@ -494,58 +392,6 @@ export function BankTools() {
                   {running ? "Analyzing & Importing Data..." : "Run Intelligent Import"}
                 </button>
               </form>
-            </div>
-          )}
-
-          {activeTool === "seed-demo" && (
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg"><Sparkles size={20} /></div>
-                <h3 className="text-xl font-bold">Populate Demo Data</h3>
-              </div>
-              <p className="text-white/60 text-sm mb-6 max-w-lg leading-relaxed">
-                Fills your bank with realistic mock roleplay data to demonstrate features to prospective customers or bankers. 
-                This will automatically create <strong>5 verified customers</strong>, <strong>9 diversified bank accounts</strong> (checking, savings, and payroll), <strong>10 historical ledger transactions</strong>, active loans, locked savings vaults, cards, payrolls, and support tickets.
-              </p>
-              
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6 max-w-md text-amber-200 text-xs space-y-2">
-                <p className="font-semibold flex items-center gap-1.5"><AlertTriangle size={14} /> Attention / Safety Warning</p>
-                <p>Executing this function will completely reset this specific bank instance by clearing existing custom accounts, ledger transactions, and customer relationships, establishing a pristine and fully-populated slate instead.</p>
-              </div>
-
-              {complete && !running && (
-                <div className="p-4 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-sm mb-6 max-w-md font-medium">
-                  ✨ Demo data successfully populated! Check your dashboard, accounts, transactions, and tools.
-                </div>
-              )}
-
-              <button 
-                disabled={running} 
-                onClick={() => {
-                   if (confirm("Are you sure you want to seed this bank with demo data? This will clear any existing data on this specific bank.")) {
-                     setRunning(true);
-                     setComplete(false);
-                     fetch(`/api/banks/${bank.id}/tools/seed-demo`, { method: "POST" })
-                       .then(r => {
-                          if (!r.ok) throw new Error("Seeding failed");
-                          return r.json();
-                       })
-                       .then(d => {
-                          setRunning(false);
-                          setComplete(true);
-                          alert("Demo data successfully populated!");
-                       })
-                       .catch(err => {
-                          setRunning(false);
-                          alert(err.message);
-                       });
-                   }
-                }}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 max-w-xs"
-              >
-                {running ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-                {running ? "Seeding Slate..." : "Populate Demo Environment"}
-              </button>
             </div>
           )}
         </div>

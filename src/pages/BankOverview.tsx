@@ -143,8 +143,8 @@ export function BankOverview() {
                   <ArrowUpRight size={16} />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">Record transfer</p>
-                  <p className="text-[11px]" style={{ color: "var(--fg-subtle)" }}>Manual ledger entry</p>
+                  <p className="text-sm font-semibold">View ledger</p>
+                  <p className="text-[11px]" style={{ color: "var(--fg-subtle)" }}>CityCorp-synced history</p>
                 </div>
               </Link>
               <Link to={`/bank/${bank.id}/loans`} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors group min-h-11">

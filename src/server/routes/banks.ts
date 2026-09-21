@@ -3056,196 +3056,97 @@ banksRouter.post("/api/banks/:bankId/payroll/:jobId/run", requireBankStaff, asyn
 
 banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { bankAccounts, vaultDeposits, loans, transactions, payrollJobs, banks, bankSettings } = await import("../../db/schema");
-    const { eq, sum, and, desc, sql, or, ne, like } = await import("drizzle-orm");
-    const { calculateTreasuryFees, FEE_TYPE_LABELS } = await import("../feeService");
+    const { bankAccounts, loans, transactions, banks, bankSettings } = await import("../../db/schema");
+    const { eq, sum, and, desc, ne } = await import("drizzle-orm");
 
     try {
       const bId = req.params.bankId;
       const bank = await db.select().from(banks).where(eq(banks.id, bId)).get();
+      const settingsRow = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId)).get();
 
-      // Ensure bank default corporate account exists & is resolved
-      let nativeCorpBalance = 0;
-      let corpAccountId = "native_corp";
-      let corpAccountName = "Native Corp Balance";
-      
-      // Calculate local native corp balance from fees (fallback)
-      const nativeFees = await db.select({ total: sum(transactions.amount) }).from(transactions).where(and(eq(transactions.bankId, bId), eq(transactions.type, "fee"), sql`${transactions.toAccountId} IS NULL`)).get();
-      nativeCorpBalance = Number(nativeFees?.total || 0);
+      const resolveNamed = async (name?: string | null) => {
+        const trimmed = (name || "").trim();
+        if (!trimmed) return null;
+        const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bId), eq(bankAccounts.accountName, trimmed))).get();
+        return {
+          name: trimmed,
+          balance: acc?.balance ?? null,
+          missing: !acc,
+        };
+      };
 
-      // If CityCorp is configured, fetch the actual top-level corp balance
+      let corpCash = { name: "CityCorp corp cash", balance: null as number | null, connected: false };
       if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
-         try {
-            const { CityCorpClient } = await import("../../lib/citycorp_api");
-            const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
-            const corpData = await client.getCorpData();
-            if (corpData && corpData.balance !== undefined) {
-               nativeCorpBalance = Math.round(corpData.balance * 100);
-               corpAccountName = corpData.name || "CityCorp Master Balance";
-               corpAccountId = "citycorp_master";
-            }
-         } catch(e) {
-            console.error("Failed to fetch CityCorp master balance", e);
-         }
-      } else {
-         const settingsRow = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId)).get();
-         const operating = settingsRow?.defaultCorpAccount?.trim();
-         if (operating) {
-            const linkedCorpAcc = await db.select().from(bankAccounts).where(
-               and(
-                  eq(bankAccounts.bankId, bId),
-                  or(eq(bankAccounts.id, operating), eq(bankAccounts.accountName, operating))
-               )
-            ).get();
-            if (linkedCorpAcc) {
-               nativeCorpBalance = linkedCorpAcc.balance;
-               corpAccountName = linkedCorpAcc.accountName;
-               corpAccountId = linkedCorpAcc.id;
-            }
-         }
+        try {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          const corpData = await client.getCorpData();
+          if (corpData && corpData.balance !== undefined) {
+            corpCash = {
+              name: corpData.name || "CityCorp corp cash",
+              balance: Math.round(Number(corpData.balance) * 100),
+              connected: true,
+            };
+          }
+        } catch (e) {
+          console.error("Failed to fetch CityCorp corp cash", e);
+        }
       }
 
-      // 1. Reserves & Bank System Assets
-      const systemAccounts = await db.select().from(bankAccounts).where(
-        and(
-          eq(bankAccounts.bankId, bId),
-          or(eq(bankAccounts.isSystem, true), eq(bankAccounts.ownerDiscordId, "SYSTEM"))
-        )
+      const operating = await resolveNamed(settingsRow?.defaultCorpAccount);
+      const loanPool = await resolveNamed(settingsRow?.loanPoolAccount);
+      const feeAccount = await resolveNamed(settingsRow?.feeCollectionAccount);
+      const interestPool = await resolveNamed(settingsRow?.interestPoolAccount);
+      const settlement = await resolveNamed(settingsRow?.settlementAccount);
+
+      const poolNames = new Set(
+        [operating, loanPool, feeAccount, interestPool, settlement]
+          .filter(Boolean)
+          .map((p: any) => String(p.name).toLowerCase())
       );
 
-      const vaultCash = systemAccounts.find(a => a.systemCategory === "vault_cash")?.balance || 0;
-      const corpAccountReserves = nativeCorpBalance;
-      const interestRevenueReserves = systemAccounts.find(a => a.systemCategory === "interest_revenue")?.balance || 0;
-      const otherReserves = systemAccounts
-        .filter(a => true && a.systemCategory !== "vault_cash" && a.systemCategory !== "interest_revenue")
-        .reduce((sum, a) => sum + (a.balance || 0), 0);
+      const customerAccounts = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.bankId, bId), eq(bankAccounts.isSystem, false), ne(bankAccounts.ownerDiscordId, "SYSTEM"))
+      );
+      const clientDeposits = customerAccounts
+        .filter((a) => !poolNames.has((a.accountName || "").toLowerCase()))
+        .reduce((s, a) => s + (a.balance || 0), 0);
 
-      const cashReserves = vaultCash + corpAccountReserves + interestRevenueReserves + otherReserves;
-
-      // 2. Customer Liabilities (Non-system accounts + Locked savings vaults)
-      const custSum = await db.select({ total: sum(bankAccounts.balance) })
-        .from(bankAccounts)
-        .where(
-          and(
-            eq(bankAccounts.bankId, bId),
-            eq(bankAccounts.isSystem, false),
-            ne(bankAccounts.ownerDiscordId, "SYSTEM")
-          )
-        ).get();
-      const customerDeposits = Number(custSum?.total || 0);
-
-      const vaultSum = await db.select({ total: sum(vaultDeposits.amount) })
-        .from(vaultDeposits).where(eq(vaultDeposits.bankId, bId)).get();
-      const totalVaultBalances = Number(vaultSum?.total || 0);
-
-      const totalLiabilities = customerDeposits + totalVaultBalances;
-
-      // 3. Loan Book (Outstanding Principal on Active Loans)
       const loanSum = await db.select({ total: sum(loans.remainingAmount) })
         .from(loans).where(and(eq(loans.bankId, bId), eq(loans.status, "active"))).get();
-      const totalLoans = Number(loanSum?.total || 0);
+      const outstandingLoans = Number(loanSum?.total || 0);
 
-      // Total Assets = Cash Reserves + Active Loans
-      const totalAssets = cashReserves + totalLoans;
-      const equity = totalAssets - totalLiabilities;
-      const reserveRatio = totalLiabilities > 0 ? (cashReserves / totalLiabilities) : 1;
-
-      // 4. Accurate Corporate Fee Revenue & Breakdown from In-Game Corp Transactions
-      const { totalFeesCollected, totalFeeCount, feeBreakdown, recentTransactions } = await calculateTreasuryFees(db, bId);
-
-      // 5. Interest Earned
-      const interestSum = await db.select({ total: sum(transactions.amount) })
-        .from(transactions).where(
-          and(
-            eq(transactions.bankId, bId),
-            or(
-              eq(transactions.type, "interest_payment"),
-              like(transactions.category, "%Interest%"),
-              like(transactions.description, "%Interest%")
-            )
-          )
-        ).get();
-      const totalInterestCollected = Number(interestSum?.total || 0);
-
-      // 6. Operating Expenses
-      const payrollSum = await db.select({ total: sum(payrollJobs.amount) })
-        .from(payrollJobs)
-        .where(and(eq(payrollJobs.bankId, bId), eq(payrollJobs.isActive, true)))
-        .get();
-      const estimatedExpenses = Number(payrollSum?.total || 0);
-
-      // Operational P&L
-      const grossRevenue = totalFeesCollected + totalInterestCollected;
-      const netIncome = grossRevenue - estimatedExpenses;
-
-      // 7. Daily Flow Volume over 7 days
-      const recentTxs = await db.select()
+      const recentLedger = await db.select()
         .from(transactions)
         .where(eq(transactions.bankId, bId))
         .orderBy(desc(transactions.timestamp))
-        .limit(150);
+        .limit(40);
 
       const dailyVolume = Array.from({ length: 7 }).map((_, i) => {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        d.setHours(0,0,0,0);
-        return {
-          date: d.toISOString().split('T')[0],
-          inflow: 0,
-          outflow: 0,
-        };
+        d.setHours(0, 0, 0, 0);
+        return { date: d.toISOString().split("T")[0], inflow: 0, outflow: 0 };
       }).reverse();
 
-      for (const tx of recentTxs) {
-        const dStr = new Date(tx.timestamp).toISOString().split('T')[0];
-        const day = dailyVolume.find(dv => dv.date === dStr);
-        if (day) {
-          if (tx.type === 'deposit' || tx.type === 'fee' || tx.type === 'interest_payment' || tx.type === 'loan_payment') {
-            day.inflow += tx.amount;
-          }
-          if (tx.type === 'withdraw' || tx.type === 'transfer') {
-            day.outflow += tx.amount;
-          }
-        }
+      for (const tx of recentLedger) {
+        const dStr = new Date(tx.timestamp).toISOString().split("T")[0];
+        const day = dailyVolume.find((dv) => dv.date === dStr);
+        if (!day) continue;
+        if (tx.type === "deposit") day.inflow += tx.amount;
+        if (tx.type === "withdraw") day.outflow += tx.amount;
       }
 
       res.json({
-        bankCorpAccount: {
-          id: corpAccountId,
-          name: corpAccountName,
-          balance: nativeCorpBalance,
-          category: "corporate",
-          existsInGame: true,
-          lastSyncedAt: new Date()
-        },
-        // Balance sheet
-        totalAssets,
-        totalLiabilities,
-        equity,
-        cashReserves,
-        vaultCash,
-        feeRevenueReserves: corpAccountReserves,
-        interestRevenueReserves,
-        otherReserves,
-        totalLoans,
-        customerDeposits,
-        vaultDeposits: totalVaultBalances,
-        totalDeposits: totalLiabilities,
-        reserveRatio,
-        targetReserveRatio: 0.15,
-
-        // P&L
-        grossRevenue,
-        estimatedRevenue: grossRevenue,
-        totalFeesCollected,
-        totalFeeCount,
-        totalInterestCollected,
-        totalExpenses: estimatedExpenses,
-        netIncome,
-        feeBreakdown,
-        recentTransactions,
-
-        // Flow
+        corpCash,
+        operating,
+        loanPool,
+        feeAccount,
+        interestPool,
+        settlement,
+        clientDeposits,
+        outstandingLoans,
+        recentLedger,
         dailyVolume,
       });
     } catch (e: any) {
@@ -3253,7 +3154,6 @@ banksRouter.get("/api/banks/:bankId/treasury", requireBankStaff, async (req: exp
       res.status(500).json({ error: (e as any).message });
     }
   });
-
 banksRouter.post("/api/banks/:bankId/treasury/sync-corp-transactions", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { syncInGameCorpTransactions } = await import("../feeService");
@@ -4382,53 +4282,22 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
       if (bankResult.length === 0) return res.status(404).json({ error: "Bank not found" });
       const bank = bankResult[0];
 
-      const { type, accountName, amount, description, toAccountName } = req.body;
+      const { type, accountName, amount, description } = req.body;
       const parsedAmount = Math.round(parseFloat(amount) * 100);
       if (parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
-
-      // Find the Vault Cash system account for this bank
-      const sysAccountRes = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bank.id), eq(bankAccounts.systemCategory, 'vault_cash'))).limit(1);
-      const vaultCashAccount = sysAccountRes.length > 0 ? sysAccountRes[0] : null;
+      if (type === "transfer") {
+        return res.status(410).json({
+          error: "Staff cannot record transfers. CityCorp already books them when money moves. Use Teller only if you must execute a new same-bank CityCorp transfer.",
+        });
+      }
 
       // Identify source account ID for internal DB
       const accountRes = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bank.id), eq(bankAccounts.accountName, accountName))).limit(1);
       if (accountRes.length === 0) return res.status(404).json({ error: "Source account not found locally" });
       const account = accountRes[0];
 
-      let toAccountRes: any[] = [];
-      if (type === 'transfer' && toAccountName) {
-        toAccountRes = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bank.id), eq(bankAccounts.accountName, toAccountName))).limit(1);
-        if (toAccountRes.length === 0) return res.status(404).json({ error: "Destination account not found locally" });
-      }
-
       const { auditLogs } = await import("../../db/schema");
       const { refreshAccountCache } = await import("../../lib/citycorp_money");
-
-      if (type === 'transfer') {
-        if (!toAccountName || toAccountRes.length === 0) return res.status(400).json({ error: "Missing destination account" });
-        try {
-          const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
-          const moved = await executeSameBankBookTransfer({
-            sourceAccount: account,
-            destAccount: toAccountRes[0],
-            desiredCents: parsedAmount,
-            mode: "from_payment",
-            description: description || `Staff transfer to ${toAccountName}`,
-            type: "transfer",
-          });
-          await db.insert(auditLogs).values({
-            id: uuidv4(),
-            bankId: bank.id,
-            userDiscordId: (req as any).user?.discordId || "Operator",
-            action: "manual_transfer",
-            details: `Processed transfer of $${(parsedAmount / 100).toFixed(2)} from ${accountName} to ${toAccountName}`,
-            timestamp: new Date()
-          });
-          return res.json({ success: true, txId: moved.txId, quote: moved.quote });
-        } catch (err: any) {
-          return res.status(400).json({ error: err.message || "Transfer failed" });
-        }
-      }
 
       // Teller cash window: deposit/withdraw hit the bank owner's personal in-game wallet.
       if (!bank.corpId || !bank.corpApiUuid || !bank.corpApiKey) {
@@ -4457,17 +4326,9 @@ banksRouter.post("/api/banks/:bankId/transactions", requireBankStaff, async (req
         });
       }
 
-      // Enforce Double Entry Ledger Rules
-      let finalFromId = null;
-      let finalToId = null;
-
-      if (type === 'deposit') {
-         finalFromId = vaultCashAccount ? vaultCashAccount.id : null;
-         finalToId = account.id;
-      } else if (type === 'withdraw') {
-         finalFromId = account.id;
-         finalToId = vaultCashAccount ? vaultCashAccount.id : null;
-      }
+      // Local ledger mirrors CityCorp cash window. The other side is the owner's wallet, not a fake vault account.
+      const finalFromId = type === "withdraw" ? account.id : null;
+      const finalToId = type === "deposit" ? account.id : null;
 
       const isFlagged = parsedAmount >= 1000000;
 
@@ -5041,280 +4902,7 @@ banksRouter.post("/api/banks/:bankId/tools/sqlite-migration", [requireBankStaff,
   });
 
 banksRouter.post("/api/banks/:bankId/tools/seed-demo", [requireBankStaff, requireRole(["owner", "admin"])], async (req: any, res: any) => {
-    if (process.env.NODE_ENV === "production") {
-      return res.status(410).json({ error: "Demo seed is disabled in production." });
-    }
-    const { db } = await import("../../db/index");
-    const { 
-      bankCustomers, 
-      bankAccounts, 
-      transactions, 
-      loans, 
-      escrows, 
-      vaultDeposits, 
-      cards, 
-      payrollJobs, 
-      subscriptions, 
-      invoices, 
-      supportTickets, 
-      auditLogs 
-    } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
-    const { v4: uuidv4 } = await import("uuid");
-
-    try {
-      const bId = req.params.bankId;
-
-      // 1. Purge all existing data for this bank to make it a perfect reset
-      await db.delete(transactions).where(eq(transactions.bankId, bId));
-      await db.delete(vaultDeposits).where(eq(vaultDeposits.bankId, bId));
-      await db.delete(cards).where(eq(cards.bankId, bId));
-      await db.delete(payrollJobs).where(eq(payrollJobs.bankId, bId));
-      await db.delete(subscriptions).where(eq(subscriptions.bankId, bId));
-      await db.delete(invoices).where(eq(invoices.bankId, bId));
-      await db.delete(loans).where(eq(loans.bankId, bId));
-      await db.delete(escrows).where(eq(escrows.bankId, bId));
-      await db.delete(supportTickets).where(eq(supportTickets.bankId, bId));
-      await db.delete(bankAccounts).where(eq(bankAccounts.bankId, bId));
-      await db.delete(bankCustomers).where(eq(bankCustomers.bankId, bId));
-      await db.delete(auditLogs).where(eq(auditLogs.bankId, bId));
-
-      // 2. Define Demo Customers
-      const demoUsers = [
-        { discordId: "1048576", mcUsername: "vance_charles", mcUuid: "e2920fca-31d0-4fdf-9730-805fc48f574d", notes: "Whitelabel tester & active roleplayer" },
-        { discordId: "2097152", mcUsername: "clara_mendez", mcUuid: "e502cfa1-77df-482f-897b-607ef89dc74f", notes: "Real-estate developer Clara's Holdings" },
-        { discordId: "3145728", mcUsername: "marcus_oak", mcUuid: "fa925c7e-85a9-4675-9273-df27d530f9a2", notes: "CEO of Oak Lumber Corp" },
-        { discordId: "4194304", mcUsername: "sarah_connor", mcUuid: "858a74e5-9e67-4d92-80f0-c515a8053678", notes: "Tactical defense consultant" },
-        { discordId: "5242880", mcUsername: "john_doe", mcUuid: "fc530ef2-5b96-4a4b-9705-5cae60eb1dfa", notes: "High net-worth asset investor" },
-      ];
-
-      for (const u of demoUsers) {
-        await db.insert(bankCustomers).values({
-          id: uuidv4(),
-          bankId: bId,
-          discordId: u.discordId,
-          kycStatus: "approved",
-          mcUuid: u.mcUuid,
-          mcUsername: u.mcUsername,
-          notes: u.notes,
-          createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-        });
-      }
-
-      // 3. Define and Insert Bank Accounts
-      const accountsToCreate = [
-        { id: "acc_vance_checking", ownerDiscordId: "1048576", accountName: "Main Checking", accountType: "personal", balance: 0 },
-        { id: "acc_vance_savings", ownerDiscordId: "1048576", accountName: "High-Yield Vault", accountType: "personal", balance: 0 },
-        { id: "acc_vance_escrow", ownerDiscordId: "1048576", accountName: "Onyx Escrow Buffer", accountType: "business", balance: 0 },
-        
-        { id: "acc_clara_checking", ownerDiscordId: "2097152", accountName: "Standard Checking", accountType: "personal", balance: 0 },
-        { id: "acc_clara_savings", ownerDiscordId: "2097152", accountName: "Emerald Savings", accountType: "personal", balance: 0 },
-        
-        { id: "acc_marcus_checking", ownerDiscordId: "3145728", accountName: "Oak Lumber Corp", accountType: "business", balance: 0 },
-        { id: "acc_marcus_payroll", ownerDiscordId: "3145728", accountName: "Payroll Clearing", accountType: "payroll", balance: 0 },
-        
-        { id: "acc_sarah_checking", ownerDiscordId: "4194304", accountName: "Tactical Checking", accountType: "personal", balance: 0 },
-        
-        { id: "acc_john_savings", ownerDiscordId: "5242880", accountName: "Savings Portfolio", accountType: "personal", balance: 0 }
-      ];
-
-      for (const acc of accountsToCreate) {
-        await db.insert(bankAccounts).values({
-          id: acc.id,
-          bankId: bId,
-          ownerDiscordId: acc.ownerDiscordId,
-          accountName: acc.accountName,
-          accountType: acc.accountType,
-          balance: acc.balance,
-          isActive: true,
-          createdAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000)
-        });
-      }
-
-      // 4. Seeding historical Transactions
-      const demoTransactions = [
-        { from: "acc_vance_checking", to: "acc_clara_checking", amount: 125000, type: "transfer", desc: "Contractor design services", daysAgo: 20 },
-        { from: null, to: "acc_marcus_checking", amount: 2500000, type: "deposit", desc: "Wholesale Lumber Invoice #884", daysAgo: 18 },
-        { from: "acc_sarah_checking", to: null, amount: 50000, type: "withdraw", desc: "Counter Cash Withdrawal", daysAgo: 15 },
-        { from: "acc_vance_checking", to: "acc_marcus_checking", amount: 1500, type: "transfer", desc: "Weekly Planters Subscription Charge", daysAgo: 12 },
-        { from: null, to: "acc_marcus_checking", amount: 350000, type: "onyx_payment", desc: "B2B Payment Gateway Settlement", daysAgo: 10 },
-        { from: null, to: "acc_john_savings", amount: 15000000, type: "deposit", desc: "Initial Portfolio Capital Injection", daysAgo: 9 },
-        { from: "acc_marcus_payroll", to: "acc_vance_checking", amount: 240000, type: "transfer", desc: "Biweekly Salary - Vance Charles", daysAgo: 5 },
-        { from: "acc_vance_checking", to: "acc_marcus_checking", amount: 5000, type: "transfer", desc: "Store order purchase", daysAgo: 3 },
-        { from: null, to: "acc_vance_checking", amount: 200000, type: "deposit", desc: "Gold ingot sales to game trade", daysAgo: 2 },
-        { from: "acc_clara_checking", to: null, amount: 20000, type: "withdraw", desc: "Cash withdrawal for local vendor", daysAgo: 1 }
-      ];
-
-      for (const tx of demoTransactions) {
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          bankId: bId,
-          fromAccountId: tx.from,
-          toAccountId: tx.to,
-          amount: tx.amount,
-          type: tx.type,
-          description: tx.desc,
-          timestamp: new Date(Date.now() - tx.daysAgo * 24 * 60 * 60 * 1000)
-        });
-      }
-
-      // 5. Seeding Loans (active & pending)
-      await db.insert(loans).values({
-        id: "loan_vance_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        discordId: "1048576",
-        accountId: "acc_vance_checking",
-        principalAmount: 1500000,
-        remainingAmount: 1245000,
-        interestRate: 550, // 5.5%
-        nextPaymentDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        purpose: "Vehicle Acquisition - Obsidian Rover SUV",
-        status: "active",
-        createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
-      });
-
-      await db.insert(loans).values({
-        id: "loan_clara_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        discordId: "2097152",
-        accountId: "acc_clara_checking",
-        principalAmount: 500000,
-        remainingAmount: 500000,
-        interestRate: 800, // 8.0%
-        nextPaymentDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        purpose: "Office Upgrade & High-speed Terminal",
-        status: "pending",
-        createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
-      });
-
-      // 6. Seeding vault deposits (locked savings)
-      await db.insert(vaultDeposits).values({
-        id: "vault_vance_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        accountId: "acc_vance_savings",
-        amount: 2000000,
-        lockedUntil: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
-        interestRate: 450, // 4.5%
-        status: "locked",
-        createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
-      });
-
-      // 7. Seeding cards (debit and credit)
-      await db.insert(cards).values({
-        id: "card_vance_debit_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        accountId: "acc_vance_checking",
-        cardNumber: "4000123456789010",
-        cvv: "382",
-        expiryDate: "12/30",
-        isLocked: false,
-        type: "debit",
-        createdAt: new Date()
-      });
-
-      await db.insert(cards).values({
-        id: "card_clara_credit_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        accountId: "acc_clara_checking",
-        cardNumber: "4111222233334444",
-        cvv: "901",
-        expiryDate: "08/29",
-        isLocked: false,
-        type: "credit",
-        creditLimit: 500000,
-        creditUsed: 124050,
-        apr: 1800, // 18%
-        minimumPayment: 5000,
-        nextPaymentDate: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000),
-        createdAt: new Date()
-      });
-
-      // 8. Seeding payroll jobs
-      await db.insert(payrollJobs).values({
-        id: "payroll_vance_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        employerAccountId: "acc_marcus_checking",
-        employeeAccountId: "acc_vance_checking",
-        amount: 240000,
-        frequency: "biweekly",
-        nextRun: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-        isActive: true,
-        createdAt: new Date()
-      });
-
-      // 9. Seeding subscriptions
-      await db.insert(subscriptions).values({
-        id: "sub_vance_marcus_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        billerAccountId: "acc_marcus_checking",
-        customerAccountId: "acc_vance_checking",
-        amount: 4999,
-        frequency: "monthly",
-        nextRun: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000),
-        isActive: true,
-        description: "Oak Lumber VIP Club Host Tier 2",
-        createdAt: new Date()
-      });
-
-      // 10. Seeding invoices
-      await db.insert(invoices).values({
-        id: "invoice_marcus_vance_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        billerAccountId: "acc_marcus_checking",
-        customerAccountId: "acc_vance_checking",
-        amount: 150000,
-        description: "Lumber Supply Delivery for Estate",
-        dueDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
-        status: "paid",
-        createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
-      });
-
-      await db.insert(invoices).values({
-        id: "invoice_marcus_clara_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        billerAccountId: "acc_marcus_checking",
-        customerAccountId: "acc_clara_checking",
-        amount: 45000,
-        description: "Consulting and Site Surveys",
-        dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
-        status: "pending",
-        createdAt: new Date()
-      });
-
-      // 11. Seeding support tickets
-      await db.insert(supportTickets).values({
-        id: "ticket_marcus_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        discordId: "3145728",
-        subject: "Requesting credit limit expansion for lumber corp operations",
-        status: "open",
-        createdAt: new Date()
-      });
-
-      await db.insert(supportTickets).values({
-        id: "ticket_clara_" + uuidv4().slice(0, 8),
-        bankId: bId,
-        discordId: "2097152",
-        subject: "Question about credit card apr compounding schedule",
-        status: "open",
-        createdAt: new Date()
-      });
-
-      // 12. Seeding audit logs
-      await db.insert(auditLogs).values({
-        id: uuidv4(),
-        bankId: bId,
-        userDiscordId: 'Operator',
-        action: `seed_demo`,
-        details: `Populated full suite of realistic demo roleplay data (5 customers, 9 accounts, 10 transactions, active loans, cards, payroll, subscriptions, and support tickets)`,
-        timestamp: new Date()
-      });
-
-      res.json({ success: true, message: "Pristine demo data successfully populated." });
-    } catch (e: any) {
-      console.error(e);
-      res.status(500).json({ error: e.message || "Internal error seeding demo data" });
-    }
+    return res.status(410).json({ error: "Demo seed is disabled. Do not fabricate ledger balances." });
   });
 
 banksRouter.get("/api/banks/:bankId/compliance/flagged", requireBankStaff, async (req: express.Request, res: express.Response) => {
