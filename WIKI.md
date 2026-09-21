@@ -1168,6 +1168,7 @@ Staff desks do **not** record transfers. CityCorp already books every movement. 
 - **Iframe Preview Compatibility**: Configured Express Helmet middleware with `frameguard: false` and `contentSecurityPolicy: false` to permit native live previewing in AI Studio iframe shells.
 - **Production Build Flow**: `npm run build` compiles Vite frontend assets to `dist/` and bundles `server.ts` into a CommonJS artifact `dist/server.cjs`, executed cleanly by `npm start`.
 - **Bulk Operator Tools Surface Streamlining**: Removed the legacy "SQLite (.db) Migration" and "Intelligent JSON Migration" upload options from the Bank Staff Bulk Tools UI (`BankTools.tsx`), focusing the operator tools on active operational flows: Run Daily Processing (EOD interest & loan servicing), Purge Zero-Balance, Emergency Lock, and CityCorp Auto-Import.
+- **Discord Bot Linking Redirect URI Exposure**: Co-located the dedicated **Discord Bot Linking Callback** (`/api/auth/discord/callback`) alongside the CityCorp sign-in callback directly within the Bank Settings branding and bot credentials panel (`BankSettings.tsx`), with single-click copy buttons and explicit guidance for Discord Developer Portal configuration (`OAuth2 -> Redirects`).
 
 
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Building2,  AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search, Landmark, Percent  } from "lucide-react";
+import { Building2, AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search, Landmark, Percent, Copy, Check } from "lucide-react";
 import { SchemeSwatches } from "../components/ui/chrome";
 import { SCHEME_HEX, accentForeground, type ColorSchemeId } from "../lib/theme";
 
@@ -12,6 +12,13 @@ export function BankSettings() {
   const [vaultTiers, setVaultTiers] = useState<any[]>([{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}]);
   const [schemeId, setSchemeId] = useState<ColorSchemeId>("slate");
   const [brandHex, setBrandHex] = useState("#8b95a5");
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2500);
+  };
 
   useEffect(() => {
     if (bank?.id) {
@@ -342,18 +349,65 @@ export function BankSettings() {
               />
             </div>
 
-            <div className="col-span-1 md:col-span-2 bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--fg-muted)" }}>
-                CityCorp login callback
+            <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              {/* CityCorp Login Callback */}
+              <div className="bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-4 space-y-3 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--fg-muted)" }}>
+                      CityCorp Sign-In Callback
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                      Primary Login
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--fg-subtle)" }}>
+                    Add to your <strong>CityCorp Developer Dashboard</strong> under Redirect URIs. All customers and staff authenticate through CityCorp.
+                  </p>
+                </div>
+                <div className="bg-[var(--bg)] p-2.5 rounded-lg border border-white/10 flex items-center justify-between gap-2">
+                  <code className="text-xs select-all break-all font-mono" style={{ color: "var(--ok)" }}>
+                    {`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/citycorp/callback`}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/citycorp/callback`, 'citycorp')}
+                    className="shrink-0 p-1.5 rounded-md hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    {copiedField === 'citycorp' ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  </button>
+                </div>
               </div>
-              <p className="text-xs" style={{ color: "var(--fg-subtle)" }}>
-                Customers and staff sign in with CityCorp only. Register this callback in the CityCorp developer dashboard. Discord is not a login method.
-              </p>
-              <div className="bg-[var(--bg)] p-2.5 rounded-lg border border-white/10">
-                <span className="font-sans block text-[10px] uppercase mb-1" style={{ color: "var(--fg-subtle)" }}>CityCorp OAuth redirect URI</span>
-                <code className="text-sm select-all block break-all" style={{ color: "var(--ok)" }}>
-                  {`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/citycorp/callback`}
-                </code>
+
+              {/* Discord Bot Linking Callback */}
+              <div className="bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-4 space-y-3 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--fg-muted)" }}>
+                      Discord Bot Linking Callback
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
+                      Bot & Slash Commands
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--fg-subtle)" }}>
+                    Add to <strong>Discord Developer Portal &rarr; OAuth2 &rarr; Redirects</strong>. Used when logged-in customers connect Discord to enable bot commands.
+                  </p>
+                </div>
+                <div className="bg-[var(--bg)] p-2.5 rounded-lg border border-white/10 flex items-center justify-between gap-2">
+                  <code className="text-xs select-all break-all font-mono text-indigo-300">
+                    {`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/discord/callback`}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(`https://${settings?.customDomain?.trim() || window.location.host}/api/auth/discord/callback`, 'discord')}
+                    className="shrink-0 p-1.5 rounded-md hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    {copiedField === 'discord' ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1205,17 +1259,6 @@ export function BankSettings() {
             </div>
           </div>
         </div>
-
-
-          <div className="mt-8 border rounded-xl p-4" style={{ borderColor: "var(--border)", background: "color-mix(in oklab, var(--fg) 3%, transparent)" }}>
-            <h4 className="text-sm font-medium mb-2">Discord bot linking callback (optional)</h4>
-            <p className="text-xs mb-3" style={{ color: "var(--fg-subtle)" }}>
-              Not a login. Customers already signed in with CityCorp can attach Discord so /bank works. Add this URL only if you use a custom Discord application.
-            </p>
-            <code className="flex-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-xs overflow-x-auto whitespace-nowrap block">
-              {`https://${settings?.customDomain || window.location.hostname}/api/auth/discord/callback`}
-            </code>
-          </div>
 
         <div className="flex justify-end pt-4 pb-12">
           <button 
