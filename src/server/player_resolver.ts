@@ -52,9 +52,23 @@ export async function resolveMinecraftUsername(uuid: string, client?: CityCorpCl
 
   // 2. CityCorp API player endpoint
   try {
-    const cityCorpPlayerRes = await fetch(`https://api.cityrp.org/player?uuid=${uuid}`, { signal: AbortSignal.timeout(3500) });
+    const cityCorpPlayerRes = await fetch(`https://api.cityrp.org/citycorp/player?uuid=${uuid}`, { signal: AbortSignal.timeout(3500) });
     if (cityCorpPlayerRes.ok) {
       const pData = await cityCorpPlayerRes.json();
+      const name = pData?.username || pData?.name || pData?.player?.name || pData?.player_name;
+      if (name && typeof name === "string" && name !== "Citizen") {
+        uuidToUsernameCache.set(cleanUuid, {name, ts: Date.now()});
+        return name;
+      }
+    }
+  } catch (e) {
+    // proceed to next fallback
+  }
+
+  try {
+    const legacyPlayerRes = await fetch(`https://api.cityrp.org/player?uuid=${uuid}`, { signal: AbortSignal.timeout(3500) });
+    if (legacyPlayerRes.ok) {
+      const pData = await legacyPlayerRes.json();
       const name = pData?.username || pData?.name || pData?.player?.name || pData?.player_name;
       if (name && typeof name === "string" && name !== "Citizen") {
         uuidToUsernameCache.set(cleanUuid, {name, ts: Date.now()});

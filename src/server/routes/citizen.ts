@@ -910,6 +910,9 @@ citizenRouter.post("/api/citizen/payment-links", requireAuth, async (req: expres
       const { billerAccountId, amount, description } = req.body;
       const discordId = (req as any).user.discordId;
       const parsedAmount = amount ? Math.round(parseFloat(amount) * 100) : 0;
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        return res.status(400).json({ error: "Invalid payment amount. Amount must be a positive number greater than 0." });
+      }
       
       const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, billerAccountId), eq(bankAccounts.ownerDiscordId, discordId))).get();
       if (!acc) return res.status(403).json({ error: "Account not found or unauthorized" });
@@ -1098,49 +1101,95 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
     const { eq, and, gte, sql } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
 
+    const discordId = (req as any).user.discordId;
+    const { extractIdempotencyKey, checkIdempotency, startIdempotency, completeIdempotency, releaseIdempotency } = await import("../../lib/idempotency.js");
+    const idempotencyKey = extractIdempotencyKey(req);
+    const scope = `citizen_transfer_${discordId}`;
+
+    if (idempotencyKey) {
+      const check = await checkIdempotency(idempotencyKey, scope);
+      if (check.state === "completed") {
+        return res.status(check.statusCode || 200).json(check.body);
+      }
+      if (check.state === "in_progress") {
+        return res.status(409).json({ error: "A transfer with this idempotency key is currently processing. Please wait." });
+      }
+      await startIdempotency(idempotencyKey, scope);
+    }
+
     try {
-      const { fromAccountId, toAccountId, toQuery, amount } = req.body; const discordId = (req as any).user.discordId;
+      const { fromAccountId, toAccountId, toQuery, amount } = req.body;
       if (!fromAccountId || !(toAccountId || toQuery) || fromAccountId === toAccountId) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
         return res.status(400).json({ error: "Invalid account selection" });
       }
 
       const parsedAmount = Math.round(parseFloat(amount) * 100);
-      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return res.status(400).json({ error: "Invalid amount" });
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Invalid amount" });
+      }
 
       let sourceAccount;
       let sourceCard: any = null;
 
       if (fromAccountId.startsWith("crd_")) {
           sourceCard = await db.select().from(cards).where(eq(cards.id, fromAccountId)).get();
-          if (!sourceCard) return res.status(404).json({ error: "Source card not found" });
-          if (sourceCard.isLocked) return res.status(400).json({ error: "Card is locked" });
+          if (!sourceCard) {
+            if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+            return res.status(404).json({ error: "Source card not found" });
+          }
+          if (sourceCard.isLocked) {
+            if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+            return res.status(400).json({ error: "Card is locked" });
+          }
           
           sourceAccount = await db.select().from(bankAccounts).where(eq(bankAccounts.id, sourceCard.accountId)).get();
       } else {
           sourceAccount = await db.select().from(bankAccounts).where(eq(bankAccounts.id, fromAccountId)).get();
       }
 
-      if (!sourceAccount) return res.status(404).json({ error: "Source account not found" });
+      if (!sourceAccount) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(404).json({ error: "Source account not found" });
+      }
 
       if (!(await requireOwnedAccount(req, sourceAccount, true))) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
         return res.status(403).json({ error: "Unauthorized to transfer from this account" });
       }
       
-      if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
+      if (!sourceAccount.isActive || sourceAccount.isFrozen) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Source account is inactive or frozen" });
+      }
       
       if (sourceCard) {
           if ((sourceCard.creditUsed || 0) + parsedAmount > (sourceCard.creditLimit || 0)) {
+              if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
               return res.status(400).json({ error: "Exceeds credit limit" });
           }
       } else {
-          if (sourceAccount.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
+          if (sourceAccount.balance < parsedAmount) {
+            if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+            return res.status(400).json({ error: "Insufficient funds" });
+          }
       }
 
       const destResolved = await (await import("../../lib/account_lookup.js")).resolvePayableAccount(toAccountId || toQuery, { bankId: sourceAccount.bankId, excludeId: sourceAccount.id });
-      if (!destResolved.account) return res.status(404).json({ error: destResolved.error || "No account with that name at this bank." });
+      if (!destResolved.account) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(404).json({ error: destResolved.error || "No account with that name at this bank." });
+      }
       const destAccount = destResolved.account;
-      if (destAccount.bankId !== sourceAccount.bankId) return res.status(400).json({ error: "Transfers stay inside one bank. Use Onyx to pay another bank." });
-      if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
+      if (destAccount.bankId !== sourceAccount.bankId) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Transfers stay inside one bank. Use Onyx to pay another bank." });
+      }
+      if (!destAccount.isActive || destAccount.isFrozen) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Destination account is inactive or frozen" });
+      }
 
       const fromBank = sourceAccount.bankId;
       const toBank = destAccount.bankId;
@@ -1203,8 +1252,15 @@ citizenRouter.post("/api/citizen/transfer", requireAuth, async (req: express.Req
           fromLabel: sourceAccount.accountName,
         })
       ).catch(() => {});
-      res.json({ success: true, quote: resultQuote });
+      const responsePayload = { success: true, quote: resultQuote };
+      if (idempotencyKey) {
+        await completeIdempotency(idempotencyKey, scope, 200, responsePayload);
+      }
+      res.json(responsePayload);
     } catch (e: any) {
+      if (idempotencyKey) {
+        await releaseIdempotency(idempotencyKey, scope);
+      }
       console.error(e);
       res.status(500).json({ error: e.message || "Internal error" });
     }

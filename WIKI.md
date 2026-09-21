@@ -84,6 +84,12 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
 
 ### 6. Performance & Optimization Architecture
 - **Database Indexing**: Drizzle SQLite schema includes explicit `index()` declarations on high-cardinality foreign keys and timestamp fields across `bank_accounts` (`bankId`, `ownerDiscordId`), `transactions` (`bankId`, `fromAccountId`, `toAccountId`, `timestamp`), `bank_staff` (`bankId`, `discordId`), `loans` (`bankId`, `discordId`), `escrows` (`bankId`), and `audit_logs` (`bankId`, `userDiscordId`).
+- **High-Performance API Key Lookups (`apiKeyLast4`)**: The `banks` and `onyx_merchants` tables store an indexed `apiKeyLast4` suffix (`idx_banks_api_key_last4` and `idx_onyx_merchants_api_key_last4`). `authenticateApiRequest` and Onyx merchant lookups filter candidate rows using this indexed 4-character suffix prior to executing constant-time cryptographic hash verification, eliminating table scans on high-traffic API workloads.
+- **Transaction Idempotency Engine (`idempotency_keys`)**: High-concurrency financial endpoints (`/api/v1/transfers`, `/api/citizen/transfer`, `/api/portal/:bankId/transfer`, `/api/banks/:bankId/teller/transfer`, `/api/onyx/checkout`) natively support idempotency keys supplied via the `Idempotency-Key` / `X-Idempotency-Key` HTTP headers or the request body `idempotencyKey`.
+  - Guarantees exactly-once execution and prevents double debits or accidental duplicate payments on network retries.
+  - Active operations are tracked with an `"in_progress"` state, returning `409 Conflict` on concurrent collisions.
+  - Finished operations record HTTP status code and response payload with an automated 24-hour expiration window (`expiresAt`).
+  - Pre-execution validation errors automatically release the key to allow clients to correct parameters and retry without collision.
 - **In-Memory Caching**: CityCorp Network API queries (`/corp/list`) use a 3-minute TTL in-memory cache to eliminate external latency spikes and safeguard against upstream rate limits.
 - **Server-Side Pagination**: High-volume data routes (`GET /api/banks/:bankId/transactions` and `GET /api/banks/:bankId/audit`) support `limit` and `offset` parameters for fast, responsive UI rendering.
 
@@ -120,7 +126,7 @@ Instead of simple passwords, the platform supports Discord and CityCorp OAuth au
 - `/api/auth/url` generates the OAuth prompt (Discord or CityCorp, controllable via `provider=citycorp` query or fallback environment variables).
 - `/api/auth/discord/callback` handles the Discord OAuth code exchange.
 - `/api/auth/citycorp/callback` and `/api/auth/callback` handle CityCorp OAuth authorization code exchange (`POST https://api.cityrp.org/auth/token`).
-  - **Custom OAuth URL Preservation**: Directly respects custom CityCorp OAuth URLs (`cityCorpAuthUrl`) saved in Bank Settings without stripping or overwriting configured scopes. Default scopes (`corp.player.info.get,corp.account_money.transfer,corp.account.deposit,corp.account.withdraw`) are used when no custom URL is provided.
+  - **Custom OAuth URL Preservation**: Directly respects custom CityCorp OAuth URLs (`cityCorpAuthUrl`) saved in Bank Settings without stripping or overwriting configured scopes. Default scopes (`corp.player.info.get,corp.info.get`) are used when no custom URL is provided, matching the official CityRP OAS 3.0 specification.
   - **Bank Domain & State Encoding**: Prioritizes the bank's configured `customDomain` (e.g., `https://vh.azisle.com/api/auth/citycorp/callback`) and request host headers. Encodes the exact `appId` and `redirectUri` used during authorization into the OAuth `state` payload, ensuring matching `app_id` and `redirect_uri` during token exchange with `https://api.cityrp.org/auth/token`.
 - The JWT payload (`discordId`, `username`, `avatarUrl`, `isGlobalAdmin`) is encrypted with `JWT_SECRET` and stored in an HTTP-only, secure, sameSite=lax cookie (`auth_token`).
 - Tokens are set to expire in 7 days.
@@ -142,6 +148,9 @@ Instead of simple passwords, the platform supports Discord and CityCorp OAuth au
 ### Protection Layers
 - **Helmet**: Enforces core header securities while selectively disabling `contentSecurityPolicy` and `crossOriginEmbedderPolicy` to allow relaxed iframe cross-embeds for Pterodactyl dashboards.
 - **Rate Limiting**: `express-rate-limit` enforces a strict ceiling of 1000 requests per 15 minutes globally across all `/api/` endpoints.
+- **Card Security & RBAC Isolation**: Raw card numbers and CVVs are masked by default across all staff and customer views. Unmasked card retrieval via `/api/banks/:bankId/cards/:cardId/reveal` is strictly restricted to `owner` and `admin` roles, preventing disclosure to lower-tier staff roles (`teller`, `loan_officer`, `compliance`).
+- **Hardened SQLite Database Import Tool**: To prevent arbitrary code execution or SQL injection, database migration imports (`/api/banks/:bankId/tools/sqlite-migration`) strictly require binary SQLite files. The server enforces binary SQLite magic header signature verification (`SQLite format 3\0`) and opens temporary databases with `readonly: true` and `trusted_schema = OFF` before extracting schema records.
+- **Settlement Rollback Alerting & Resilience**: Cross-bank CityCorp money settlement routines include automated compensation rollbacks if a destination leg fails. If a rollback itself encounters an operational failure, the system triggers `raisePlatformAlert` to dispatch immediate high-priority alerts to system administrators, preventing silent fund stranding.
 - **Global Admins**: Hard-coded root developers (such as `@cofys` / `cofysmc@gmail.com`) automatically inherit Root Global Admin permissions, bypassing bank-level staff restrictions.
 
 ---
@@ -734,19 +743,123 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
     - `GET /corp/accounts/transactions`: `getTransactionById(accountName, transactionId)`
     - `GET /corp/accounts/transactions/list`: `getAccountTransactions(accountName, page)` (paginated listing with fallback)
 
+### 🌐 Official CityRP API v1.0.0 (OAS 3.0) Integration Standard
 
+Slate SaaS integrates natively with the official CityRP API specification (OAS 3.0 / `https://api.cityrp.org`).
 
+#### 1. Core Services & Base URLs
+- **Auth API (`https://api.cityrp.org/auth`)**: OAuth 2.0 authorization code exchange service (`POST /auth/token`). Used exclusively when an application needs permission to act on behalf of another consenting player.
+- **CityCorp API (`https://api.cityrp.org/citycorp`)**: Corporation management, banking accounts, player profiles, economy, stocks/IPOs, tasks, shops, and real-time WebSockets.
+  - Corporation operations: `https://api.cityrp.org/citycorp/corp/*`
+  - Player profile: `GET https://api.cityrp.org/citycorp/player` (Basic Auth)
+  - Live Event Stream: `wss://api.cityrp.org/citycorp`
+- **CityRealty API (`https://api.cityrp.org/cityrealty`)**: Property and plot management (`/plot/*`, `/player`, and WebSocket `wss://api.cityrp.org/cityrealty`).
 
+#### 2. Token Types & HTTP Basic Authentication
+CityCorp and CityRealty use HTTP Basic Authentication for all requests. The username identifies the account owner, and the password specifies the credential:
+- **`crp_...` (App Token)**: Generated in the CityRP Developer Dashboard. Normal private API credential. Unrestricted by OAuth scopes. Authenticates the owner directly (`Basic BASE64(minecraft_uuid:crp_...)`). **Required for WebSocket event streams**.
+- **`crpoa_...` (OAuth Token)**: Issued by the Auth API after a player authorizes an application. Scoped token representing that player's permission grant. Authenticates on behalf of that player (`Basic BASE64(authorizing_uuid:crpoa_...)`). Scopes are strictly enforced.
 
+#### 3. Delegated OAuth 2.0 Flow
+1. **Authorize Request**: Player is directed to:
+   ```
+   https://dashboard.cityrp.org/authorize?app_id={APP_ID}&redirect_uri={REDIRECT_URI}&scopes=corp.player.info.get,corp.info.get&state={CSRF_TOKEN}
+   ```
+2. **Callback Handling**: After approval, the user is redirected to `redirect_uri` with:
+   ```
+   https://yourserver.com/callback?client_secret={AUTH_CODE}&state={STATE}
+   ```
+   *Notice*: The one-time authorization code is transmitted in the `client_secret` query parameter (valid for 10 minutes).
+3. **Token Exchange**: Server executes a backend POST:
+   ```http
+   POST https://api.cityrp.org/auth/token
+   Content-Type: application/x-www-form-urlencoded
 
+   grant_type=authorization_code&client_secret={AUTH_CODE}&app_id={APP_ID}&token={APP_TOKEN}
+   ```
+4. **Token Response**:
+   ```json
+   {
+     "token": "crpoa_...",
+     "token_type": "Basic",
+     "scope": "corp.player.info.get,corp.info.get",
+     "minecraft_uuid": "a8098c1a-f86e-11da-bd1a-00112444be1e"
+   }
+   ```
+5. **API Calls with Scoped Token**:
+   ```http
+   GET https://api.cityrp.org/citycorp/player
+   Authorization: Basic BASE64(minecraft_uuid:crpoa_...)
+   ```
 
+#### 4. Official Scopes Reference
+Scopes use a dot-separated naming convention:
+- `corp.player.info.get`: Read player info from CityCorp
+- `corp.info.get`: Read corporation data
+- `corp.staff.write`: Modify corporation staff
+- `corp.account.create`: Create a corporation account
+- `corp.delete`: Delete a corporation
+- `realty.player.info.get`: Read player info from CityRealty
+- `realty.plot.info.get`: Read plot information
 
+#### 5. Pagination Standard
+- All paginated endpoints are **one-based** (`page=1`). Values `0` and negative numbers are clamped to `1`.
+- Requesting pages beyond the end clamps to the final page.
+- Standard pagination envelope:
+  ```json
+  {
+    "corps": [ ... ],
+    "currentPage": 1,
+    "totalPages": 64,
+    "totalCorps": 636
+  }
+  ```
+- Most endpoints return 10 records per page; `GET /citycorp/items/list` returns 200.
 
-
-
-
-
-### Interest Engine (APY System)
+#### 6. Live Events (WebSocket Stream)
+- **Endpoint**: `wss://api.cityrp.org/citycorp`
+- **Handshake Authentication**: Requires `Authorization: Basic BASE64(minecraft_uuid:appToken)`.
+- **Token Rule**: Only normal `crp_...` app tokens are accepted; scoped OAuth tokens are explicitly rejected.
+- **Event Envelope**:
+  ```json
+  {
+    "type": "EVENT_TRIGGERED",
+    "name": "CorpDepositEvent",
+    "event": { ... }
+  }
+  ```
+- **31 Registered CityCorp Event Types**:
+  1. `CorpAdvertiseEvent`
+  2. `CorpCreatedEvent`
+  3. `CorpDisbandEvent`
+  4. `CorpTransferOwnershipEvent`
+  5. `CorpAccountChangeEvent`
+  6. `CorpAccountCreateEvent`
+  7. `CorpAccountDeleteEvent`
+  8. `CorpAccountDepositEvent`
+  9. `CorpAccountWithdrawEvent`
+  10. `CorpDemoteEvent`
+  11. `CorpFireEvent`
+  12. `CorpHireEvent`
+  13. `CorpPromoteEvent`
+  14. `CorpResignEvent`
+  15. `CorpDepositEvent`
+  16. `CorpWithdrawEvent`
+  17. `CorpDescriptionChangeEvent`
+  18. `CorpDiscordChangeEvent`
+  19. `CorpHQChangeEvent`
+  20. `CorpShopCreateEvent`
+  21. `CorpShopDeleteEvent`
+  22. `CorpDelistEvent`
+  23. `CorpDividendChangeEvent`
+  24. `CorpIPOEvent`
+  25. `StockSellEvent`
+  26. `StockTransferEvent`
+  27. `CorpTaskClaimEvent`
+  28. `CorpTaskCompleteEvent`
+  29. `CorpTaskCreateEvent`
+  30. `CorpTaskDeleteEvent`
+  31. `ShopChangeEvent`
 - **Automated Yields**: Added an interactive "Interest Engine" page in the Bank Staff Portal under Operations. 
 - **Bank-Level Configuration**: Bank Managers and Admins can configure the Base APY Yield (in basis points), minimum balances, max balance caps, and target account types (Savings, Personal, Business, or All).
 - **Manual Trigger**: Bank staff can currently run the interest accrual manually from the UI. When triggered, the system automatically loops through all eligible active accounts (excluding system accounts) and securely calculates and deposits the configured APY directly into the accounts.

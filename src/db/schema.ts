@@ -731,3 +731,18 @@ export const usedPaymentTokens = sqliteTable("used_payment_tokens", {
   merchantIdx: index("idx_used_payment_tokens_merchant").on(table.merchantId),
   usedAtIdx: index("idx_used_payment_tokens_used_at").on(table.usedAt),
 }));
+
+export const idempotencyKeys = sqliteTable("idempotency_keys", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull(),
+  scope: text("scope").notNull(),
+  status: text("status").notNull(), // "in_progress" | "completed"
+  statusCode: integer("status_code"),
+  responseJson: text("response_json"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+  scopeKeyIdx: index("idx_idempotency_scope_key").on(table.scope, table.key),
+  expiresAtIdx: index("idx_idempotency_expires_at").on(table.expiresAt),
+}));
+

@@ -516,14 +516,21 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
     const { onyxMerchants, bankAccounts, transactions } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
+    const { extractIdempotencyKey, checkIdempotency, startIdempotency, completeIdempotency, releaseIdempotency } = await import("../../lib/idempotency.js");
+    let idempotencyKey: string | null = null;
+    let scope = "";
 
     try {
       const { verifyPresentedKey, hashApiKey, last4OfKey } = await import("../../lib/api_keys.js");
       const { consumePaymentToken } = await import("../../lib/payment_tokens.js");
       const { bankIsSuspended } = await import("../../lib/tenant_guard.js");
       const { banks } = await import("../../db/schema");
-      const allMerchants = await db.select().from(onyxMerchants);
-      const merchant = allMerchants.find((m) => verifyPresentedKey({
+      const { or, isNull } = await import("drizzle-orm");
+      const presentedLast4 = last4OfKey(apiKey);
+      const candidateMerchants = await db.select().from(onyxMerchants).where(
+        presentedLast4 ? or(eq(onyxMerchants.apiKeyLast4, presentedLast4), isNull(onyxMerchants.apiKeyLast4)) : undefined
+      );
+      const merchant = candidateMerchants.find((m) => verifyPresentedKey({
         presented: apiKey,
         storedHash: (m as any).apiKeyHash,
         storedEncrypted: m.apiKey,
@@ -546,13 +553,29 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
         return res.status(403).json({ error: "Receiving bank is suspended." });
       }
 
+      idempotencyKey = extractIdempotencyKey(req);
+      scope = `onyx_checkout_${merchant.id}`;
+
+      if (idempotencyKey) {
+        const check = await checkIdempotency(idempotencyKey, scope);
+        if (check.state === "completed") {
+          return res.status(check.statusCode || 200).json(check.body);
+        }
+        if (check.state === "in_progress") {
+          return res.status(409).json({ error: "A checkout with this idempotency key is currently processing. Please wait." });
+        }
+        await startIdempotency(idempotencyKey, scope);
+      }
+
       const { userDiscordId, amountCents, description, sourceAccountId, paymentToken } = req.body;
 
       if (!paymentToken) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
         return res.status(401).json({ error: "Missing customer paymentToken. Customer must approve this transaction first." });
       }
 
       if (!userDiscordId || !amountCents || amountCents <= 0) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
         return res.status(400).json({ error: "Invalid payment payload" });
       }
 
@@ -776,8 +799,15 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
         }
       }
 
-      res.json({ success: true, message: "Payment processed successfully." });
+      const responsePayload = { success: true, message: "Payment processed successfully." };
+      if (idempotencyKey) {
+        await completeIdempotency(idempotencyKey, scope, 200, responsePayload);
+      }
+      res.json(responsePayload);
     } catch (e: any) {
+      if (idempotencyKey) {
+        await releaseIdempotency(idempotencyKey, scope);
+      }
       console.error(e);
       res.status(400).json({ error: e.message || "Internal error during checkout" });
     }

@@ -735,10 +735,7 @@ export function BankSettings() {
             </div>
           </div>
           <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-200 leading-relaxed">
-            <strong>Configuration Guideline:</strong> Ensure your application's <strong>Redirect URI</strong> in the CityCorp Developer Portal is configured precisely to:<br />
-            <code className="text-white bg-black/40 px-1.5 py-0.5 rounded select-all font-mono">
-              {window.location.origin}/api/portal/{bank?.id}/oauth/callback
-            </code>
+            <strong>Configuration Guideline:</strong> Add the redirect URI above (<code className="text-white bg-black/40 px-1.5 py-0.5 rounded select-all font-mono">https://{settings?.customDomain?.trim() || window.location.host}/api/auth/citycorp/callback</code>) to your CityCorp application in the Developer Dashboard.
           </div>
         </div>
 

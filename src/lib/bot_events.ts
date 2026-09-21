@@ -140,6 +140,18 @@ export class CityCorpWebSocket {
       return;
     }
 
+    if (eventName === "CorpHireEvent" || eventName === "CorpFireEvent" || eventName === "CorpPromoteEvent" || eventName === "CorpDemoteEvent" || eventName === "CorpResignEvent") {
+      const targetUser = eventData?.staff?.name || eventData?.player?.name || eventData?.username || eventData?.staff?.uuid || "employee";
+      console.log(`[Bank ${this.bankId}] CityCorp Staff Event (${eventName}) for ${targetUser}`);
+      botManager.sendNotification(this.bankId, `📋 **CityCorp Staff Update**: \`${eventName}\` involving ${targetUser}.`);
+      return;
+    }
+
+    if (eventName === "CorpIPOEvent" || eventName === "CorpDelistEvent" || eventName === "StockSellEvent" || eventName === "StockTransferEvent") {
+      console.log(`[Bank ${this.bankId}] CityCorp Market Event (${eventName})`);
+      return;
+    }
+
     const isAccountEvent = eventName.includes("CorpAccount");
     const isTreasuryEvent = eventName === "CorpDepositEvent" || eventName === "CorpWithdrawEvent";
     if (!isAccountEvent && !isTreasuryEvent) return;

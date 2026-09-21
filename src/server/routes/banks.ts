@@ -4005,7 +4005,7 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
     }
   });
 
-banksRouter.post("/api/banks/:bankId/cards/:cardId/reveal", requireBankStaff, async (req: express.Request, res: express.Response) => {
+banksRouter.post("/api/banks/:bankId/cards/:cardId/reveal", [requireBankStaff, requireRole(["owner", "admin"])], async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { cards, auditLogs } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -4628,23 +4628,46 @@ banksRouter.post("/api/banks/:bankId/tools/sqlite-migration", [requireBankStaff,
       const bId = req.params.bankId;
       const { dbBase64, dbSql } = req.body;
 
-      if (!dbBase64 && !dbSql) {
-        return res.status(400).json({ error: "Please upload a valid SQLite .db file or provide a SQL dump script." });
+      if (dbSql) {
+        return res.status(400).json({ 
+          error: "Raw SQL script execution is permanently disabled for multi-tenant security. Please upload a binary SQLite database file (.db, .sqlite, .sqlite3)." 
+        });
+      }
+
+      if (!dbBase64) {
+        return res.status(400).json({ error: "Please upload a valid SQLite database file (.db, .sqlite, .sqlite3) encoded in base64." });
+      }
+
+      const buffer = Buffer.from(dbBase64, "base64");
+      
+      // Enforce SQLite 3 magic header validation ("SQLite format 3\0")
+      const SQLITE_HEADER = Buffer.from("SQLite format 3\0");
+      if (buffer.length < 16 || !buffer.subarray(0, 16).equals(SQLITE_HEADER)) {
+        return res.status(400).json({ error: "Uploaded file is not a valid SQLite database file (invalid magic header)." });
       }
 
       tempPath = path.join(os.tmpdir(), `sqlite_import_${uuidv4()}.db`);
+      fs.writeFileSync(tempPath, buffer);
 
-      if (dbBase64) {
-        const buffer = Buffer.from(dbBase64, "base64");
-        fs.writeFileSync(tempPath, buffer);
-        legacyDb = new Database(tempPath, { readonly: true });
-      } else if (dbSql) {
-        legacyDb = new Database(tempPath);
-        legacyDb.exec(dbSql);
-      }
+      // Open read-only and disable trusted schema to prevent any malicious trigger/function execution
+      legacyDb = new Database(tempPath, { readonly: true, fileMustExist: true });
+      try {
+        legacyDb.pragma("trusted_schema = OFF");
+      } catch (_) {}
 
+      // Discover tables using safe parameter-free query
       const tableRows = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-      const tableNames = tableRows.map((t: any) => t.name.toLowerCase());
+      const tableNames = tableRows.map((t: any) => String(t.name || "").toLowerCase());
+
+      const ALLOWED_TABLES = new Set([
+        "accounts",
+        "loan_products",
+        "loans",
+        "loan_applications",
+        "transactions",
+        "invoices",
+        "payroll_entries"
+      ]);
 
       let accountsImported = 0;
       let customersImported = 0;

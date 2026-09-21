@@ -93,28 +93,62 @@ v1Router.post("/api/v1/transfers", authenticateApiRequest, async (req: express.R
     const { eq, and } = await import("drizzle-orm");
     const bank = (req as any).bank;
 
+    const { extractIdempotencyKey, checkIdempotency, startIdempotency, completeIdempotency, releaseIdempotency } = await import("../../lib/idempotency.js");
+    const idempotencyKey = extractIdempotencyKey(req);
+    const scope = `v1_transfer_${bank.id}`;
+
+    if (idempotencyKey) {
+      const check = await checkIdempotency(idempotencyKey, scope);
+      if (check.state === "completed") {
+        return res.status(check.statusCode || 200).json(check.body);
+      }
+      if (check.state === "in_progress") {
+        return res.status(409).json({ error: "A transfer with this idempotency key is currently being processed. Please wait." });
+      }
+      await startIdempotency(idempotencyKey, scope);
+    }
+
     try {
       const { fromAccountId, toAccountId, amount, description } = req.body;
       if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
         return res.status(400).json({ error: "Invalid account selection" });
       }
 
       const amnt = Math.round(parseFloat(amount) * 100);
-      if (!Number.isFinite(amnt) || amnt <= 0) return res.status(400).json({ error: "Invalid amount" });
+      if (!Number.isFinite(amnt) || amnt <= 0) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Invalid amount" });
+      }
 
       const [sourceAccount] = await db.select().from(bankAccounts).where(
         and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bank.id))
       );
 
-      if (!sourceAccount) return res.status(404).json({ error: "Source account not found" });
-      if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
-      if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
+      if (!sourceAccount) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(404).json({ error: "Source account not found" });
+      }
+      if (!sourceAccount.isActive || sourceAccount.isFrozen) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Source account is inactive or frozen" });
+      }
+      if (sourceAccount.balance < amnt) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: `Insufficient funds.` });
+      }
 
       const [destAccount] = await db.select().from(bankAccounts).where(
         and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bank.id))
       );
-      if (!destAccount) return res.status(404).json({ error: "Destination account not found" });
-      if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
+      if (!destAccount) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(404).json({ error: "Destination account not found" });
+      }
+      if (!destAccount.isActive || destAccount.isFrozen) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Destination account is inactive or frozen" });
+      }
 
       const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money");
       const moved = await executeSameBankBookTransfer({
@@ -127,8 +161,13 @@ v1Router.post("/api/v1/transfers", authenticateApiRequest, async (req: express.R
       });
 
       const [tx] = await db.select().from(transactions).where(eq(transactions.id, moved.txId));
-      res.json({ data: tx });
+      const responsePayload = { data: tx };
+      if (idempotencyKey) {
+        await completeIdempotency(idempotencyKey, scope, 200, responsePayload);
+      }
+      res.json(responsePayload);
     } catch (e: any) {
+      if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
       console.error(e);
       if (e?.name === "MoneyRailError") {
         return res.status(400).json({ error: e.message || "Transfer failed" });

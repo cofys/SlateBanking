@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { db } from "../db/index";
 import { banks, bankAccounts, bankSettings, transactions, clearinghouseBalances } from "../db/schema";
 import { CityCorpClient } from "./citycorp_api";
+import { raisePlatformAlert } from "./platform_alerts.js";
 import {
   FeeLine,
   FeePayerMode,
@@ -559,8 +560,19 @@ export async function executeCrossBankSettledTransfer(opts: {
         description: "Settlement rollback",
         type: "transfer",
       });
-    } catch (rollbackErr) {
+    } catch (rollbackErr: any) {
       console.error("[cross-bank] rollback failed", rollbackErr);
+      try {
+        await raisePlatformAlert({
+          bankId: sourceBank.id,
+          severity: "critical",
+          code: "settlement_rollback_failed",
+          message: `Cross-bank settlement payout failed to ${destBank.name}, and automatic rollback of first leg from ${aSettle.accountName} to ${opts.sourceAccount.accountName} also failed: ${rollbackErr?.message || "Unknown error"}. Customer funds ($${dollars(quote.submittedCents)}) may be stranded in settlement account.`,
+          dedupeMinutes: 5,
+        });
+      } catch (alertErr) {
+        console.error("[cross-bank] failed to raise platform alert", alertErr);
+      }
     }
     throw new MoneyRailError(`Receiving-bank settlement payout failed: ${e.message}`);
   }

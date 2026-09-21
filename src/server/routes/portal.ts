@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET, getRedirectUri } from "../middleware.js";
 import { botManager } from "../../lib/bot_manager.js";
-import { buildCityCorpAuthUrl } from "../../lib/citycorp_api.js";
+import { buildCityCorpAuthUrl, fetchCityCorpPlayerInfo } from "../../lib/citycorp_api.js";
 import { getUserCandidateIdentifiers, isUserAccountOwnerOrMember, isUserStaffOrGlobalAdmin } from "../userResolver.js";
 import * as crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -85,7 +85,7 @@ portalRouter.get("/api/portal/:bankId/oauth/callback", async (req: express.Reque
         token: bank.cityCorpAppSecret
       });
 
-      const tokenResponse = await fetch("https://dashboard.cityrp.org/oauth/token", {
+      const tokenResponse = await fetch("https://api.cityrp.org/auth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: bodyParams.toString()
@@ -105,18 +105,14 @@ portalRouter.get("/api/portal/:bankId/oauth/callback", async (req: express.Reque
         return res.status(400).send("CityCorp returned an invalid token response");
       }
 
-      const authHeader = 'Basic ' + Buffer.from(`${minecraftUuid}:${token}`).toString('base64');
-      console.log("Fetching player info from CityCorp...");
-      const playerRes = await fetch("https://api.cityrp.org/player", {
-        headers: { "Authorization": authHeader, "User-Agent": "SlateBankBot/1.0" }
-      });
-
-      let mcUsername = "Citizen";
-      if (playerRes.ok) {
-        const playerData = await playerRes.json();
-        mcUsername = playerData.username || playerData.name || mcUsername;
-        console.log(`Successfully fetched player name from CityCorp: ${mcUsername}`);
-      } else {
+      let mcUsername = tokenData.username || tokenData.name || tokenData.player_name || "Citizen";
+      try {
+        const pInfo = await fetchCityCorpPlayerInfo(minecraftUuid, token);
+        if (pInfo.success && pInfo.username) {
+          mcUsername = pInfo.username;
+          console.log(`Successfully fetched player name from CityCorp: ${mcUsername}`);
+        }
+      } catch (e) {
         console.warn(`Could not fetch player name from CityCorp API, falling back to: ${mcUsername}`);
       }
 
@@ -491,43 +487,79 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
     const { bankAccounts, banks } = await import("../../db/schema");
     const { eq, and } = await import("drizzle-orm");
 
+    const bankId = req.params.bankId;
+    const { extractIdempotencyKey, checkIdempotency, startIdempotency, completeIdempotency, releaseIdempotency } = await import("../../lib/idempotency.js");
+    const idempotencyKey = extractIdempotencyKey(req);
+    const scope = `portal_transfer_${bankId}_${(req as any).user?.discordId || "unknown"}`;
+
+    if (idempotencyKey) {
+      const check = await checkIdempotency(idempotencyKey, scope);
+      if (check.state === "completed") {
+        return res.status(check.statusCode || 200).json(check.body);
+      }
+      if (check.state === "in_progress") {
+        return res.status(409).json({ error: "A transfer with this idempotency key is currently processing. Please wait." });
+      }
+      await startIdempotency(idempotencyKey, scope);
+    }
+
     try {
       const { fromAccountId, toAccountId, toQuery, amount, feePayerMode } = req.body;
-      const bankId = req.params.bankId;
       const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
       const [targetBank] = await db.select().from(banks).where(eq(banks.id, bankId));
       if (targetBank?.maintenanceMode) {
         const isStaff = await isUserStaffOrAdmin(req, bankId);
         if (!isStaff) {
+          if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
           return res.status(503).json({ error: "This bank is currently in maintenance mode for system updates & staff testing. Portal transactions are temporarily suspended." });
         }
       }
 
       if (!fromAccountId || !(toAccountId || toQuery) || fromAccountId === toAccountId) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
         return res.status(400).json({ error: "Invalid account selection" });
       }
 
       const amnt = Math.round(parseFloat(amount) * 100);
-      if (!Number.isFinite(amnt) || amnt <= 0) return res.status(400).json({ error: "Invalid amount" });
+      if (!Number.isFinite(amnt) || amnt <= 0) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Invalid amount" });
+      }
 
       const [sourceAccount] = await db.select().from(bankAccounts).where(
         and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bankId))
       );
 
       if (!sourceAccount || !(await isUserAccountOwnerOrMember(sourceAccount, candidateIds))) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
         return res.status(404).json({ error: "Source account not found or unauthorized" });
       }
 
-      if (!sourceAccount.isActive || sourceAccount.isFrozen) return res.status(400).json({ error: "Source account is inactive or frozen" });
-      if (sourceAccount.balance < amnt) return res.status(400).json({ error: `Insufficient funds.` });
+      if (!sourceAccount.isActive || sourceAccount.isFrozen) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Source account is inactive or frozen" });
+      }
+      if (sourceAccount.balance < amnt) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: `Insufficient funds.` });
+      }
 
       const { resolvePayableAccount } = await import("../../lib/account_lookup.js");
       const resolved = await resolvePayableAccount(toAccountId || toQuery, { bankId, excludeId: sourceAccount.id });
-      if (!resolved.account) return res.status(404).json({ error: resolved.error || "Destination account not found" });
+      if (!resolved.account) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(404).json({ error: resolved.error || "Destination account not found" });
+      }
       const destAccount = resolved.account;
-      if (destAccount.bankId !== bankId) return res.status(400).json({ error: "Transfers stay inside this bank. Use Onyx to pay another bank." });
-      if (!destAccount.isActive || destAccount.isFrozen) return res.status(400).json({ error: "Destination account is inactive or frozen" });
+      if (destAccount.bankId !== bankId) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Transfers stay inside this bank. Use Onyx to pay another bank." });
+      }
+      if (!destAccount.isActive || destAccount.isFrozen) {
+        if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+        return res.status(400).json({ error: "Destination account is inactive or frozen" });
+      }
 
       const { executeSameBankBookTransfer, parseFeePayerMode, loadSettings } = await import("../../lib/citycorp_money");
       const settings = await loadSettings(bankId);
@@ -551,8 +583,15 @@ portalRouter.post("/api/portal/:bankId/transfer", requireAuth, async (req: expre
         })
       ).catch(() => {});
 
-      res.json({ success: true, quote: moved.quote, txId: moved.txId, destination: { id: destAccount.id, accountName: destAccount.accountName, bankName: destAccount.bankName } });
+      const responsePayload = { success: true, quote: moved.quote, txId: moved.txId, destination: { id: destAccount.id, accountName: destAccount.accountName, bankName: destAccount.bankName } };
+      if (idempotencyKey) {
+        await completeIdempotency(idempotencyKey, scope, 200, responsePayload);
+      }
+      res.json(responsePayload);
     } catch (e: any) {
+      if (idempotencyKey) {
+        await releaseIdempotency(idempotencyKey, scope);
+      }
       console.error(e);
       if (e?.name === "MoneyRailError") {
         return res.status(400).json({ error: e.message || "Transfer failed" });

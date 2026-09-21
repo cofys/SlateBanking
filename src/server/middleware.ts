@@ -113,8 +113,12 @@ export const authenticateApiRequest = async (req: express.Request, res: express.
   try {
     const { verifyPresentedKey, hashApiKey, last4OfKey } = await import("../lib/api_keys.js");
     const { bankIsSuspended } = await import("../lib/tenant_guard.js");
-    const all = await db.select().from(banks);
-    const bank = all.find((b) => {
+    const { or, eq, isNull } = await import("drizzle-orm");
+    const tokenLast4 = last4OfKey(token);
+    const candidates = await db.select().from(banks).where(
+      tokenLast4 ? or(eq(banks.apiKeyLast4, tokenLast4), isNull(banks.apiKeyLast4)) : undefined
+    );
+    const bank = candidates.find((b) => {
       const result = verifyPresentedKey({
         presented: token,
         storedHash: (b as any).apiKeyHash,

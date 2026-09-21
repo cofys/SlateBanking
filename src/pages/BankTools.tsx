@@ -202,12 +202,12 @@ export function BankTools() {
                 <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Upload size={20} /></div>
                 <div>
                   <h3 className="text-xl font-bold">SQLite (.db) Direct Database Migration</h3>
-                  <p className="text-xs text-emerald-400 font-mono mt-0.5">Supports .db, .sqlite, .sqlite3 files or .sql script dumps</p>
+                  <p className="text-xs text-emerald-400 font-mono mt-0.5">Supports .db, .sqlite, and .sqlite3 binary database files</p>
                 </div>
               </div>
               <p className="text-white/60 text-sm mb-6 max-w-xl leading-relaxed">
-                Migrating from an older bot or legacy SQLite database? Upload your raw <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">.db</code> file or paste SQL queries below.
-                Our ingestion engine will parse tables including <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">accounts</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loan_products</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loans</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loan_applications</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">transactions</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">invoices</code>, and <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">payroll_entries</code>.
+                Migrating from an older bot or legacy SQLite database? Upload your raw <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">.db</code> file.
+                Our ingestion engine validates the SQLite file format and safely extracts allowlisted tables including <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">accounts</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loan_products</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loans</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">loan_applications</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">transactions</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">invoices</code>, and <code className="bg-white/10 px-1 py-0.5 rounded text-xs text-white/80">payroll_entries</code>.
               </p>
 
               <form onSubmit={async (e) => {
@@ -220,29 +220,26 @@ export function BankTools() {
                      const fileInput = document.getElementById("sqlite-file-input") as HTMLInputElement;
                      const file = fileInput?.files?.[0];
 
-                     let payload: any = {};
-
-                     if (file) {
-                       if (file.name.endsWith(".sql")) {
-                         const text = await file.text();
-                         payload.dbSql = text;
-                       } else {
-                         // Read binary .db file into base64
-                         const arrayBuffer = await file.arrayBuffer();
-                         const bytes = new Uint8Array(arrayBuffer);
-                         let binary = "";
-                         for (let i = 0; i < bytes.byteLength; i++) {
-                           binary += String.fromCharCode(bytes[i]);
-                         }
-                         payload.dbBase64 = btoa(binary);
-                       }
-                     } else if (sqlScriptText.trim()) {
-                       payload.dbSql = sqlScriptText.trim();
-                     } else {
-                       alert("Please select a .db/.sqlite/.sql file OR paste SQL dump script text.");
+                     if (!file) {
+                       alert("Please select a binary .db, .sqlite, or .sqlite3 file to upload.");
                        setRunning(false);
                        return;
                      }
+
+                     if (file.name.endsWith(".sql")) {
+                       alert("Raw .sql script execution is disabled for multi-tenant safety. Please upload a binary SQLite .db file.");
+                       setRunning(false);
+                       return;
+                     }
+
+                     // Read binary .db file into base64
+                     const arrayBuffer = await file.arrayBuffer();
+                     const bytes = new Uint8Array(arrayBuffer);
+                     let binary = "";
+                     for (let i = 0; i < bytes.byteLength; i++) {
+                       binary += String.fromCharCode(bytes[i]);
+                     }
+                     const payload = { dbBase64: btoa(binary) };
 
                      const res = await fetch(`/api/banks/${bank.id}/tools/sqlite-migration`, {
                        method: 'POST',
@@ -265,23 +262,9 @@ export function BankTools() {
               }} className="max-w-xl space-y-6">
                 
                 <div>
-                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Option 1: Upload SQLite Database File (.db / .sqlite / .sqlite3 / .sql)</label>
-                   <input id="sqlite-file-input" type="file" accept=".db,.sqlite,.sqlite3,.sql" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-400 hover:file:bg-emerald-500/30" />
-                   <p className="text-xs text-white/40 mt-1.5">Direct binary upload of your legacy SQLite file. We parse all tables safely on the server.</p>
-                </div>
-
-                <div>
-                   <div className="flex justify-between items-center mb-2">
-                     <label className="block text-xs font-medium text-white/50 uppercase tracking-wide">Option 2: Or Paste SQL Script / Schema Dump</label>
-                     <span className="text-[10px] text-zinc-500">CREATE TABLE &amp; INSERT INTO statements</span>
-                   </div>
-                   <textarea
-                     rows={5}
-                     value={sqlScriptText}
-                     onChange={(e) => setSqlScriptText(e.target.value)}
-                     placeholder={`CREATE TABLE accounts (\n  account_name TEXT PRIMARY KEY,\n  discord_id TEXT NOT NULL,\n  mc_username TEXT,\n  ...\n);\n\nINSERT INTO accounts VALUES ('main_checking', '123456789', 'Steve', ...);`}
-                     className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg p-3 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500 leading-relaxed"
-                   />
+                   <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Upload SQLite Database File (.db / .sqlite / .sqlite3)</label>
+                   <input id="sqlite-file-input" type="file" accept=".db,.sqlite,.sqlite3" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-400 hover:file:bg-emerald-500/30" />
+                   <p className="text-xs text-white/40 mt-1.5">Direct binary upload of your legacy SQLite database. Parsed safely read-only on the server.</p>
                 </div>
 
                 {complete && sqliteStats && (

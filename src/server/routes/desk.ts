@@ -223,25 +223,50 @@ deskRouter.post("/api/banks/:bankId/teller/quote", requireBankStaff, async (req:
 });
 
 deskRouter.post("/api/banks/:bankId/teller/transfer", requireBankStaff, async (req: express.Request, res: express.Response) => {
+  const bankId = req.params.bankId;
+  const { extractIdempotencyKey, checkIdempotency, startIdempotency, completeIdempotency, releaseIdempotency } = await import("../../lib/idempotency.js");
+  const idempotencyKey = extractIdempotencyKey(req);
+  const scope = `teller_transfer_${bankId}_${(req as any).user?.discordId || "staff"}`;
+
+  if (idempotencyKey) {
+    const check = await checkIdempotency(idempotencyKey, scope);
+    if (check.state === "completed") {
+      return res.status(check.statusCode || 200).json(check.body);
+    }
+    if (check.state === "in_progress") {
+      return res.status(409).json({ error: "A transfer with this idempotency key is currently processing. Please wait." });
+    }
+    await startIdempotency(idempotencyKey, scope);
+  }
+
   try {
     const { db } = await import("../../db/index.js");
     const { bankAccounts, banks, auditLogs } = await import("../../db/schema.js");
     const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money.js");
-    const bankId = req.params.bankId;
     const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
     const block = bankBlocksCustomerMoney(bank);
-    if (block.blocked) return res.status(503).json({ error: block.reason });
+    if (block.blocked) {
+      if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+      return res.status(503).json({ error: block.reason });
+    }
 
     const { fromAccountId, toAccountId, amount, feePayerMode, description } = req.body;
     const cents = Math.round(parseFloat(amount) * 100);
     if (!fromAccountId || !toAccountId || !Number.isFinite(cents) || cents <= 0) {
+      if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
       return res.status(400).json({ error: "Invalid transfer" });
     }
     const source = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bankId))).get();
     const dest = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, toAccountId), eq(bankAccounts.bankId, bankId))).get();
-    if (!source || !dest) return res.status(404).json({ error: "Account not found" });
+    if (!source || !dest) {
+      if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+      return res.status(404).json({ error: "Account not found" });
+    }
 
-    if (source.bankId !== dest.bankId) return res.status(400).json({ error: "Teller transfers stay inside this bank. Use a wire or Onyx for another bank." });
+    if (source.bankId !== dest.bankId) {
+      if (idempotencyKey) await releaseIdempotency(idempotencyKey, scope);
+      return res.status(400).json({ error: "Teller transfers stay inside this bank. Use a wire or Onyx for another bank." });
+    }
 
     const result = await executeSameBankBookTransfer({
       sourceAccount: source,
@@ -271,9 +296,17 @@ deskRouter.post("/api/banks/:bankId/teller/transfer", requireBankStaff, async (r
       })
     ).catch(() => {});
 
-    res.json({ success: true, quote: result.quote, txId: result.txId });
+    const responsePayload = { success: true, quote: result.quote, txId: result.txId };
+    if (idempotencyKey) {
+      await completeIdempotency(idempotencyKey, scope, 200, responsePayload);
+    }
+    res.json(responsePayload);
   } catch (e: any) {
-    res.status(400).json({ error: e.message || "Transfer failed" });
+    if (idempotencyKey) {
+      await releaseIdempotency(idempotencyKey, scope);
+    }
+    console.error(e);
+    res.status(500).json({ error: e.message || "Internal error" });
   }
 });
 

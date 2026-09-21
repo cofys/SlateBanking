@@ -330,6 +330,8 @@ function ensureDatabaseSchemaSynced() {
 
   createTableIfNotExists("platform_alerts", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT, severity TEXT NOT NULL DEFAULT 'warning', code TEXT NOT NULL, message TEXT NOT NULL, is_open INTEGER DEFAULT 1, created_at INTEGER NOT NULL, resolved_at INTEGER, resolved_by TEXT");
   createTableIfNotExists("used_payment_tokens", "token_hash TEXT PRIMARY KEY NOT NULL, merchant_id TEXT, discord_id TEXT, amount_cents INTEGER, used_at INTEGER NOT NULL");
+  createTableIfNotExists("idempotency_keys", "id TEXT PRIMARY KEY NOT NULL, key TEXT NOT NULL, scope TEXT NOT NULL, status TEXT NOT NULL, status_code INTEGER, response_json TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL");
+
 
   // Onyx Settings table
   checkAndAddColumn("onyx_settings", "b2b_api_fee_percent", "INTEGER DEFAULT 200");
@@ -380,6 +382,10 @@ function ensureDatabaseSchemaSynced() {
   createIndexIfNotExists("idx_platform_alerts_bank_id", "platform_alerts", "bank_id");
   createIndexIfNotExists("idx_platform_alerts_open", "platform_alerts", "is_open");
   createIndexIfNotExists("idx_used_payment_tokens_merchant", "used_payment_tokens", "merchant_id");
+  createIndexIfNotExists("idx_idempotency_scope_key", "idempotency_keys", "scope, key");
+  createIndexIfNotExists("idx_idempotency_expires_at", "idempotency_keys", "expires_at");
+  createIndexIfNotExists("idx_banks_api_key_last4", "banks", "api_key_last4");
+  createIndexIfNotExists("idx_onyx_merchants_api_key_last4", "onyx_merchants", "api_key_last4");
 }
 
 try {

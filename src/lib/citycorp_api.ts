@@ -2,7 +2,115 @@ import { db } from "../db/index";
 import { cityCorpLogs } from "../db/schema";
 import { v4 as uuidv4 } from "uuid";
 
-export const CITYCORP_DEFAULT_SCOPES = "corp.player.info.get,corp.account_money.transfer,corp.account.deposit,corp.account.withdraw";
+export const CITYCORP_DEFAULT_SCOPES = "corp.player.info.get,corp.info.get";
+
+/**
+ * Official CityRP Scopes (dot-separated naming convention):
+ * - corp.player.info.get -> GET player info from CityCorp
+ * - corp.info.get -> GET corporation data
+ * - corp.staff.write -> PATCH (modify) corp staff
+ * - corp.account.create -> POST (create) a corp account
+ * - corp.delete -> DELETE a corp
+ * - realty.player.info.get -> GET player info from CityRealty
+ * - realty.plot.info.get -> GET plot information
+ */
+export const CITYRP_OFFICIAL_SCOPES = [
+  "corp.player.info.get",
+  "corp.info.get",
+  "corp.staff.write",
+  "corp.account.create",
+  "corp.delete",
+  "realty.player.info.get",
+  "realty.plot.info.get"
+] as const;
+
+/**
+ * The 31 CityCorp event types emitted over wss://api.cityrp.org/citycorp
+ */
+export const CITYCORP_EVENT_TYPES = [
+  "CorpAdvertiseEvent",
+  "CorpCreatedEvent",
+  "CorpDisbandEvent",
+  "CorpTransferOwnershipEvent",
+  "CorpAccountChangeEvent",
+  "CorpAccountCreateEvent",
+  "CorpAccountDeleteEvent",
+  "CorpAccountDepositEvent",
+  "CorpAccountWithdrawEvent",
+  "CorpDemoteEvent",
+  "CorpFireEvent",
+  "CorpHireEvent",
+  "CorpPromoteEvent",
+  "CorpResignEvent",
+  "CorpDepositEvent",
+  "CorpWithdrawEvent",
+  "CorpDescriptionChangeEvent",
+  "CorpDiscordChangeEvent",
+  "CorpHQChangeEvent",
+  "CorpShopCreateEvent",
+  "CorpShopDeleteEvent",
+  "CorpDelistEvent",
+  "CorpDividendChangeEvent",
+  "CorpIPOEvent",
+  "StockSellEvent",
+  "StockTransferEvent",
+  "CorpTaskClaimEvent",
+  "CorpTaskCompleteEvent",
+  "CorpTaskCreateEvent",
+  "CorpTaskDeleteEvent",
+  "ShopChangeEvent"
+] as const;
+
+/**
+ * Fetches player profile information using either the player's scoped OAuth token or app token.
+ * According to official docs: GET https://api.cityrp.org/citycorp/player with Basic Auth (uuid:token).
+ */
+export async function fetchCityCorpPlayerInfo(
+  minecraftUuid: string,
+  token: string
+): Promise<{ success: boolean; username?: string; data?: any; error?: string }> {
+  const authString = `${minecraftUuid}:${token}`;
+  const authEncoded = Buffer.from(authString).toString("base64");
+  const headers = {
+    Authorization: `Basic ${authEncoded}`,
+    "User-Agent": "SlateBankBot/1.0",
+    "Content-Type": "application/json"
+  };
+
+  // Primary endpoint per OAS 3.0 docs: /citycorp/player
+  try {
+    const res = await fetch("https://api.cityrp.org/citycorp/player", {
+      headers,
+      signal: AbortSignal.timeout(5000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const username = data.username || data.name || data.player?.name || data.player_name || null;
+      return { success: true, username: username || undefined, data };
+    }
+  } catch (e: any) {
+    console.warn(`[CityCorp] Primary /citycorp/player fetch failed: ${e.message}`);
+  }
+
+  // Fallback to legacy root /player endpoint if available
+  try {
+    const fallbackRes = await fetch("https://api.cityrp.org/player", {
+      headers,
+      signal: AbortSignal.timeout(4000)
+    });
+
+    if (fallbackRes.ok) {
+      const data = await fallbackRes.json();
+      const username = data.username || data.name || data.player?.name || data.player_name || null;
+      return { success: true, username: username || undefined, data };
+    }
+  } catch (e: any) {
+    console.warn(`[CityCorp] Fallback /player fetch failed: ${e.message}`);
+  }
+
+  return { success: false, error: "Failed to fetch CityCorp player info" };
+}
 
 export function buildCityCorpAuthUrl(
   bank: { cityCorpAppId?: string | null; cityCorpAuthUrl?: string | null },

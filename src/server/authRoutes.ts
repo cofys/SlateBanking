@@ -2,7 +2,7 @@ import { logSecurityEvent, sanitizeReturnTo, clientIp } from "./middleware";
 import express from "express";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET, getRedirectUri, requireAuth } from "./middleware.js";
-import { buildCityCorpAuthUrl } from "../lib/citycorp_api.js";
+import { buildCityCorpAuthUrl, fetchCityCorpPlayerInfo } from "../lib/citycorp_api.js";
 
 function envAdminIds(): Set<string> {
   const raw = [
@@ -326,14 +326,9 @@ export function registerAuthRoutes(app: express.Express) {
 
       if (!mcUsername) {
         try {
-          const authHeader = 'Basic ' + Buffer.from(`${minecraftUuid}:${token}`).toString('base64');
-          const playerRes = await fetch("https://api.cityrp.org/player", {
-            headers: { "Authorization": authHeader, "User-Agent": "SlateBankBot/1.0" }
-          });
-
-          if (playerRes.ok) {
-            const playerData = await playerRes.json();
-            mcUsername = playerData.username || playerData.name || playerData.player?.name || playerData.player_name || "";
+          const playerRes = await fetchCityCorpPlayerInfo(minecraftUuid, token);
+          if (playerRes.success && playerRes.username) {
+            mcUsername = playerRes.username;
           }
         } catch (e) {
           console.error("CityCorp player API error:", e);
