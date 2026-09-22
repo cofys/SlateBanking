@@ -39,6 +39,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [loanProducts, setLoanProducts] = useState<any[]>([]);
   const [cardProducts, setCardProducts] = useState<any[]>([]);
   const [bondProducts, setBondProducts] = useState<any[]>([]);
+  const [accountTiers, setAccountTiers] = useState<any[]>([]);
+  const [selectedTierId, setSelectedTierId] = useState("");
   const [merchants, setMerchants] = useState<any[]>([]);
   const [repayingLoan, setRepayingLoan] = useState<any | null>(null);
   const [logoBroken, setLogoBroken] = useState(false);
@@ -92,6 +94,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         if (d.error) setBankNotFound(true);
         else {
           setBank(d);
+          if (Array.isArray(d.settings?.accountTiers)) {
+            setAccountTiers(d.settings.accountTiers.filter((t: any) => !t.isPrivate));
+          }
           document.title = `${d.name} · Banking`;
         }
       })
@@ -152,12 +157,18 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
           setLoanProducts(Array.isArray(d.loans) ? d.loans : []);
           setCardProducts(Array.isArray(d.cards) ? d.cards : []);
           setBondProducts(Array.isArray(d.bonds) ? d.bonds : []);
+          if (Array.isArray(d.accountTiers)) {
+            setAccountTiers(d.accountTiers.filter((t: any) => !t.isPrivate));
+          }
         })
         .catch(() => {});
     }
   }, [view, bankId]);
 
   const accounts = userData?.accounts || [];
+  const availableTiers = (
+    accountTiers.length > 0 ? accountTiers : (Array.isArray(settings?.accountTiers) ? settings.accountTiers : [])
+  ).filter((t: any) => !t.isPrivate);
   const netWorth = accounts.reduce((s: number, a: any) => s + (a.balance || 0), 0);
   const loans = userData?.loans || [];
   const activeLoans = loans.filter((l: any) => ["active", "delinquent", "defaulted", "pending", "awaiting_signature"].includes(l.status));
@@ -258,17 +269,40 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     const fd = new FormData(form);
+    const chosenTierId = (fd.get("tierId") as string) || selectedTierId;
+    const chosenTier = availableTiers.find((t: any) => t.id === chosenTierId);
+
+    let accountType = fd.get("accountType") as string;
+    if (chosenTier) {
+      if (chosenTier.type === "business") {
+        accountType = "business_checking";
+      } else if (chosenTier.name?.toLowerCase().includes("saving")) {
+        accountType = "personal_savings";
+      } else {
+        accountType = "personal_checking";
+      }
+    } else if (!accountType) {
+      accountType = "personal_checking";
+    }
+
     setActionPending(true);
     try {
       const res = await fetch("/api/citizen/accounts/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankId, accountName: fd.get("accountName"), accountType: fd.get("accountType") || "personal" }),
+        body: JSON.stringify({ 
+          bankId, 
+          accountName: fd.get("accountName"), 
+          accountType,
+          tierId: chosenTierId || undefined,
+        }),
       });
       const d = await res.json();
       if (!res.ok) flash(d.error || "Could not open account");
       else {
         flash("Account opened.");
+        form.reset();
+        setSelectedTierId("");
         setView("home");
         handleSearch();
       }
@@ -592,7 +626,11 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <div key={acc.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 hover:border-white/20 transition">
                       <div className="flex justify-between items-start gap-3">
                         <div>
-                          <p className="text-[11px] uppercase tracking-wider text-white/40">{acc.accountType || "personal"}</p>
+                          <p className="text-[11px] uppercase tracking-wider text-white/40">
+                            {acc.tierId && availableTiers.find((t: any) => t.id === acc.tierId)
+                              ? `${availableTiers.find((t: any) => t.id === acc.tierId).name} · ${acc.accountType?.replace('_', ' ') || 'personal'}`
+                              : (acc.accountType?.replace('_', ' ') || "personal")}
+                          </p>
                           <p className="font-bold mt-0.5">{acc.accountName}</p>
                         </div>
                         {acc.isFrozen && <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-full">Frozen</span>}
@@ -833,12 +871,60 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
             <form onSubmit={openAccount} className="rounded-2xl border border-white/10 p-5 space-y-3">
               <h3 className="font-bold flex items-center gap-2"><Wallet size={16} /> Open an account</h3>
-              <input name="accountName" required placeholder="Account name" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm" />
-              <select name="accountType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                <option value="personal_checking" className="bg-[#18181c] text-[#f4f4f5]">Personal checking</option>
-                <option value="personal_savings" className="bg-[#18181c] text-[#f4f4f5]">Savings</option>
-                <option value="business_checking" className="bg-[#18181c] text-[#f4f4f5]">Business</option>
-              </select>
+              <div>
+                <input name="accountName" required placeholder="Account name" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm placeholder:text-white/30" />
+              </div>
+
+              {availableTiers.length > 0 ? (
+                <div className="space-y-2.5">
+                  <select 
+                    name="tierId" 
+                    value={selectedTierId || (availableTiers.find((t: any) => t.isDefault)?.id || availableTiers[0]?.id || "")}
+                    onChange={(e) => setSelectedTierId(e.target.value)}
+                    required
+                    className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                  >
+                    {availableTiers.map((t: any) => (
+                      <option key={t.id} value={t.id} className="bg-[#18181c] text-[#f4f4f5]">
+                        {t.name} ({t.type === "business" ? "Business" : "Personal"})
+                        {t.apyPercent ? ` · ${(Number(t.apyPercent) / 100).toFixed(2)}% APY` : ""}
+                        {t.monthlyFee ? ` · $${(Number(t.monthlyFee) / 100).toFixed(2)}/mo` : ""}
+                        {t.isDefault ? " · Default" : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  {(() => {
+                    const activeTier = availableTiers.find((t: any) => t.id === (selectedTierId || availableTiers.find((x: any) => x.isDefault)?.id || availableTiers[0]?.id));
+                    if (!activeTier) return null;
+                    return (
+                      <div className="text-xs bg-white/[0.03] border border-white/10 rounded-xl p-3 space-y-1.5">
+                        {activeTier.description && (
+                          <p className="text-white/80">{activeTier.description}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/45">
+                          <span>Category: <strong className="text-white/80 capitalize">{activeTier.type}</strong></span>
+                          {activeTier.minBalance > 0 && <span>Min. Deposit: <strong className="text-white/80">{formatMoney(activeTier.minBalance)}</strong></span>}
+                          {activeTier.monthlyFee > 0 ? (
+                            <span>Monthly Fee: <strong className="text-white/80">{formatMoney(activeTier.monthlyFee)}/mo</strong></span>
+                          ) : (
+                            <span className="text-emerald-400 font-medium">No Monthly Maintenance Fee</span>
+                          )}
+                          {activeTier.apyPercent > 0 && <span>Annual Yield: <strong className="text-emerald-400">{(Number(activeTier.apyPercent) / 100).toFixed(2)}% APY</strong></span>}
+                          {activeTier.creditLimit > 0 && <span>Includes Credit Line: <strong className="text-indigo-300">{formatMoney(activeTier.creditLimit)}</strong></span>}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <select name="accountType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                  <option value="personal_checking" className="bg-[#18181c] text-[#f4f4f5]">Personal checking</option>
+                  <option value="personal_savings" className="bg-[#18181c] text-[#f4f4f5]">Savings</option>
+                  <option value="business_checking" className="bg-[#18181c] text-[#f4f4f5]">Business</option>
+                </select>
+              )}
+
               <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Open</button>
             </form>
 

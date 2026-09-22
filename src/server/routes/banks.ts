@@ -27,8 +27,12 @@ banksRouter.put("/api/banks/:bankId/tiers", [requireBankStaff, requireRole(["own
   const { bankId } = req.params;
   const { accountTiers } = req.body;
   try {
+    const hasTiers = Array.isArray(accountTiers) && accountTiers.length > 0;
     await db.update(bankSettings)
-      .set({ accountTiers })
+      .set({ 
+        accountTiers,
+        enableAccountTiers: hasTiers ? true : false,
+      })
       .where(eq(bankSettings.bankId, bankId));
     res.json({ accountTiers });
   } catch (e: any) {

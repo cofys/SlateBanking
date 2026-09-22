@@ -175,13 +175,18 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
       const rawTiers = (settings && Array.isArray(settings.vaultTiers)) ? settings.vaultTiers : [];
       const cleanTiers = (!settings || settings.enableVaults === false || isDefaultDummyVaultTiers(rawTiers)) ? [] : rawTiers;
 
+      const rawAccountTiers = (settings && Array.isArray(settings.accountTiers)) ? settings.accountTiers : [];
+      const cleanAccountTiers = (!settings || settings.enableAccountTiers === false)
+        ? []
+        : rawAccountTiers.filter((t: any) => !t.isPrivate);
+
       const publicSettings = settings ? {
         bankId: settings.bankId,
         logoUrl: settings.logoUrl || bank.logoUrl,
         colorScheme: settings.colorScheme,
         requireKyc: settings.requireKyc,
-        enableAccountTiers: settings.enableAccountTiers,
-        accountTiers: settings.accountTiers,
+        enableAccountTiers: settings.enableAccountTiers !== false && cleanAccountTiers.length > 0,
+        accountTiers: cleanAccountTiers,
         enableLoans: settings.enableLoans,
         enableVaults: settings.enableVaults,
         enableCards: settings.enableCards,
@@ -257,7 +262,10 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         bankName: banks.name,
         accountName: bankAccounts.accountName,
         type: bankAccounts.accountType,
-        balance: bankAccounts.balance
+        accountType: bankAccounts.accountType,
+        tierId: bankAccounts.tierId,
+        balance: bankAccounts.balance,
+        isFrozen: bankAccounts.isFrozen,
       })
       .from(bankAccounts)
       .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
@@ -275,7 +283,10 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
             bankName: banks.name,
             accountName: bankAccounts.accountName,
             type: bankAccounts.accountType,
-            balance: bankAccounts.balance
+            accountType: bankAccounts.accountType,
+            tierId: bankAccounts.tierId,
+            balance: bankAccounts.balance,
+            isFrozen: bankAccounts.isFrozen,
           })
           .from(bankAccounts)
           .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
@@ -853,17 +864,52 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       return res.status(400).json({ error: "Bank selection and Account Name are required." });
     }
 
-    const allowedTypes = ["personal_checking", "personal_savings", "business_checking", "business_savings"];
-    let type = allowedTypes.includes(accountType) ? accountType : (accountType === "business" ? "business_checking" : "personal_checking");
-    const isBusiness = type.includes("business");
-
     // 1. Check Bank
     const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
     if (!bank) return res.status(404).json({ error: "Selected bank does not exist." });
 
-    // 2. Check Bank Settings for requirePersonalForBusiness requirement
+    // 2. Check Bank Settings
     const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
     const mustHavePersonal = settings?.requirePersonalForBusiness ?? true;
+
+    const rawAccountTiers = (settings && Array.isArray(settings.accountTiers)) ? settings.accountTiers : [];
+    const tiersActive = settings?.enableAccountTiers !== false && rawAccountTiers.length > 0;
+
+    const allowedTypes = ["personal_checking", "personal_savings", "business_checking", "business_savings"];
+    let type = allowedTypes.includes(accountType) ? accountType : (accountType === "business" ? "business_checking" : "personal_checking");
+
+    let finalTierId = null;
+    let selectedTier: any = null;
+
+    if (tiersActive) {
+      if (reqTierId) {
+        selectedTier = rawAccountTiers.find((t: any) => t.id === reqTierId && !t.isPrivate);
+        if (selectedTier) {
+          finalTierId = selectedTier.id;
+          if (selectedTier.type === "business") {
+            type = "business_checking";
+          } else if (selectedTier.type === "personal" && (!accountType || accountType === "personal")) {
+            type = selectedTier.name?.toLowerCase().includes("saving") ? "personal_savings" : "personal_checking";
+          }
+        } else {
+          return res.status(400).json({ error: "Invalid or private tier selected." });
+        }
+      } else {
+        const defaultTier = rawAccountTiers.find((t: any) => (t.type === type || (t.type === "personal" && type.startsWith("personal")) || (t.type === "business" && type.startsWith("business"))) && t.isDefault && !t.isPrivate);
+        if (defaultTier) {
+          finalTierId = defaultTier.id;
+          selectedTier = defaultTier;
+        } else {
+          const fallbackTier = rawAccountTiers.find((t: any) => (t.type === type || (t.type === "personal" && type.startsWith("personal")) || (t.type === "business" && type.startsWith("business"))) && !t.isPrivate);
+          if (fallbackTier) {
+            finalTierId = fallbackTier.id;
+            selectedTier = fallbackTier;
+          }
+        }
+      }
+    }
+
+    const isBusiness = type.includes("business");
 
     if (isBusiness && mustHavePersonal) {
       // Check if user has an active personal account in this bank
@@ -880,27 +926,6 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
         return res.status(400).json({ 
           error: `Bank Policy Violation: ${bank.name} requires you to open at least one Personal Account before registering a Business Account.` 
         });
-      }
-    }
-
-    let finalTierId = null;
-    if (settings?.enableAccountTiers && settings?.accountTiers) {
-      if (reqTierId) {
-        const selectedTier = settings.accountTiers.find((t: any) => t.id === reqTierId && !t.isPrivate);
-        if (selectedTier) {
-          finalTierId = selectedTier.id;
-        } else {
-          return res.status(400).json({ error: "Invalid or private tier selected." });
-        }
-      } else {
-        const defaultTier = settings.accountTiers.find((t: any) => t.type === type && t.isDefault && !t.isPrivate);
-        if (defaultTier) {
-          finalTierId = defaultTier.id;
-        } else {
-           // Fallback to first non-private tier of the type
-           const fallbackTier = settings.accountTiers.find((t: any) => t.type === type && !t.isPrivate);
-           if (fallbackTier) finalTierId = fallbackTier.id;
-        }
       }
     }
 
@@ -1246,13 +1271,20 @@ portalRouter.get("/api/portal/:bankId/catalog", requireAuth, async (req: express
 
     const rawVaultTiers = Array.isArray(settings?.vaultTiers) ? settings.vaultTiers : [];
     const bonds = (settings?.enableVaults === false || isDefaultDummyVaultTiers(rawVaultTiers)) ? [] : rawVaultTiers;
+    const rawAccountTiers = Array.isArray(settings?.accountTiers) ? settings.accountTiers : [];
+    const accountTiers = (settings?.enableAccountTiers === false) 
+      ? [] 
+      : rawAccountTiers.filter((t: any) => !t.isPrivate);
+
     res.json({ 
       loans, 
       cards, 
       bonds, 
+      accountTiers,
       enableLoans: settings?.enableLoans !== false, 
       enableCards: settings?.enableCards !== false, 
-      enableBonds: settings?.enableVaults !== false && bonds.length > 0 
+      enableBonds: settings?.enableVaults !== false && bonds.length > 0,
+      enableAccountTiers: settings?.enableAccountTiers !== false && accountTiers.length > 0
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message || "Failed to load catalog" });

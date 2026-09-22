@@ -867,12 +867,13 @@ Scopes use a dot-separated naming convention:
 - **Account-Level Overrides**: Added `customApyPercent` to the `bankAccounts` schema so that specific VIP accounts can override the bank's base APY.
 
 ### Account Tiers System
-- **Tier Configuration**: Banks can toggle the "Custom Account Tiers" feature in the Settings page. This reveals the "Account Tiers" menu item under "Products & Services".
+- **Tier Configuration**: Banks can toggle the "Custom Account Tiers" feature in the Settings page or directly configure tiers in the "Account Tiers" page under "Products & Services". Saving account tiers automatically activates the feature for the bank.
 - **Granular Rulesets**: Within the Account Tiers UI, bank staff can create tiers (e.g., Gold Savings, Premium Checking) customized with a monthly fee, minimum balance requirements, and custom APY/transfer/deposit/withdraw fee percentages.
-- **Private Tiers**: Tiers can be marked as "Private (Staff Only)". Private tiers are ignored by the automated tier assignment logic when citizens register new accounts, ensuring they are strictly handed out by bank staff.
-- **Dynamic Tier Registration**: If a bank has public tiers enabled, the citizen registration modal automatically replaces the static "Personal / Business" category buttons with a dynamic list of available public tiers, allowing users to choose an upgraded tier immediately upon opening an account.
+- **Private Tiers**: Tiers can be marked as "Private (Staff Only)". Private tiers are ignored by public catalog and automated tier assignment logic when citizens register new accounts, ensuring they are strictly handed out by bank staff.
+- **Customer Portal Integration**: The Customer Portal (`BankPortal.tsx`) pulls available tiers directly from the bank's configuration (`/api/portal/:bankId/info` and `/api/portal/:bankId/catalog`). When custom account tiers exist, the "Open an account" form dynamically renders each tier option complete with fee, yield (APY), category, and perk summaries, and automatically associates the created account with the designated `tierId`.
+- **Dynamic Tier Registration**: If a bank has public tiers enabled, the registration flows automatically present the dynamic list of available public tiers, allowing users to choose an upgraded tier immediately upon opening an account.
 - **Customer Upgrades**: Citizens can upgrade their existing account's tier directly from their customer portal. An "Upgrade" button is displayed on eligible account cards, which opens a modal allowing them to select a new public tier of the same account type.
-- **Account Creation Support**: When creating or provisioning new bank accounts manually via the staff portal, the selected tier is seamlessly linked if Account Tiers are enabled.
+- **Account Creation Support**: When creating or provisioning new bank accounts manually via the staff portal or customer portal, the selected tier is seamlessly linked if Account Tiers are configured.
 - **Tier Reassignment**: Staff can manually reassign an existing account's tier at any point directly from the account's details page by clicking the edit icon next to the tier name.
 - **Transaction Engine Integration**: The citizen transaction engine inherently supports these customized configurations. Transfer logic overrides the bank's default transfer fees with the tier's custom rates if assigned.
 
