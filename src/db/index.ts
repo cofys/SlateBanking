@@ -177,6 +177,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "withdraw_fee_percent", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "deposit_fee_percent", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "transfer_fee_percent", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "government_fee_percent", "INTEGER DEFAULT 25");
   checkAndAddColumn("bank_settings", "inter_bank_wire_threshold", "INTEGER DEFAULT 5000000");
   checkAndAddColumn("bank_settings", "color_scheme", "TEXT DEFAULT 'indigo'");
   checkAndAddColumn("bank_settings", "logo_url", "TEXT");

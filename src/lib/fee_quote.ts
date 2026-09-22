@@ -1,6 +1,6 @@
 export type FeePayerMode = "from_payment" | "sender_covers";
 
-export type FeeSource = "citycorp" | "bank" | "platform";
+export type FeeSource = "citycorp" | "bank" | "platform" | "government";
 
 export interface FeeLine {
   code: string;
@@ -33,12 +33,53 @@ export function cityCorpPercentToRate(percent: number): number {
   return percent / 100;
 }
 
-/** Slate stores percents × 100 (200 → 2.00%). */
+/** Direct percent to rate: 1.75 -> 0.0175 (1.75%) */
+export function slatePercentToRate(percent: number | null | undefined): number {
+  if (percent === null || percent === undefined) return 0;
+  const n = Number(percent);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // If stored as basis points (e.g. > 100, like 175)
+  if (n > 100) return n / 10000;
+  return n / 100;
+}
+
+/** Basis points to rate: 175 -> 0.0175 (1.75%) */
+export function slateBpsToRate(bps: number | null | undefined): number {
+  if (bps === null || bps === undefined) return 0;
+  const n = Number(bps);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // If stored directly as a decimal percent (e.g. 1.75 instead of 175)
+  if (!Number.isInteger(n) || (n < 20 && n > 0 && n % 1 !== 0)) return n / 100;
+  return n / 10000;
+}
+
+/**
+ * Normalizes any fee percentage input (e.g. 0.25 for 0.25%, 25 for 0.25% bps, 1.75 for 1.75%)
+ * to decimal rate (0.0025, 0.0175).
+ */
+export function normalizePercentToRate(val: number | null | undefined, defaultPercent = 0): number {
+  if (val === null || val === undefined) {
+    return defaultPercent > 0 ? normalizePercentToRate(defaultPercent) : 0;
+  }
+  const n = Number(val);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // If stored as integer basis points (e.g. 25 bps = 0.25%, 175 bps = 1.75%, 200 bps = 2.0%)
+  if (Number.isInteger(n) && n >= 20) {
+    return n / 10000;
+  }
+  // Otherwise it's a direct percentage (e.g. 0.25 = 0.25%, 1.75 = 1.75%)
+  return n / 100;
+}
+
+/** Slate stores percents in various formats (1.75% as 1.75 or 175 bps).
+ * Automatically converts to decimal rate (0.0175).
+ */
 export function slateStoredToRate(stored: number | null | undefined): number {
   if (stored === null || stored === undefined) return 0;
   const n = Number(stored);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  return n / 10000;
+  if (n >= 50) return n / 10000;
+  return n / 100;
 }
 
 export function parseCityCorpFeeList(fees: any): { withdrawPct: number; depositPct: number } {
@@ -47,10 +88,23 @@ export function parseCityCorpFeeList(fees: any): { withdrawPct: number; depositP
   if (!fees) return { withdrawPct, depositPct };
 
   const apply = (key: string, value: number) => {
-    const t = key.toUpperCase();
+    const t = String(key).toUpperCase();
     if (t === "WITHDRAW") withdrawPct = value;
     if (t === "DEPOSIT") depositPct = value;
   };
+
+  if (typeof fees === "string") {
+    try {
+      fees = JSON.parse(fees);
+    } catch {
+      const parts = fees.split(/[,;\n]/);
+      for (const part of parts) {
+        const [k, v] = part.split(/[:=]/);
+        if (k && v) apply(k.trim(), Number(v.trim()) || 0);
+      }
+      return { withdrawPct, depositPct };
+    }
+  }
 
   if (Array.isArray(fees)) {
     for (const entry of fees) {
@@ -84,31 +138,44 @@ export function combinedCutRate(lines: FeeLine[]): number {
 export function quoteFees(desiredCents: number, lines: FeeLine[], mode: FeePayerMode): FeeQuote {
   const desired = Math.max(0, Math.round(desiredCents));
   const filtered = lines.filter((l) => l.rate > 0);
-  const p = combinedCutRate(filtered);
+  const totalRate = filtered.reduce((acc, l) => acc + l.rate, 0);
+
+  if (desired === 0 || totalRate <= 0) {
+    return {
+      mode,
+      desiredCents: desired,
+      submittedCents: desired,
+      receivedCents: desired,
+      totalFeeCents: 0,
+      combinedRate: 0,
+      lines: filtered.map((l) => ({ ...l, amountCents: 0 })),
+    };
+  }
 
   let submittedCents: number;
   let receivedCents: number;
-  if (desired === 0) {
-    submittedCents = 0;
-    receivedCents = 0;
-  } else if (p <= 0) {
-    submittedCents = desired;
-    receivedCents = desired;
-  } else if (p >= 0.9999) {
-    throw new Error("Combined fee rate is too high to quote.");
-  } else if (mode === "sender_covers") {
-    submittedCents = Math.ceil(desired / (1 - p));
+  let quotedLines: QuotedFeeLine[];
+  let totalFeeCents: number;
+
+  if (mode === "sender_covers") {
+    // Sender covers fee on top: line amounts are based on desired transfer amount
+    quotedLines = filtered.map((line) => ({
+      ...line,
+      amountCents: Math.round(desired * line.rate),
+    }));
+    totalFeeCents = quotedLines.reduce((sum, l) => sum + l.amountCents, 0);
+    submittedCents = desired + totalFeeCents;
     receivedCents = desired;
   } else {
+    // Fees are deducted from the payment amount
     submittedCents = desired;
-    receivedCents = Math.floor(desired * (1 - p));
+    quotedLines = filtered.map((line) => ({
+      ...line,
+      amountCents: Math.round(desired * line.rate),
+    }));
+    totalFeeCents = quotedLines.reduce((sum, l) => sum + l.amountCents, 0);
+    receivedCents = Math.max(0, desired - totalFeeCents);
   }
-
-  const totalFeeCents = submittedCents - receivedCents;
-  const quotedLines: QuotedFeeLine[] = filtered.map((line) => ({
-    ...line,
-    amountCents: Math.round(submittedCents * line.rate),
-  }));
 
   return {
     mode,
@@ -116,14 +183,36 @@ export function quoteFees(desiredCents: number, lines: FeeLine[], mode: FeePayer
     submittedCents,
     receivedCents,
     totalFeeCents,
-    combinedRate: p,
+    combinedRate: totalRate,
     lines: quotedLines,
   };
 }
 
 export function parseFeePayerMode(raw: any, fallback: FeePayerMode = "from_payment"): FeePayerMode {
-  const v = String(raw || "").toLowerCase();
-  if (v === "sender_covers" || v === "sender-covers" || v === "gross") return "sender_covers";
-  if (v === "from_payment" || v === "from-payment" || v === "net") return "from_payment";
+  const v = String(raw || "").trim().toLowerCase();
+  if (
+    v === "sender_covers" ||
+    v === "sender-covers" ||
+    v === "sender" ||
+    v === "gross" ||
+    v === "cover" ||
+    v === "covers" ||
+    v === "on_top" ||
+    v === "ontop" ||
+    v === "payer"
+  ) {
+    return "sender_covers";
+  }
+  if (
+    v === "from_payment" ||
+    v === "from-payment" ||
+    v === "net" ||
+    v === "deduct" ||
+    v === "deducted" ||
+    v === "sub" ||
+    v === "recipient"
+  ) {
+    return "from_payment";
+  }
   return fallback;
 }

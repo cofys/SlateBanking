@@ -54,6 +54,9 @@ export function BankSettings() {
       withdrawFeePercent: parseFloat(formData.get("withdrawFeePercent") as string) || 0,
       depositFeePercent: parseFloat(formData.get("depositFeePercent") as string) || 0,
       transferFeePercent: parseFloat(formData.get("transferFeePercent") as string) || 0,
+      governmentFeePercent: formData.get("governmentFeePercent") !== null && !isNaN(parseFloat(formData.get("governmentFeePercent") as string))
+        ? parseFloat(formData.get("governmentFeePercent") as string)
+        : 0.25,
       overwriteCustomAccountFees: formData.get("overwriteCustomAccountFees") === "on",
       savingsApyPercent: Math.round(parseFloat(formData.get("savingsApyPercent") as string) * 100) || 300,
       interBankWireThreshold: Math.floor(parseFloat(formData.get("interBankWireThreshold") as string) * 100) || 5000000,
@@ -179,14 +182,14 @@ export function BankSettings() {
             Fees & Risk Management
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Deposit Fee (%)</label>
               <input 
                 name="depositFeePercent" 
                 type="number" 
                 step="0.01"
-                defaultValue={settings?.depositFeePercent || 0} 
+                defaultValue={settings?.depositFeePercent ? (Number(settings.depositFeePercent) > 100 ? Number(settings.depositFeePercent) / 100 : Number(settings.depositFeePercent)) : 0} 
                 className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
@@ -196,7 +199,7 @@ export function BankSettings() {
                 name="withdrawFeePercent" 
                 type="number" 
                 step="0.01"
-                defaultValue={settings?.withdrawFeePercent || 0} 
+                defaultValue={settings?.withdrawFeePercent ? (Number(settings.withdrawFeePercent) > 100 ? Number(settings.withdrawFeePercent) / 100 : Number(settings.withdrawFeePercent)) : 0} 
                 className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
             </div>
@@ -206,9 +209,24 @@ export function BankSettings() {
                 name="transferFeePercent" 
                 type="number" 
                 step="0.01"
-                defaultValue={settings?.transferFeePercent || 0} 
+                defaultValue={settings?.transferFeePercent ? (Number(settings.transferFeePercent) > 100 ? Number(settings.transferFeePercent) / 100 : Number(settings.transferFeePercent)) : 0} 
                 className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
               />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-medium text-white/50 uppercase tracking-wide">Government Fee (%)</label>
+                <span className="text-[10px] text-amber-400/90 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono border border-amber-500/20">Civic Fee</span>
+              </div>
+              <input 
+                name="governmentFeePercent" 
+                type="number" 
+                step="0.01"
+                min="0"
+                defaultValue={settings?.governmentFeePercent != null ? (Number(settings.governmentFeePercent) >= 20 ? Number(settings.governmentFeePercent) / 100 : Number(settings.governmentFeePercent)) : 0.25} 
+                className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+              />
+              <p className="text-[11px] text-white/40 mt-1">Separate civic levy applied & shown on all quotes</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Savings APY Yield (%)</label>

@@ -1445,6 +1445,22 @@ banksRouter.put("/api/banks/:bankId/accounts/:accountId/custom-settings", requir
         timestamp: new Date()
       });
 
+      try {
+        const bankRow = await db.select().from(banks).where(eq(banks.id, bId)).get();
+        if (bankRow?.corpId && bankRow?.corpApiUuid && bankRow?.corpApiKey) {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bankRow.corpId, bankRow.corpApiUuid, bankRow.corpApiKey, bankRow.id);
+          if (newWithdrawFee !== null && newWithdrawFee !== undefined) {
+            await client.setAccountFee(acc.accountName, "WITHDRAW", newWithdrawFee / 100).catch(() => {});
+          }
+          if (newDepositFee !== null && newDepositFee !== undefined) {
+            await client.setAccountFee(acc.accountName, "DEPOSIT", newDepositFee / 100).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn("[fees] failed to sync custom account fees to CityCorp:", err);
+      }
+
       const updated = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accId)).get();
       res.json({ success: true, account: updated });
     } catch (e: any) {
@@ -1468,6 +1484,7 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
           withdrawFeePercent: 0,
           depositFeePercent: 0,
           transferFeePercent: 0,
+          governmentFeePercent: 25,
           colorScheme: "slate",
           logoUrl: null,
           supportEmail: null,
@@ -1494,6 +1511,7 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
       }
       res.json({
         ...settings,
+        governmentFeePercent: settings?.governmentFeePercent !== undefined && settings?.governmentFeePercent !== null ? settings.governmentFeePercent : 25,
         logoUrl: settings.logoUrl || bank?.logoUrl || "",
         customDomain: bank?.customDomain || "",
         brandingColor: bank?.brandingColor || "#4f46e5",
@@ -1567,6 +1585,13 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         withdrawFeePercent: req.body.withdrawFeePercent,
         depositFeePercent: req.body.depositFeePercent,
         transferFeePercent: req.body.transferFeePercent,
+        governmentFeePercent: (() => {
+          const raw = req.body.governmentFeePercent;
+          if (raw === undefined || raw === null || raw === "") return 25;
+          const n = Number(raw);
+          if (!Number.isFinite(n) || n < 0) return 25;
+          return n <= 10 ? Math.round(n * 100) : Math.round(n);
+        })(),
         colorScheme: req.body.colorScheme,
         logoUrl: req.body.logoUrl,
         supportEmail: req.body.supportEmail,
@@ -1647,9 +1672,9 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         const { bankAccounts, auditLogs } = await import("../../db/schema");
         const { v4: uuidv4 } = await import("uuid");
 
-        const transferFee = req.body.transferFeePercent !== undefined && req.body.transferFeePercent !== null && req.body.transferFeePercent !== "" ? Math.round(Number(req.body.transferFeePercent)) : null;
-        const depositFee = req.body.depositFeePercent !== undefined && req.body.depositFeePercent !== null && req.body.depositFeePercent !== "" ? Math.round(Number(req.body.depositFeePercent)) : null;
-        const withdrawFee = req.body.withdrawFeePercent !== undefined && req.body.withdrawFeePercent !== null && req.body.withdrawFeePercent !== "" ? Math.round(Number(req.body.withdrawFeePercent)) : null;
+        const transferFee = req.body.transferFeePercent !== undefined && req.body.transferFeePercent !== null && req.body.transferFeePercent !== "" ? Math.round(Number(req.body.transferFeePercent) * 100) : null;
+        const depositFee = req.body.depositFeePercent !== undefined && req.body.depositFeePercent !== null && req.body.depositFeePercent !== "" ? Math.round(Number(req.body.depositFeePercent) * 100) : null;
+        const withdrawFee = req.body.withdrawFeePercent !== undefined && req.body.withdrawFeePercent !== null && req.body.withdrawFeePercent !== "" ? Math.round(Number(req.body.withdrawFeePercent) * 100) : null;
 
         await db.update(bankAccounts).set({
           customTransferFeePercent: transferFee,
@@ -1662,9 +1687,29 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
           bankId: bId,
           userDiscordId: 'Operator',
           action: 'bulk_custom_fees_overwritten',
-          details: `Applied bank-wide fee update to all accounts (Transfer: ${transferFee ?? 'default'}, Deposit: ${depositFee ?? 'default'}, Withdraw: ${withdrawFee ?? 'default'})`,
+          details: `Applied bank-wide fee update to all accounts (Transfer: ${transferFee !== null ? transferFee / 100 + '%' : 'default'}, Deposit: ${depositFee !== null ? depositFee / 100 + '%' : 'default'}, Withdraw: ${withdrawFee !== null ? withdrawFee / 100 + '%' : 'default'})`,
           timestamp: new Date()
         });
+
+        try {
+          const bankRow = await db.select().from(banks).where(eq(banks.id, bId)).get();
+          if (bankRow?.corpId && bankRow?.corpApiUuid && bankRow?.corpApiKey) {
+            const { CityCorpClient } = await import("../../lib/citycorp_api");
+            const client = new CityCorpClient(bankRow.corpId, bankRow.corpApiUuid, bankRow.corpApiKey, bankRow.id);
+            const allAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bId)).all();
+            for (const a of allAccounts) {
+              if (a.accountType === "system_asset" && a.accountName.toUpperCase().includes("SETTLEMENT")) continue;
+              if (withdrawFee !== null) {
+                await client.setAccountFee(a.accountName, "WITHDRAW", withdrawFee / 100).catch(() => {});
+              }
+              if (depositFee !== null) {
+                await client.setAccountFee(a.accountName, "DEPOSIT", depositFee / 100).catch(() => {});
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("[fees] failed to sync bulk fees to CityCorp:", err);
+        }
       }
 
       try {
@@ -2047,8 +2092,23 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
              console.error(`CityCorp Add Subuser Failed:`, subuserRes.message);
           }
         }
+
+        // 3c. Sync initial bank fees to CityCorp account
+        try {
+          const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bank.id)).get();
+          const wFee = settings?.withdrawFeePercent ? (Number(settings.withdrawFeePercent) > 100 ? Number(settings.withdrawFeePercent) / 100 : Number(settings.withdrawFeePercent)) : 0;
+          const dFee = settings?.depositFeePercent ? (Number(settings.depositFeePercent) > 100 ? Number(settings.depositFeePercent) / 100 : Number(settings.depositFeePercent)) : 0;
+          if (wFee > 0) {
+            await client.setAccountFee(accountName, "WITHDRAW", wFee).catch(() => {});
+          }
+          if (dFee > 0) {
+            await client.setAccountFee(accountName, "DEPOSIT", dFee).catch(() => {});
+          }
+        } catch (err) {
+          console.warn("[fees] failed to set initial CityCorp fees on account creation:", err);
+        }
         
-        // 3c. New CityCorp accounts start at $0. Seed via teller cash window or in-game deposit.
+        // 3d. New CityCorp accounts start at $0. Seed via teller cash window or in-game deposit.
         // Linking an existing in-game account SETS the cache from live balance.
       }
 

@@ -132,6 +132,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   withdrawFeePercent: integer("withdraw_fee_percent").default(0), // multiplied by 100
   depositFeePercent: integer("deposit_fee_percent").default(0),
   transferFeePercent: integer("transfer_fee_percent").default(0),
+  governmentFeePercent: integer("government_fee_percent").default(25), // 0.25% civic/government transit fee (e.g. 25 bps = 0.25%)
   interBankWireThreshold: integer("inter_bank_wire_threshold").default(5000000), // Default $50,000 before requiring manual wire
   colorScheme: text("color_scheme").default("slate"),
   logoUrl: text("logo_url"),

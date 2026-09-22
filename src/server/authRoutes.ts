@@ -796,9 +796,10 @@ export function registerAuthRoutes(app: express.Express) {
           ));
       }
 
-      // Re-issue updated auth_token cookie
+      // Re-issue updated auth_token cookie (strip reserved JWT claims to prevent "Bad options.expiresIn" error)
+      const { exp: _exp, iat: _iat, nbf: _nbf, jti: _jti, ...cleanPayload } = decodedSession || {};
       const newPayload = {
-        ...decodedSession,
+        ...cleanPayload,
         linkedDiscordId: realDiscordId
       };
       const newSignedToken = jwt.sign(newPayload, JWT_SECRET, { expiresIn: '30d' });
@@ -910,8 +911,9 @@ export function registerAuthRoutes(app: express.Express) {
           or(eq(bankCustomers.discordId, key), eq(bankCustomers.mcUuid, key), eq(bankCustomers.linkedDiscordId, key))
         );
       }
-      // Re-issue cookie without linkedDiscordId
-      const newPayload = { ...user, linkedDiscordId: null };
+      // Re-issue cookie without linkedDiscordId (strip reserved claims to avoid expiresIn conflict)
+      const { exp: _uExp, iat: _uIat, nbf: _uNbf, jti: _uJti, ...cleanUser } = user || {};
+      const newPayload = { ...cleanUser, linkedDiscordId: null };
       const newSignedToken = jwt.sign(newPayload, JWT_SECRET, { expiresIn: '30d' });
       res.cookie('auth_token', newSignedToken, {
         secure: true,

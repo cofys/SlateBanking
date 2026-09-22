@@ -1217,6 +1217,53 @@ To prevent public leakage of account information or user status:
 - Bank settings now include dedicated OpenGraph and search engine optimization fields stored in `bank_settings`.
 - Allows bank owners to customize how their institution previews when shared in Discord channels, Twitter/X cards, and search engine results, supporting custom page titles, descriptive summaries, and rich social banner image URLs.
 
+### 5. Discord Bot Transfer Fee Quoting & Settlement Engine (`quoteBookTransfer`, `FeePayerMode`)
+To ensure complete parity between the Web Banking Portal and the Discord Bot experience, transfer flows in `bot_logic.ts` calculate and present transparent fee schedules prior to transaction settlement:
+- **Interactive Quoting & Confirmation Flow**:
+  - Clicking **Transfer Funds** opens a modal with destination account, dollar amount, optional fee payer mode (`deduct` or `cover`), and optional memo.
+  - The bot calls `quoteBookTransfer` (from `citycorp_money.ts`) to compute exact line-item fees according to institutional settings (`transferFeePercent`, fixed minimums, CityCorp transit fees) and active `FeePayerMode`.
+  - An ephemeral **Transfer Quote & Confirmation** embed is presented displaying:
+    - Source Account and live balance
+    - Destination Account
+    - Desired Transfer Principal
+    - Configured Fee Payer Option (`I cover fees` / `Fees from payment`)
+    - Itemized fee schedule breakdown with percentage rates and dollar amounts
+    - Total amount debited from sender (`submittedCents`)
+    - Total amount credited to recipient (`receivedCents`)
+    - Projected source balance remaining after settlement
+    - Optional transfer memo
+  - The confirmation embed features interactive action buttons: **✅ Confirm & Send** (`tx_confirm_${token}`) and **❌ Cancel** (`tx_cancel_${token}`).
+- **Strict Pre-Settlement Balance Validation**:
+  - If a user's account balance is insufficient to cover the total required amount (`quote.submittedCents`, which incorporates fee additions when the sender covers), the bot halts execution immediately and provides a breakdown detailing the required total, fees, current balance, and exact shortfall.
+- **Two-Phase Settlement Execution**:
+  - Upon clicking Confirm, the bot re-validates the session, verifies the source account's available balance, and executes `executeSameBankBookTransfer` with CityCorp ledger synchronization.
+  - A receipt embed is rendered with the generated Transaction ID, fee breakdown, and updated account balance.
+  - If the recipient has a linked Discord snowflake, `customer_notify.ts` automatically sends a direct message notification informing them of the incoming transfer.
+- **Flexible Fee Payer Selection**:
+  - Users can specify `cover` (sender pays fees on top) or `deduct` (fees deducted from transfer amount) in the transfer modal. If left blank, the bot automatically falls back to the institution's `defaultFeePayerMode` configured in Bank Settings.
+
+### 6. Transfer Fee Calculation, Configurable Government Fee & CityCorp Parity
+To ensure mathematical parity between Slate's quote engine and in-game CityCorp Minecraft plugin transfers:
+- **Separation of Bank Fees & Government Civic Fees**:
+  - The civic / government transit fee (defaulting to 0.25%, configurable per-bank in `Bank Settings` via `governmentFeePercent`) operates independently of bank-specific charges (withdraw, transfer, or deposit fees).
+  - Both fees are calculated on the transfer amount and rendered as distinct line items in all customer-facing quote breakdowns (web portals and Discord bot transfer modals/receipts) alongside the cumulative Total Fees.
+- **Root Cause & Percentage Normalization**:
+  - Previously, `slateStoredToRate` assumed all percentage values were stored multiplied by 100 (basis points, dividing by 10,000). When evaluating a 1.75% withdraw fee on $100, `1.75 / 10000` resulted in an effective rate of 0.0175% ($0.02), rather than 1.75% ($1.75).
+  - The quoting engine now uses `normalizePercentToRate` and `slatePercentToRate` to robustly parse both direct decimal values (e.g. `0.25` or `1.75`) and basis point integers (e.g. `25` or `175`).
+- **CityCorp In-Game Transfer Parity**:
+  - In the Minecraft CityCorp plugin, transfers are processed as an automated withdrawal from the source account followed by a deposit to the recipient. Consequently, the bank's withdrawal/transfer fee applies in full alongside the separate government fee.
+  - On account creation, individual custom fee updates, and bulk account fee updates, Slate synchronizes account fee rates directly to the CityCorp API (`client.setAccountFee`), ensuring that the Minecraft plugin and web interface remain in strict lockstep.
+- **Accurate Additive Math**:
+  - `quoteFees` guarantees that `totalFeeCents` is strictly equal to the sum of each individual fee line item (`sum(line.amountCents)`).
+  - In `from_payment` mode, `submittedCents = desired` and `receivedCents = desired - totalFeeCents`.
+  - In `sender_covers` mode, `receivedCents = desired` and `submittedCents = desired + totalFeeCents`.
+  - This eliminates any 1-cent rounding mismatches between fee lines and transfer totals.
+
+### 7. JWT Session Signing & Reserved Claim Sanitization
+- When re-issuing session cookies during Discord linking (`/api/auth/discord/callback`) or unlinking (`/api/auth/unlink-discord`), the payload is sanitized to strip reserved JWT claims (`exp`, `iat`, `nbf`, `jti`).
+- This eliminates the jsonwebtoken collision error (`Bad "options.expiresIn" option the payload already has an "exp" property`) when users link their Discord account during registration or onboarding.
+
+
 
 
 

@@ -134,8 +134,11 @@ export function BankTeller() {
             <div className="flex justify-between"><span className="text-white/40">Submitted</span><span className="font-mono">{formatMoney(quote.submittedCents)}</span></div>
             <div className="flex justify-between"><span className="text-white/40">Received</span><span className="font-mono text-emerald-300">{formatMoney(quote.receivedCents)}</span></div>
             {quote.lines?.map((l: any) => (
-              <div key={l.code} className="flex justify-between text-xs"><span className="text-white/35">{l.label}</span><span className="font-mono">{formatMoney(l.amountCents)}</span></div>
+              <div key={l.code} className="flex justify-between text-xs"><span className="text-white/35">{l.label} ({Number((l.rate * 100).toFixed(2))}%)</span><span className="font-mono">{formatMoney(l.amountCents)}</span></div>
             ))}
+            {quote.lines && quote.lines.length > 1 && (
+              <div className="flex justify-between text-xs pt-1 border-t border-white/5 font-medium"><span className="text-white/50">Total Fees</span><span className="font-mono text-amber-300/80">{formatMoney(quote.totalFeeCents)}</span></div>
+            )}
           </div>
         )}
         {msg && <p className="text-xs text-amber-200">{msg}</p>}

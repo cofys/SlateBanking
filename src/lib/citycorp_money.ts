@@ -9,9 +9,12 @@ import {
   FeePayerMode,
   FeeQuote,
   cityCorpPercentToRate,
+  normalizePercentToRate,
   parseCityCorpFeeList,
   parseFeePayerMode,
   quoteFees,
+  slateBpsToRate,
+  slatePercentToRate,
   slateStoredToRate,
 } from "./fee_quote";
 
@@ -107,7 +110,8 @@ export async function readCityCorpAccountFees(
 ): Promise<{ withdrawRate: number; depositRate: number; raw: any }> {
   const details = await client.getAccountDetails(accountName);
   const account = details?.account || details || {};
-  const parsed = parseCityCorpFeeList(account.fees || details?.fees);
+  const rawFees = account.fees ?? details?.fees ?? details?.account?.fees ?? account.fee_list;
+  const parsed = parseCityCorpFeeList(rawFees);
   return {
     withdrawRate: cityCorpPercentToRate(parsed.withdrawPct),
     depositRate: cityCorpPercentToRate(parsed.depositPct),
@@ -122,32 +126,27 @@ function slateAccountFeeRate(
 ): number {
   if (!account && !settings) return 0;
   if (kind === "withdraw") {
-    if (account?.customWithdrawFeePercent != null) return slateStoredToRate(account.customWithdrawFeePercent);
+    if (account?.customWithdrawFeePercent != null) return slateBpsToRate(account.customWithdrawFeePercent);
     if (settings?.enableAccountTiers && account?.tierId && settings.accountTiers) {
       const t = settings.accountTiers.find((x: any) => x.id === account.tierId);
-      if (t && t.withdrawFeePercent != null) return slateStoredToRate(t.withdrawFeePercent);
+      if (t && t.withdrawFeePercent != null) return slateBpsToRate(t.withdrawFeePercent);
     }
-    return slateStoredToRate(settings?.withdrawFeePercent);
+    return slatePercentToRate(settings?.withdrawFeePercent);
   }
   if (kind === "deposit") {
-    if (account?.customDepositFeePercent != null) return slateStoredToRate(account.customDepositFeePercent);
+    if (account?.customDepositFeePercent != null) return slateBpsToRate(account.customDepositFeePercent);
     if (settings?.enableAccountTiers && account?.tierId && settings.accountTiers) {
       const t = settings.accountTiers.find((x: any) => x.id === account.tierId);
-      if (t && t.depositFeePercent != null) return slateStoredToRate(t.depositFeePercent);
+      if (t && t.depositFeePercent != null) return slateBpsToRate(t.depositFeePercent);
     }
-    return slateStoredToRate(settings?.depositFeePercent);
+    return slatePercentToRate(settings?.depositFeePercent);
   }
-  if (account?.customTransferFeePercent != null) return slateStoredToRate(account.customTransferFeePercent);
+  if (account?.customTransferFeePercent != null) return slateBpsToRate(account.customTransferFeePercent);
   if (settings?.enableAccountTiers && account?.tierId && settings.accountTiers) {
     const t = settings.accountTiers.find((x: any) => x.id === account.tierId);
-    if (t && t.transferFeePercent != null) return slateStoredToRate(t.transferFeePercent);
+    if (t && t.transferFeePercent != null) return slateBpsToRate(t.transferFeePercent);
   }
-  return slateStoredToRate(settings?.transferFeePercent);
-}
-
-function incrementalBankRate(slateRate: number, cityRate: number): number {
-  if (slateRate <= cityRate + 1e-12) return 0;
-  return slateRate - cityRate;
+  return slatePercentToRate(settings?.transferFeePercent);
 }
 
 export async function buildTransferFeeLines(opts: {
@@ -162,56 +161,49 @@ export async function buildTransferFeeLines(opts: {
   extraLines?: FeeLine[];
 }): Promise<FeeLine[]> {
   const lines: FeeLine[] = [];
-  let cityWithdraw = 0;
-  let cityDeposit = 0;
 
-  if (opts.sourceClient) {
-    try {
-      const f = await readCityCorpAccountFees(opts.sourceClient, opts.sourceAccount.accountName);
-      cityWithdraw = f.withdrawRate;
-      if (cityWithdraw > 0) {
-        lines.push({
-          code: "citycorp_withdraw",
-          label: "CityCorp withdraw fee",
-          rate: cityWithdraw,
-          source: "citycorp",
-        });
-      }
-    } catch (e) {
-      console.warn("[fee quote] source CityCorp fees failed", e);
-    }
-  }
-  if (opts.destClient) {
-    try {
-      const f = await readCityCorpAccountFees(opts.destClient, opts.destAccount.accountName);
-      cityDeposit = f.depositRate;
-      if (cityDeposit > 0) {
-        lines.push({
-          code: "citycorp_deposit",
-          label: "CityCorp deposit fee",
-          rate: cityDeposit,
-          source: "citycorp",
-        });
-      }
-    } catch (e) {
-      console.warn("[fee quote] dest CityCorp fees failed", e);
-    }
+  // 1. Government Fee (Mandatory civic/transit fee, default 0.25%, applied and shown separately)
+  const govRate = normalizePercentToRate(
+    (opts.sourceSettings as any)?.governmentFeePercent,
+    0.25
+  );
+  if (govRate > 0) {
+    lines.push({
+      code: "government_fee",
+      label: "Government fee",
+      rate: govRate,
+      source: "government",
+    });
   }
 
+  // 2. Bank Fees (Transfer fee, or withdrawal fee if transfer fee is 0)
   const slateWithdraw = slateAccountFeeRate(opts.sourceAccount, opts.sourceSettings, "withdraw");
   const slateDeposit = slateAccountFeeRate(opts.destAccount, opts.destSettings, "deposit");
   const slateTransfer = slateAccountFeeRate(opts.sourceAccount, opts.sourceSettings, "transfer");
 
-  const extraW = incrementalBankRate(slateWithdraw, cityWithdraw);
-  if (extraW > 0) {
-    lines.push({ code: "bank_withdraw", label: "Bank withdraw fee", rate: extraW, source: "bank" });
-  }
-  const extraD = incrementalBankRate(slateDeposit, cityDeposit);
-  if (extraD > 0) {
-    lines.push({ code: "bank_deposit", label: "Bank deposit fee", rate: extraD, source: "bank" });
-  }
   if (slateTransfer > 0) {
-    lines.push({ code: "bank_transfer", label: "Bank transfer fee", rate: slateTransfer, source: "bank" });
+    lines.push({
+      code: "bank_transfer",
+      label: "Bank transfer fee",
+      rate: slateTransfer,
+      source: "bank",
+    });
+  } else if (slateWithdraw > 0) {
+    lines.push({
+      code: "bank_withdraw",
+      label: "Bank withdrawal fee",
+      rate: slateWithdraw,
+      source: "bank",
+    });
+  }
+
+  if (slateDeposit > 0) {
+    lines.push({
+      code: "bank_deposit",
+      label: "Bank deposit fee",
+      rate: slateDeposit,
+      source: "bank",
+    });
   }
 
   if (opts.extraLines) lines.push(...opts.extraLines);

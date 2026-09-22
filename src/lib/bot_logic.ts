@@ -6,6 +6,32 @@ import { v4 as uuidv4 } from 'uuid';
 import { CityCorpClient } from './citycorp_api';
 import { getCandidateIdsForDiscordSnowflake, getAccountsForUser, getAllAccountsForUser } from '../server/userResolver';
 import { SCHEME_HEX } from './theme';
+import type { FeePayerMode, FeeQuote } from './fee_quote';
+
+interface PendingTransferQuote {
+  userId: string;
+  bankId: string;
+  sourceAccountId: string;
+  destAccountId: string;
+  toAccountName: string;
+  amountInCents: number;
+  mode: FeePayerMode;
+  memo?: string;
+  quote: FeeQuote;
+  createdAt: number;
+}
+
+const pendingTransferQuotes = new Map<string, PendingTransferQuote>();
+
+// Periodically clean up stale quotes older than 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, item] of pendingTransferQuotes.entries()) {
+    if (now - item.createdAt > 10 * 60 * 1000) {
+      pendingTransferQuotes.delete(token);
+    }
+  }
+}, 60 * 1000).unref();
 
 const LINK_DISCORD_MSG = "Link Discord in your bank portal first. Sign in with CityCorp, then tap **Link Discord**. The bot only works after that.";
 
@@ -845,17 +871,35 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
       .setCustomId('to_account')
       .setLabel("Destination Account Name")
       .setStyle(TextInputStyle.Short)
+      .setPlaceholder("Exact in-game account name")
       .setRequired(true);
       
     const amtInput = new TextInputBuilder()
       .setCustomId('amount')
       .setLabel("Amount (in Dollars)")
       .setStyle(TextInputStyle.Short)
+      .setPlaceholder("e.g. 50.00")
       .setRequired(true);
+
+    const feeModeInput = new TextInputBuilder()
+      .setCustomId('fee_mode')
+      .setLabel("Fee Option ('deduct' or 'cover')")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("deduct = from transfer, cover = you pay on top (optional)")
+      .setRequired(false);
+
+    const memoInput = new TextInputBuilder()
+      .setCustomId('memo')
+      .setLabel("Memo / Description (Optional)")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("e.g. Payment for goods, rent")
+      .setRequired(false);
       
     modal.addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(toInput),
-      new ActionRowBuilder<TextInputBuilder>().addComponents(amtInput)
+      new ActionRowBuilder<TextInputBuilder>().addComponents(amtInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(feeModeInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(memoInput)
     );
     await interaction.showModal(modal);
   } else if (cid === 'bank_gui_apply_loan') {
@@ -983,6 +1027,10 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     await interaction.showModal(modal);
   } else if (cid === 'staff_gui_toggle_status') {
     await handleStaffToggleStatus(bankId, interaction);
+  } else if (cid.startsWith('tx_confirm_')) {
+    await handleConfirmTransfer(bankId, interaction);
+  } else if (cid.startsWith('tx_cancel_')) {
+    await handleCancelTransfer(bankId, interaction);
   }
 }
 
@@ -999,12 +1047,16 @@ async function handleModal(bankId: string, interaction: ModalSubmitInteraction) 
       const sourceAccId = parts.length > 2 ? parts[2] : null;
       const toAccount = interaction.fields.getTextInputValue('to_account');
       const amountStr = interaction.fields.getTextInputValue('amount');
+      let rawFeeMode = '';
+      try { rawFeeMode = interaction.fields.getTextInputValue('fee_mode') || ''; } catch {}
+      let memo = '';
+      try { memo = interaction.fields.getTextInputValue('memo') || ''; } catch {}
       const amount = parseFloat(amountStr);
       if (isNaN(amount) || amount <= 0) {
         await interaction.reply({ content: 'Invalid amount. Must be a positive number.', ephemeral: true });
         return;
       }
-      await handleTransfer(bankId, interaction, toAccount, amount, sourceAccId);
+      await handleTransfer(bankId, interaction, toAccount, amount, sourceAccId, rawFeeMode, memo);
     } else if (interaction.customId === 'modal_apply_loan') {
       const amountStr = interaction.fields.getTextInputValue('loan_amount');
       const purpose = interaction.fields.getTextInputValue('loan_purpose');
@@ -1088,12 +1140,39 @@ async function handleOpenAccount(bankId: string, interaction: ModalSubmitInterac
   await interaction.editReply({ content: 'Open new accounts in the bank portal after signing in with CityCorp. Discord only operates accounts you already hold.', components: [backButtonRow] });
 }
 
-async function handleTransfer(bankId: string, interaction: ModalSubmitInteraction, toAccountName: string, amount: number, sourceAccId?: string | null) {
+async function handleTransfer(
+  bankId: string, 
+  interaction: ModalSubmitInteraction, 
+  toAccountName: string, 
+  amount: number, 
+  sourceAccId?: string | null,
+  rawFeeMode?: string,
+  memo?: string
+) {
   await interaction.deferReply({ ephemeral: true });
   const amountInCents = Math.round(amount * 100);
 
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  const bank = b[0];
+  if (!bank) {
+    await interaction.editReply({ content: 'Bank not found.', components: [backButtonRow] });
+    return;
+  }
+
+  if (bank.maintenanceMode) {
+    const isStaff = await isBankStaffOrGlobalAdmin(bankId, interaction.user.id);
+    if (!isStaff) {
+      await interaction.editReply({ content: `**${bank.name}** is currently closed for maintenance. Transactions are temporarily suspended.`, components: [backButtonRow] });
+      return;
+    }
+  }
+
   const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
+
+  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+  const color = brandColor(bank, settings);
+  const logo = httpsUrl(settings?.logoUrl || bank?.logoUrl);
 
   // Source accounts — must belong to this bank and this user
   const userAccounts = await getAccountsForUser(bankId, ids);
@@ -1101,49 +1180,302 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
 
   if (!sourceAccount) {
     if (userAccounts.length === 0) {
-      await interaction.editReply({ content: 'You do not have any bank accounts open here.' });
+      await interaction.editReply({ content: 'You do not have any bank accounts open here.', components: [backButtonRow] });
       return;
     }
     sourceAccount = userAccounts[0];
   }
 
-  if (sourceAccount.balance < amountInCents) {
-    await interaction.editReply({ content: `Insufficient funds. Your balance is $${(sourceAccount.balance / 100).toFixed(2)}.` });
+  if (!sourceAccount.isActive || sourceAccount.isFrozen) {
+    await interaction.editReply({ content: 'Your source account is inactive or frozen. Transfers are not permitted.', components: [backButtonRow] });
     return;
   }
 
   const { resolvePayableAccount } = await import('./account_lookup');
   const destResolved = await resolvePayableAccount(toAccountName, { bankId, excludeId: sourceAccount.id });
   if (!destResolved.account) {
-    await interaction.editReply({ content: destResolved.error || `Destination account **${toAccountName}** not found at this bank.` });
+    await interaction.editReply({ content: destResolved.error || `Destination account **${toAccountName}** not found at this bank.`, components: [backButtonRow] });
     return;
   }
   const destAccount = destResolved.account;
 
   if (sourceAccount.id === destAccount.id) {
-    await interaction.editReply({ content: 'Cannot transfer to the same account.' });
+    await interaction.editReply({ content: 'Cannot transfer to the same account.', components: [backButtonRow] });
+    return;
+  }
+
+  if (destAccount.bankId !== bankId) {
+    await interaction.editReply({ content: 'Transfers stay inside this bank. Cross-bank payments use Onyx.', components: [backButtonRow] });
+    return;
+  }
+
+  if (!destAccount.isActive || destAccount.isFrozen) {
+    await interaction.editReply({ content: `Destination account **${destAccount.accountName}** is inactive or frozen.`, components: [backButtonRow] });
     return;
   }
 
   const client = await getBankClient(bankId);
   if (!client) {
-    await interaction.editReply({ content: 'This bank is not connected to CityCorp. Transfers are unavailable.' });
+    await interaction.editReply({ content: 'This bank is not connected to CityCorp. Transfers are unavailable.', components: [backButtonRow] });
     return;
   }
+
+  const { parseFeePayerMode } = await import('./fee_quote');
+  const mode = parseFeePayerMode(rawFeeMode, (settings?.defaultFeePayerMode as any) || 'from_payment');
+
+  const { quoteBookTransfer } = await import('./citycorp_money');
+  let quote;
   try {
-    const { executeSameBankBookTransfer } = await import('./citycorp_money');
-    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-    await executeSameBankBookTransfer({
+    const qResult = await quoteBookTransfer({
       sourceAccount,
       destAccount,
       desiredCents: amountInCents,
-      mode: (settings?.defaultFeePayerMode as any) || 'from_payment',
-      description: `Transfer to ${toAccountName}`,
+      mode,
     });
-    await interaction.editReply({ content: `✅ Transferred $${amount.toFixed(2)} from **${sourceAccount.accountName}** to **${destAccount.accountName}** via CityCorp.` });
-  } catch (e: any) {
-    await interaction.editReply({ content: `CityCorp Transfer Failed: ${e.message}` });
+    quote = qResult.quote;
+  } catch (err: any) {
+    await interaction.editReply({ content: `Unable to quote transfer fees: ${err.message}`, components: [backButtonRow] });
+    return;
   }
+
+  // Verify balance covers submittedCents (desired amount + fees if sender covers)
+  if (sourceAccount.balance < quote.submittedCents) {
+    const needed = money(quote.submittedCents);
+    const curBal = money(sourceAccount.balance);
+    const feeAmt = money(quote.totalFeeCents);
+    await interaction.editReply({
+      content: `❌ **Insufficient Funds**\nTransfer of **${money(quote.desiredCents)}** requires **${needed}** from **${sourceAccount.accountName}** (including **${feeAmt}** in fees).\nYour current balance is **${curBal}** (Short by **${money(quote.submittedCents - sourceAccount.balance)}**).`,
+      components: [backButtonRow],
+    });
+    return;
+  }
+
+  const token = Math.random().toString(36).substring(2, 10);
+  pendingTransferQuotes.set(token, {
+    userId: interaction.user.id,
+    bankId,
+    sourceAccountId: sourceAccount.id,
+    destAccountId: destAccount.id,
+    toAccountName: destAccount.accountName,
+    amountInCents,
+    mode,
+    memo: memo?.trim() || undefined,
+    quote,
+    createdAt: Date.now(),
+  });
+
+  const quoteEmbed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(`💸  ${bank.name.toUpperCase()} · TRANSFER QUOTE`)
+    .setDescription(`Please review the transfer quote and fee schedule below before confirming.`)
+    .addFields(
+      { name: '📤 From Account', value: `**${sourceAccount.accountName}** (\`${money(sourceAccount.balance)}\`)`, inline: true },
+      { name: '📥 To Account', value: `**${destAccount.accountName}**`, inline: true },
+      { name: '💵 Transfer Amount', value: `**${money(quote.desiredCents)}**`, inline: true },
+      { 
+        name: '⚙️ Fee Payer Option', 
+        value: mode === 'sender_covers' 
+          ? '`I cover fees` (Fees debited from you on top)' 
+          : '`Fees from payment` (Fees deducted from recipient amount)', 
+        inline: false 
+      },
+    );
+
+  if (quote.lines.length > 0 && quote.totalFeeCents > 0) {
+    const breakdownText = quote.lines
+      .map(l => `• **${l.label}** (${(l.rate * 100).toFixed(2)}%): ${money(l.amountCents)}`)
+      .join('\n');
+    quoteEmbed.addFields({
+      name: `🧾 Fee Breakdown (Total: ${money(quote.totalFeeCents)})`,
+      value: breakdownText,
+      inline: false,
+    });
+  } else {
+    quoteEmbed.addFields({
+      name: '🧾 Fees',
+      value: '✨ **No fees charged** ($0.00)',
+      inline: false,
+    });
+  }
+
+  quoteEmbed.addFields(
+    { name: '💰 Total Debited from You', value: `**${money(quote.submittedCents)}**`, inline: true },
+    { name: '🎯 Recipient Will Receive', value: `**${money(quote.receivedCents)}**`, inline: true },
+    { name: '💳 Remaining Balance', value: `**${money(sourceAccount.balance - quote.submittedCents)}**`, inline: true }
+  );
+
+  if (memo?.trim()) {
+    quoteEmbed.addFields({ name: '📝 Memo', value: memo.trim(), inline: false });
+  }
+
+  quoteEmbed
+    .setFooter({ text: `${footerText(bank, settings)} • Quote valid for 10 minutes`, ...(logo ? { iconURL: logo } : {}) })
+    .setTimestamp();
+
+  const confirmRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`tx_confirm_${token}`)
+      .setLabel(`Confirm & Send ${money(quote.submittedCents)}`)
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('✅'),
+    new ButtonBuilder()
+      .setCustomId(`tx_cancel_${token}`)
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('❌')
+  );
+
+  await interaction.editReply({
+    embeds: [quoteEmbed],
+    components: [confirmRow],
+  });
+}
+
+async function handleConfirmTransfer(bankId: string, interaction: ButtonInteraction) {
+  const token = interaction.customId.replace('tx_confirm_', '');
+  const pending = pendingTransferQuotes.get(token);
+
+  if (!pending || pending.bankId !== bankId) {
+    await interaction.reply({
+      content: '⚠️ This transfer quote has expired or was already processed. Please start a new transfer.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (pending.userId !== interaction.user.id) {
+    await interaction.reply({
+      content: 'You cannot confirm a transfer initiated by another user.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.deferUpdate();
+  pendingTransferQuotes.delete(token);
+
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  const bank = b[0];
+  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+  const logo = httpsUrl(settings?.logoUrl || bank?.logoUrl);
+
+  const [sourceAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, pending.sourceAccountId));
+  const [destAccount] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, pending.destAccountId));
+
+  if (!sourceAccount || !destAccount) {
+    await interaction.editReply({
+      content: 'One or both accounts involved in this transfer are no longer available.',
+      embeds: [],
+      components: [backButtonRow],
+    });
+    return;
+  }
+
+  if (!sourceAccount.isActive || sourceAccount.isFrozen) {
+    await interaction.editReply({
+      content: 'Source account is frozen or inactive. Transfer cancelled.',
+      embeds: [],
+      components: [backButtonRow],
+    });
+    return;
+  }
+
+  if (sourceAccount.balance < pending.quote.submittedCents) {
+    await interaction.editReply({
+      content: `❌ Insufficient funds. Balance is **${money(sourceAccount.balance)}**, but this transfer requires **${money(pending.quote.submittedCents)}** (including fees).`,
+      embeds: [],
+      components: [backButtonRow],
+    });
+    return;
+  }
+
+  try {
+    const { executeSameBankBookTransfer } = await import('./citycorp_money');
+    const moved = await executeSameBankBookTransfer({
+      sourceAccount,
+      destAccount,
+      desiredCents: pending.quote.desiredCents,
+      mode: pending.mode,
+      description: pending.memo || `Transfer to ${destAccount.accountName}`,
+      type: 'transfer',
+    });
+
+    // Notify recipient if linked to Discord
+    import('./customer_notify.js').then(({ notifyTransferReceived }) =>
+      notifyTransferReceived({
+        bankId: destAccount.bankId,
+        destOwnerDiscordId: destAccount.ownerDiscordId,
+        destAccountName: destAccount.accountName,
+        receivedCents: moved.quote.receivedCents,
+        fromLabel: sourceAccount.accountName,
+      })
+    ).catch(() => {});
+
+    // Success confirmation receipt
+    const successEmbed = new EmbedBuilder()
+      .setColor(0x10b981)
+      .setTitle(`✅  ${bank?.name?.toUpperCase() || 'BANK'} · TRANSFER COMPLETED`)
+      .setDescription(`Your transfer was successfully executed and settled via CityCorp.`)
+      .addFields(
+        { name: '📤 Source Account', value: `**${sourceAccount.accountName}**`, inline: true },
+        { name: '📥 Destination', value: `**${destAccount.accountName}**`, inline: true },
+        { name: '💵 Sent Amount', value: `**${money(moved.quote.desiredCents)}**`, inline: true },
+        { name: '💰 Total Debited', value: `**${money(moved.quote.submittedCents)}**`, inline: true },
+        { name: '🧾 Fees Paid', value: `**${moved.quote.totalFeeCents > 0 ? money(moved.quote.totalFeeCents) : '$0.00'}**`, inline: true },
+        { name: '🎯 Recipient Received', value: `**${money(moved.quote.receivedCents)}**`, inline: true },
+        { name: '🔖 Transaction ID', value: `\`${moved.txId}\``, inline: false },
+      );
+
+    if (moved.quote.lines.length > 0 && moved.quote.totalFeeCents > 0) {
+      const breakdownText = moved.quote.lines
+        .map(l => `• **${l.label}** (${(l.rate * 100).toFixed(2)}%): ${money(l.amountCents)}`)
+        .join('\n');
+      successEmbed.addFields({
+        name: 'Fee Line Items',
+        value: breakdownText,
+        inline: false,
+      });
+    }
+
+    if (pending.memo) {
+      successEmbed.addFields({ name: '📝 Memo', value: pending.memo, inline: false });
+    }
+
+    const updatedSource = await db.select().from(bankAccounts).where(eq(bankAccounts.id, sourceAccount.id)).get();
+    if (updatedSource) {
+      successEmbed.addFields({
+        name: '💳 Updated Source Balance',
+        value: `**${money(updatedSource.balance)}**`,
+        inline: false,
+      });
+    }
+
+    successEmbed
+      .setFooter({ text: `${footerText(bank, settings)} • Transfer Settlement Complete`, ...(logo ? { iconURL: logo } : {}) })
+      .setTimestamp();
+
+    await interaction.editReply({
+      embeds: [successEmbed],
+      components: [backButtonRow],
+    });
+  } catch (e: any) {
+    await interaction.editReply({
+      content: `❌ CityCorp Transfer Failed: ${e.message}`,
+      embeds: [],
+      components: [backButtonRow],
+    });
+  }
+}
+
+async function handleCancelTransfer(bankId: string, interaction: ButtonInteraction) {
+  const token = interaction.customId.replace('tx_cancel_', '');
+  pendingTransferQuotes.delete(token);
+
+  await interaction.update({
+    content: '❌ Transfer cancelled. No funds were debited.',
+    embeds: [],
+    components: [backButtonRow],
+  });
 }
 
 async function handleHistory(bankId: string, interaction: ButtonInteraction) {
@@ -1611,9 +1943,10 @@ async function handleBankRates(bankId: string, interaction: ButtonInteraction) {
   const logo = httpsUrl(settings?.logoUrl || bank.logoUrl);
 
   const savingsApy = ((settings?.savingsApyPercent || 0) / 100).toFixed(2);
-  const depositFee = Number(settings?.depositFeePercent || 0);
-  const withdrawFee = Number(settings?.withdrawFeePercent || 0);
-  const transferFee = Number(settings?.transferFeePercent || 0);
+  const depositFee = settings?.depositFeePercent ? (Number(settings.depositFeePercent) > 100 ? Number(settings.depositFeePercent) / 100 : Number(settings.depositFeePercent)) : 0;
+  const withdrawFee = settings?.withdrawFeePercent ? (Number(settings.withdrawFeePercent) > 100 ? Number(settings.withdrawFeePercent) / 100 : Number(settings.withdrawFeePercent)) : 0;
+  const transferFee = settings?.transferFeePercent ? (Number(settings.transferFeePercent) > 100 ? Number(settings.transferFeePercent) / 100 : Number(settings.transferFeePercent)) : 0;
+  const govFee = settings?.governmentFeePercent != null ? (Number(settings.governmentFeePercent) >= 20 ? Number(settings.governmentFeePercent) / 100 : Number(settings.governmentFeePercent)) : 0.25;
   const defaultApr = (policy.defaultApr / 100).toFixed(2);
 
   const embed = new EmbedBuilder()
@@ -1625,6 +1958,7 @@ async function handleBankRates(bankId: string, interaction: ButtonInteraction) {
       { name: 'Deposit fee', value: `${depositFee}%`, inline: true },
       { name: 'Withdraw fee', value: `${withdrawFee}%`, inline: true },
       { name: 'Transfer fee', value: `${transferFee}%`, inline: true },
+      { name: 'Government fee', value: `${govFee}%`, inline: true },
     )
     .setFooter({ text: footerText(bank, settings), ...(logo ? { iconURL: logo } : {}) })
     .setTimestamp();
