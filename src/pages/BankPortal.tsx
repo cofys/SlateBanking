@@ -56,6 +56,18 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [quote, setQuote] = useState<any>(null);
   const [quoteErr, setQuoteErr] = useState("");
   const [quoting, setQuoting] = useState(false);
+  const [transferSuccess, setTransferSuccess] = useState<{
+    txId: string;
+    fromAccountName: string;
+    toAccountName: string;
+    submittedCents: number;
+    receivedCents: number;
+    totalFeeCents: number;
+    lines?: { code: string; label: string; rate: number; amountCents: number }[];
+    feeMode: "from_payment" | "sender_covers";
+    memo?: string;
+    timestamp: string;
+  } | null>(null);
 
   const brand = hexOr(bank?.brandingColor || bank?.settings?.brandingColor);
   const brandFg = accentForeground(brand);
@@ -221,12 +233,26 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       const d = await res.json();
       if (!res.ok) flash(d.error || "Transfer failed");
       else {
-        flash("Sent.");
+        const fromAcc = accounts.find((a: any) => a.id === sendFrom);
+        const toName = d.destination?.accountName || destHint || sendTo;
+        setTransferSuccess({
+          txId: d.txId || `tx_${Date.now()}`,
+          fromAccountName: fromAcc?.accountName || "Your account",
+          toAccountName: toName,
+          submittedCents: d.quote?.submittedCents ?? quote?.submittedCents ?? Math.round(parseFloat(sendAmt) * 100),
+          receivedCents: d.quote?.receivedCents ?? quote?.receivedCents ?? Math.round(parseFloat(sendAmt) * 100),
+          totalFeeCents: d.quote?.totalFeeCents ?? quote?.totalFeeCents ?? 0,
+          lines: d.quote?.lines ?? quote?.lines ?? [],
+          feeMode,
+          memo: sendMemo || undefined,
+          timestamp: new Date().toISOString(),
+        });
         setSendAmt("");
         setSendTo("");
         setSendMemo("");
+        setDestHint("");
+        setDestMatches([]);
         setQuote(null);
-        setView("home");
         handleSearch();
       }
     } catch {
@@ -574,7 +600,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   { id: "borrow" as View, label: "Loans", icon: Landmark },
                   { id: "apply" as View, label: "Apply", icon: Plus },
                 ].map((a) => (
-                  <button key={a.id} onClick={() => setView(a.id)} className="flex flex-col items-center gap-2 py-3 rounded-2xl border text-xs font-semibold" style={{ background: "color-mix(in oklab, var(--fg) 5%, transparent)", borderColor: "var(--border)" }}>
+                  <button key={a.id} onClick={() => { if (a.id === "send") setTransferSuccess(null); setView(a.id); }} className="flex flex-col items-center gap-2 py-3 rounded-2xl border text-xs font-semibold" style={{ background: "color-mix(in oklab, var(--fg) 5%, transparent)", borderColor: "var(--border)" }}>
                     <a.icon size={16} />
                     {a.label}
                   </button>
@@ -696,7 +722,127 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
           </div>
         )}
 
-        {view === "send" && (
+        {view === "send" && transferSuccess && (
+          <div className="max-w-lg space-y-6">
+            <div className="text-center space-y-2 pt-2">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
+                <CheckCircle2 size={32} />
+              </div>
+              <h2 className="text-2xl font-black text-white">Transfer Confirmed</h2>
+              <p className="text-xs text-white/50">Your funds have been transferred successfully via CityCorp.</p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-4">
+              <div className="text-center py-2 border-b border-white/5">
+                <span className="text-xs font-semibold text-white/40 uppercase tracking-wider">Total Sent</span>
+                <div className="text-3xl font-black font-mono text-white mt-1">
+                  {formatMoney(transferSuccess.submittedCents)}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between py-2.5 px-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm">
+                <span className="text-emerald-200/80 font-medium">Recipient Receives</span>
+                <span className="font-mono font-bold text-emerald-300">
+                  {formatMoney(transferSuccess.receivedCents)}
+                </span>
+              </div>
+
+              <div className="space-y-2.5 text-sm pt-1">
+                <div className="flex justify-between">
+                  <span className="text-white/40">To</span>
+                  <span className="font-semibold text-white">{transferSuccess.toAccountName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/40">From</span>
+                  <span className="font-semibold text-white/80">{transferSuccess.fromAccountName}</span>
+                </div>
+                {transferSuccess.memo && (
+                  <div className="flex justify-between">
+                    <span className="text-white/40">Memo</span>
+                    <span className="text-white/80 italic">"{transferSuccess.memo}"</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-xs">
+                  <span className="text-white/40">Fee Policy</span>
+                  <span className="text-white/70 font-medium">
+                    {transferSuccess.feeMode === "sender_covers" ? "Sender Covered Fees" : "Fees Deducted from Payment"}
+                  </span>
+                </div>
+              </div>
+
+              {transferSuccess.lines && transferSuccess.lines.length > 0 && (
+                <div className="pt-3 border-t border-white/5 space-y-1.5">
+                  <span className="text-[11px] font-bold text-white/40 uppercase tracking-wider">Fee Breakdown</span>
+                  {transferSuccess.lines.map((l: any) => (
+                    <div key={l.code} className="flex justify-between text-xs">
+                      <span className="text-white/40">{l.label} ({Number((l.rate * 100).toFixed(2))}%)</span>
+                      <span className="font-mono text-white/60">{formatMoney(l.amountCents)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between text-xs pt-1 border-t border-white/5 font-medium">
+                    <span className="text-white/50">Total Fees</span>
+                    <span className="font-mono text-amber-300/80">{formatMoney(transferSuccess.totalFeeCents)}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-white/5 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-white/40">Reference</span>
+                  <button
+                    type="button"
+                    onClick={() => copy(transferSuccess.txId, "conf_tx")}
+                    className="flex items-center gap-1.5 font-mono text-[11px] text-white/70 hover:text-white bg-white/5 px-2.5 py-1 rounded-lg border border-white/10 transition-colors"
+                  >
+                    <span>{transferSuccess.txId.slice(0, 16)}…</span>
+                    {copied === "conf_tx" ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                  </button>
+                </div>
+                <div className="flex justify-between text-white/35">
+                  <span>Timestamp</span>
+                  <span>{format(new Date(transferSuccess.timestamp), "MMM d, yyyy · h:mm a")}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setTransferSuccess(null);
+                  setView("home");
+                }}
+                className="w-full py-3.5 rounded-2xl font-bold text-white shadow-lg transition-opacity hover:opacity-95"
+                style={btnBrand}
+              >
+                Return to Dashboard
+              </button>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTransferSuccess(null);
+                  }}
+                  className="flex-1 py-3 rounded-2xl font-semibold text-sm bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white flex items-center justify-center gap-2 transition-colors"
+                >
+                  <Send size={14} /> Send Another
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTransferSuccess(null);
+                    setView("activity");
+                  }}
+                  className="flex-1 py-3 rounded-2xl font-semibold text-sm bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white flex items-center justify-center gap-2 transition-colors"
+                >
+                  <FileText size={14} /> View Activity
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view === "send" && !transferSuccess && (
           <form onSubmit={sendNow} className="max-w-lg space-y-5">
             <h2 className="text-2xl font-black">Send money</h2>
             <label className="block text-xs font-bold text-white/40 uppercase">From</label>
@@ -1036,7 +1182,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             const Icon = n.icon;
             const on = view === n.id || (n.id === "home" && ["bills", "borrow", "cards"].includes(view) === false && view !== "send" && view !== "activity" && view !== "apply");
             return (
-              <button key={n.id} onClick={() => setView(n.id)} className="py-3 min-h-[52px] text-[11px] font-semibold flex flex-col items-center gap-1" style={{ color: on ? "var(--fg)" : "var(--fg-subtle)" }}>
+              <button key={n.id} onClick={() => { if (n.id === "send" && view !== "send") setTransferSuccess(null); setView(n.id); }} className="py-3 min-h-[52px] text-[11px] font-semibold flex flex-col items-center gap-1" style={{ color: on ? "var(--fg)" : "var(--fg-subtle)" }}>
                 <Icon size={18} color={on ? brand : undefined} />
                 {n.label}
               </button>

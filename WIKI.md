@@ -1267,8 +1267,19 @@ To ensure mathematical parity between Slate's quote engine and in-game CityCorp 
 - When re-issuing session cookies during Discord linking (`/api/auth/discord/callback`) or unlinking (`/api/auth/unlink-discord`), the payload is sanitized to strip reserved JWT claims (`exp`, `iat`, `nbf`, `jti`).
 - This eliminates the jsonwebtoken collision error (`Bad "options.expiresIn" option the payload already has an "exp" property`) when users link their Discord account during registration or onboarding.
 
-
-
-
-
-
+### 8. Customer Portal Transfer Confirmation Screen & Digital Receipt
+- **In-Place Confirmation Workflow (`BankPortal.tsx`)**:
+  - Replaced the abrupt auto-refresh redirect to the home dashboard upon sending money with a dedicated, persistent **Transfer Confirmed** receipt screen.
+  - Displays complete transaction parameters immediately post-settlement:
+    - **Total Sent**: Highlighted total debit amount formatted with `formatMoney`.
+    - **Recipient Receives**: Visual badge highlighting the exact net amount received.
+    - **Account Details**: Clear "From" and "To" account names.
+    - **Memo / Note**: Displays transfer memo if provided.
+    - **Fee Policy & Breakdown**: Shows whether the sender covered fees or if fees were deducted from payment, along with an itemized breakdown of the government tax and bank withdrawal fees.
+    - **Reference & Copy**: Displays a truncated transaction ID with a one-click copy button for customer dispute and verification purposes.
+    - **Timestamp**: Formatted transaction settlement timestamp.
+  - Provides dedicated action controls:
+    - **Return to Dashboard**: Safely resets transfer state and transitions to the Home overview.
+    - **Send Another**: Clears receipt and reopens a clean send form immediately.
+    - **View Activity**: Navigates directly to the comprehensive transaction activity ledger.
+  - Smart Navigation Reset: Navigating into "Send" from other tabs (home quick actions or bottom navigation bar) automatically resets any active receipt to present a fresh payment form.
