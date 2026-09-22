@@ -158,23 +158,67 @@ export function quoteFees(desiredCents: number, lines: FeeLine[], mode: FeePayer
   let totalFeeCents: number;
 
   if (mode === "sender_covers") {
-    // Sender covers fee on top: line amounts are based on desired transfer amount
-    quotedLines = filtered.map((line) => ({
-      ...line,
-      amountCents: Math.round(desired * line.rate),
-    }));
-    totalFeeCents = quotedLines.reduce((sum, l) => sum + l.amountCents, 0);
-    submittedCents = desired + totalFeeCents;
-    receivedCents = desired;
+    // In CityCorp (in-game), fees are deducted from the submitted transfer amount:
+    // received_in_game = submitted - round(submitted * totalRate).
+    // To ensure the destination account receives EXACTLY `desiredCents`,
+    // the submitted amount must be grossed up: submitted = desired / (1 - totalRate).
+    if (totalRate >= 1) {
+      submittedCents = desired;
+      totalFeeCents = 0;
+      receivedCents = desired;
+      quotedLines = filtered.map((l) => ({ ...l, amountCents: 0 }));
+    } else {
+      let gross = Math.round(desired / (1 - totalRate));
+      let feeInGame = Math.round(gross * totalRate);
+      if (gross - feeInGame < desired) {
+        gross++;
+        feeInGame = Math.round(gross * totalRate);
+      }
+      submittedCents = gross;
+      totalFeeCents = submittedCents - desired;
+      receivedCents = desired;
+
+      // Allocate fee lines proportionally based on each line's rate share
+      let allocatedFee = 0;
+      quotedLines = filtered.map((line, idx) => {
+        if (idx === filtered.length - 1) {
+          // Last line absorbs any 1-cent rounding difference to guarantee exact sum === totalFeeCents
+          return {
+            ...line,
+            amountCents: Math.max(0, totalFeeCents - allocatedFee),
+          };
+        }
+        const lineAmt = Math.round(totalFeeCents * (line.rate / totalRate));
+        allocatedFee += lineAmt;
+        return {
+          ...line,
+          amountCents: lineAmt,
+        };
+      });
+    }
   } else {
-    // Fees are deducted from the payment amount
+    // Fees are deducted from the payment amount:
+    // Sender pays `desired` total, in-game deducts fees, and recipient receives the net.
     submittedCents = desired;
-    quotedLines = filtered.map((line) => ({
-      ...line,
-      amountCents: Math.round(desired * line.rate),
-    }));
-    totalFeeCents = quotedLines.reduce((sum, l) => sum + l.amountCents, 0);
+    totalFeeCents = Math.round(desired * totalRate);
     receivedCents = Math.max(0, desired - totalFeeCents);
+
+    let allocatedFee = 0;
+    quotedLines = filtered.map((line, idx) => {
+      if (idx === filtered.length - 1) {
+        // Last line absorbs any 1-cent rounding difference to guarantee exact sum === totalFeeCents
+        return {
+          ...line,
+          amountCents: Math.max(0, totalFeeCents - allocatedFee),
+        };
+      }
+      const lineAmt = Math.round(totalFeeCents * (line.rate / totalRate));
+      allocatedFee += lineAmt;
+      return {
+        ...line,
+        amountCents: lineAmt,
+      };
+    });
   }
 
   return {

@@ -197,7 +197,8 @@ export async function buildTransferFeeLines(opts: {
     });
   }
 
-  if (slateDeposit > 0) {
+  // 3. Deposit Fee (In CityCorp book transfers, deposit fees are not assessed on same-bank internal transfers; only on cross-bank inflows)
+  if (slateDeposit > 0 && opts.sourceBank.id !== opts.destBank.id) {
     lines.push({
       code: "bank_deposit",
       label: "Bank deposit fee",

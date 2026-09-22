@@ -686,7 +686,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         <p className="text-[11px] text-white/35">{t.timestamp ? format(new Date(t.timestamp), "MMM d · h:mm a") : ""}</p>
                       </div>
                       <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : "text-white"}`}>
-                        {inbound ? "+" : "−"}{formatMoney(t.amountReceived ?? t.amount)}
+                        {inbound ? "+" : "−"}{formatMoney(inbound ? (t.amountReceived ?? t.amount) : (t.amountSubmitted ?? t.amount))}
                       </p>
                     </div>
                   );
@@ -783,7 +783,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       <p className="text-sm font-semibold truncate">{t.description || t.type}</p>
                       <p className="text-[11px] text-white/35">{t.timestamp ? format(new Date(t.timestamp), "MMM d, yyyy · h:mm a") : ""}</p>
                     </div>
-                    <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : ""}`}>{inbound ? "+" : "−"}{formatMoney(t.amountReceived ?? t.amount)}</p>
+                    <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : ""}`}>{inbound ? "+" : "−"}{formatMoney(inbound ? (t.amountReceived ?? t.amount) : (t.amountSubmitted ?? t.amount))}</p>
                   </div>
                 );
               })}

@@ -1253,11 +1253,15 @@ To ensure mathematical parity between Slate's quote engine and in-game CityCorp 
 - **CityCorp In-Game Transfer Parity**:
   - In the Minecraft CityCorp plugin, transfers are processed as an automated withdrawal from the source account followed by a deposit to the recipient. Consequently, the bank's withdrawal/transfer fee applies in full alongside the separate government fee.
   - On account creation, individual custom fee updates, and bulk account fee updates, Slate synchronizes account fee rates directly to the CityCorp API (`client.setAccountFee`), ensuring that the Minecraft plugin and web interface remain in strict lockstep.
-- **Accurate Additive Math**:
-  - `quoteFees` guarantees that `totalFeeCents` is strictly equal to the sum of each individual fee line item (`sum(line.amountCents)`).
-  - In `from_payment` mode, `submittedCents = desired` and `receivedCents = desired - totalFeeCents`.
-  - In `sender_covers` mode, `receivedCents = desired` and `submittedCents = desired + totalFeeCents`.
-  - This eliminates any 1-cent rounding mismatches between fee lines and transfer totals.
+- **Accurate Gross-Up Formula & Additive Math**:
+  - In the in-game Minecraft plugin, transfer fees are deducted from the submitted transit amount (`received_in_game = submitted - round(submitted * totalRate)`).
+  - Therefore, in `sender_covers` mode, to ensure the destination receives **exactly** the desired amount in-game without falling short, the submitted amount is **grossed up**: `submitted = ceil(desired / (1 - totalRate))`. For example, on a $100.00 transfer with 1.75% bank fee + 0.25% government fee (2.00% total rate), submitting $102.04 results in in-game fee deduction of $2.04 and recipient receiving exactly $100.00 (whereas submitting $102.00 would cause in-game to deduct $2.04 and leave only $99.96).
+  - In `from_payment` mode, `submittedCents = desired`, `totalFeeCents = round(desired * totalRate)`, and `receivedCents = desired - totalFeeCents`.
+  - Line-item fee amounts (`government_fee`, `bank_withdraw`, etc.) are apportioned proportionally by rate share with the final line absorbing any single-cent rounding difference, guaranteeing that `sum(line.amountCents) === totalFeeCents`.
+- **Internal Same-Bank Book Transfers vs. Cross-Bank Inflows**:
+  - Internal account-to-account book transfers within the same institution only assess the sender's withdrawal/transfer fee and government transit fee. Inbound deposit fees are not assessed on internal same-bank transfers and only apply to cross-bank deposits.
+- **Activity & Transaction History Clarification**:
+  - Outbound debit transactions now explicitly display `amountSubmitted` (total funds debited from the sender), while inbound credit transactions display `amountReceived` (net funds credited to the recipient), avoiding sender confusion over deducted fee totals.
 
 ### 7. JWT Session Signing & Reserved Claim Sanitization
 - When re-issuing session cookies during Discord linking (`/api/auth/discord/callback`) or unlinking (`/api/auth/unlink-discord`), the payload is sanitized to strip reserved JWT claims (`exp`, `iat`, `nbf`, `jti`).
