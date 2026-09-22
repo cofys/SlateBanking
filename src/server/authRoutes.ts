@@ -121,8 +121,9 @@ export function registerAuthRoutes(app: express.Express) {
       if (!sessionToken) {
         return res.status(401).json({ error: "Sign in with CityCorp first, then link Discord from account settings." });
       }
+      let decodedSession: any = null;
       try {
-        jwt.verify(sessionToken, JWT_SECRET, { algorithms: ["HS256"] });
+        decodedSession = jwt.verify(sessionToken, JWT_SECRET, { algorithms: ["HS256"] });
       } catch {
         return res.status(401).json({ error: "Sign in with CityCorp first, then link Discord from account settings." });
       }
@@ -130,9 +131,52 @@ export function registerAuthRoutes(app: express.Express) {
         return res.status(400).json({ error: "Discord is not a sign-in method. Link it from account settings after CityCorp login." });
       }
 
-      const isCustomDomain = bank && bank.customDomain && hostHeader && hostHeader.includes(bank.customDomain);
-      if (isCustomDomain && bank!.discordClientId) {
-         clientId = (bank as any).discordClientId;
+      // If bank was not identified from bankId or custom domain, resolve from user session
+      if (!bank && decodedSession) {
+        try {
+          const { bankCustomers } = await import("../db/schema");
+          const { or: drizzleOr, eq: drizzleEq } = await import("drizzle-orm");
+          const sessionId = decodedSession.discordId;
+          const sessionMc = decodedSession.mcUuid;
+          const sessionUser = decodedSession.username;
+          
+          const custMatches = await db.select().from(bankCustomers).where(
+            drizzleOr(
+              sessionId ? drizzleEq(bankCustomers.discordId, sessionId) : undefined,
+              sessionMc ? drizzleEq(bankCustomers.mcUuid, sessionMc) : undefined,
+              sessionUser ? drizzleEq(bankCustomers.mcUsername, sessionUser) : undefined
+            )
+          ).all();
+
+          // Prefer a bank where this customer is enrolled and has discordClientId configured
+          for (const cm of custMatches) {
+            const b = await db.select().from(banks).where(eq(banks.id, cm.bankId)).get();
+            if (b?.discordClientId) {
+              bank = b;
+              break;
+            }
+          }
+          if (!bank && custMatches.length > 0 && custMatches[0].bankId) {
+            bank = await db.select().from(banks).where(eq(banks.id, custMatches[0].bankId)).get();
+          }
+
+          // If still no bank found, check if there is only 1 bank or 1 bank with discordClientId
+          if (!bank) {
+            const allBanks = await db.select().from(banks).all();
+            const configuredBanks = allBanks.filter((b: any) => b.discordClientId && b.discordClientSecret);
+            if (configuredBanks.length === 1) {
+              bank = configuredBanks[0];
+            } else if (allBanks.length === 1) {
+              bank = allBanks[0];
+            }
+          }
+        } catch (e) {
+          console.error("Error auto-resolving bank for Discord linking:", e);
+        }
+      }
+
+      if (bank?.discordClientId) {
+        clientId = bank.discordClientId;
       }
 
       const redirectUri = await getRedirectUri(req);
@@ -568,8 +612,21 @@ export function registerAuthRoutes(app: express.Express) {
        }
     }
 
-    const isCustomDomain = bankToUse && bankToUse.customDomain && hostname && hostname.includes(bankToUse.customDomain);
-    if (bankToUse && isCustomDomain && bankToUse.discordClientId && bankToUse.discordClientSecret) {
+    if (!bankToUse) {
+      try {
+        const allBanks = await db.select().from(banks).all();
+        const banksWithDiscord = allBanks.filter((b: any) => b.discordClientId && b.discordClientSecret);
+        if (banksWithDiscord.length === 1) {
+          bankToUse = banksWithDiscord[0];
+        } else if (allBanks.length === 1) {
+          bankToUse = allBanks[0];
+        }
+      } catch (e) {
+        console.error("Fallback bank lookup error in discord callback:", e);
+      }
+    }
+
+    if (bankToUse?.discordClientId && bankToUse?.discordClientSecret) {
        clientId = bankToUse.discordClientId;
        clientSecret = bankToUse.discordClientSecret;
     }

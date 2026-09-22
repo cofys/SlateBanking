@@ -9,7 +9,7 @@ export function BankSettings() {
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [vaultTiers, setVaultTiers] = useState<any[]>([{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}]);
+  const [vaultTiers, setVaultTiers] = useState<any[]>([]);
   const [schemeId, setSchemeId] = useState<ColorSchemeId>("slate");
   const [brandHex, setBrandHex] = useState("#8b95a5");
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -20,6 +20,13 @@ export function BankSettings() {
     setTimeout(() => setCopiedField(null), 2500);
   };
 
+  const isDefaultDummyVaultTiers = (tiers: any[]): boolean => {
+    if (!Array.isArray(tiers) || tiers.length !== 5) return false;
+    const dummyDays = [7, 30, 90, 180, 365];
+    const dummyRates = [100, 300, 500, 800, 1200];
+    return tiers.every((t, i) => Number(t.lockDays) === dummyDays[i] && Number(t.interestRate) === dummyRates[i] && Number(t.penaltyPercent) === 20);
+  };
+
   useEffect(() => {
     if (bank?.id) {
       setLoading(true);
@@ -27,7 +34,11 @@ export function BankSettings() {
         .then(r => r.json())
         .then(data => {
           setSettings(data);
-          if (data.vaultTiers) setVaultTiers(data.vaultTiers);
+          if (Array.isArray(data.vaultTiers) && !isDefaultDummyVaultTiers(data.vaultTiers)) {
+            setVaultTiers(data.vaultTiers);
+          } else {
+            setVaultTiers([]);
+          }
           setSchemeId((data.colorScheme as ColorSchemeId) || "slate");
           setBrandHex(data.brandingColor || SCHEME_HEX[data.colorScheme] || "#8b95a5");
           setLoading(false);
@@ -57,14 +68,14 @@ export function BankSettings() {
       discordClientRoleId: formData.get("discordClientRoleId"),
       requireKyc: formData.get("requireKyc") === "on",
       requirePersonalForBusiness: formData.get("requirePersonalForBusiness") === "on",
-      enableLoans: formData.get("enableLoans") === "on",
-      enableVaults: formData.get("enableVaults") === "on",
-      enableCards: formData.get("enableCards") === "on",
-      enablePayroll: formData.get("enablePayroll") === "on",
-      enableSubscriptions: formData.get("enableSubscriptions") === "on",
-      enableEscrow: formData.get("enableEscrow") === "on",
-      enableTreasury: formData.get("enableTreasury") === "on",
-      enableAccountTiers: formData.get("enableAccountTiers") === "on",
+      enableLoans: !!settings?.enableLoans,
+      enableVaults: !!settings?.enableVaults,
+      enableCards: !!settings?.enableCards,
+      enablePayroll: !!settings?.enablePayroll,
+      enableSubscriptions: !!settings?.enableSubscriptions,
+      enableEscrow: !!settings?.enableEscrow,
+      enableTreasury: !!settings?.enableTreasury,
+      enableAccountTiers: !!settings?.enableAccountTiers,
       enableGoogleDocsContracts: formData.get("enableGoogleDocsContracts") === "on",
       googleDocsLoanTemplateUrl: formData.get("googleDocsLoanTemplateUrl"),
       googleDocsCreditTemplateUrl: formData.get("googleDocsCreditTemplateUrl"),
@@ -901,56 +912,56 @@ export function BankSettings() {
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableLoans ? 'bg-pink-500' : 'bg-white/10'}`}>
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableLoans ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
-               <input type="checkbox" name="enableLoans" className="hidden" defaultChecked={settings?.enableLoans} onChange={(e) => setSettings({...settings, enableLoans: e.target.checked})} />
+               <input type="checkbox" name="enableLoans" className="hidden" checked={!!settings?.enableLoans} onChange={(e) => setSettings({...settings, enableLoans: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Loan Center</span>
             </label>
             <label className="flex items-center gap-4 cursor-pointer group">
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableVaults ? 'bg-pink-500' : 'bg-white/10'}`}>
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableVaults ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
-               <input type="checkbox" name="enableVaults" className="hidden" defaultChecked={settings?.enableVaults} onChange={(e) => setSettings({...settings, enableVaults: e.target.checked})} />
+               <input type="checkbox" name="enableVaults" className="hidden" checked={!!settings?.enableVaults} onChange={(e) => setSettings({...settings, enableVaults: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Bonds</span>
             </label>
             <label className="flex items-center gap-4 cursor-pointer group">
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableCards ? 'bg-pink-500' : 'bg-white/10'}`}>
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableCards ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
-               <input type="checkbox" name="enableCards" className="hidden" defaultChecked={settings?.enableCards} onChange={(e) => setSettings({...settings, enableCards: e.target.checked})} />
+               <input type="checkbox" name="enableCards" className="hidden" checked={!!settings?.enableCards} onChange={(e) => setSettings({...settings, enableCards: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Debit/Credit Cards</span>
             </label>
             <label className="flex items-center gap-4 cursor-pointer group">
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enablePayroll ? 'bg-pink-500' : 'bg-white/10'}`}>
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enablePayroll ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
-               <input type="checkbox" name="enablePayroll" className="hidden" defaultChecked={settings?.enablePayroll} onChange={(e) => setSettings({...settings, enablePayroll: e.target.checked})} />
+               <input type="checkbox" name="enablePayroll" className="hidden" checked={!!settings?.enablePayroll} onChange={(e) => setSettings({...settings, enablePayroll: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Corporate Payroll</span>
             </label>
             <label className="flex items-center gap-4 cursor-pointer group">
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableSubscriptions ? 'bg-pink-500' : 'bg-white/10'}`}>
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableSubscriptions ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
-               <input type="checkbox" name="enableSubscriptions" className="hidden" defaultChecked={settings?.enableSubscriptions} onChange={(e) => setSettings({...settings, enableSubscriptions: e.target.checked})} />
+               <input type="checkbox" name="enableSubscriptions" className="hidden" checked={!!settings?.enableSubscriptions} onChange={(e) => setSettings({...settings, enableSubscriptions: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Subscriptions</span>
             </label>
             <label className="flex items-center gap-4 cursor-pointer group">
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableEscrow ? 'bg-pink-500' : 'bg-white/10'}`}>
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableEscrow ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
-               <input type="checkbox" name="enableEscrow" className="hidden" defaultChecked={settings?.enableEscrow} onChange={(e) => setSettings({...settings, enableEscrow: e.target.checked})} />
+               <input type="checkbox" name="enableEscrow" className="hidden" checked={!!settings?.enableEscrow} onChange={(e) => setSettings({...settings, enableEscrow: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Escrow Services</span>
             </label>
             <label className="flex items-center gap-4 cursor-pointer group">
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableTreasury ? 'bg-pink-500' : 'bg-white/10'}`}>
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableTreasury ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
-               <input type="checkbox" name="enableTreasury" className="hidden" defaultChecked={settings?.enableTreasury} onChange={(e) => setSettings({...settings, enableTreasury: e.target.checked})} />
+               <input type="checkbox" name="enableTreasury" className="hidden" checked={!!settings?.enableTreasury} onChange={(e) => setSettings({...settings, enableTreasury: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Treasury Analytics</span>
             </label>
             <label className="flex items-center gap-4 cursor-pointer group">
                <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.enableAccountTiers ? 'bg-pink-500' : 'bg-white/10'}`}>
                   <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.enableAccountTiers ? 'translate-x-4' : 'translate-x-0'}`}></div>
                </div>
-               <input type="checkbox" name="enableAccountTiers" className="hidden" defaultChecked={settings?.enableAccountTiers} onChange={(e) => setSettings({...settings, enableAccountTiers: e.target.checked})} />
+               <input type="checkbox" name="enableAccountTiers" className="hidden" checked={!!settings?.enableAccountTiers} onChange={(e) => setSettings({...settings, enableAccountTiers: e.target.checked})} />
                <span className="text-sm text-white/80 group-hover:text-pink-400 transition-colors">Custom Account Tiers</span>
             </label>
           </div>
@@ -959,27 +970,38 @@ export function BankSettings() {
             <div className="pt-6 border-t border-white/10 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-md font-semibold text-white/80">Bond terms</p>
-                  <p className="text-xs text-white/40 mt-1">Shown on Apply. Lock days, yield (percent × 100, so 500 = 5.00%), early-exit penalty.</p>
+                  <p className="text-md font-semibold text-white/80">Bond terms ({vaultTiers.length} active)</p>
+                  <p className="text-xs text-white/40 mt-1">Shown on customer portal Apply tab. Lock days, yield in basis points (500 = 5.00%), early-exit penalty %.</p>
                 </div>
-                <button type="button" onClick={() => setVaultTiers([...vaultTiers, { lockDays: 30, interestRate: 300, penaltyPercent: 20 }])} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white/10">Add term</button>
+                <div className="flex items-center gap-2">
+                  {vaultTiers.length > 0 && (
+                    <button type="button" onClick={() => setVaultTiers([])} className="text-xs text-rose-400 hover:text-rose-300 font-medium px-2.5 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 transition-colors">Clear all</button>
+                  )}
+                  <button type="button" onClick={() => setVaultTiers([...vaultTiers, { lockDays: 30, interestRate: 300, penaltyPercent: 20 }])} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-colors">Add term</button>
+                </div>
               </div>
-              <div className="space-y-2">
-                {vaultTiers.map((t, i) => (
-                  <div key={i} className="grid grid-cols-3 sm:grid-cols-4 gap-2 items-end">
-                    <label className="text-[11px] text-white/40">Days
-                      <input type="number" value={t.lockDays} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], lockDays: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
-                    </label>
-                    <label className="text-[11px] text-white/40">Yield (bps)
-                      <input type="number" value={t.interestRate} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], interestRate: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
-                    </label>
-                    <label className="text-[11px] text-white/40">Early penalty %
-                      <input type="number" value={t.penaltyPercent} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], penaltyPercent: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
-                    </label>
-                    <button type="button" onClick={() => setVaultTiers(vaultTiers.filter((_, j) => j !== i))} className="text-xs text-rose-300 py-1.5">Remove</button>
-                  </div>
-                ))}
-              </div>
+              {vaultTiers.length === 0 ? (
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 text-xs text-white/40 text-center">
+                  No bond terms configured. The customer portal will not offer any bonds until terms are added here.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {vaultTiers.map((t, i) => (
+                    <div key={i} className="grid grid-cols-3 sm:grid-cols-4 gap-2 items-end">
+                      <label className="text-[11px] text-white/40">Days
+                        <input type="number" value={t.lockDays} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], lockDays: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                      </label>
+                      <label className="text-[11px] text-white/40">Yield (bps)
+                        <input type="number" value={t.interestRate} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], interestRate: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                      </label>
+                      <label className="text-[11px] text-white/40">Early penalty %
+                        <input type="number" value={t.penaltyPercent} onChange={(e) => { const n = [...vaultTiers]; n[i] = { ...n[i], penaltyPercent: parseInt(e.target.value) || 0 }; setVaultTiers(n); }} className="w-full mt-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2 py-1.5 text-sm" />
+                      </label>
+                      <button type="button" onClick={() => setVaultTiers(vaultTiers.filter((_, j) => j !== i))} className="text-xs text-rose-300 hover:text-rose-200 py-1.5 font-medium transition-colors">Remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

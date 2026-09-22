@@ -148,10 +148,18 @@ citizenRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Reques
       const uniqueBankIds = [...new Set(userAccounts.map(a => a.bankId))];
       const settings = uniqueBankIds.length > 0 ? await db.select().from(bankSettings).where(inArray(bankSettings.bankId, uniqueBankIds)) : [];
       
+      const isDefaultDummyVaultTiers = (tiers: any[]): boolean => {
+        if (!Array.isArray(tiers) || tiers.length !== 5) return false;
+        const dummyDays = [7, 30, 90, 180, 365];
+        const dummyRates = [100, 300, 500, 800, 1200];
+        return tiers.every((t, i) => Number(t.lockDays) === dummyDays[i] && Number(t.interestRate) === dummyRates[i] && Number(t.penaltyPercent) === 20);
+      };
+
       const banksConfig = uniqueBankIds.reduce((acc: any, bId: string) => {
          const set = settings.find(s => s.bankId === bId);
+         const rawTiers = Array.isArray(set?.vaultTiers) ? set.vaultTiers : [];
          acc[bId] = {
-            vaultTiers: set?.vaultTiers || [{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}]
+            vaultTiers: (set?.enableVaults === false || isDefaultDummyVaultTiers(rawTiers)) ? [] : rawTiers
          };
          return acc;
       }, {});
@@ -1313,7 +1321,7 @@ citizenRouter.post("/api/citizen/vaults", requireAuth, async (req: express.Reque
         if (account.balance < parsedAmount) return res.status(400).json({ error: "Insufficient funds" });
         
         const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, account.bankId)).get();
-        const tiers = settings?.vaultTiers || [{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}];
+        const tiers = Array.isArray(settings?.vaultTiers) ? settings.vaultTiers : [];
         
         const selectedTier = tiers.find((t: any) => t.lockDays === lockDays);
         if (!selectedTier) return res.status(400).json({ error: "Invalid lock period" });
@@ -1370,7 +1378,7 @@ citizenRouter.post("/api/citizen/vaults/:id/withdraw", requireAuth, async (req: 
         if (!account || !(await requireOwnedAccount(req, account))) return res.status(403).json({ error: "Unauthorized" });
         
         const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, vault.bankId)).get();
-        const tiers = settings?.vaultTiers || [{"lockDays":7,"interestRate":100,"penaltyPercent":20},{"lockDays":30,"interestRate":300,"penaltyPercent":20},{"lockDays":90,"interestRate":500,"penaltyPercent":20},{"lockDays":180,"interestRate":800,"penaltyPercent":20},{"lockDays":365,"interestRate":1200,"penaltyPercent":20}];
+        const tiers = Array.isArray(settings?.vaultTiers) ? settings.vaultTiers : [];
         
         // Find the penalty from the tier, if the lock period matches
         // For early withdrawals, we need the penalty

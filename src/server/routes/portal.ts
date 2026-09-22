@@ -165,6 +165,16 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
       const bank = await db.select().from(banks).where(eq(banks.id, req.params.bankId)).get();
       if (!bank) return res.status(404).json({ error: "Bank not found" });
       const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bank.id)).get();
+      const isDefaultDummyVaultTiers = (tiers: any[]): boolean => {
+        if (!Array.isArray(tiers) || tiers.length !== 5) return false;
+        const dummyDays = [7, 30, 90, 180, 365];
+        const dummyRates = [100, 300, 500, 800, 1200];
+        return tiers.every((t, i) => Number(t.lockDays) === dummyDays[i] && Number(t.interestRate) === dummyRates[i] && Number(t.penaltyPercent) === 20);
+      };
+
+      const rawTiers = (settings && Array.isArray(settings.vaultTiers)) ? settings.vaultTiers : [];
+      const cleanTiers = (!settings || settings.enableVaults === false || isDefaultDummyVaultTiers(rawTiers)) ? [] : rawTiers;
+
       const publicSettings = settings ? {
         bankId: settings.bankId,
         logoUrl: settings.logoUrl || bank.logoUrl,
@@ -181,7 +191,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
         enableTreasury: settings.enableTreasury,
         loginBgUrl: settings.loginBgUrl,
         requirePersonalForBusiness: settings.requirePersonalForBusiness,
-        vaultTiers: settings.vaultTiers,
+        vaultTiers: cleanTiers,
         defaultFeePayerMode: settings.defaultFeePayerMode,
         savingsApyPercent: settings.savingsApyPercent,
         tagline: settings.tagline,
@@ -1227,8 +1237,23 @@ portalRouter.get("/api/portal/:bankId/catalog", requireAuth, async (req: express
     const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
     const loans = settings?.enableLoans === false ? [] : await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, bankId), eq(loanProducts.isActive, true)));
     const cards = settings?.enableCards === false ? [] : await db.select().from(creditProducts).where(and(eq(creditProducts.bankId, bankId), eq(creditProducts.isActive, true)));
-    const bonds = settings?.enableVaults === false ? [] : (settings?.vaultTiers || []);
-    res.json({ loans, cards, bonds, enableLoans: settings?.enableLoans !== false, enableCards: settings?.enableCards !== false, enableBonds: settings?.enableVaults !== false });
+    const isDefaultDummyVaultTiers = (tiers: any[]): boolean => {
+      if (!Array.isArray(tiers) || tiers.length !== 5) return false;
+      const dummyDays = [7, 30, 90, 180, 365];
+      const dummyRates = [100, 300, 500, 800, 1200];
+      return tiers.every((t, i) => Number(t.lockDays) === dummyDays[i] && Number(t.interestRate) === dummyRates[i] && Number(t.penaltyPercent) === 20);
+    };
+
+    const rawVaultTiers = Array.isArray(settings?.vaultTiers) ? settings.vaultTiers : [];
+    const bonds = (settings?.enableVaults === false || isDefaultDummyVaultTiers(rawVaultTiers)) ? [] : rawVaultTiers;
+    res.json({ 
+      loans, 
+      cards, 
+      bonds, 
+      enableLoans: settings?.enableLoans !== false, 
+      enableCards: settings?.enableCards !== false, 
+      enableBonds: settings?.enableVaults !== false && bonds.length > 0 
+    });
   } catch (e: any) {
     res.status(500).json({ error: e.message || "Failed to load catalog" });
   }

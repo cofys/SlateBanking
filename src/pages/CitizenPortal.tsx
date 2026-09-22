@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { formatMoney } from "../lib/utils";
-import { Building2, ChevronRight, LogOut, Wallet } from "lucide-react";
+import { Building2, ChevronRight, LogOut, Wallet, X, Bot, Link2 } from "lucide-react";
 import { AuthScreen, BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
 import { hexOr, withAlpha } from "../lib/theme";
 import { motion } from "motion/react";
@@ -12,6 +12,7 @@ export function CitizenPortal() {
   const [mine, setMine] = useState<any>(null);
   const [directory, setDirectory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showBotPicker, setShowBotPicker] = useState(false);
 
   useEffect(() => {
     document.title = "Customer Portal";
@@ -52,6 +53,23 @@ export function CitizenPortal() {
   }, [accounts, directory]);
 
   const otherBanks = directory.filter((b) => !byBank.some((row) => row.bank.id === b.id));
+
+  const handleConnectDiscord = (bankId?: string) => {
+    if (bankId) {
+      setShowBotPicker(false);
+      linkDiscord(bankId);
+      return;
+    }
+    if (byBank.length === 1) {
+      linkDiscord(byBank[0].bank.id);
+    } else if (byBank.length === 0 && directory.length === 1) {
+      linkDiscord(directory[0].id);
+    } else if (byBank.length > 1 || directory.length > 1) {
+      setShowBotPicker(true);
+    } else {
+      linkDiscord();
+    }
+  };
 
   if (isLoading) return <ScreenLoader />;
 
@@ -103,8 +121,8 @@ export function CitizenPortal() {
           </p>
           <div className="flex flex-wrap gap-2 mt-6">
             {!user.linkedDiscordId && (
-              <button onClick={() => linkDiscord()} className="text-sm font-semibold px-4 py-2.5 rounded-xl border" style={{ borderColor: "var(--border)" }}>
-                Connect Discord bot
+              <button onClick={() => handleConnectDiscord()} className="text-sm font-semibold px-4 py-2.5 rounded-xl border flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
+                <Bot size={15} /> Connect Discord bot
               </button>
             )}
             <Link to="/accept" className="text-sm font-semibold px-4 py-2.5 rounded-xl border" style={{ borderColor: "var(--border)", color: "var(--fg)" }}>
@@ -172,6 +190,70 @@ export function CitizenPortal() {
               </Link>
             ))}
           </section>
+        )}
+        {showBotPicker && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+            <div 
+              className="w-full max-w-md p-6 rounded-2xl border shadow-2xl space-y-5"
+              style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Bot size={18} /> Connect Bank Discord Bot
+                  </h3>
+                  <p className="text-xs mt-1" style={{ color: "var(--fg-muted)" }}>
+                    Choose which bank's bot you want to link your Discord account with:
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowBotPicker(false)}
+                  className="p-1.5 rounded-lg border hover:bg-[var(--bg-subtle)] transition-colors"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {(byBank.length > 0 ? byBank.map((b) => b.bank) : directory).map((b) => {
+                  const color = hexOr(b.brandingColor);
+                  return (
+                    <button
+                      key={b.id}
+                      onClick={() => handleConnectDiscord(b.id)}
+                      className="w-full p-3.5 rounded-xl border text-left flex items-center gap-3 transition-colors hover:border-[var(--border-strong)]"
+                      style={{ borderColor: "var(--border)", background: "color-mix(in oklab, var(--fg) 2%, transparent)" }}
+                    >
+                      <div 
+                        className="w-9 h-9 rounded-lg flex items-center justify-center font-semibold text-sm shrink-0"
+                        style={{ background: withAlpha(color, 0.2), color }}
+                      >
+                        {(b.name || "?").slice(0, 1)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate">{b.name}</p>
+                        <p className="text-xs truncate" style={{ color: "var(--fg-subtle)" }}>
+                          Link to {b.name}'s Discord Bot
+                        </p>
+                      </div>
+                      <Link2 size={16} style={{ color: "var(--fg-muted)" }} />
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  onClick={() => setShowBotPicker(false)}
+                  className="text-xs font-semibold px-4 py-2 rounded-xl border"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>

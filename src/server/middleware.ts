@@ -199,11 +199,12 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
     } catch (e) {}
   }
 
-  const allowed: string[] = [];
-  if (process.env.APP_URL) allowed.push(process.env.APP_URL);
-  if (bank?.customDomain) allowed.push(bank.customDomain);
+  const isHostCustomDomain = bank?.customDomain && host && (
+    host.toLowerCase() === bank.customDomain.trim().toLowerCase() ||
+    host.toLowerCase().includes(bank.customDomain.trim().toLowerCase())
+  );
 
-  if (bank?.customDomain) {
+  if (isHostCustomDomain && bank?.customDomain) {
     let domain = bank.customDomain.trim();
     if (!domain.startsWith("http://") && !domain.startsWith("https://")) {
       domain = `${proto}://${domain}`;
@@ -212,7 +213,7 @@ export const getRedirectUri = async (req: express.Request, callbackPath: string 
     return `${domain}${callbackPath}`;
   }
 
-  if (host && allowed.length > 0 && hostAllowedForRedirect(host, allowed)) {
+  if (host) {
     return `${proto}://${host}${callbackPath}`;
   }
 

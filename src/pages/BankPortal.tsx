@@ -641,8 +641,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
           <form onSubmit={sendNow} className="max-w-lg space-y-5">
             <h2 className="text-2xl font-black">Send money</h2>
             <label className="block text-xs font-bold text-white/40 uppercase">From</label>
-            <select value={sendFrom} onChange={(e) => setSendFrom(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm">
-              {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName} · {formatMoney(a.balance)}</option>)}
+            <select value={sendFrom} onChange={(e) => setSendFrom(e.target.value)} className="w-full bg-[#18181c] border border-white/10 rounded-2xl px-4 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+              {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · {formatMoney(a.balance)}</option>)}
             </select>
             <label className="block text-xs font-bold text-white/40 uppercase">To</label>
             <input
@@ -801,9 +801,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <p className="font-semibold text-sm">{inv.description || "Invoice"}</p>
                     <p className="text-xs text-white/40">{formatMoney(inv.amount)}</p>
                   </div>
-                  <select className="bg-white/5 border border-white/10 rounded-xl text-xs px-2 py-2" onChange={(e) => { if (e.target.value) payInvoice(inv.id, e.target.value); }}>
-                    <option value="">Pay from…</option>
-                    {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                  <select className="bg-[#18181c] border border-white/10 rounded-xl text-xs px-2 py-2 text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]" onChange={(e) => { if (e.target.value) payInvoice(inv.id, e.target.value); }}>
+                    <option value="" className="bg-[#18181c] text-[#f4f4f5]">Pay from…</option>
+                    {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName}</option>)}
                   </select>
                 </div>
               ))}
@@ -811,12 +811,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             {merchants.length > 0 && (
               <form onSubmit={payMerchant} className="rounded-2xl border border-white/10 p-5 space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-white/40">Pay a merchant</h3>
-                <select name="sourceAccountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                <select name="sourceAccountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                  {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName}</option>)}
                 </select>
-                <select name="merchantId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                  <option value="">Merchant…</option>
-                  {merchants.map((m: any) => <option key={m.id} value={m.id}>{m.name}{m.bankName ? ` · ${m.bankName}` : ""}</option>)}
+                <select name="merchantId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                  <option value="" className="bg-[#18181c] text-[#f4f4f5]">Merchant…</option>
+                  {merchants.map((m: any) => <option key={m.id} value={m.id} className="bg-[#18181c] text-[#f4f4f5]">{m.name}{m.bankName ? ` · ${m.bankName}` : ""}</option>)}
                 </select>
                 <input name="amount" type="number" step="0.01" min="0.01" required placeholder="Amount" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono" />
                 <input name="description" placeholder="Memo" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm" />
@@ -834,10 +834,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             <form onSubmit={openAccount} className="rounded-2xl border border-white/10 p-5 space-y-3">
               <h3 className="font-bold flex items-center gap-2"><Wallet size={16} /> Open an account</h3>
               <input name="accountName" required placeholder="Account name" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm" />
-              <select name="accountType" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                <option value="personal_checking">Personal checking</option>
-                <option value="personal_savings">Savings</option>
-                <option value="business_checking">Business</option>
+              <select name="accountType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                <option value="personal_checking" className="bg-[#18181c] text-[#f4f4f5]">Personal checking</option>
+                <option value="personal_savings" className="bg-[#18181c] text-[#f4f4f5]">Savings</option>
+                <option value="business_checking" className="bg-[#18181c] text-[#f4f4f5]">Business</option>
               </select>
               <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Open</button>
             </form>
@@ -845,22 +845,22 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             {settings.enableLoans !== false && (
               <form onSubmit={applyLoan} className="rounded-2xl border border-white/10 p-5 space-y-3">
                 <h3 className="font-bold flex items-center gap-2"><Landmark size={16} /> Apply for a loan</h3>
-                <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                  {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName}</option>)}
                 </select>
                 {loanProducts.length > 0 && (
-                  <select name="productId" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                    <option value="">Standard terms</option>
+                  <select name="productId" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                    <option value="" className="bg-[#18181c] text-[#f4f4f5]">Standard terms</option>
                     {loanProducts.map((p: any) => (
-                      <option key={p.id} value={p.id}>{p.name} — {(Number(p.interestRate) / (Number(p.interestRate) > 100 ? 100 : 1)).toFixed(2)}% · max {formatMoney(p.maxAmount)}</option>
+                      <option key={p.id} value={p.id} className="bg-[#18181c] text-[#f4f4f5]">{p.name} — {(Number(p.interestRate) / (Number(p.interestRate) > 100 ? 100 : 1)).toFixed(2)}% · max {formatMoney(p.maxAmount)}</option>
                     ))}
                   </select>
                 )}
                 <input name="amount" type="number" step="0.01" min="10" required placeholder="Amount" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono" />
-                <select name="termMonths" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                  <option value="6">6 months</option>
-                  <option value="12">12 months</option>
-                  <option value="24">24 months</option>
+                <select name="termMonths" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                  <option value="6" className="bg-[#18181c] text-[#f4f4f5]">6 months</option>
+                  <option value="12" className="bg-[#18181c] text-[#f4f4f5]">12 months</option>
+                  <option value="24" className="bg-[#18181c] text-[#f4f4f5]">24 months</option>
                 </select>
                 <input name="purpose" placeholder="Purpose" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm" />
                 <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Submit application</button>
@@ -870,21 +870,21 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             {settings.enableCards !== false && (
               <form onSubmit={requestCard} className="rounded-2xl border border-white/10 p-5 space-y-3">
                 <h3 className="font-bold flex items-center gap-2"><CreditCard size={16} /> Request a card</h3>
-                <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                  {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName}</option>)}
                 </select>
                 {cardProducts.length > 0 ? (
-                  <select name="productId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                  <select name="productId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
                     {cardProducts.map((p: any) => (
-                      <option key={p.id} value={p.id}>
+                      <option key={p.id} value={p.id} className="bg-[#18181c] text-[#f4f4f5]">
                         {p.name} · {p.cardKind === "debit" ? "debit" : "credit"} · limit {formatMoney(p.maxLimit)} · {Number(p.interestRate).toFixed(2)}% APR
                         {p.tierId ? " · optional tier" : ""}
                       </option>
                     ))}
                   </select>
                 ) : (
-                  <select name="cardType" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                    <option value="debit">Debit</option>
+                  <select name="cardType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                    <option value="debit" className="bg-[#18181c] text-[#f4f4f5]">Debit</option>
                   </select>
                 )}
                 <p className="text-[11px] text-white/35">Credit cards have a set limit for Onyx and cash advances. Tiers are optional — not required to apply.</p>
@@ -892,16 +892,16 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               </form>
             )}
 
-            {settings.enableVaults !== false && bondProducts.length > 0 && (
+            {settings.enableVaults !== false && Array.isArray(bondProducts) && bondProducts.length > 0 && (
               <form onSubmit={buyBond} className="rounded-2xl border border-white/10 p-5 space-y-3">
                 <h3 className="font-bold flex items-center gap-2"><PiggyBank size={16} /> Buy a bond</h3>
                 <p className="text-xs text-white/40">Time-locked deposits. You earn the advertised yield if you hold to maturity.</p>
-                <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName} · {formatMoney(a.balance)}</option>)}
+                <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                  {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · {formatMoney(a.balance)}</option>)}
                 </select>
-                <select name="lockDays" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
+                <select name="lockDays" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
                   {bondProducts.map((t: any) => (
-                    <option key={t.lockDays} value={t.lockDays}>{t.lockDays} days · {(Number(t.interestRate) / 100).toFixed(2)}% · {t.penaltyPercent ?? 20}% early penalty</option>
+                    <option key={t.lockDays} value={t.lockDays} className="bg-[#18181c] text-[#f4f4f5]">{t.lockDays} days · {(Number(t.interestRate) / 100).toFixed(2)}% · {t.penaltyPercent ?? 20}% early penalty</option>
                   ))}
                 </select>
                 <input name="amount" type="number" step="0.01" min="1" required placeholder="Amount to lock" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono" />
@@ -944,8 +944,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 <button type="button" onClick={() => setRepayingLoan(null)}><X size={16} /></button>
               </div>
               <p className="text-sm text-white/50">Remaining {formatMoney(repayingLoan.remainingAmount ?? repayingLoan.remainingBalance)}</p>
-              <select name="accountId" required className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm">
-                {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.accountName} · {formatMoney(a.balance)}</option>)}
+              <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · {formatMoney(a.balance)}</option>)}
               </select>
               <input name="amount" type="number" step="0.01" min="0.01" required defaultValue={((repayingLoan.remainingAmount ?? 0) / 100).toFixed(2)} className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 font-mono" />
               <button disabled={actionPending} className="w-full py-3 rounded-xl font-bold" style={btnBrand}>Pay</button>
