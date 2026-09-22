@@ -7,7 +7,8 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowDownLeft, ArrowUpRight, Building2, Check, ChevronRight, Copy, CreditCard,
   FileText, Landmark, Loader2, Lock, LogIn, LogOut, Plus, Send, ShieldCheck,
-  Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock, Link2, CheckCircle2
+  Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock, Link2, CheckCircle2,
+  Users, Repeat, Play, Pause, Trash2, Calendar, UserPlus, Sliders, Edit3, DollarSign, Shield, Tag
 } from "lucide-react";
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
@@ -41,6 +42,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [bondProducts, setBondProducts] = useState<any[]>([]);
   const [accountTiers, setAccountTiers] = useState<any[]>([]);
   const [selectedTierId, setSelectedTierId] = useState("");
+  const [selectedTx, setSelectedTx] = useState<any | null>(null);
+  const [accountNameChoice, setAccountNameChoice] = useState("");
+  const [namingPref, setNamingPref] = useState<"custom" | "discord">("custom");
   const [merchants, setMerchants] = useState<any[]>([]);
   const [repayingLoan, setRepayingLoan] = useState<any | null>(null);
   const [logoBroken, setLogoBroken] = useState(false);
@@ -68,6 +72,44 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     memo?: string;
     timestamp: string;
   } | null>(null);
+
+  // Subscriptions State
+  const [showAddSubModal, setShowAddSubModal] = useState(false);
+  const [subFromAccount, setSubFromAccount] = useState("");
+  const [subPayee, setSubPayee] = useState("");
+  const [subAmount, setSubAmount] = useState("");
+  const [subFrequency, setSubFrequency] = useState<"weekly" | "monthly">("monthly");
+  const [subDescription, setSubDescription] = useState("");
+  const [subTogglingId, setSubTogglingId] = useState<string | null>(null);
+
+  // Business Account Members State
+  const [managingMembersAcc, setManagingMembersAcc] = useState<any | null>(null);
+  const [accountMembersList, setAccountMembersList] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [newMemberDiscordId, setNewMemberDiscordId] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState<"manager" | "viewer">("manager");
+  const [addingMember, setAddingMember] = useState(false);
+
+  // Split Bill State
+  const [splitBillModalOpen, setSplitBillModalOpen] = useState(false);
+  const [splitFromAccountId, setSplitFromAccountId] = useState("");
+  const [splitTotalAmount, setSplitTotalAmount] = useState("");
+  const [splitDescription, setSplitDescription] = useState("");
+  const [splitParticipants, setSplitParticipants] = useState<string[]>([""]);
+  const [splitSubmitting, setSplitSubmitting] = useState(false);
+
+  // Corporate Department Cards State
+  const [showIssueCorpCardModal, setShowIssueCorpCardModal] = useState(false);
+  const [editingCorpCard, setEditingCorpCard] = useState<any | null>(null);
+  const [corpCardAccountId, setCorpCardAccountId] = useState("");
+  const [corpCardLabel, setCorpCardLabel] = useState("");
+  const [corpCardAssignedMc, setCorpCardAssignedMc] = useState("");
+  const [corpCardAssignedDiscord, setCorpCardAssignedDiscord] = useState("");
+  const [corpCardType, setCorpCardType] = useState<"debit" | "credit">("debit");
+  const [corpCardDailyLimit, setCorpCardDailyLimit] = useState("100");
+  const [corpCardCreditLimit, setCorpCardCreditLimit] = useState("1000");
+  const [corpCardAllowAdvance, setCorpCardAllowAdvance] = useState(true);
+  const [corpCardAllowOnyx, setCorpCardAllowOnyx] = useState(true);
 
   const brand = hexOr(bank?.brandingColor || bank?.settings?.brandingColor);
   const brandFg = accentForeground(brand);
@@ -185,6 +227,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const loans = userData?.loans || [];
   const activeLoans = loans.filter((l: any) => ["active", "delinquent", "defaulted", "pending", "awaiting_signature"].includes(l.status));
   const invoices = (userData?.pendingInvoices || []).filter((i: any) => i.status !== "paid");
+  const subscriptions = userData?.subscriptions || [];
   const cards = userData?.cards || [];
   const tx = userData?.recentTx || [];
   const defaultFeeMode = (settings.defaultFeePayerMode as any) === "sender_covers" ? "sender_covers" : "from_payment";
@@ -311,6 +354,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       accountType = "personal_checking";
     }
 
+    const accName = (fd.get("accountName") as string) || accountNameChoice;
+
     setActionPending(true);
     try {
       const res = await fetch("/api/citizen/accounts/register", {
@@ -318,9 +363,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           bankId, 
-          accountName: fd.get("accountName"), 
+          accountName: accName, 
           accountType,
           tierId: chosenTierId || undefined,
+          namingPreference: namingPref,
         }),
       });
       const d = await res.json();
@@ -328,6 +374,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       else {
         flash("Account opened.");
         form.reset();
+        setAccountNameChoice("");
         setSelectedTierId("");
         setView("home");
         handleSearch();
@@ -483,6 +530,297 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       }
     } catch {
       flash("Payment failed");
+    }
+    setActionPending(false);
+  };
+
+  const toggleSubscription = async (subId: string) => {
+    setSubTogglingId(subId);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/subscriptions/${subId}/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to update subscription");
+      else {
+        flash(d.isActive ? "Subscription activated." : "Subscription paused.");
+        handleSearch();
+      }
+    } catch {
+      flash("Error toggling subscription");
+    }
+    setSubTogglingId(null);
+  };
+
+  const createSubscription = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!subFromAccount || !subPayee || !subAmount) return;
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/subscriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerAccountId: subFromAccount,
+          billerQuery: subPayee,
+          amount: subAmount,
+          frequency: subFrequency,
+          description: subDescription,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to create subscription");
+      else {
+        flash("Recurring subscription mandate created.");
+        setShowAddSubModal(false);
+        setSubPayee("");
+        setSubAmount("");
+        setSubDescription("");
+        handleSearch();
+      }
+    } catch {
+      flash("Error creating subscription");
+    }
+    setActionPending(false);
+  };
+
+  const openManageMembers = async (acc: any) => {
+    setManagingMembersAcc(acc);
+    setLoadingMembers(true);
+    setAccountMembersList([]);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/accounts/${acc.id}/members`);
+      const d = await res.json();
+      if (res.ok && Array.isArray(d.members)) {
+        setAccountMembersList(d.members);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setLoadingMembers(false);
+  };
+
+  const addAccountMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!managingMembersAcc || !newMemberDiscordId.trim()) return;
+    setAddingMember(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/accounts/${managingMembersAcc.id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberDiscordId: newMemberDiscordId.trim(),
+          role: newMemberRole,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to add member");
+      else {
+        flash("Operator added to account.");
+        setNewMemberDiscordId("");
+        const refreshed = await fetch(`/api/portal/${bankId}/accounts/${managingMembersAcc.id}/members`).then(r => r.json());
+        if (Array.isArray(refreshed.members)) setAccountMembersList(refreshed.members);
+        handleSearch();
+      }
+    } catch {
+      flash("Error adding member");
+    }
+    setAddingMember(false);
+  };
+
+  const removeAccountMember = async (memberId: string) => {
+    if (!managingMembersAcc) return;
+    try {
+      const res = await fetch(`/api/portal/${bankId}/accounts/${managingMembersAcc.id}/members/${memberId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        flash("Member removed.");
+        setAccountMembersList(prev => prev.filter(m => m.id !== memberId));
+        handleSearch();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        flash(d.error || "Failed to remove member");
+      }
+    } catch {
+      flash("Error removing member");
+    }
+  };
+
+  const startSplitBill = (fromTx?: any) => {
+    if (accounts.length > 0 && !splitFromAccountId) {
+      setSplitFromAccountId(accounts[0].id);
+    }
+    if (fromTx) {
+      const amtDollars = ((fromTx.amountSubmitted ?? fromTx.amount) / 100).toFixed(2);
+      setSplitTotalAmount(amtDollars);
+      setSplitDescription(fromTx.description || "Expense");
+      if (fromTx.fromAccountId) setSplitFromAccountId(fromTx.fromAccountId);
+    } else {
+      setSplitTotalAmount("");
+      setSplitDescription("");
+    }
+    setSplitParticipants([""]);
+    setSplitBillModalOpen(true);
+  };
+
+  const handleSendSplit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const total = parseFloat(splitTotalAmount);
+    if (!splitFromAccountId || isNaN(total) || total <= 0) {
+      flash("Please enter a valid total amount and select a receiving account.");
+      return;
+    }
+    const cleanParticipants = splitParticipants.map(p => p.trim()).filter(Boolean);
+    if (cleanParticipants.length === 0) {
+      flash("Please enter at least one participant to split with.");
+      return;
+    }
+
+    const perPerson = parseFloat((total / (cleanParticipants.length + 1)).toFixed(2));
+    const splits = cleanParticipants.map(target => ({
+      target,
+      amount: perPerson,
+    }));
+
+    setSplitSubmitting(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/split-bill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromAccountId: splitFromAccountId,
+          description: splitDescription,
+          splits,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to send split requests");
+      else {
+        flash(`Split requests sent! Created ${d.invoicesCreated} payment request${d.invoicesCreated === 1 ? "" : "s"}.`);
+        setSplitBillModalOpen(false);
+        handleSearch();
+      }
+    } catch {
+      flash("Error creating split bill");
+    }
+    setSplitSubmitting(false);
+  };
+
+  // Corporate Cards Handlers
+  const openIssueCorpCardModal = (preselectedAccountId?: string) => {
+    const defaultAcc = preselectedAccountId || accounts.find((a: any) => a.accountType?.includes("business"))?.id || accounts[0]?.id || "";
+    setCorpCardAccountId(defaultAcc);
+    setCorpCardLabel("");
+    setCorpCardAssignedMc("");
+    setCorpCardAssignedDiscord("");
+    setCorpCardType("debit");
+    setCorpCardDailyLimit("100");
+    setCorpCardCreditLimit("1000");
+    setCorpCardAllowAdvance(true);
+    setCorpCardAllowOnyx(true);
+    setShowIssueCorpCardModal(true);
+  };
+
+  const openEditCorpCardModal = (card: any) => {
+    setEditingCorpCard(card);
+    setCorpCardLabel(card.cardLabel || "");
+    setCorpCardAssignedMc(card.assignedMcUsername || "");
+    setCorpCardAssignedDiscord(card.assignedDiscordId || "");
+    setCorpCardDailyLimit(((card.spendingLimitDailyCents || 0) / 100).toFixed(2));
+    setCorpCardAllowAdvance(card.allowCashAdvance !== false);
+    setCorpCardAllowOnyx(card.allowOnyxTransactions !== false);
+  };
+
+  const handleIssueCorporateCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!corpCardAccountId) {
+      flash("Please select a funding account.");
+      return;
+    }
+    if (!corpCardAssignedMc && !corpCardAssignedDiscord) {
+      flash("Please assign the card to an employee via Minecraft username or Discord ID.");
+      return;
+    }
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/corporate-cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: corpCardAccountId,
+          cardLabel: corpCardLabel || "Corporate Department Card",
+          assignedMcUsername: corpCardAssignedMc.trim() || undefined,
+          assignedDiscordId: corpCardAssignedDiscord.trim() || undefined,
+          type: corpCardType,
+          spendingLimitDaily: parseFloat(corpCardDailyLimit || "0"),
+          creditLimit: corpCardType === "credit" ? Math.round(parseFloat(corpCardCreditLimit || "0") * 100) : undefined,
+          allowCashAdvance: corpCardAllowAdvance,
+          allowOnyxTransactions: corpCardAllowOnyx,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        flash(d.error || "Failed to issue corporate card");
+      } else {
+        flash("Corporate department card issued successfully!");
+        setShowIssueCorpCardModal(false);
+        handleSearch();
+      }
+    } catch {
+      flash("Error issuing corporate card");
+    }
+    setActionPending(false);
+  };
+
+  const handleUpdateCorporateCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCorpCard) return;
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/corporate-cards/${editingCorpCard.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardLabel: corpCardLabel,
+          assignedMcUsername: corpCardAssignedMc.trim() || null,
+          assignedDiscordId: corpCardAssignedDiscord.trim() || null,
+          spendingLimitDaily: parseFloat(corpCardDailyLimit || "0"),
+          allowCashAdvance: corpCardAllowAdvance,
+          allowOnyxTransactions: corpCardAllowOnyx,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        flash(d.error || "Failed to update corporate card");
+      } else {
+        flash("Corporate card settings saved.");
+        setEditingCorpCard(null);
+        handleSearch();
+      }
+    } catch {
+      flash("Error updating corporate card");
+    }
+    setActionPending(false);
+  };
+
+  const handleDeleteCorporateCard = async (cardId: string) => {
+    if (!confirm("Are you sure you want to revoke this corporate department card? This action cannot be undone.")) return;
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/corporate-cards/${cardId}`, {
+        method: "DELETE",
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        flash(d.error || "Failed to revoke card");
+      } else {
+        flash("Corporate card revoked.");
+        handleSearch();
+      }
+    } catch {
+      flash("Error revoking card");
     }
     setActionPending(false);
   };
@@ -683,10 +1021,33 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         {acc.isFrozen && <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-full">Frozen</span>}
                       </div>
                       <p className="text-2xl font-black tabular-nums mt-4">{formatMoney(acc.balance)}</p>
-                      <button onClick={() => copy(acc.id, acc.id)} className="mt-3 text-[11px] font-mono text-white/30 hover:text-white flex items-center gap-1">
-                        {copied === acc.id ? <Check size={11} /> : <Copy size={11} />}
-                        {acc.id.slice(0, 14)}…
-                      </button>
+                      <div className="mt-3 flex items-center justify-between">
+                        <button onClick={() => copy(acc.id, acc.id)} className="text-[11px] font-mono text-white/30 hover:text-white flex items-center gap-1">
+                          {copied === acc.id ? <Check size={11} /> : <Copy size={11} />}
+                          {acc.id.slice(0, 14)}…
+                        </button>
+                        {acc.accountType?.includes("business") && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openIssueCorpCardModal(acc.id)}
+                              title="Issue an employee corporate department card"
+                              className="flex items-center gap-1 text-[11px] font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 px-2 py-1 rounded-lg border border-white/10 transition"
+                            >
+                              <CreditCard size={12} />
+                              <span>Dept Card</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openManageMembers(acc)}
+                              className="flex items-center gap-1 text-[11px] font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 px-2 py-1 rounded-lg border border-white/10 transition"
+                            >
+                              <Users size={12} />
+                              <span>Team</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -695,25 +1056,41 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
             <section>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Recent</h2>
-                <button onClick={() => setView("activity")} className="text-xs font-bold text-white/50 hover:text-white">See all</button>
+                <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Recent Activity</h2>
+                <button onClick={() => setView("activity")} className="text-xs font-bold text-white/50 hover:text-white transition-colors">See all</button>
               </div>
               <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
                 {tx.slice(0, 6).length === 0 && <p className="p-5 text-sm text-white/40">No activity yet.</p>}
                 {tx.slice(0, 6).map((t: any) => {
                   const inbound = accounts.some((a: any) => a.id === t.toAccountId);
                   return (
-                    <div key={t.id} className="px-4 py-3.5 flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${inbound ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-white/60"}`}>
+                    <div 
+                      key={t.id} 
+                      onClick={() => setSelectedTx(t)}
+                      className="px-4 py-3.5 flex items-center gap-3 hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                    >
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${inbound ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-white/60 group-hover:text-white"}`}>
                         {inbound ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">{t.description || t.type}</p>
-                        <p className="text-[11px] text-white/35">{t.timestamp ? format(new Date(t.timestamp), "MMM d · h:mm a") : ""}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold truncate text-white group-hover:text-white">{t.description || t.type}</p>
+                          {t.memo && (
+                            <span className="text-[10px] bg-white/10 text-white/70 px-1.5 py-0.5 rounded font-mono truncate max-w-[120px] hidden sm:inline-block">
+                              "{t.memo}"
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-white/35">
+                          {t.timestamp ? format(new Date(t.timestamp), "MMM d · h:mm a") : ""} · Click for details
+                        </p>
                       </div>
-                      <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : "text-white"}`}>
-                        {inbound ? "+" : "−"}{formatMoney(inbound ? (t.amountReceived ?? t.amount) : (t.amountSubmitted ?? t.amount))}
-                      </p>
+                      <div className="text-right flex items-center gap-2">
+                        <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : "text-white"}`}>
+                          {inbound ? "+" : "−"}{formatMoney(inbound ? (t.amountReceived ?? t.amount) : (t.amountSubmitted ?? t.amount))}
+                        </p>
+                        <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 transition-colors" />
+                      </div>
                     </div>
                   );
                 })}
@@ -915,21 +1292,56 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
         {view === "activity" && (
           <div className="space-y-4">
-            <h2 className="text-2xl font-black">Activity</h2>
-            <div className="rounded-2xl border border-white/10 divide-y divide-white/5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-black">Activity</h2>
+              <span className="text-xs text-white/40">{tx.length} transaction{tx.length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
               {tx.length === 0 && <p className="p-6 text-white/40 text-sm">Nothing here yet.</p>}
               {tx.map((t: any) => {
                 const inbound = accounts.some((a: any) => a.id === t.toAccountId);
                 return (
-                  <div key={t.id} className="px-4 py-3.5 flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${inbound ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5"}`}>
+                  <div 
+                    key={t.id} 
+                    onClick={() => setSelectedTx(t)}
+                    className="px-4 py-3.5 flex items-center gap-3 hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                  >
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${inbound ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-white/60 group-hover:text-white"}`}>
                       {inbound ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{t.description || t.type}</p>
-                      <p className="text-[11px] text-white/35">{t.timestamp ? format(new Date(t.timestamp), "MMM d, yyyy · h:mm a") : ""}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold truncate text-white group-hover:text-white">{t.description || t.type}</p>
+                        {t.memo && (
+                          <span className="text-[10px] bg-white/10 text-white/80 px-2 py-0.5 rounded font-mono truncate max-w-[160px]">
+                            "{t.memo}"
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-white/35">
+                        {t.timestamp ? format(new Date(t.timestamp), "MMM d, yyyy · h:mm a") : ""} · Click for receipt
+                      </p>
                     </div>
-                    <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : ""}`}>{inbound ? "+" : "−"}{formatMoney(inbound ? (t.amountReceived ?? t.amount) : (t.amountSubmitted ?? t.amount))}</p>
+                    <div className="flex items-center gap-2.5">
+                      <p className={`font-mono text-sm font-bold ${inbound ? "text-emerald-300" : "text-white"}`}>
+                        {inbound ? "+" : "−"}{formatMoney(inbound ? (t.amountReceived ?? t.amount) : (t.amountSubmitted ?? t.amount))}
+                      </p>
+                      {!inbound && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startSplitBill(t);
+                          }}
+                          title="Split this bill with friends"
+                          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-xs font-semibold flex items-center gap-1 border border-white/10 transition"
+                        >
+                          <Users size={12} />
+                          <span>Split</span>
+                        </button>
+                      )}
+                      <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 transition-colors" />
+                    </div>
                   </div>
                 );
               })}
@@ -963,59 +1375,390 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         )}
 
         {view === "cards" && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-black">Cards</h2>
-              {settings.enableCards !== false && <button onClick={() => setView("apply")} className="text-xs font-bold px-3 py-2 rounded-xl border border-white/10">Request</button>}
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-black">Cards & Expense Management</h2>
+                <p className="text-xs text-white/40 mt-0.5">Manage personal cards and assign corporate department cards to employees.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {accounts.some((a: any) => a.accountType?.includes("business")) && (
+                  <button 
+                    type="button"
+                    onClick={() => openIssueCorpCardModal()} 
+                    className="text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-lg transition"
+                    style={btnBrand}
+                  >
+                    <Plus size={14} />
+                    <span>Issue Corporate Card</span>
+                  </button>
+                )}
+                {settings.enableCards !== false && (
+                  <button 
+                    type="button"
+                    onClick={() => setView("apply")} 
+                    className="text-xs font-bold px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 transition"
+                  >
+                    Request Personal Card
+                  </button>
+                )}
+              </div>
             </div>
-            {cards.length === 0 && <p className="text-white/40 text-sm">No cards yet.</p>}
-            <div className="grid sm:grid-cols-2 gap-3">
-              {cards.map((c: any) => (
-                <div key={c.id} className="rounded-2xl p-5 border border-white/10" style={{ background: `linear-gradient(160deg, ${withAlpha(brand, 0.35)}, #0c0c12)` }}>
-                  <p className="text-[11px] uppercase tracking-widest text-white/50">{c.type} · {c.accountName || ""}</p>
-                  <p className="font-mono text-lg mt-4 tracking-widest">{c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : "••••"}</p>
-                  <p className="text-xs text-white/40 mt-2">Exp {c.expiryDate}</p>
-                  {c.type === "credit" && (
-                    <div className="mt-3 text-xs space-y-1">
-                      <div className="flex justify-between"><span className="text-white/40">Limit</span><span className="font-mono">{formatMoney(c.creditLimit)}</span></div>
-                      <div className="flex justify-between"><span className="text-white/40">Used</span><span className="font-mono">{formatMoney(c.creditUsed)}</span></div>
-                      <div className="flex justify-between"><span className="text-white/40">Available</span><span className="font-mono text-emerald-300">{formatMoney(Math.max(0, (c.creditLimit || 0) - (c.creditUsed || 0)))}</span></div>
-                    </div>
-                  )}
-                  <div className="flex gap-3 mt-4">
-                    <button onClick={() => toggleCard(c.id, !c.isLocked)} className="text-xs font-bold flex items-center gap-1">
-                      {c.isLocked ? <Unlock size={12} /> : <Lock size={12} />}
-                      {c.isLocked ? "Unlock" : "Lock"}
-                    </button>
-                    {c.type === "credit" && !c.isLocked && (
-                      <button type="button" onClick={() => setAdvanceCard(c)} className="text-xs font-bold" style={{ color: brand }}>Cash advance</button>
-                    )}
-                  </div>
+
+            {cards.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center space-y-3">
+                <CreditCard size={32} className="mx-auto text-white/30" />
+                <div>
+                  <h3 className="text-base font-bold text-white">No active cards</h3>
+                  <p className="text-xs text-white/40 max-w-sm mx-auto mt-1">
+                    Request a debit or credit card for yourself, or issue corporate department cards for employees to use with Onyx POS and cash advances.
+                  </p>
                 </div>
-              ))}
-            </div>
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <button onClick={() => setView("apply")} className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10">
+                    Request Personal Card
+                  </button>
+                  {accounts.some((a: any) => a.accountType?.includes("business")) && (
+                    <button onClick={() => openIssueCorpCardModal()} className="text-xs font-bold px-3.5 py-2 rounded-xl" style={btnBrand}>
+                      Issue Corporate Card
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Corporate Cards Section */}
+                {cards.some((c: any) => c.isCorporate) && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+                        <Building2 size={13} className="text-indigo-400" />
+                        <span>Corporate Department Cards ({cards.filter((c: any) => c.isCorporate).length})</span>
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => openIssueCorpCardModal()}
+                        className="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                      >
+                        <Plus size={12} /> Issue Another
+                      </button>
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-3.5">
+                      {cards.filter((c: any) => c.isCorporate).map((c: any) => {
+                        const dailyLimit = c.spendingLimitDailyCents || 0;
+                        const spentToday = c.dailySpentCents || 0;
+                        const pctSpent = dailyLimit > 0 ? Math.min(100, Math.round((spentToday / dailyLimit) * 100)) : 0;
+                        const isAccountManager = accounts.some((a: any) => a.id === c.accountId);
+
+                        return (
+                          <div 
+                            key={c.id} 
+                            className="rounded-2xl p-5 border border-indigo-500/20 relative overflow-hidden flex flex-col justify-between space-y-4 shadow-lg"
+                            style={{ background: `linear-gradient(150deg, rgba(99, 102, 241, 0.15), #0d0e17 80%)` }}
+                          >
+                            <div className="space-y-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-[10px] font-bold text-indigo-300 uppercase tracking-wide">
+                                    <Building2 size={11} />
+                                    <span>Corporate {c.type === "credit" ? "Credit" : "Debit"}</span>
+                                  </div>
+                                  <h4 className="font-bold text-base text-white mt-1.5">{c.cardLabel || "Department Expense Card"}</h4>
+                                  <p className="text-[11px] text-white/50">Funded by: <span className="text-white/80 font-medium">{c.accountName || "Business Account"}</span></p>
+                                </div>
+                                {c.isLocked && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                    Locked
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Employee Assignment Tag */}
+                              <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {c.assignedMcUsername ? (
+                                    <img
+                                      src={`https://mc-heads.net/avatar/${c.assignedMcUsername}/24`}
+                                      alt=""
+                                      className="w-6 h-6 rounded-md bg-white/5 border border-white/10 flex-shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center text-white/50 flex-shrink-0">
+                                      <Users size={13} />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] text-white/40 uppercase font-semibold">Assigned Employee</p>
+                                    <p className="text-xs font-bold text-white truncate">
+                                      {c.assignedMcUsername ? `MC: ${c.assignedMcUsername}` : (c.assignedDiscordId ? `Discord: ${c.assignedDiscordId}` : "Unassigned")}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Active</span>
+                              </div>
+
+                              <div className="flex justify-between items-baseline pt-1">
+                                <span className="font-mono text-lg tracking-widest text-white/90">
+                                  {c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : "••••"}
+                                </span>
+                                <span className="text-xs text-white/40 font-mono">Exp {c.expiryDate}</span>
+                              </div>
+
+                              {/* Daily Spending Limit Progress Bar */}
+                              <div className="space-y-1.5 pt-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-white/40">Daily Spending Limit</span>
+                                  <span className="font-mono font-medium text-white/80">
+                                    {dailyLimit > 0 ? (
+                                      <>
+                                        <strong className="text-white">{formatMoney(spentToday)}</strong> / {formatMoney(dailyLimit)}
+                                      </>
+                                    ) : (
+                                      <span className="text-emerald-400">No Daily Cap</span>
+                                    )}
+                                  </span>
+                                </div>
+                                {dailyLimit > 0 && (
+                                  <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                    <div 
+                                      className={`h-full transition-all duration-300 ${pctSpent >= 100 ? "bg-rose-500" : pctSpent >= 80 ? "bg-amber-400" : "bg-emerald-400"}`}
+                                      style={{ width: `${pctSpent}%` }}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Permissions Pills */}
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium border ${c.allowOnyxTransactions !== false ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-white/5 text-white/35 border-white/5"}`}>
+                                  Onyx POS {c.allowOnyxTransactions !== false ? "Enabled" : "Disabled"}
+                                </span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium border ${c.allowCashAdvance !== false ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-white/5 text-white/35 border-white/5"}`}>
+                                  Cash Advance {c.allowCashAdvance !== false ? "Enabled" : "Disabled"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Card Control Actions */}
+                            <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <button 
+                                  type="button"
+                                  onClick={() => toggleCard(c.id, !c.isLocked)} 
+                                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white flex items-center gap-1.5 transition"
+                                >
+                                  {c.isLocked ? <Unlock size={12} className="text-emerald-400" /> : <Lock size={12} />}
+                                  <span>{c.isLocked ? "Unlock" : "Lock"}</span>
+                                </button>
+                                {c.allowCashAdvance !== false && !c.isLocked && (
+                                  <button 
+                                    type="button" 
+                                    onClick={() => setAdvanceCard(c)} 
+                                    className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white flex items-center gap-1.5 transition"
+                                  >
+                                    <DollarSign size={12} />
+                                    <span>Advance</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              {isAccountManager && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditCorpCardModal(c)}
+                                    title="Edit Spending Limits & Employee Assignment"
+                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition"
+                                  >
+                                    <Sliders size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCorporateCard(c.id)}
+                                    title="Revoke Corporate Card"
+                                    className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 transition"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Personal Cards Section */}
+                {cards.some((c: any) => !c.isCorporate) && (
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+                      <CreditCard size={13} />
+                      <span>Personal Cards ({cards.filter((c: any) => !c.isCorporate).length})</span>
+                    </h3>
+                    <div className="grid sm:grid-cols-2 gap-3.5">
+                      {cards.filter((c: any) => !c.isCorporate).map((c: any) => (
+                        <div key={c.id} className="rounded-2xl p-5 border border-white/10 flex flex-col justify-between space-y-4" style={{ background: `linear-gradient(160deg, ${withAlpha(brand, 0.35)}, #0c0c12)` }}>
+                          <div>
+                            <div className="flex justify-between items-center">
+                              <p className="text-[11px] uppercase tracking-widest text-white/50">{c.type} · {c.accountName || "Personal Account"}</p>
+                              {c.isLocked && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300">Locked</span>}
+                            </div>
+                            <p className="font-mono text-lg mt-4 tracking-widest text-white">{c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : "••••"}</p>
+                            <p className="text-xs text-white/40 mt-2 font-mono">Exp {c.expiryDate}</p>
+                            {c.type === "credit" && (
+                              <div className="mt-3 text-xs space-y-1">
+                                <div className="flex justify-between"><span className="text-white/40">Limit</span><span className="font-mono">{formatMoney(c.creditLimit)}</span></div>
+                                <div className="flex justify-between"><span className="text-white/40">Used</span><span className="font-mono">{formatMoney(c.creditUsed)}</span></div>
+                                <div className="flex justify-between"><span className="text-white/40">Available</span><span className="font-mono text-emerald-300">{formatMoney(Math.max(0, (c.creditLimit || 0) - (c.creditUsed || 0)))}</span></div>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-3 pt-3 border-t border-white/5">
+                            <button onClick={() => toggleCard(c.id, !c.isLocked)} className="text-xs font-bold flex items-center gap-1">
+                              {c.isLocked ? <Unlock size={12} /> : <Lock size={12} />}
+                              {c.isLocked ? "Unlock" : "Lock"}
+                            </button>
+                            {c.type === "credit" && !c.isLocked && (
+                              <button type="button" onClick={() => setAdvanceCard(c)} className="text-xs font-bold" style={{ color: brand }}>Cash advance</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
         {view === "bills" && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-black">Pay</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-black">Pay & Recurring</h2>
+                <p className="text-xs text-white/40 mt-0.5">Manage unpaid invoices, recurring subscriptions, and split bills.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => startSplitBill()}
+                  className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white flex items-center gap-1.5 transition"
+                >
+                  <Users size={14} />
+                  <span>Split a Bill</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (accounts.length > 0 && !subFromAccount) setSubFromAccount(accounts[0].id);
+                    setShowAddSubModal(true);
+                  }}
+                  className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                  style={btnBrand}
+                >
+                  <Repeat size={14} />
+                  <span>New Subscription</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Invoices */}
             <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white/40">Invoices</h3>
-              {invoices.length === 0 && <p className="text-sm text-white/40">No unpaid invoices.</p>}
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white/40 flex items-center gap-1.5">
+                <Receipt size={14} /> Unpaid Invoices ({invoices.length})
+              </h3>
+              {invoices.length === 0 && (
+                <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-4 text-sm text-white/40">
+                  No unpaid invoices.
+                </div>
+              )}
               {invoices.map((inv: any) => (
-                <div key={inv.id} className="rounded-2xl border border-white/10 p-4 flex items-center justify-between gap-3">
+                <div key={inv.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <p className="font-semibold text-sm">{inv.description || "Invoice"}</p>
-                    <p className="text-xs text-white/40">{formatMoney(inv.amount)}</p>
+                    <p className="text-xs text-white/40">{formatMoney(inv.amount)} · Due {inv.dueDate ? format(new Date(inv.dueDate), "MMM d") : "Soon"}</p>
                   </div>
-                  <select className="bg-[#18181c] border border-white/10 rounded-xl text-xs px-2 py-2 text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]" onChange={(e) => { if (e.target.value) payInvoice(inv.id, e.target.value); }}>
+                  <select className="bg-[#18181c] border border-white/10 rounded-xl text-xs px-3 py-2 text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]" onChange={(e) => { if (e.target.value) payInvoice(inv.id, e.target.value); }}>
                     <option value="" className="bg-[#18181c] text-[#f4f4f5]">Pay from…</option>
-                    {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName}</option>)}
+                    {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · {formatMoney(a.balance)}</option>)}
                   </select>
                 </div>
               ))}
             </div>
+
+            {/* Subscriptions */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-white/40 flex items-center gap-1.5">
+                  <Repeat size={14} /> Subscriptions & Recurring Mandates ({subscriptions.length})
+                </h3>
+              </div>
+              {subscriptions.length === 0 ? (
+                <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 text-center text-sm text-white/40">
+                  <p>No active subscriptions.</p>
+                  <p className="text-xs text-white/30 mt-1">Set up recurring rent, membership dues, or vendor payments automatically.</p>
+                </div>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {subscriptions.map((sub: any) => (
+                    <div key={sub.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-between gap-3">
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-semibold text-sm truncate">{sub.description || "Recurring Mandate"}</p>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${sub.isActive ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20" : "bg-amber-500/15 text-amber-300 border border-amber-500/20"}`}>
+                            {sub.isActive ? "Active" : "Paused"}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                          <span className="text-xl font-bold font-mono tabular-nums">{formatMoney(sub.amount)}</span>
+                          <span className="text-xs text-white/40">/ {sub.frequency}</span>
+                        </div>
+                        <div className="text-xs text-white/40 space-y-0.5 mt-2">
+                          <p>From: <span className="text-white/70 font-medium">{sub.customerAccountName || "Your Account"}</span></p>
+                          <p>To: <span className="text-white/70 font-medium">{sub.billerAccountName || "Merchant"}</span></p>
+                          {sub.nextRun && (
+                            <p className="text-[11px] text-white/35 flex items-center gap-1 mt-1">
+                              <Calendar size={11} /> Next charge: {format(new Date(sub.nextRun), "MMM d, yyyy")}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-bold text-white/30">
+                          {sub.isOutgoing ? "Outgoing Debit" : "Incoming Credit"}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={subTogglingId === sub.id}
+                          onClick={() => toggleSubscription(sub.id)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition"
+                        >
+                          {subTogglingId === sub.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : sub.isActive ? (
+                            <>
+                              <Pause size={12} />
+                              <span>Pause</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play size={12} />
+                              <span>Resume</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Merchant Payment */}
             {merchants.length > 0 && (
               <form onSubmit={payMerchant} className="rounded-2xl border border-white/10 p-5 space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-white/40">Pay a merchant</h3>
@@ -1039,14 +1782,15 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             <h2 className="text-2xl font-black">Apply</h2>
             <p className="text-sm text-white/45 -mt-6">Everything this bank offers. Nothing is hidden — apply when you need it.</p>
 
-            <form onSubmit={openAccount} className="rounded-2xl border border-white/10 p-5 space-y-3">
-              <h3 className="font-bold flex items-center gap-2"><Wallet size={16} /> Open an account</h3>
-              <div>
-                <input name="accountName" required placeholder="Account name" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm placeholder:text-white/30" />
+            <form onSubmit={openAccount} className="rounded-2xl border border-white/10 p-5 space-y-4 bg-white/[0.02]">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold flex items-center gap-2"><Wallet size={16} /> Open an account</h3>
+                <span className="text-[10px] text-white/40 uppercase font-mono tracking-wider">Instant Onboarding</span>
               </div>
 
               {availableTiers.length > 0 ? (
-                <div className="space-y-2.5">
+                <div className="space-y-3">
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Account Product Tier</label>
                   <select 
                     name="tierId" 
                     value={selectedTierId || (availableTiers.find((t: any) => t.isDefault)?.id || availableTiers[0]?.id || "")}
@@ -1088,14 +1832,84 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   })()}
                 </div>
               ) : (
-                <select name="accountType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                  <option value="personal_checking" className="bg-[#18181c] text-[#f4f4f5]">Personal checking</option>
-                  <option value="personal_savings" className="bg-[#18181c] text-[#f4f4f5]">Savings</option>
-                  <option value="business_checking" className="bg-[#18181c] text-[#f4f4f5]">Business</option>
-                </select>
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide mb-1.5">Account Type</label>
+                  <select name="accountType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                    <option value="personal_checking" className="bg-[#18181c] text-[#f4f4f5]">Personal checking</option>
+                    <option value="personal_savings" className="bg-[#18181c] text-[#f4f4f5]">Savings</option>
+                    <option value="business_checking" className="bg-[#18181c] text-[#f4f4f5]">Business</option>
+                  </select>
+                </div>
               )}
 
-              <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Open</button>
+              {/* Dynamic Naming & Prefix Controls */}
+              {(() => {
+                const activeTier = availableTiers.find((t: any) => t.id === (selectedTierId || availableTiers.find((x: any) => x.isDefault)?.id || availableTiers[0]?.id));
+                const isBiz = activeTier ? activeTier.type === "business" : false;
+                const effectivePrefix = activeTier?.customPrefix || (isBiz ? (settings.businessAccountPrefix || "CORP-") : (settings.personalAccountPrefix || "ACC-"));
+                const effectiveNamingMode = activeTier?.namingMode || (isBiz ? (settings.businessAccountNamingMode || "business_name") : (settings.personalAccountNamingMode || "custom"));
+                const discordName = user?.username || (user as any)?.global_name || "client";
+
+                return (
+                  <div className="space-y-3 pt-1">
+                    {!isBiz && effectiveNamingMode === "choice_or_username" && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNamingPref("custom")}
+                          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-colors ${namingPref === "custom" ? "bg-white/10 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
+                        >
+                          Custom Name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNamingPref("discord")}
+                          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-colors ${namingPref === "discord" ? "bg-white/10 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
+                        >
+                          Discord Handle (@{discordName})
+                        </button>
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="text-xs font-semibold text-white/50 uppercase tracking-wide">
+                          {isBiz ? "Business / Entity Name" : "Account Name / Tag"}
+                        </label>
+                        <span className="text-[10px] font-mono text-white/40">
+                          Result: <strong className="text-white/80">{effectivePrefix}{(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? discordName : (accountNameChoice || (isBiz ? "AcmeCorp" : "main"))}</strong>
+                        </span>
+                      </div>
+
+                      {(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? (
+                        <div className="flex items-center bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white/80 font-mono">
+                          <span className="text-indigo-400 font-semibold">{effectivePrefix}</span>
+                          <span>{discordName}</span>
+                          <span className="ml-auto text-[11px] text-white/30 uppercase font-sans">Synced with Discord</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center bg-white/5 border border-white/10 rounded-xl overflow-hidden focus-within:border-white/30">
+                          <span className="px-3 py-2.5 bg-white/5 text-white/50 font-mono text-sm border-r border-white/10 select-none">
+                            {effectivePrefix}
+                          </span>
+                          <input 
+                            name="accountName" 
+                            required 
+                            value={accountNameChoice}
+                            onChange={(e) => setAccountNameChoice(e.target.value)}
+                            placeholder={isBiz ? "e.g. Acme Corporation" : "e.g. daily-spending"} 
+                            className="flex-1 bg-transparent px-3 py-2.5 text-sm text-white focus:outline-none placeholder:text-white/20" 
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <button disabled={actionPending} className="w-full py-3 rounded-xl font-bold text-sm text-white shadow-lg transition-opacity hover:opacity-95" style={btnBrand}>
+                {actionPending ? "Opening Account…" : "Open Account"}
+              </button>
             </form>
 
             {settings.enableLoans !== false && (
@@ -1221,6 +2035,910 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               <p className="text-sm text-white/50">Available {formatMoney(Math.max(0, (advanceCard.creditLimit || 0) - (advanceCard.creditUsed || 0)))}. Posted to your linked account. A cash-advance fee may apply.</p>
               <input name="amount" type="number" step="0.01" min="0.01" required placeholder="Amount" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 font-mono" />
               <button disabled={actionPending} className="w-full py-3 rounded-xl font-bold" style={btnBrand}>Draw</button>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Account Members Modal */}
+      <AnimatePresence>
+        {managingMembersAcc && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="bg-[#111118] border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-5 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-white/70">
+                      <Users size={16} />
+                    </div>
+                    <h3 className="font-bold text-base text-white">Account Operators</h3>
+                  </div>
+                  <p className="text-xs text-white/50 mt-1">
+                    Manage multi-user access for <span className="text-white font-medium">{managingMembersAcc.accountName}</span>.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManagingMembersAcc(null)}
+                  className="p-1.5 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Members List */}
+              <div className="space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-white/40">Active Operators</p>
+                {loadingMembers ? (
+                  <div className="flex items-center justify-center py-6 text-white/40 gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-xs">Loading team...</span>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-white/10 divide-y divide-white/5 bg-white/[0.02] overflow-hidden">
+                    {/* Primary Owner Row */}
+                    <div className="p-3.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center justify-center text-xs font-bold font-mono">
+                          ★
+                        </div>
+                        <div>
+                          <p className="text-xs font-mono font-medium text-white/90">
+                            {managingMembersAcc.ownerDiscordId || "Account Owner"}
+                          </p>
+                          <p className="text-[10px] text-white/40">Primary Account Creator</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/25">
+                        Owner
+                      </span>
+                    </div>
+
+                    {/* Member Rows */}
+                    {accountMembersList.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-white/40">
+                        No additional operators added yet. Add trusted members below.
+                      </div>
+                    ) : (
+                      accountMembersList.map((m: any) => (
+                        <div key={m.id} className="p-3.5 flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 text-white/60 flex items-center justify-center text-xs font-mono">
+                              #
+                            </div>
+                            <div>
+                              <p className="text-xs font-mono font-medium text-white/90">{m.discordId}</p>
+                              <p className="text-[10px] text-white/40">
+                                {m.role === "manager" ? "Can send funds & view balance" : "Read-only view access"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${m.role === "manager" ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" : "bg-sky-500/15 text-sky-300 border border-sky-500/25"}`}>
+                              {m.role}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeAccountMember(m.id)}
+                              title="Remove operator"
+                              className="p-1 rounded-lg hover:bg-rose-500/20 text-white/30 hover:text-rose-300 transition"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Add Member Form */}
+              <form onSubmit={addAccountMember} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <UserPlus size={14} /> Add Operator
+                </p>
+                <p className="text-[11px] text-white/40">
+                  Enter their Discord ID (snowflake) to grant access to this business account in the Discord bot and Web Portal.
+                </p>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    required
+                    value={newMemberDiscordId}
+                    onChange={(e) => setNewMemberDiscordId(e.target.value)}
+                    placeholder="Discord User ID (e.g. 102938475610293847)"
+                    className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder:text-white/20"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewMemberRole("manager")}
+                      className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition ${newMemberRole === "manager" ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300" : "bg-[#18181c] border-white/10 text-white/50"}`}
+                    >
+                      Manager (Full Access)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewMemberRole("viewer")}
+                      className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition ${newMemberRole === "viewer" ? "bg-sky-500/15 border-sky-500/40 text-sky-300" : "bg-[#18181c] border-white/10 text-white/50"}`}
+                    >
+                      Viewer (Read-only)
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={addingMember || !newMemberDiscordId.trim()}
+                  className="w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+                  style={btnBrand}
+                >
+                  {addingMember ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  <span>Grant Access</span>
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Split the Bill Modal */}
+      <AnimatePresence>
+        {splitBillModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.form
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              onSubmit={handleSendSplit}
+              className="bg-[#111118] border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-white/70">
+                      <Users size={16} />
+                    </div>
+                    <h3 className="font-bold text-base text-white">Split the Bill</h3>
+                  </div>
+                  <p className="text-xs text-white/50 mt-1">
+                    Divide an expense. CityCorp creates payment request invoices for each person.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSplitBillModalOpen(false)}
+                  className="p-1.5 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
+                  Receive Reimbursements Into
+                </label>
+                <select
+                  value={splitFromAccountId}
+                  onChange={(e) => setSplitFromAccountId(e.target.value)}
+                  required
+                  className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                >
+                  {accounts.map((a: any) => (
+                    <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">
+                      {a.accountName} · {formatMoney(a.balance)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
+                    Total Bill Amount ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={splitTotalAmount}
+                    onChange={(e) => setSplitTotalAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm font-mono text-white placeholder:text-white/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
+                    Description / Memo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={splitDescription}
+                    onChange={(e) => setSplitDescription(e.target.value)}
+                    placeholder="e.g. Dinner, Group Vault"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-white/20"
+                  />
+                </div>
+              </div>
+
+              {/* Participants */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-white/40">
+                    Split With ({splitParticipants.length} other{splitParticipants.length === 1 ? "" : "s"})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setSplitParticipants(prev => [...prev, ""])}
+                    className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1"
+                  >
+                    <Plus size={12} /> Add Person
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {splitParticipants.map((part, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={part}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSplitParticipants(prev => {
+                            const next = [...prev];
+                            next[idx] = val;
+                            return next;
+                          });
+                        }}
+                        placeholder="Account name, Discord ID, or handle"
+                        className="flex-1 bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-white/20 font-mono"
+                      />
+                      {splitParticipants.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setSplitParticipants(prev => prev.filter((_, i) => i !== idx))}
+                          className="p-2 rounded-lg hover:bg-rose-500/20 text-white/30 hover:text-rose-300 transition"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dynamic Split Calculation Breakdown */}
+              {splitTotalAmount && parseFloat(splitTotalAmount) > 0 && (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3.5 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-white/50">
+                    <span>Total bill:</span>
+                    <span className="font-mono text-white">{formatMoney(Math.round(parseFloat(splitTotalAmount) * 100))}</span>
+                  </div>
+                  <div className="flex justify-between text-white/50">
+                    <span>Split {splitParticipants.length + 1} ways:</span>
+                    <span className="font-mono text-white">
+                      {formatMoney(Math.round((parseFloat(splitTotalAmount) / (splitParticipants.length + 1)) * 100))} / person
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-emerald-400 font-semibold pt-1 border-t border-white/5">
+                    <span>Invoices generated:</span>
+                    <span>{splitParticipants.length} request{splitParticipants.length === 1 ? "" : "s"}</span>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={splitSubmitting || !splitTotalAmount || parseFloat(splitTotalAmount) <= 0}
+                className="w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2"
+                style={btnBrand}
+              >
+                {splitSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Users size={16} />}
+                <span>Send Split Requests</span>
+              </button>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* New Subscription Mandate Modal */}
+      <AnimatePresence>
+        {showAddSubModal && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.form
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              onSubmit={createSubscription}
+              className="bg-[#111118] border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-4"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-white/70">
+                      <Repeat size={16} />
+                    </div>
+                    <h3 className="font-bold text-base text-white">New Subscription Mandate</h3>
+                  </div>
+                  <p className="text-xs text-white/50 mt-1">
+                    Set up an automated recurring payment for rent, dues, or services.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddSubModal(false)}
+                  className="p-1.5 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
+                  Debit From Account
+                </label>
+                <select
+                  value={subFromAccount}
+                  onChange={(e) => setSubFromAccount(e.target.value)}
+                  required
+                  className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                >
+                  {accounts.map((a: any) => (
+                    <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">
+                      {a.accountName} · {formatMoney(a.balance)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
+                  Biller / Recipient Account
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={subPayee}
+                  onChange={(e) => setSubPayee(e.target.value)}
+                  placeholder="Biller account name, account ID, or handle"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-white/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
+                    Amount ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={subAmount}
+                    onChange={(e) => setSubAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm font-mono text-white placeholder:text-white/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
+                    Frequency
+                  </label>
+                  <select
+                    value={subFrequency}
+                    onChange={(e: any) => setSubFrequency(e.target.value)}
+                    className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-xs text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                  >
+                    <option value="weekly" className="bg-[#18181c] text-[#f4f4f5]">Weekly</option>
+                    <option value="monthly" className="bg-[#18181c] text-[#f4f4f5]">Monthly</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
+                  Memo / Purpose
+                </label>
+                <input
+                  type="text"
+                  value={subDescription}
+                  onChange={(e) => setSubDescription(e.target.value)}
+                  placeholder="e.g. Apartment Rent, Security Dues"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-white/20"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={actionPending || !subPayee || !subAmount}
+                className="w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2"
+                style={btnBrand}
+              >
+                {actionPending ? <Loader2 size={16} className="animate-spin" /> : <Repeat size={16} />}
+                <span>Authorize Recurring Mandate</span>
+              </button>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Transaction Details Modal */}
+      <AnimatePresence>
+        {selectedTx && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ y: 40, opacity: 0, scale: 0.96 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 30, opacity: 0, scale: 0.96 }}
+              className="bg-[#121218] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2.5 rounded-2xl ${accounts.some((a: any) => a.id === selectedTx.toAccountId) ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-white/80"}`}>
+                    <Receipt size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-lg text-white">Transaction Details</h3>
+                    <p className="text-xs text-white/40">
+                      {selectedTx.timestamp ? format(new Date(selectedTx.timestamp), "MMMM d, yyyy · h:mm:ss a") : "Recent"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTx(null)}
+                  className="p-1.5 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Amount Showcase */}
+              {(() => {
+                const inbound = accounts.some((a: any) => a.id === selectedTx.toAccountId);
+                const displayAmt = inbound ? (selectedTx.amountReceived ?? selectedTx.amount) : (selectedTx.amountSubmitted ?? selectedTx.amount);
+                return (
+                  <div className="text-center py-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
+                    <span className="text-[11px] font-bold text-white/40 uppercase tracking-widest">
+                      {inbound ? "Funds Received" : "Funds Transferred"}
+                    </span>
+                    <div className={`text-3xl font-black font-mono ${inbound ? "text-emerald-300" : "text-white"}`}>
+                      {inbound ? "+" : "−"}{formatMoney(displayAmt)}
+                    </div>
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 text-[11px] text-white/60 font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      Settled & Verified
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Memo Highlight */}
+              {(selectedTx.memo || selectedTx.description) && (
+                <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 uppercase tracking-wider">
+                    <FileText size={13} />
+                    <span>Memo / Note</span>
+                  </div>
+                  <p className="text-sm font-medium text-white/90 italic">
+                    "{selectedTx.memo || selectedTx.description}"
+                  </p>
+                </div>
+              )}
+
+              {/* Transaction Key Details */}
+              <div className="space-y-2.5 text-xs">
+                <div className="flex items-center justify-between py-1 border-b border-white/5">
+                  <span className="text-white/40">From</span>
+                  <div className="text-right">
+                    <span className="font-semibold text-white/90 block">{selectedTx.fromAccountName || selectedTx.fromAccountId || "System"}</span>
+                    {selectedTx.fromAccountId && (
+                      <span className="font-mono text-[10px] text-white/30">{selectedTx.fromAccountId.slice(0, 16)}…</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-white/5">
+                  <span className="text-white/40">To</span>
+                  <div className="text-right">
+                    <span className="font-semibold text-white/90 block">{selectedTx.toAccountName || selectedTx.toAccountId || "System"}</span>
+                    {selectedTx.toAccountId && (
+                      <span className="font-mono text-[10px] text-white/30">{selectedTx.toAccountId.slice(0, 16)}…</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-white/5">
+                  <span className="text-white/40">Transaction Type</span>
+                  <span className="font-medium text-white/80 capitalize">{selectedTx.type?.replace(/_/g, " ") || "Transfer"}</span>
+                </div>
+
+                {selectedTx.id && (
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-white/40">Reference ID</span>
+                    <button
+                      onClick={() => copy(selectedTx.id, `tx-${selectedTx.id}`)}
+                      className="font-mono text-[11px] text-white/50 hover:text-white flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded-lg border border-white/5 transition"
+                    >
+                      {copied === `tx-${selectedTx.id}` ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                      <span>{selectedTx.id.slice(0, 14)}…</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex gap-2 pt-2">
+                {!accounts.some((a: any) => a.id === selectedTx.toAccountId) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const txToSplit = selectedTx;
+                      setSelectedTx(null);
+                      startSplitBill(txToSplit);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                  >
+                    <Users size={14} />
+                    <span>Split Bill</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedTx(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-bold transition"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Issue Corporate Department Card Modal */}
+      <AnimatePresence>
+        {showIssueCorpCardModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.form
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              onSubmit={handleIssueCorporateCard}
+              className="bg-[#111118] border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      <Building2 size={16} />
+                    </div>
+                    <h3 className="font-bold text-base text-white">Issue Corporate Department Card</h3>
+                  </div>
+                  <p className="text-xs text-white/50 mt-1">
+                    Assign a corporate debit or credit card to an employee with daily spending limits and point-of-sale controls.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowIssueCorpCardModal(false)}
+                  className="p-1.5 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Funding Account */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">
+                  Funding Business Account
+                </label>
+                <select
+                  value={corpCardAccountId}
+                  onChange={(e) => setCorpCardAccountId(e.target.value)}
+                  required
+                  className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                >
+                  {accounts.map((a: any) => (
+                    <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">
+                      {a.accountName} · {formatMoney(a.balance)} {a.accountType?.includes("business") ? "(Business)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Department / Card Label */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">
+                  Department / Card Purpose Label
+                </label>
+                <input
+                  type="text"
+                  value={corpCardLabel}
+                  onChange={(e) => setCorpCardLabel(e.target.value)}
+                  placeholder="e.g. Logistics & Fuel, Operations, Development"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500/50"
+                  required
+                />
+              </div>
+
+              {/* Employee Assignment */}
+              <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
+                <div className="flex items-center gap-2">
+                  <UserPlus size={14} className="text-indigo-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-white/60">Employee Assignment</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-white/50 font-medium">Minecraft Username</label>
+                  <div className="flex items-center gap-2">
+                    {corpCardAssignedMc.trim() && (
+                      <img
+                        src={`https://mc-heads.net/avatar/${corpCardAssignedMc.trim()}/28`}
+                        alt=""
+                        className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex-shrink-0"
+                      />
+                    )}
+                    <input
+                      type="text"
+                      value={corpCardAssignedMc}
+                      onChange={(e) => setCorpCardAssignedMc(e.target.value)}
+                      placeholder="e.g. Steve or Notch"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 font-mono"
+                    />
+                  </div>
+                  <p className="text-[11px] text-white/35">The employee can use this card at in-game Onyx merchants and for cash advances.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-white/50 font-medium">Discord ID (Optional)</label>
+                  <input
+                    type="text"
+                    value={corpCardAssignedDiscord}
+                    onChange={(e) => setCorpCardAssignedDiscord(e.target.value)}
+                    placeholder="e.g. 123456789012345678"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Card Type & Limits */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Card Type</label>
+                  <select
+                    value={corpCardType}
+                    onChange={(e) => setCorpCardType(e.target.value as any)}
+                    className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                  >
+                    <option value="debit" className="bg-[#18181c] text-[#f4f4f5]">Debit (Direct Account)</option>
+                    <option value="credit" className="bg-[#18181c] text-[#f4f4f5]">Credit (Credit Line)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Daily Spend Cap ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={corpCardDailyLimit}
+                    onChange={(e) => setCorpCardDailyLimit(e.target.value)}
+                    placeholder="100.00 (0 = unlimited)"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-indigo-500/50"
+                  />
+                </div>
+              </div>
+
+              {corpCardType === "credit" && (
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Credit Line Limit ($)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="10"
+                    value={corpCardCreditLimit}
+                    onChange={(e) => setCorpCardCreditLimit(e.target.value)}
+                    placeholder="1000"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-indigo-500/50"
+                  />
+                </div>
+              )}
+
+              {/* Permission Toggles */}
+              <div className="space-y-2.5 pt-1">
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs text-white/80 p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition">
+                  <input
+                    type="checkbox"
+                    checked={corpCardAllowOnyx}
+                    onChange={(e) => setCorpCardAllowOnyx(e.target.checked)}
+                    className="rounded border-white/20 bg-white/5 text-indigo-500 focus:ring-0"
+                  />
+                  <div>
+                    <span className="font-semibold block">Allow Onyx Point-of-Sale Transactions</span>
+                    <span className="text-[11px] text-white/40">Authorize card usage at merchant checkouts and point-of-sale terminals.</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs text-white/80 p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition">
+                  <input
+                    type="checkbox"
+                    checked={corpCardAllowAdvance}
+                    onChange={(e) => setCorpCardAllowAdvance(e.target.checked)}
+                    className="rounded border-white/20 bg-white/5 text-indigo-500 focus:ring-0"
+                  />
+                  <div>
+                    <span className="font-semibold block">Allow Cash Advances</span>
+                    <span className="text-[11px] text-white/40">Allow the assigned employee to draw cash up to their daily limit.</span>
+                  </div>
+                </label>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={actionPending}
+                  className="w-full py-3 rounded-xl font-bold text-sm text-white shadow-lg transition-opacity hover:opacity-95"
+                  style={btnBrand}
+                >
+                  {actionPending ? "Issuing Card…" : "Issue Department Card"}
+                </button>
+              </div>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Corporate Department Card Modal */}
+      <AnimatePresence>
+        {editingCorpCard && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.form
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              onSubmit={handleUpdateCorporateCard}
+              className="bg-[#111118] border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      <Sliders size={16} />
+                    </div>
+                    <h3 className="font-bold text-base text-white">Manage Corporate Card</h3>
+                  </div>
+                  <p className="text-xs text-white/50 mt-1">
+                    Card ending in <span className="font-mono text-white font-bold">{editingCorpCard.cardNumber ? String(editingCorpCard.cardNumber).slice(-4) : "••••"}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingCorpCard(null)}
+                  className="p-1.5 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Department / Card Label</label>
+                <input
+                  type="text"
+                  value={corpCardLabel}
+                  onChange={(e) => setCorpCardLabel(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500/50"
+                  required
+                />
+              </div>
+
+              <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
+                <div className="flex items-center gap-2">
+                  <UserPlus size={14} className="text-indigo-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-white/60">Assigned Employee</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-white/50 font-medium">Minecraft Username</label>
+                  <div className="flex items-center gap-2">
+                    {corpCardAssignedMc.trim() && (
+                      <img
+                        src={`https://mc-heads.net/avatar/${corpCardAssignedMc.trim()}/28`}
+                        alt=""
+                        className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex-shrink-0"
+                      />
+                    )}
+                    <input
+                      type="text"
+                      value={corpCardAssignedMc}
+                      onChange={(e) => setCorpCardAssignedMc(e.target.value)}
+                      placeholder="e.g. Steve or Notch"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-white/50 font-medium">Discord ID (Optional)</label>
+                  <input
+                    type="text"
+                    value={corpCardAssignedDiscord}
+                    onChange={(e) => setCorpCardAssignedDiscord(e.target.value)}
+                    placeholder="e.g. 123456789012345678"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Daily Spending Cap ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={corpCardDailyLimit}
+                  onChange={(e) => setCorpCardDailyLimit(e.target.value)}
+                  placeholder="100.00 (0 = unlimited)"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-indigo-500/50"
+                />
+              </div>
+
+              {/* Permission Toggles */}
+              <div className="space-y-2.5 pt-1">
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs text-white/80 p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition">
+                  <input
+                    type="checkbox"
+                    checked={corpCardAllowOnyx}
+                    onChange={(e) => setCorpCardAllowOnyx(e.target.checked)}
+                    className="rounded border-white/20 bg-white/5 text-indigo-500 focus:ring-0"
+                  />
+                  <div>
+                    <span className="font-semibold block">Allow Onyx Point-of-Sale Transactions</span>
+                    <span className="text-[11px] text-white/40">Authorize card usage at merchant checkouts.</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs text-white/80 p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition">
+                  <input
+                    type="checkbox"
+                    checked={corpCardAllowAdvance}
+                    onChange={(e) => setCorpCardAllowAdvance(e.target.checked)}
+                    className="rounded border-white/20 bg-white/5 text-indigo-500 focus:ring-0"
+                  />
+                  <div>
+                    <span className="font-semibold block">Allow Cash Advances</span>
+                    <span className="text-[11px] text-white/40">Allow drawing cash up to daily limit.</span>
+                  </div>
+                </label>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteCorporateCard(editingCorpCard.id)}
+                  className="px-4 py-3 rounded-xl font-bold text-sm bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 transition"
+                >
+                  Revoke Card
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionPending}
+                  className="flex-1 py-3 rounded-xl font-bold text-sm text-white shadow-lg transition-opacity hover:opacity-95"
+                  style={btnBrand}
+                >
+                  {actionPending ? "Saving…" : "Save Changes"}
+                </button>
+              </div>
             </motion.form>
           </div>
         )}

@@ -24,9 +24,15 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
 ### 1. Financial Core
 - **Ledgers & Transactions**: Double-entry accounting system where money moves strictly between accounts via `transactions`. Multi-step financial operations (transfers, deposits, and fee deductions) execute inside atomic database transactions (`db.transaction`) to guarantee consistency.
   - Transaction types: `transfer`, `deposit`, `withdraw`, `onyx_payment`, `interest_payment`.
-- **Bank Accounts**: Configurable user accounts identifiable by unique IDs. Account types include `personal`, `business`, and `payroll`.
+- **Bank Accounts & Custom Naming Architecture**: Configurable user accounts identifiable by unique IDs. Account types include `personal`, `business`, and `payroll`.
   - Uses lowest denomination (cents) to avoid floating-point errors.
+  - **Account Prefixes & Naming Modes**: Banks can customize prefixes and identifier rules at the global bank level and override them per account tier:
+    - `personalAccountPrefix` (default `ACC-`) and `businessAccountPrefix` (default `CORP-`).
+    - `personalAccountNamingMode`: `custom` (freeform name tagged with prefix), `discord_username` (standardizes account tags to `PREFIX-discord_username`), or `choice_or_username` (allows citizens to choose between freeform and their verified Discord handle).
+    - `businessAccountNamingMode`: `business_name` (standardizes account tags to `PREFIX-BusinessName`) or `discord_plus_business` (standardizes to `PREFIX-discord_username-BusinessName`).
+    - **Tier-Level Overrides**: Individual account tiers configure a `customPrefix` and `namingMode` to override global defaults for specialized customer tiers (e.g. `VIP-`, `SAVINGS-`, `TREASURY-`).
   - **Custom Account Fee Overrides**: Individual accounts can be configured with custom fee rates (`customTransferFeePercent`, `customDepositFeePercent`, `customWithdrawFeePercent`). When defined, transaction fee processing respects the custom account rate rather than the global bank default. When updating bank-wide fee settings in `Bank Settings`, staff can check a toggle to either overwrite custom account overrides or leave them preserved.
+  - **Transaction Memo & Detailed Receipt Modal**: In the Citizen Bank Portal, all transactions across the Home dashboard and the Activity tab are clickable. Clicking any transaction row opens a high-fidelity modal displaying complete ledger metadata: gross/net amounts, verified status, formatted settlement timestamps, counterparty account handles and masked IDs, transaction type, settlement reference ID, and prominent memo inspection. Outgoing payments also include one-click "Split Bill" actions.
 - **Savings Interest Accrual Engine**: Banks can configure `savingsApyPercent` (e.g. 300 basis points = 3.00% APY) in `Bank Settings`. Staff can trigger daily interest compounding via `POST /api/banks/:bankId/accrue-interest`, which atomically calculates pro-rated daily interest across active, non-frozen accounts, logs interest credit transactions, and updates `lastInterestAccrualAt`.
 - **Audit Logs**: Irreversible system action records tracking all internal financial manipulation or staff changes. Automatically logs `action`, `details`, and `timestamp`. Server-side pagination (`limit` & `offset`) keeps high-volume logs fast.
 
@@ -1283,3 +1289,64 @@ To ensure mathematical parity between Slate's quote engine and in-game CityCorp 
     - **Send Another**: Clears receipt and reopens a clean send form immediately.
     - **View Activity**: Navigates directly to the comprehensive transaction activity ledger.
   - Smart Navigation Reset: Navigating into "Send" from other tabs (home quick actions or bottom navigation bar) automatically resets any active receipt to present a fresh payment form.
+
+### 9. Customer Subscriptions & Recurring Payment Mandates
+- **Customer Self-Service Subscriptions (`BankPortal.tsx` & `/api/portal/:bankId/subscriptions`)**:
+  - Exposes recurring direct debit mandate capabilities directly to account holders in the customer portal under the enhanced "Pay & Recurring" tab (`view === "bills"`).
+  - Customers can establish automated scheduled payments (e.g. rent, guild dues, security fees, or vendor subscriptions) directly from their portal:
+    - **Creation**: Specify debit account, recipient/biller account name or ID, amount, frequency (`weekly` or `monthly`), and an optional descriptive memo.
+    - **Lifecycle Controls**: Real-time status display (`Active` vs. `Paused`) with one-click instant pause/resume toggling.
+    - **Next Run Schedule**: Displays the exact calculated next charge timestamp.
+    - **Cross-Service Execution**: Synchronized with the platform's recurring background subscription processor to execute payments automatically when due.
+
+### 10. Business Account Multi-User Member Management
+- **Collaborative Operator Access (`/api/portal/:bankId/accounts/:accountId/members`)**:
+  - Commercial and organizational account owners can now invite and manage multiple operators for their business accounts.
+  - Accessible via the **"Team & Operators"** button on business account cards on the customer portal dashboard.
+  - **Roles & Permissions**:
+    - **Owner**: Permanent creator with full administrative authority.
+    - **Manager**: Authorized to execute transfers, initiate payments, review balance, and manage invoices.
+    - **Viewer**: Read-only oversight of account balances and audit transactions.
+  - **Operator Management**:
+    - Add operators by their Discord User Snowflake ID.
+    - Instant removal / revocation of operator privileges via the modal interface.
+    - Full multi-tenant isolation ensuring only account owners or managers can access member administration.
+
+### 11. "Split the Bill" Expense Sharing & Automated Invoicing
+- **Multi-Party Expense Division (`/api/portal/:bankId/split-bill`)**:
+  - Allows customers to divide communal expenses, dinner checks, or shared purchases across friends or guild members.
+  - Accessible from the "Pay & Recurring" portal view and via a one-click **"Split"** action on any outbound transaction in the customer's Activity ledger.
+  - **Dynamic Math Engine**:
+    - Dynamically calculates the per-person share based on the total bill and participant count (`amount / (participants.length + 1)`).
+    - Real-time breakdown showing total bill, individual share, and number of payment requests to be generated.
+  - **Automated Settlement Generation**:
+    - Resolves each participant's account identifier (by username, account ID, or Discord ID).
+    - Automatically creates formal Slate payment request invoices under the target accounts with memo references (`Split Bill: <Memo>`), payable directly through their portal with one click.
+    - Reimbursed funds settle directly into the initiator's chosen receiving account.
+
+### 12. Transaction Memo Details & Full Audit Inspection
+- **Interactive Transaction Detail Modal (`BankPortal.tsx`)**:
+  - Users can click on any transaction row or memo in the Activity Ledger or Home recent transactions to launch an inspection modal.
+  - Displays formatted amount and direction badges (Credit vs Debit), full un-truncated memo/notes, counterparty names and account IDs, transaction classification, exact settlement timestamp, and one-click copyable reference IDs.
+  - Provides a direct "Split Bill" action modal trigger for outbound debit payments.
+
+### 13. Configurable Account Number Prefixes & Naming Schemes
+- **Customizable Bank & Account Tier Identifiers**:
+  - Bank staff can configure standard account prefixes (e.g. `ACC`, `BNK`, `CORP`, `ROYAL`) and naming conventions in `Bank Settings` and `Account Tiers`.
+  - Supports personal account custom naming, discord username auto-population, and dedicated business account naming conventions (`BIZ-name` / `CORP-name`).
+  - Account prefix settings are evaluated dynamically during account creation and tier selection.
+
+### 14. Corporate Department Cards for Employee Spending
+- **Department Expense Cards & Employee Assignment (`/api/portal/:bankId/corporate-cards`)**:
+  - Business account owners and managers can issue corporate debit or credit cards linked directly to their business balance.
+  - **Employee Identification via Minecraft & Discord**:
+    - Cards can be assigned to specific employees by their **Minecraft Username** (with automated 3D avatar rendering from Mojang/Crafatar APIs) or Discord Snowflake ID.
+    - Assigned employees can view and lock/unlock their assigned cards in the customer portal.
+  - **Customizable Spending Controls & Permissions**:
+    - **Daily Spending Limit**: Configurable daily spending cap (`spendingLimitDailyCents`). Spending is automatically tracked (`dailySpentCents`) and resets every 24 hours.
+    - **Onyx Point-of-Sale Controls**: `allowOnyxTransactions` toggle permits or blocks card usage at physical Onyx merchant terminals and web checkout widgets.
+    - **Cash Advance Controls**: `allowCashAdvance` toggle allows or restricts drawing cash against the corporate card.
+  - **Onyx Checkout Enforcement (`onyx.ts`)**:
+    - When an Onyx transaction is executed with a corporate card, Onyx validates employee authorization, active lock status, Onyx POS permissions, and verifies that the charge does not exceed the remaining daily spending allowance before debiting the company's ledger.
+
+

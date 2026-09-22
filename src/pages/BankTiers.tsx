@@ -249,6 +249,41 @@ export function BankTiers() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
+                      <label className="block text-xs font-medium text-white/50 mb-1">Custom Tier Prefix (Optional)</label>
+                      <input
+                        type="text"
+                        value={tier.customPrefix || ""}
+                        onChange={(e) => updateTier(tier.id, "customPrefix", e.target.value)}
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-indigo-500 focus:outline-none"
+                        placeholder="Inherits bank setting (e.g. VIP-)"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-white/50 mb-1">Naming Mode Override (Optional)</label>
+                      <select
+                        value={tier.namingMode || ""}
+                        onChange={(e) => updateTier(tier.id, "namingMode", e.target.value || null)}
+                        className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="">Inherit Bank Setting</option>
+                        {tier.type === "business" ? (
+                          <>
+                            <option value="business_name">Registered Business Entity Name</option>
+                            <option value="discord_plus_business">Discord Owner + Business Name</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="custom">Customer Chooses Name</option>
+                            <option value="discord_username">Automatic Discord Username</option>
+                            <option value="choice_or_username">Allow Citizen Choice</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
                       <label className="block text-xs font-medium text-emerald-400 mb-1">Included Credit Limit ($)</label>
                       <input
                         type="number"

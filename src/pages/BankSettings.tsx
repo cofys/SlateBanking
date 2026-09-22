@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Building2, AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search, Landmark, Percent, Copy, Check } from "lucide-react";
+import { Building2, AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search, Landmark, Percent, Copy, Check, User } from "lucide-react";
 import { SchemeSwatches } from "../components/ui/chrome";
 import { SCHEME_HEX, accentForeground, type ColorSchemeId } from "../lib/theme";
 
@@ -13,6 +13,10 @@ export function BankSettings() {
   const [schemeId, setSchemeId] = useState<ColorSchemeId>("slate");
   const [brandHex, setBrandHex] = useState("#8b95a5");
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [personalPrefix, setPersonalPrefix] = useState("ACC-");
+  const [businessPrefix, setBusinessPrefix] = useState("CORP-");
+  const [personalNamingMode, setPersonalNamingMode] = useState("custom");
+  const [businessNamingMode, setBusinessNamingMode] = useState("business_name");
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -41,6 +45,10 @@ export function BankSettings() {
           }
           setSchemeId((data.colorScheme as ColorSchemeId) || "slate");
           setBrandHex(data.brandingColor || SCHEME_HEX[data.colorScheme] || "#8b95a5");
+          setPersonalPrefix(data.personalAccountPrefix ?? "ACC-");
+          setBusinessPrefix(data.businessAccountPrefix ?? "CORP-");
+          setPersonalNamingMode(data.personalAccountNamingMode ?? "custom");
+          setBusinessNamingMode(data.businessAccountNamingMode ?? "business_name");
           setLoading(false);
         });
     }
@@ -51,6 +59,10 @@ export function BankSettings() {
     setSaving(true);
     const formData = new FormData(e.target as HTMLFormElement);
     const newSettings = {
+      personalAccountPrefix: (formData.get("personalAccountPrefix") as string) || "ACC-",
+      businessAccountPrefix: (formData.get("businessAccountPrefix") as string) || "CORP-",
+      personalAccountNamingMode: (formData.get("personalAccountNamingMode") as string) || "custom",
+      businessAccountNamingMode: (formData.get("businessAccountNamingMode") as string) || "business_name",
       withdrawFeePercent: parseFloat(formData.get("withdrawFeePercent") as string) || 0,
       depositFeePercent: parseFloat(formData.get("depositFeePercent") as string) || 0,
       transferFeePercent: parseFloat(formData.get("transferFeePercent") as string) || 0,
@@ -261,6 +273,110 @@ export function BankSettings() {
             </label>
           </div>
           <p className="text-xs text-white/40 mt-3">Fees are automatically deducted during transactions. Leave unchecked to preserve custom fee overrides set on individual customer accounts.</p>
+        </div>
+
+        {/* Account Identifier & Prefix Rules */}
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold mb-2">
+            <Wallet style={{ color: "var(--accent)" }} size={20} />
+            Account Identifiers & Naming Conventions
+          </div>
+          <p className="text-xs text-white/60 mb-6">
+            Customize how account numbers and display names are automatically structured when citizens open personal and corporate accounts.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Personal Accounts */}
+            <div className="bg-black/20 border border-white/5 rounded-lg p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-white flex items-center gap-2">
+                  <User size={16} className="text-indigo-400" /> Personal Accounts
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                  Preview: {personalPrefix || "ACC-"}{personalNamingMode === "discord_username" ? "DiscordUser" : "my-savings"}
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-1.5 uppercase tracking-wide">
+                  Account Prefix
+                </label>
+                <input
+                  name="personalAccountPrefix"
+                  type="text"
+                  value={personalPrefix}
+                  onChange={(e) => setPersonalPrefix(e.target.value)}
+                  placeholder="ACC-"
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
+                />
+                <p className="text-[11px] text-white/40 mt-1">Default prefix attached to personal accounts (e.g. ACC-, SLATE-, USR-)</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-1.5 uppercase tracking-wide">
+                  Naming Policy
+                </label>
+                <select
+                  name="personalAccountNamingMode"
+                  value={personalNamingMode}
+                  onChange={(e) => setPersonalNamingMode(e.target.value)}
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="custom">Customer Chooses Name ({personalPrefix}custom_name)</option>
+                  <option value="discord_username">Automatic Discord Username ({personalPrefix}username)</option>
+                  <option value="choice_or_username">Allow Citizen Choice (Custom or Username)</option>
+                </select>
+                <p className="text-[11px] text-white/40 mt-1">
+                  Controls whether client picks their own account tag or if it locks to their authenticated Discord username.
+                </p>
+              </div>
+            </div>
+
+            {/* Business Accounts */}
+            <div className="bg-black/20 border border-white/5 rounded-lg p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Building2 size={16} className="text-emerald-400" /> Business / Corporate Accounts
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                  Preview: {businessPrefix || "CORP-"}{businessNamingMode === "discord_plus_business" ? "DiscordUser-AcmeCorp" : "AcmeCorp"}
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-1.5 uppercase tracking-wide">
+                  Business Prefix
+                </label>
+                <input
+                  name="businessAccountPrefix"
+                  type="text"
+                  value={businessPrefix}
+                  onChange={(e) => setBusinessPrefix(e.target.value)}
+                  placeholder="CORP-"
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[11px] text-white/40 mt-1">Default prefix attached to corporate accounts (e.g. CORP-, BIZ-, ENT-)</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-1.5 uppercase tracking-wide">
+                  Business Naming Policy
+                </label>
+                <select
+                  name="businessAccountNamingMode"
+                  value={businessNamingMode}
+                  onChange={(e) => setBusinessNamingMode(e.target.value)}
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="business_name">Registered Business Entity Name ({businessPrefix}Company)</option>
+                  <option value="discord_plus_business">Discord Owner + Business Name ({businessPrefix}Owner-Company)</option>
+                </select>
+                <p className="text-[11px] text-white/40 mt-1">
+                  Select how enterprise accounts format their institutional entity name.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Branding & Visuals */}

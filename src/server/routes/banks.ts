@@ -1511,6 +1511,10 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
       }
       res.json({
         ...settings,
+        personalAccountPrefix: settings?.personalAccountPrefix ?? "ACC-",
+        businessAccountPrefix: settings?.businessAccountPrefix ?? "CORP-",
+        personalAccountNamingMode: settings?.personalAccountNamingMode ?? "custom",
+        businessAccountNamingMode: settings?.businessAccountNamingMode ?? "business_name",
         governmentFeePercent: settings?.governmentFeePercent !== undefined && settings?.governmentFeePercent !== null ? settings.governmentFeePercent : 25,
         logoUrl: settings.logoUrl || bank?.logoUrl || "",
         customDomain: bank?.customDomain || "",
@@ -1656,6 +1660,10 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         discordShowDeposits: req.body.discordShowDeposits === undefined ? true : (req.body.discordShowDeposits === true || req.body.discordShowDeposits === 'true' || req.body.discordShowDeposits === 'on'),
         discordShowAccounts: req.body.discordShowAccounts === undefined ? true : (req.body.discordShowAccounts === true || req.body.discordShowAccounts === 'true' || req.body.discordShowAccounts === 'on'),
         discordGuiStyle: req.body.discordGuiStyle || 'executive',
+        personalAccountPrefix: req.body.personalAccountPrefix !== undefined ? String(req.body.personalAccountPrefix).trim() : "ACC-",
+        businessAccountPrefix: req.body.businessAccountPrefix !== undefined ? String(req.body.businessAccountPrefix).trim() : "CORP-",
+        personalAccountNamingMode: req.body.personalAccountNamingMode !== undefined ? String(req.body.personalAccountNamingMode).trim() : "custom",
+        businessAccountNamingMode: req.body.businessAccountNamingMode !== undefined ? String(req.body.businessAccountNamingMode).trim() : "business_name",
         metaTitle: req.body.metaTitle ? String(req.body.metaTitle).trim() : null,
         metaDescription: req.body.metaDescription ? String(req.body.metaDescription).trim() : null,
         metaKeywords: req.body.metaKeywords ? String(req.body.metaKeywords).trim() : null,
@@ -4045,6 +4053,15 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
          creditLimit: cards.creditLimit,
          creditUsed: cards.creditUsed,
          productId: cards.productId,
+         isCorporate: cards.isCorporate,
+         assignedMcUsername: cards.assignedMcUsername,
+         assignedDiscordId: cards.assignedDiscordId,
+         cardLabel: cards.cardLabel,
+         spendingLimitDailyCents: cards.spendingLimitDailyCents,
+         dailySpentCents: cards.dailySpentCents,
+         lastDailySpentResetAt: cards.lastDailySpentResetAt,
+         allowCashAdvance: cards.allowCashAdvance,
+         allowOnyxTransactions: cards.allowOnyxTransactions,
          createdAt: cards.createdAt,
          accountId: cards.accountId,
          accountName: bankAccounts.accountName,
@@ -4112,7 +4129,20 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
     const { v4: uuidv4 } = await import("uuid");
     const { randomInt } = await import("crypto");
     try {
-       const { accountId, creditLimit, creditApr, productId } = req.body;
+       const { 
+         accountId, 
+         creditLimit, 
+         creditApr, 
+         productId, 
+         type = "credit",
+         isCorporate = false,
+         assignedMcUsername = null,
+         assignedDiscordId = null,
+         cardLabel = null,
+         spendingLimitDaily = 0,
+         allowCashAdvance = true,
+         allowOnyxTransactions = true,
+       } = req.body;
        if (!accountId) return res.status(400).json({ error: "Missing fields" });
        
        // check account exists in bank
@@ -4126,6 +4156,8 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
        nextYear.setFullYear(nextYear.getFullYear() + 4);
        const expiryDate = `${(nextYear.getMonth() + 1).toString().padStart(2, '0')}/${nextYear.getFullYear().toString().slice(-2)}`;
 
+       const dailyLimitCents = Math.max(0, Math.round(parseFloat(spendingLimitDaily || "0") * 100));
+
        const result = await db.insert(cards).values({
          id: uuidv4(),
          bankId: req.params.bankId,
@@ -4133,12 +4165,21 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
          cardNumber,
          cvv,
          expiryDate,
-         type: "credit",
-         creditLimit: creditLimit ? parseInt(creditLimit) : 1000000,
+         type: type === "debit" ? "debit" : "credit",
+         creditLimit: type === "debit" ? 0 : (creditLimit ? parseInt(creditLimit) : 1000000),
          creditUsed: 0,
-         apr: creditApr ? parseInt(creditApr) : 1999,
+         apr: type === "debit" ? 0 : (creditApr ? parseInt(creditApr) : 1999),
          isLocked: false,
          productId: productId || null,
+         isCorporate: !!isCorporate,
+         assignedMcUsername: assignedMcUsername ? String(assignedMcUsername).trim() : null,
+         assignedDiscordId: assignedDiscordId ? String(assignedDiscordId).trim().replace(/^<@!?/, "").replace(/>$/, "") : null,
+         cardLabel: cardLabel ? String(cardLabel).trim() : (isCorporate ? "Corporate Department Card" : null),
+         spendingLimitDailyCents: dailyLimitCents,
+         dailySpentCents: 0,
+         lastDailySpentResetAt: new Date(),
+         allowCashAdvance: allowCashAdvance !== undefined ? !!allowCashAdvance : true,
+         allowOnyxTransactions: allowOnyxTransactions !== undefined ? !!allowOnyxTransactions : true,
          nextPaymentDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })(),
          createdAt: new Date(),
        }).returning().get();

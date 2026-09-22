@@ -611,21 +611,65 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
       let sourceCard: any = null;
       let destAccountId: string | null = null;
       let netAmount = 0;
+      let isCorpCard = false;
+      let corpDailySpent = 0;
 
       await db.transaction(async (tx: any) => {
         if (sourceAccountId) {
            if (sourceAccountId.startsWith("crd_")) {
-             const { cards } = await import("../../db/schema");
+             const { cards, bankCustomers } = await import("../../db/schema");
              const matches = await tx.select().from(cards).where(eq(cards.id, sourceAccountId));
              if (matches.length === 0) throw new Error("Provided source card not found.");
              sourceCard = matches[0];
              if (sourceCard.isLocked) throw new Error("Source card is locked.");
-             
+
              const accMatches = await tx.select().from(bankAccounts).where(
-               and(eq(bankAccounts.id, sourceCard.accountId), eq(bankAccounts.ownerDiscordId, userDiscordId))
+               eq(bankAccounts.id, sourceCard.accountId)
              );
-             if (accMatches.length === 0) throw new Error("Linked account not found or unauthorized.");
-             userAccount = accMatches[0];
+             if (accMatches.length === 0) throw new Error("Linked bank account not found.");
+
+             if (sourceCard.isCorporate) {
+               isCorpCard = true;
+               if (sourceCard.allowOnyxTransactions === false) {
+                 throw new Error("Onyx transactions are disabled for this corporate card.");
+               }
+
+               // Verify card authorization for employee or owner
+               const custMatches = await tx.select().from(bankCustomers).where(
+                 and(eq(bankCustomers.bankId, sourceCard.bankId), eq(bankCustomers.discordId, userDiscordId))
+               );
+               const cust = custMatches[0];
+               const isAssigned = (sourceCard.assignedDiscordId && sourceCard.assignedDiscordId === userDiscordId) ||
+                 (cust?.mcUsername && sourceCard.assignedMcUsername && cust.mcUsername.toLowerCase() === sourceCard.assignedMcUsername.toLowerCase()) ||
+                 accMatches[0].ownerDiscordId === userDiscordId;
+
+               if (!isAssigned) {
+                 throw new Error("You are not authorized to use this corporate card.");
+               }
+
+               // Calculate & reset daily spend
+               const now = new Date();
+               corpDailySpent = sourceCard.dailySpentCents || 0;
+               if (sourceCard.lastDailySpentResetAt) {
+                 const resetDate = new Date(sourceCard.lastDailySpentResetAt);
+                 const diffHours = (now.getTime() - resetDate.getTime()) / (1000 * 60 * 60);
+                 if (diffHours >= 24 || resetDate.getUTCDate() !== now.getUTCDate()) {
+                   corpDailySpent = 0;
+                 }
+               }
+
+               const dailyLimit = sourceCard.spendingLimitDailyCents || 0;
+               if (dailyLimit > 0 && corpDailySpent + amountCents > dailyLimit) {
+                 throw new Error(`Corporate card daily limit of $${(dailyLimit / 100).toFixed(2)} exceeded. (Spent today: $${(corpDailySpent / 100).toFixed(2)})`);
+               }
+
+               userAccount = accMatches[0];
+             } else {
+               if (accMatches[0].ownerDiscordId !== userDiscordId) {
+                 throw new Error("Linked account unauthorized.");
+               }
+               userAccount = accMatches[0];
+             }
            } else {
              const matches = await tx.select().from(bankAccounts).where(
                and(eq(bankAccounts.id, sourceAccountId), eq(bankAccounts.ownerDiscordId, userDiscordId))
@@ -645,7 +689,7 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
            userAccount = userAccounts[0]; 
         }
 
-        if (sourceCard) {
+        if (sourceCard && sourceCard.type === "credit") {
             if ((sourceCard.creditUsed || 0) + amountCents > (sourceCard.creditLimit || 0)) {
                 throw new Error("Insufficient credit limit.");
             }
@@ -682,26 +726,30 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
         }
 
         if (sourceCard) {
-            const { resolveLoanFundingAccount, settlementAccountName, loadSettings } = await import("../../lib/citycorp_money");
-            const funding = await resolveLoanFundingAccount(merchant.bankId);
-            let hasPool = funding.kind !== "treasury" && !!funding.name;
-            if (!hasPool) {
-              const settings = await loadSettings(merchant.bankId);
-              const settleName = settlementAccountName(settings);
-              const settleAcc = await tx.select().from(bankAccounts).where(
-                and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.accountName, settleName))
-              ).get();
-              if (!settleAcc) {
-                throw new Error("Credit checkout requires a loan pool, operating, or settlement account. No pool configured.");
+            const { cards } = await import("../../db/schema");
+            const updatePayload: any = {
+              lastDailySpentResetAt: new Date(),
+              dailySpentCents: corpDailySpent + amountCents,
+            };
+
+            if (sourceCard.type === "credit") {
+              const { resolveLoanFundingAccount, settlementAccountName, loadSettings } = await import("../../lib/citycorp_money");
+              const funding = await resolveLoanFundingAccount(merchant.bankId);
+              let hasPool = funding.kind !== "treasury" && !!funding.name;
+              if (!hasPool) {
+                const settings = await loadSettings(merchant.bankId);
+                const settleName = settlementAccountName(settings);
+                const settleAcc = await tx.select().from(bankAccounts).where(
+                  and(eq(bankAccounts.bankId, merchant.bankId), eq(bankAccounts.accountName, settleName))
+                ).get();
+                if (!settleAcc) {
+                  throw new Error("Credit checkout requires a loan pool, operating, or settlement account. No pool configured.");
+                }
               }
+              updatePayload.creditUsed = (sourceCard.creditUsed || 0) + amountCents;
             }
 
-            const { cards } = await import("../../db/schema");
-            await tx.update(cards)
-              .set({ creditUsed: (sourceCard.creditUsed || 0) + amountCents })
-              .where(eq(cards.id, sourceCard.id));
-        } else {
-          // CityCorp book transfer happens after this sqlite tx to avoid holding the lock on HTTP.
+            await tx.update(cards).set(updatePayload).where(eq(cards.id, sourceCard.id));
         }
 
         if (taxAmount > 0) {
@@ -718,7 +766,7 @@ onyxRouter.post("/api/onyx/checkout", async (req: express.Request, res: express.
         }
       });
 
-      if (sourceCard) {
+      if (sourceCard && sourceCard.type === "credit") {
         const { resolveLoanFundingAccount, disburseFromPoolOrOperating, executeSameBankBookTransfer, settlementAccountName, loadSettings } = await import("../../lib/citycorp_money");
         const liveDest = destAccountId
           ? await db.select().from(bankAccounts).where(eq(bankAccounts.id, destAccountId)).get()

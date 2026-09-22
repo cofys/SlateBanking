@@ -168,7 +168,11 @@ export const bankSettings = sqliteTable("bank_settings", {
   slateAdvanceCents: integer("slate_advance_cents").default(0),
   defaultFeePayerMode: text("default_fee_payer_mode").default("from_payment"),
 
-  accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean; isPrivate?: boolean; creditLimit?: number | null; creditApr?: number | null; autoApproveLoans?: boolean; autoApproveCreditCards?: boolean; maxAutoApproveLoanAmount?: number; }[]>(),
+  accountTiers: text("account_tiers", { mode: "json" }).$type<{ id: string; name: string; description: string; type: string; monthlyFee: number; apyPercent: number | null; transferFeePercent: number | null; depositFeePercent: number | null; withdrawFeePercent: number | null; minBalance: number; isDefault: boolean; isPrivate?: boolean; creditLimit?: number | null; creditApr?: number | null; autoApproveLoans?: boolean; autoApproveCreditCards?: boolean; maxAutoApproveLoanAmount?: number; customPrefix?: string | null; namingMode?: string | null; }[]>(),
+  personalAccountPrefix: text("personal_account_prefix").default("ACC-"),
+  businessAccountPrefix: text("business_account_prefix").default("CORP-"),
+  personalAccountNamingMode: text("personal_account_naming_mode").default("custom"), // "custom", "discord_username", "choice_or_username"
+  businessAccountNamingMode: text("business_account_naming_mode").default("business_name"), // "business_name", "discord_plus_business"
   savingsApyPercent: integer("savings_apy_percent").default(300), // 3.00% APY in basis points
   interestPaymentSchedule: text("interest_payment_schedule").default("manual"), // manual, daily, weekly, monthly
   interestNextPaymentAt: integer("interest_next_payment_at", { mode: "timestamp" }),
@@ -364,11 +368,23 @@ export const cards = sqliteTable("cards", {
   minimumPayment: integer("minimum_payment").default(0),
   nextPaymentDate: integer("next_payment_date", { mode: "timestamp" }),
   productId: text("product_id"),
+
+  // Corporate Department Card fields
+  isCorporate: integer("is_corporate", { mode: "boolean" }).default(false),
+  assignedMcUsername: text("assigned_mc_username"),
+  assignedDiscordId: text("assigned_discord_id"),
+  cardLabel: text("card_label"), // e.g. "Fleet & Logistics", "Executive Ops", "Security"
+  spendingLimitDailyCents: integer("spending_limit_daily_cents").default(0), // 0 = unlimited
+  dailySpentCents: integer("daily_spent_cents").default(0),
+  lastDailySpentResetAt: integer("last_daily_spent_reset_at", { mode: "timestamp" }),
+  allowCashAdvance: integer("allow_cash_advance", { mode: "boolean" }).default(true),
+  allowOnyxTransactions: integer("allow_onyx_transactions", { mode: "boolean" }).default(true),
   
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
   bankIdIdx: index("idx_cards_bank_id").on(table.bankId),
   accountIdIdx: index("idx_cards_account_id").on(table.accountId),
+  assignedMcUsernameIdx: index("idx_cards_assigned_mc_username").on(table.assignedMcUsername),
 }));
 
 export const payrollJobs = sqliteTable("payroll_jobs", {

@@ -205,6 +205,10 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
         vaultTiers: cleanTiers,
         defaultFeePayerMode: settings.defaultFeePayerMode,
         savingsApyPercent: settings.savingsApyPercent,
+        personalAccountPrefix: settings.personalAccountPrefix ?? "ACC-",
+        businessAccountPrefix: settings.businessAccountPrefix ?? "CORP-",
+        personalAccountNamingMode: settings.personalAccountNamingMode ?? "custom",
+        businessAccountNamingMode: settings.businessAccountNamingMode ?? "business_name",
         tagline: settings.tagline,
         discordShowStats: settings.discordShowStats,
       } : null;
@@ -340,8 +344,16 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         .orderBy(desc(transactions.timestamp))
         .limit(50);
 
+      const referencedAccIds = Array.from(new Set(recentTxs.flatMap(t => [t.fromAccountId, t.toAccountId]).filter(Boolean))) as string[];
+      const accRows = referencedAccIds.length > 0 
+        ? await db.select({ id: bankAccounts.id, name: bankAccounts.accountName }).from(bankAccounts).where(inArray(bankAccounts.id, referencedAccIds))
+        : [];
+      const accNameMap = new Map(accRows.map(r => [r.id, r.name]));
+
       const mappedTxs = recentTxs.map(tx => ({
         ...tx,
+        fromAccountName: tx.fromAccountId ? (accNameMap.get(tx.fromAccountId) || tx.fromAccountId) : "External Deposit",
+        toAccountName: tx.toAccountId ? (accNameMap.get(tx.toAccountId) || tx.toAccountId) : "External Withdrawal",
         toDiscordId: accountIds.includes(tx.toAccountId!) ? primaryId : null
       }));
 
@@ -366,7 +378,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       )
       .orderBy(desc(invoices.createdAt));
 
-      // Get user cards
+      // Get user cards (owned and employee-assigned corporate cards)
       const userCards = await db.select({
          id: cards.id,
          bankId: cards.bankId,
@@ -380,14 +392,62 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
          creditLimit: cards.creditLimit,
          creditUsed: cards.creditUsed,
          productId: cards.productId,
+         isCorporate: cards.isCorporate,
+         assignedMcUsername: cards.assignedMcUsername,
+         assignedDiscordId: cards.assignedDiscordId,
+         cardLabel: cards.cardLabel,
+         spendingLimitDailyCents: cards.spendingLimitDailyCents,
+         dailySpentCents: cards.dailySpentCents,
+         lastDailySpentResetAt: cards.lastDailySpentResetAt,
+         allowCashAdvance: cards.allowCashAdvance,
+         allowOnyxTransactions: cards.allowOnyxTransactions,
       })
       .from(cards)
       .leftJoin(banks, eq(cards.bankId, banks.id))
       .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
-      .where(and(inArray(cards.accountId, accountIds), eq(cards.bankId, bankId)));
+      .where(and(
+        eq(cards.bankId, bankId),
+        or(
+          accountIds.length > 0 ? inArray(cards.accountId, accountIds) : sql`1=0`,
+          customer?.mcUsername ? sql`lower(${cards.assignedMcUsername}) = lower(${customer.mcUsername})` : sql`1=0`,
+          candidateIds.length > 0 ? inArray(cards.assignedDiscordId, candidateIds) : sql`1=0`
+        )
+      ));
+
+      // Check daily reset on returned cards
+      const now = new Date();
+      const mappedCards = userCards.map((c: any) => {
+        let currentDailySpent = c.dailySpentCents || 0;
+        if (c.lastDailySpentResetAt) {
+          const resetDate = new Date(c.lastDailySpentResetAt);
+          const diffHours = (now.getTime() - resetDate.getTime()) / (1000 * 60 * 60);
+          if (diffHours >= 24 || resetDate.getUTCDate() !== now.getUTCDate()) {
+            currentDailySpent = 0;
+          }
+        }
+        return {
+          ...c,
+          dailySpentCents: currentDailySpent,
+          cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
+          isAssignedToMe: !accountIds.includes(c.accountId),
+        };
+      });
 
       // Get user loans
-      const userSubscriptions = await db.select().from(subscriptions).where(and(eq(subscriptions.bankId, bankId), or(inArray(subscriptions.customerAccountId, accountIds), inArray(subscriptions.billerAccountId, accountIds))));
+      // Get user subscriptions with account names
+      const rawUserSubscriptions = await db.select().from(subscriptions).where(and(eq(subscriptions.bankId, bankId), or(inArray(subscriptions.customerAccountId, accountIds), inArray(subscriptions.billerAccountId, accountIds)))).orderBy(desc(subscriptions.createdAt));
+      const allSubAccountIds = Array.from(new Set(rawUserSubscriptions.flatMap(s => [s.billerAccountId, s.customerAccountId])));
+      let subAccountsMap = new Map<string, string>();
+      if (allSubAccountIds.length > 0) {
+        const subAccRows = await db.select({ id: bankAccounts.id, name: bankAccounts.accountName }).from(bankAccounts).where(inArray(bankAccounts.id, allSubAccountIds));
+        subAccRows.forEach(r => subAccountsMap.set(r.id, r.name));
+      }
+      const userSubscriptions = rawUserSubscriptions.map((s: any) => ({
+        ...s,
+        billerAccountName: subAccountsMap.get(s.billerAccountId) || "Biller",
+        customerAccountName: subAccountsMap.get(s.customerAccountId) || "Customer",
+        isOutgoing: accountIds.includes(s.customerAccountId),
+      }));
       const userLoans = await db.select()
         .from(loans)
         .where(and(eq(loans.bankId, bankId), or(inArray(loans.discordId, candidateIds), inArray(loans.accountId, accountIds))));
@@ -397,10 +457,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         accounts: userAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
-        cards: userCards.map((c: any) => ({
-          ...c,
-          cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
-        })),
+        cards: mappedCards,
         loans: userLoans.map((l: any) => ({
           ...l,
           amount: l.principalAmount,
@@ -644,7 +701,9 @@ portalRouter.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async 
       if (!card || card.bankId !== bankId) return res.status(404).json({ error: "Card not found" });
 
       const [account] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId));
-      if (!account || !(await isUserAccountOwnerOrMember(account, candidateIds))) {
+      const isAssigned = (card.assignedDiscordId && candidateIds.includes(card.assignedDiscordId)) ||
+        (card.assignedMcUsername && candidateIds.some((cid: string) => cid.toLowerCase() === card.assignedMcUsername?.toLowerCase()));
+      if (!account || (!(await isUserAccountOwnerOrMember(account, candidateIds)) && !isAssigned)) {
          return res.status(403).json({ error: "Unauthorized" });
       }
 
@@ -748,7 +807,19 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
           inArray(transactions.toAccountId, accountIds)
         ))
         .orderBy(desc(transactions.timestamp))
-        .limit(20);
+        .limit(50);
+
+      const referencedAccIds = Array.from(new Set(recentTxs.flatMap(t => [t.fromAccountId, t.toAccountId]).filter(Boolean))) as string[];
+      const accRows = referencedAccIds.length > 0 
+        ? await db.select({ id: bankAccounts.id, name: bankAccounts.accountName }).from(bankAccounts).where(inArray(bankAccounts.id, referencedAccIds))
+        : [];
+      const accNameMap = new Map(accRows.map(r => [r.id, r.name]));
+
+      recentTxs = recentTxs.map(tx => ({
+        ...tx,
+        fromAccountName: tx.fromAccountId ? (accNameMap.get(tx.fromAccountId) || tx.fromAccountId) : "External Deposit",
+        toAccountName: tx.toAccountId ? (accNameMap.get(tx.toAccountId) || tx.toAccountId) : "External Withdrawal",
+      }));
 
       userCards = await db.select({
         id: cards.id,
@@ -867,10 +938,10 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
     if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
     const primaryId = candidateIds[0];
 
-    const { bankId, accountName, accountType, businessTaxId, businessSector, tierId: reqTierId } = req.body;
+    const { bankId, accountName, accountType, businessTaxId, businessSector, tierId: reqTierId, namingPreference } = req.body;
 
-    if (!bankId || !accountName) {
-      return res.status(400).json({ error: "Bank selection and Account Name are required." });
+    if (!bankId) {
+      return res.status(400).json({ error: "Bank selection is required." });
     }
 
     // 1. Check Bank
@@ -938,13 +1009,58 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       }
     }
 
+    // 2.5 Resolve Prefixes and Account Naming Standards
+    const { users } = await import("../../db/schema");
+    const userRow = await db.select().from(users).where(eq(users.discordId, primaryId)).get();
+    const discordUsername = userRow?.mcUsername || (req as any).user?.username || (req as any).user?.displayName || "client";
+
+    const configuredPrefix = isBusiness
+      ? (selectedTier?.customPrefix !== undefined && selectedTier?.customPrefix !== null && selectedTier?.customPrefix !== "" ? selectedTier.customPrefix : (settings?.businessAccountPrefix || "CORP-"))
+      : (selectedTier?.customPrefix !== undefined && selectedTier?.customPrefix !== null && selectedTier?.customPrefix !== "" ? selectedTier.customPrefix : (settings?.personalAccountPrefix || "ACC-"));
+
+    const namingMode = isBusiness
+      ? (selectedTier?.namingMode || settings?.businessAccountNamingMode || "business_name")
+      : (selectedTier?.namingMode || settings?.personalAccountNamingMode || "custom");
+
+    let finalAccountName = (accountName || "").trim();
+
+    if (!isBusiness) {
+      if (namingMode === "discord_username" || namingPreference === "discord") {
+        finalAccountName = `${configuredPrefix}${discordUsername}`;
+      } else {
+        if (!finalAccountName) {
+          return res.status(400).json({ error: "Account Name is required." });
+        }
+        if (!finalAccountName.startsWith(configuredPrefix)) {
+          finalAccountName = `${configuredPrefix}${finalAccountName}`;
+        }
+      }
+    } else {
+      // Business
+      const baseBiz = (finalAccountName || businessTaxId || "").trim();
+      if (!baseBiz) {
+        return res.status(400).json({ error: "Business / Entity Name is required." });
+      }
+      if (namingMode === "discord_plus_business") {
+        const strippedBiz = baseBiz.startsWith(configuredPrefix) ? baseBiz.slice(configuredPrefix.length) : baseBiz;
+        finalAccountName = `${configuredPrefix}${discordUsername}-${strippedBiz}`;
+      } else {
+        if (!baseBiz.startsWith(configuredPrefix)) {
+          finalAccountName = `${configuredPrefix}${baseBiz}`;
+        } else {
+          finalAccountName = baseBiz;
+        }
+      }
+    }
+
     // 3. Create Account
-    const id = `ACC-${uuidv4().substring(0, 8).toUpperCase()}`;
+    const cleanPrefixForId = configuredPrefix ? configuredPrefix.replace(/[^a-zA-Z0-9_-]/g, '') : "ACC-";
+    const id = `${cleanPrefixForId}${uuidv4().substring(0, 8).toUpperCase()}`;
     await db.insert(bankAccounts).values({
       id,
       bankId,
       ownerDiscordId: primaryId,
-      accountName: accountName.trim(),
+      accountName: finalAccountName,
       accountType: type,
       tierId: finalTierId,
       businessTaxId: type === "business" ? (businessTaxId || `CORP-${uuidv4().substring(0, 6).toUpperCase()}`) : null,
@@ -1354,25 +1470,331 @@ portalRouter.post("/api/portal/:bankId/bonds", requireAuth, async (req: express.
   }
 });
 
-portalRouter.post("/api/portal/:bankId/cards/:cardId/cash-advance", requireAuth, async (req: express.Request, res: express.Response) => {
-  const { db } = await import("../../db/index.js");
-  const { cards, bankAccounts, creditProducts } = await import("../../db/schema.js");
-  const { eq, and, sql } = await import("drizzle-orm");
-  try {
-    const bankId = req.params.bankId;
-    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
-    const amountCents = Math.round(parseFloat(req.body.amount) * 100);
-    if (!Number.isFinite(amountCents) || amountCents <= 0) return res.status(400).json({ error: "Invalid amount" });
+// -----------------------------------------------------------------------------------------------------
+// Card Lock / Unlock Toggle
+// -----------------------------------------------------------------------------------------------------
 
-    const card = await db.select().from(cards).where(and(eq(cards.id, req.params.cardId), eq(cards.bankId, bankId))).get();
+portalRouter.post("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { cards, bankAccounts, bankCustomers } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+  try {
+    const { bankId, cardId } = req.params;
+    const { isLocked } = req.body;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.bankId, bankId))).get();
     if (!card) return res.status(404).json({ error: "Card not found" });
-    if (card.isLocked) return res.status(400).json({ error: "Card is locked" });
-    if (card.type !== "credit") return res.status(400).json({ error: "Cash advances are for credit cards." });
+
+    const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
+    const isOwnerOrMember = acc ? await isUserAccountOwnerOrMember(acc, candidateIds) : false;
+
+    // Also allow assigned employee to lock/unlock their own card
+    const customer = await db.select().from(bankCustomers).where(and(eq(bankCustomers.bankId, bankId), inArray(bankCustomers.discordId, candidateIds))).get();
+    const isAssigned = (card.assignedDiscordId && candidateIds.includes(card.assignedDiscordId)) ||
+      (customer?.mcUsername && card.assignedMcUsername && card.assignedMcUsername.toLowerCase() === customer.mcUsername.toLowerCase());
+
+    if (!isOwnerOrMember && !isAssigned) {
+      return res.status(403).json({ error: "Unauthorized to change lock status on this card" });
+    }
+
+    const newLockState = isLocked !== undefined ? !!isLocked : !card.isLocked;
+    await db.update(cards).set({ isLocked: newLockState }).where(eq(cards.id, card.id));
+    res.json({ success: true, isLocked: newLockState });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to toggle card lock" });
+  }
+});
+
+// -----------------------------------------------------------------------------------------------------
+// Corporate Department Cards Management (for Business Accounts)
+// -----------------------------------------------------------------------------------------------------
+
+portalRouter.post("/api/portal/:bankId/corporate-cards", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { cards, bankAccounts, banks } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+  const { randomInt } = await import("crypto");
+
+  try {
+    const { bankId } = req.params;
+    const {
+      accountId,
+      assignedMcUsername,
+      assignedDiscordId,
+      cardLabel,
+      cardType = "debit",
+      spendingLimitDaily = 0,
+      allowCashAdvance = true,
+      allowOnyxTransactions = true,
+    } = req.body;
+
+    if (!accountId) return res.status(400).json({ error: "Funding account is required" });
+    if (!assignedMcUsername || !String(assignedMcUsername).trim()) {
+      return res.status(400).json({ error: "Employee Minecraft username is required" });
+    }
+
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
+    if (!acc) return res.status(404).json({ error: "Account not found" });
+
+    const isAuthorized = await isUserAccountOwnerOrMember(acc, candidateIds);
+    if (!isAuthorized) return res.status(403).json({ error: "Only business owners and managers can issue corporate cards" });
+
+    const cleanMcUsername = String(assignedMcUsername).trim();
+    const cleanDiscordId = assignedDiscordId ? String(assignedDiscordId).trim().replace(/^<@!?/, "").replace(/>$/, "") : null;
+    const cleanLabel = cardLabel ? String(cardLabel).trim().slice(0, 60) : "Corporate Department Card";
+    const dailyLimitCents = Math.max(0, Math.round(parseFloat(spendingLimitDaily || "0") * 100));
+
+    const cardNumber = Array.from({ length: 16 }, () => randomInt(0, 10)).join("");
+    const cvv = Array.from({ length: 3 }, () => randomInt(0, 10)).join("");
+    const nextYear = new Date();
+    nextYear.setFullYear(nextYear.getFullYear() + 4);
+    const expiryDate = `${(nextYear.getMonth() + 1).toString().padStart(2, "0")}/${nextYear.getFullYear().toString().slice(-2)}`;
+
+    const newCard = {
+      id: `crd_${uuidv4().substring(0, 8)}`,
+      bankId,
+      accountId,
+      cardNumber,
+      cvv,
+      expiryDate,
+      type: cardType === "credit" ? "credit" : "debit",
+      creditLimit: cardType === "credit" ? 500000 : 0, // $5,000 credit limit if credit type
+      creditUsed: 0,
+      apr: cardType === "credit" ? 1499 : 0,
+      isLocked: false,
+      isCorporate: true,
+      assignedMcUsername: cleanMcUsername,
+      assignedDiscordId: cleanDiscordId,
+      cardLabel: cleanLabel,
+      spendingLimitDailyCents: dailyLimitCents,
+      dailySpentCents: 0,
+      lastDailySpentResetAt: new Date(),
+      allowCashAdvance: !!allowCashAdvance,
+      allowOnyxTransactions: !!allowOnyxTransactions,
+      createdAt: new Date(),
+    };
+
+    await db.insert(cards).values(newCard as any);
+
+    res.json({
+      success: true,
+      card: {
+        ...newCard,
+        cardNumber: `•••• ${cardNumber.slice(-4)}`,
+        last4: cardNumber.slice(-4),
+        cvv: undefined,
+      },
+    });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to issue corporate card" });
+  }
+});
+
+portalRouter.patch("/api/portal/:bankId/corporate-cards/:cardId", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { cards, bankAccounts } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, cardId } = req.params;
+    const {
+      spendingLimitDaily,
+      allowCashAdvance,
+      allowOnyxTransactions,
+      cardLabel,
+      assignedMcUsername,
+      assignedDiscordId,
+      isLocked,
+    } = req.body;
+
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.bankId, bankId))).get();
+    if (!card) return res.status(404).json({ error: "Card not found" });
 
     const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
     if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
       return res.status(403).json({ error: "Unauthorized" });
     }
+
+    const updates: any = {};
+    if (spendingLimitDaily !== undefined) {
+      updates.spendingLimitDailyCents = Math.max(0, Math.round(parseFloat(spendingLimitDaily) * 100));
+    }
+    if (allowCashAdvance !== undefined) updates.allowCashAdvance = !!allowCashAdvance;
+    if (allowOnyxTransactions !== undefined) updates.allowOnyxTransactions = !!allowOnyxTransactions;
+    if (cardLabel !== undefined) updates.cardLabel = String(cardLabel).trim().slice(0, 60);
+    if (assignedMcUsername !== undefined) updates.assignedMcUsername = String(assignedMcUsername).trim();
+    if (assignedDiscordId !== undefined) {
+      updates.assignedDiscordId = assignedDiscordId ? String(assignedDiscordId).trim().replace(/^<@!?/, "").replace(/>$/, "") : null;
+    }
+    if (isLocked !== undefined) updates.isLocked = !!isLocked;
+
+    await db.update(cards).set(updates).where(eq(cards.id, cardId));
+    const updated = await db.select().from(cards).where(eq(cards.id, cardId)).get();
+    res.json({ success: true, card: updated });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to update corporate card" });
+  }
+});
+
+portalRouter.delete("/api/portal/:bankId/corporate-cards/:cardId", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { cards, bankAccounts } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, cardId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.bankId, bankId))).get();
+    if (!card) return res.status(404).json({ error: "Card not found" });
+
+    const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
+    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    await db.delete(cards).where(eq(cards.id, cardId));
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to revoke corporate card" });
+  }
+});
+
+// -----------------------------------------------------------------------------------------------------
+// Cash Advance for Personal Credit & Corporate Department Cards
+// -----------------------------------------------------------------------------------------------------
+
+portalRouter.post("/api/portal/:bankId/cards/:cardId/cash-advance", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { cards, bankAccounts, creditProducts, bankCustomers, transactions } = await import("../../db/schema.js");
+  const { eq, and, sql, inArray } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const bankId = req.params.bankId;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const amountCents = Math.round(parseFloat(req.body.amount) * 100);
+    const destinationAccountId = req.body.destinationAccountId;
+    if (!Number.isFinite(amountCents) || amountCents <= 0) return res.status(400).json({ error: "Invalid amount" });
+
+    const card = await db.select().from(cards).where(and(eq(cards.id, req.params.cardId), eq(cards.bankId, bankId))).get();
+    if (!card) return res.status(404).json({ error: "Card not found" });
+    if (card.isLocked) return res.status(400).json({ error: "Card is locked" });
+
+    const fundingAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
+    if (!fundingAcc) return res.status(404).json({ error: "Funding account not found" });
+
+    const isOwnerOrMember = await isUserAccountOwnerOrMember(fundingAcc, candidateIds);
+    const customer = await db.select().from(bankCustomers).where(and(eq(bankCustomers.bankId, bankId), inArray(bankCustomers.discordId, candidateIds))).get();
+    const isAssigned = (card.assignedDiscordId && candidateIds.includes(card.assignedDiscordId)) ||
+      (customer?.mcUsername && card.assignedMcUsername && card.assignedMcUsername.toLowerCase() === customer.mcUsername.toLowerCase());
+
+    if (!isOwnerOrMember && !isAssigned) {
+      return res.status(403).json({ error: "Unauthorized to draw funds with this card" });
+    }
+
+    // Check Corporate Permissions & Daily Limits
+    if (card.isCorporate) {
+      if (card.allowCashAdvance === false) {
+        return res.status(400).json({ error: "Cash advances are disabled for this corporate card." });
+      }
+
+      // Check & reset daily spent
+      const now = new Date();
+      let currentDailySpent = card.dailySpentCents || 0;
+      if (card.lastDailySpentResetAt) {
+        const resetDate = new Date(card.lastDailySpentResetAt);
+        const diffHours = (now.getTime() - resetDate.getTime()) / (1000 * 60 * 60);
+        if (diffHours >= 24 || resetDate.getUTCDate() !== now.getUTCDate()) {
+          currentDailySpent = 0;
+        }
+      }
+
+      const dailyLimit = card.spendingLimitDailyCents || 0;
+      if (dailyLimit > 0 && currentDailySpent + amountCents > dailyLimit) {
+        return res.status(400).json({
+          error: `Draw exceeds card daily limit of $${(dailyLimit / 100).toFixed(2)}. Spent today: $${(currentDailySpent / 100).toFixed(2)}.`,
+        });
+      }
+
+      // Resolve destination account (employee's account or owner's chosen account)
+      let destAcc: any = null;
+      if (destinationAccountId) {
+        destAcc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, destinationAccountId), eq(bankAccounts.bankId, bankId))).get();
+        if (!destAcc || !(await isUserAccountOwnerOrMember(destAcc, candidateIds))) {
+          return res.status(400).json({ error: "Invalid destination account" });
+        }
+      } else {
+        // Find default personal account for the caller
+        destAcc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, candidateIds))).get();
+        if (!destAcc) destAcc = fundingAcc;
+      }
+
+      if (card.type === "credit") {
+        if ((card.creditUsed || 0) + amountCents > (card.creditLimit || 0)) {
+          return res.status(400).json({ error: "Exceeds card credit limit." });
+        }
+
+        const { disburseFromPoolOrOperating } = await import("../../lib/citycorp_money.js");
+        await disburseFromPoolOrOperating({
+          bankId,
+          toAccount: destAcc,
+          amountCents,
+          description: `Corp Card Advance · ${card.cardLabel || "Card"} (${card.assignedMcUsername || "Employee"})`,
+        });
+
+        await db.update(cards).set({
+          creditUsed: sql`${cards.creditUsed} + ${amountCents}`,
+          dailySpentCents: currentDailySpent + amountCents,
+          lastDailySpentResetAt: now,
+        }).where(eq(cards.id, card.id));
+
+        return res.json({
+          success: true,
+          advancedCents: amountCents,
+          feeCents: 0,
+          creditUsed: (card.creditUsed || 0) + amountCents,
+          dailySpentCents: currentDailySpent + amountCents,
+        });
+      } else {
+        // Corporate Debit: check balance on funding business account
+        if (fundingAcc.balance < amountCents) {
+          return res.status(400).json({ error: `Insufficient business account balance ($${(fundingAcc.balance / 100).toFixed(2)} available).` });
+        }
+
+        const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money.js");
+        await executeSameBankBookTransfer({
+          sourceAccount: fundingAcc,
+          destAccount: destAcc,
+          desiredCents: amountCents,
+          mode: "from_payment",
+          description: `Corp Card Debit Draw · ${card.cardLabel || "Card"} (${card.assignedMcUsername || "Employee"})`,
+          type: "cash_advance",
+        });
+
+        await db.update(cards).set({
+          dailySpentCents: currentDailySpent + amountCents,
+          lastDailySpentResetAt: now,
+        }).where(eq(cards.id, card.id));
+
+        return res.json({
+          success: true,
+          advancedCents: amountCents,
+          feeCents: 0,
+          dailySpentCents: currentDailySpent + amountCents,
+        });
+      }
+    }
+
+    // Standard Non-Corporate Card Cash Advance
+    if (card.type !== "credit") return res.status(400).json({ error: "Cash advances are for credit cards." });
 
     let product: any = null;
     if ((card as any).productId) {
@@ -1392,7 +1814,7 @@ portalRouter.post("/api/portal/:bankId/cards/:cardId/cash-advance", requireAuth,
     const { disburseFromPoolOrOperating } = await import("../../lib/citycorp_money.js");
     await disburseFromPoolOrOperating({
       bankId,
-      toAccount: acc,
+      toAccount: fundingAcc,
       amountCents,
       description: `Cash advance · card ${String(card.cardNumber || "").slice(-4)}`,
     });
@@ -1401,5 +1823,303 @@ portalRouter.post("/api/portal/:bankId/cards/:cardId/cash-advance", requireAuth,
   } catch (e: any) {
     console.error(e);
     res.status(400).json({ error: e.message || "Cash advance failed" });
+  }
+});
+
+// -----------------------------------------------------------------------------------------------------
+// Business Account Members & Multi-User Operators
+// -----------------------------------------------------------------------------------------------------
+
+portalRouter.get("/api/portal/:bankId/accounts/:accountId/members", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { bankAccounts, accountMembers } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, accountId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
+    if (!account) return res.status(404).json({ error: "Account not found" });
+
+    const isMemberOrOwner = await isUserAccountOwnerOrMember(account, candidateIds);
+    if (!isMemberOrOwner) return res.status(403).json({ error: "Unauthorized" });
+
+    const members = await db.select().from(accountMembers).where(eq(accountMembers.accountId, accountId));
+    const isOwner = candidateIds.some(c => c === account.ownerDiscordId || c.toLowerCase() === (account.ownerDiscordId || "").toLowerCase());
+
+    res.json({
+      accountId,
+      accountName: account.accountName,
+      accountType: account.accountType,
+      isOwner,
+      ownerDiscordId: account.ownerDiscordId,
+      members,
+    });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to fetch account members" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/accounts/:accountId/members", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { bankAccounts, accountMembers } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { bankId, accountId } = req.params;
+    const { memberDiscordId, role } = req.body;
+    if (!memberDiscordId || !role) return res.status(400).json({ error: "Missing member Discord ID or role" });
+    if (!["manager", "viewer"].includes(role)) return res.status(400).json({ error: "Role must be 'manager' or 'viewer'" });
+
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
+    if (!account) return res.status(404).json({ error: "Account not found" });
+
+    const isOwner = candidateIds.some(c => c === account.ownerDiscordId || c.toLowerCase() === (account.ownerDiscordId || "").toLowerCase());
+    if (!isOwner) return res.status(403).json({ error: "Only the account owner can manage members" });
+
+    const cleanDiscordId = String(memberDiscordId).trim().replace(/^<@!?/, "").replace(/>$/, "");
+    if (!cleanDiscordId) return res.status(400).json({ error: "Invalid Discord ID" });
+
+    // Check if user is the owner
+    if (cleanDiscordId === account.ownerDiscordId) {
+      return res.status(400).json({ error: "Owner already has full management rights" });
+    }
+
+    // Check if already a member
+    const existing = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.discordId, cleanDiscordId))).get();
+    if (existing) {
+      await db.update(accountMembers).set({ role }).where(eq(accountMembers.id, existing.id));
+      return res.json({ success: true, memberId: existing.id, updated: true });
+    }
+
+    const id = uuidv4();
+    await db.insert(accountMembers).values({
+      id,
+      accountId,
+      discordId: cleanDiscordId,
+      role,
+      createdAt: new Date(),
+    });
+
+    res.json({ success: true, memberId: id, created: true });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to add member" });
+  }
+});
+
+portalRouter.delete("/api/portal/:bankId/accounts/:accountId/members/:memberId", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { bankAccounts, accountMembers } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, accountId, memberId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
+    if (!account) return res.status(404).json({ error: "Account not found" });
+
+    const isOwner = candidateIds.some(c => c === account.ownerDiscordId || c.toLowerCase() === (account.ownerDiscordId || "").toLowerCase());
+    if (!isOwner) return res.status(403).json({ error: "Only the account owner can remove members" });
+
+    await db.delete(accountMembers).where(and(eq(accountMembers.id, memberId), eq(accountMembers.accountId, accountId)));
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to remove member" });
+  }
+});
+
+// -----------------------------------------------------------------------------------------------------
+// Customer Subscriptions & Recurring Mandates
+// -----------------------------------------------------------------------------------------------------
+
+portalRouter.post("/api/portal/:bankId/subscriptions", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { subscriptions, bankAccounts } = await import("../../db/schema.js");
+  const { eq, and, or } = await import("drizzle-orm");
+
+  try {
+    const { bankId } = req.params;
+    const { customerAccountId, billerQuery, amount, frequency, description } = req.body;
+    if (!customerAccountId || !billerQuery || !amount) {
+      return res.status(400).json({ error: "Missing required fields (account, payee, amount)" });
+    }
+
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const myAccount = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, customerAccountId), eq(bankAccounts.bankId, bankId))).get();
+    if (!myAccount || !(await isUserAccountOwnerOrMember(myAccount, candidateIds))) {
+      return res.status(403).json({ error: "Unauthorized account selection" });
+    }
+
+    // Resolve biller account
+    let billerAccount = await db.select().from(bankAccounts).where(
+      and(
+        eq(bankAccounts.bankId, bankId),
+        or(
+          eq(bankAccounts.id, billerQuery),
+          eq(bankAccounts.accountName, billerQuery)
+        )
+      )
+    ).get();
+
+    if (!billerAccount) {
+      const allAccs = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId));
+      billerAccount = allAccs.find(a => a.accountName.toLowerCase() === String(billerQuery).trim().toLowerCase()) || undefined;
+    }
+
+    if (!billerAccount) {
+      return res.status(404).json({ error: `Payee account "${billerQuery}" not found at this bank` });
+    }
+
+    if (billerAccount.id === myAccount.id) {
+      return res.status(400).json({ error: "Cannot create a subscription mandate to the same account" });
+    }
+
+    const amountCents = Math.round(parseFloat(amount) * 100);
+    if (isNaN(amountCents) || amountCents <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    const freq = frequency === "weekly" ? "weekly" : "monthly";
+    const nextRun = new Date();
+    if (freq === "weekly") nextRun.setDate(nextRun.getDate() + 7);
+    else nextRun.setMonth(nextRun.getMonth() + 1);
+
+    const id = `sub_${Date.now()}_${randomInt(1000, 9999)}`;
+    await db.insert(subscriptions).values({
+      id,
+      bankId,
+      billerAccountId: billerAccount.id,
+      customerAccountId: myAccount.id,
+      amount: amountCents,
+      frequency: freq,
+      nextRun,
+      isActive: true,
+      description: description || "Recurring Subscription",
+      createdAt: new Date(),
+    });
+
+    res.json({ success: true, id, nextRun });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to create subscription" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/subscriptions/:id/toggle", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { subscriptions, bankAccounts } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, id } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const sub = await db.select().from(subscriptions).where(and(eq(subscriptions.id, id), eq(subscriptions.bankId, bankId))).get();
+    if (!sub) return res.status(404).json({ error: "Subscription not found" });
+
+    // Check authorization: caller must own or be member of either customerAccountId or billerAccountId
+    const custAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, sub.customerAccountId)).get();
+    const billAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, sub.billerAccountId)).get();
+
+    const canManageCust = custAcc && (await isUserAccountOwnerOrMember(custAcc, candidateIds));
+    const canManageBill = billAcc && (await isUserAccountOwnerOrMember(billAcc, candidateIds));
+
+    if (!canManageCust && !canManageBill) {
+      return res.status(403).json({ error: "Unauthorized to manage this subscription" });
+    }
+
+    const nextState = !sub.isActive;
+    await db.update(subscriptions).set({ isActive: nextState }).where(eq(subscriptions.id, sub.id));
+    res.json({ success: true, isActive: nextState });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to toggle subscription" });
+  }
+});
+
+// -----------------------------------------------------------------------------------------------------
+// Split the Bill (Multi-Participant Invoicing)
+// -----------------------------------------------------------------------------------------------------
+
+portalRouter.post("/api/portal/:bankId/split-bill", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index.js");
+  const { invoices, bankAccounts } = await import("../../db/schema.js");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId } = req.params;
+    const { fromAccountId, description, splits } = req.body;
+    if (!fromAccountId || !Array.isArray(splits) || splits.length === 0) {
+      return res.status(400).json({ error: "Missing required split details (account, splits)" });
+    }
+
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const myAccount = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, fromAccountId), eq(bankAccounts.bankId, bankId))).get();
+    if (!myAccount || !(await isUserAccountOwnerOrMember(myAccount, candidateIds))) {
+      return res.status(403).json({ error: "Unauthorized recipient account selection" });
+    }
+
+    const allBankAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId));
+    const createdInvoices: any[] = [];
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 7);
+
+    for (const split of splits) {
+      const targetQuery = (split.target || "").trim();
+      const splitAmount = parseFloat(split.amount);
+      if (!targetQuery || isNaN(splitAmount) || splitAmount <= 0) continue;
+
+      let targetAccount = allBankAccounts.find(a => 
+        a.id === targetQuery || 
+        a.accountName.toLowerCase() === targetQuery.toLowerCase()
+      );
+
+      if (!targetAccount) {
+        return res.status(404).json({ error: `Could not find account "${targetQuery}" at this bank` });
+      }
+
+      if (targetAccount.id === myAccount.id) {
+        return res.status(400).json({ error: "Cannot send a split bill invoice to yourself" });
+      }
+
+      const invId = `inv_${Date.now()}_${randomInt(1000, 9999)}`;
+      const amountCents = Math.round(splitAmount * 100);
+      const splitDesc = description ? `Split: ${description}` : `Split bill (${myAccount.accountName})`;
+
+      await db.insert(invoices).values({
+        id: invId,
+        bankId,
+        billerAccountId: myAccount.id,
+        customerAccountId: targetAccount.id,
+        amount: amountCents,
+        description: splitDesc,
+        dueDate,
+        status: "pending",
+        createdAt: new Date(),
+      });
+
+      createdInvoices.push({
+        id: invId,
+        targetAccountName: targetAccount.accountName,
+        amountCents,
+      });
+    }
+
+    if (createdInvoices.length === 0) {
+      return res.status(400).json({ error: "No valid participants with positive split amounts were provided" });
+    }
+
+    res.json({
+      success: true,
+      invoicesCreated: createdInvoices.length,
+      invoices: createdInvoices,
+    });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to create split bill requests" });
   }
 });

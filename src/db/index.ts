@@ -73,6 +73,15 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("cards", "apr", "INTEGER DEFAULT 0");
   checkAndAddColumn("cards", "minimum_payment", "INTEGER DEFAULT 0");
   checkAndAddColumn("cards", "next_payment_date", "INTEGER");
+  checkAndAddColumn("cards", "is_corporate", "INTEGER DEFAULT 0");
+  checkAndAddColumn("cards", "assigned_mc_username", "TEXT");
+  checkAndAddColumn("cards", "assigned_discord_id", "TEXT");
+  checkAndAddColumn("cards", "card_label", "TEXT");
+  checkAndAddColumn("cards", "spending_limit_daily_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("cards", "daily_spent_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("cards", "last_daily_spent_reset_at", "INTEGER");
+  checkAndAddColumn("cards", "allow_cash_advance", "INTEGER DEFAULT 1");
+  checkAndAddColumn("cards", "allow_onyx_transactions", "INTEGER DEFAULT 1");
   createTableIfNotExists("payroll_jobs", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, employer_account_id TEXT NOT NULL, employee_account_id TEXT NOT NULL, amount INTEGER NOT NULL, frequency TEXT NOT NULL, next_run INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("subscriptions", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, biller_account_id TEXT NOT NULL, customer_account_id TEXT NOT NULL, amount INTEGER NOT NULL, frequency TEXT NOT NULL, next_run INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("clearinghouse_balances", "bank_id TEXT PRIMARY KEY NOT NULL, balance INTEGER DEFAULT 0 NOT NULL");
@@ -216,6 +225,10 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "google_docs_auto_generate", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "enable_account_tiers", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "account_tiers", "TEXT");
+  checkAndAddColumn("bank_settings", "personal_account_prefix", "TEXT DEFAULT 'ACC-'");
+  checkAndAddColumn("bank_settings", "business_account_prefix", "TEXT DEFAULT 'CORP-'");
+  checkAndAddColumn("bank_settings", "personal_account_naming_mode", "TEXT DEFAULT 'custom'");
+  checkAndAddColumn("bank_settings", "business_account_naming_mode", "TEXT DEFAULT 'business_name'");
   checkAndAddColumn("bank_settings", "interest_payment_schedule", "TEXT DEFAULT 'manual'");
   checkAndAddColumn("bank_settings", "interest_next_payment_at", "INTEGER");
   checkAndAddColumn("bank_settings", "interest_target_accounts", "TEXT DEFAULT 'savings_only'");
