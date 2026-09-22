@@ -31,7 +31,7 @@ async function webhookIdentity(bankId: string): Promise<{ username: string; colo
     username: (bank?.name || "Bank").slice(0, 80),
     color,
     avatar,
-    footer: ((settings?.discordFooter || bank?.name || "") as string).slice(0, 80),
+    footer: ((settings?.discordFooter || `${bank?.name || "Bank"} • Powered by - Slate Banking Platform`) as string).slice(0, 80),
   };
 }
 

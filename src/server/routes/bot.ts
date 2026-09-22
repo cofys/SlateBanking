@@ -13,6 +13,33 @@ botRouter.get("/api/bots/status", requireGlobalAdmin, (req: express.Request, res
   res.json(botManager.getBankStatuses());
 });
 
+botRouter.get("/api/banks/:bankId/bot-status", requireBankStaff, async (req: express.Request, res: express.Response) => {
+  try {
+    const { bankId } = req.params;
+    const instance = botManager.getInstance(bankId);
+    const isOnline = botManager.isBankBotOnline(bankId);
+    
+    // Also check if database has token configured
+    const { db } = await import("../../db/index.js");
+    const { banks } = await import("../../db/schema.js");
+    const { eq } = await import("drizzle-orm");
+    const bank = await db.select({ status: banks.status, discordToken: banks.discordToken, maintenanceMode: banks.maintenanceMode }).from(banks).where(eq(banks.id, bankId)).get();
+
+    const finalStatus = isOnline ? "online" : (instance?.status || bank?.status || "offline");
+
+    res.json({
+      status: finalStatus,
+      isOnline,
+      hasToken: !!bank?.discordToken,
+      maintenanceMode: !!bank?.maintenanceMode,
+      botTag: instance?.client?.user?.tag || null,
+      ping: instance?.client?.ws?.ping ?? null,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 botRouter.post("/api/banks/:bankId/spawn-discord-gui", requireBankStaff, async (req: express.Request, res: express.Response) => {
   try {
     const { bankId } = req.params;

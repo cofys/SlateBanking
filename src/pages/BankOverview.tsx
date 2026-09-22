@@ -9,12 +9,28 @@ export function BankOverview() {
   const { bank } = useOutletContext<{ bank: any }>();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [botStatus, setBotStatus] = useState<string>(bank?.status || "offline");
+  const [botDetails, setBotDetails] = useState<{ botTag?: string | null; ping?: number | null; hasToken?: boolean } | null>(null);
 
   const { user } = useAuth();
   const [staffRole, setStaffRole] = useState<string | null>(null);
 
   useEffect(() => {
     if (bank?.id) {
+       const fetchBotStatus = () => {
+         fetch(`/api/banks/${bank.id}/bot-status`)
+           .then(res => res.ok ? res.json() : null)
+           .then(data => {
+             if (data) {
+               setBotStatus(data.status || (data.isOnline ? "online" : "offline"));
+               setBotDetails(data);
+             }
+           })
+           .catch(() => {});
+       };
+       fetchBotStatus();
+       const botInterval = setInterval(fetchBotStatus, 15000);
+
        fetch(`/api/banks/${bank.id}/team`)
          .then(res => res.ok ? res.json() : [])
          .then(data => {
@@ -48,8 +64,10 @@ export function BankOverview() {
           });
           setLoading(false);
        });
+
+       return () => clearInterval(botInterval);
     }
-  }, [bank, user]);
+  }, [bank?.id, user?.discordId]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-64 gap-3" style={{ color: "var(--fg-subtle)" }}>
@@ -165,13 +183,23 @@ export function BankOverview() {
             </h3>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-medium" style={{ color: "var(--fg-muted)" }}>
-                  <Activity size={14} /> Discord gateway
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-medium" style={{ color: "var(--fg-muted)" }}>
+                    <Activity size={14} /> Discord gateway
+                  </div>
+                  {botDetails?.botTag && (
+                    <p className="text-[10px] font-mono mt-0.5" style={{ color: "var(--fg-subtle)" }}>{botDetails.botTag}</p>
+                  )}
                 </div>
-                {bank.status === "online" ? (
-                  <span className="flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ color: "var(--ok)", background: "color-mix(in oklab, var(--ok) 12%, transparent)" }}>
-                    <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "var(--ok)" }} /> Online
-                  </span>
+                {botStatus === "online" || bank?.status === "online" ? (
+                  <div className="flex items-center gap-2">
+                    {botDetails?.ping != null && (
+                      <span className="text-[10px] font-mono text-emerald-400/80">{Math.round(botDetails.ping)}ms</span>
+                    )}
+                    <span className="flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ color: "var(--ok)", background: "color-mix(in oklab, var(--ok) 12%, transparent)" }}>
+                      <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "var(--ok)" }} /> Online
+                    </span>
+                  </div>
                 ) : (
                   <span className="flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ color: "var(--danger)", background: "color-mix(in oklab, var(--danger) 12%, transparent)" }}>
                     <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--danger)" }} /> Offline

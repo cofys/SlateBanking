@@ -34,7 +34,13 @@ portalRouter.get("/api/portal/:bankId/oauth/url", requireAuth, async (req: expre
       const redirectUri = `${bankCustomDomain}/api/portal/${bankId}/oauth/callback`;
       const { v4: uuidv4 } = await import("uuid");
       const nonce = uuidv4();
-      res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
+      res.cookie('oauth_nonce', nonce, {
+        maxAge: 10 * 60 * 1000,
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        partitioned: true
+      });
       const state = encodeURIComponent(JSON.stringify({
         bankId,
         discordId: (req as any).user.discordId,
@@ -61,7 +67,7 @@ portalRouter.get("/api/portal/:bankId/oauth/callback", async (req: express.Reque
       const stateStr = req.query.state as string;
 
       const expectedNonce = req.cookies?.oauth_nonce;
-      res.clearCookie('oauth_nonce');
+      res.clearCookie('oauth_nonce', { secure: true, sameSite: 'none', httpOnly: true });
       if (req.query.error) { return res.status(400).send(`CityCorp OAuth Error: ${req.query.error} - ${req.query.error_description}`); }
     if (!code || !stateStr) {
         return res.status(400).send(`Missing code or state. URL: ${req.originalUrl}`);
@@ -203,6 +209,9 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
         discordShowStats: settings.discordShowStats,
       } : null;
 
+      const isOnline = botManager.isBankBotOnline(bank.id);
+      const liveStatus = isOnline ? 'online' : (bank.status === 'online' && botManager.getInstance(bank.id) ? 'online' : (botManager.getInstance(bank.id)?.status || bank.status || 'offline'));
+
       const safeBank = {
         id: bank.id,
         name: bank.name,
@@ -214,7 +223,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
         customDomain: bank.customDomain,
         brandingColor: bank.brandingColor,
         logoUrl: bank.logoUrl,
-        status: bank.status,
+        status: liveStatus,
         plan: bank.plan,
         billingStatus: bank.billingStatus,
         platformFeePercent: bank.platformFeePercent,

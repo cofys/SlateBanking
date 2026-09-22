@@ -1,12 +1,12 @@
-# Slate SaaS – Platform Wiki
+# Slate Banking Platform – Platform Wiki
 
-Welcome to the definitive Slate SaaS Platform Wiki. This living document encapsulates the architecture, features, workflows, and integrations of the entire banking and payment service provider suite.
+Welcome to the definitive Slate Banking Platform Wiki. This living document encapsulates the architecture, features, workflows, and integrations of the entire banking and payment service provider suite.
 
 ---
 
 ## 🏛 Platform Overview
 
-Slate SaaS is a multi-tenant banking management platform designed for gaming and roleplaying communities (such as Minecraft RP servers). It provides distinct isolation for individual banks while connecting them globally via a centralized Payment Service Provider (Onyx) and Central Clearinghouse.
+Slate Banking Platform is a multi-tenant banking management platform designed for gaming and roleplaying communities (such as Minecraft RP servers). It provides distinct isolation for individual banks while connecting them globally via a centralized Payment Service Provider (Onyx) and Central Clearinghouse.
 
 ### Core Stack
 - **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, React Router DOM, Recharts for data visualization.
@@ -157,11 +157,12 @@ Instead of simple passwords, the platform supports Discord and CityCorp OAuth au
 
 ## 🤖 Bot Manager Daemon (`bot_manager.ts`)
 
-Every bank defined in the platform can attach a unique Discord Bot Token to its configuration. Slate SaaS runs an internal `BotManager` class designed to handle an unlimited swarm of isolated Discord JS Client instances.
+Every bank defined in the platform can attach a unique Discord Bot Token to its configuration. Slate Banking Platform runs an internal `BotManager` class designed to handle an unlimited swarm of isolated Discord JS Client instances.
 
-- **Provisioning**: When a bank is created or updated, `botManager.provisionBankBot(bankId, token)` spins up a new independent bot process logged in under that token.
-- **Shutdowns**: `botManager.stopBankBot(bankId)` safely terminates the client.
-- **Status API**: Exposes `/api/bots/status` for the Admin Dashboard to visualize real-time WebSocket connection states of every client.
+- **Provisioning & State Synchronization**: When a bank is created or updated, `botManager.provisionBankBot(bankId, token)` spins up a new independent bot process logged in under that token. Upon reaching Discord Gateway `ready` state, the manager atomically synchronizes the database `banks.status` to `online` and exposes live WebSocket connectivity. If connection errors or shutdowns occur, the status is safely transitioned to `error` or `offline`.
+- **Live Status Resolution & Gateway Ping**: In addition to `/api/bots/status` for Global Admins, the platform exposes `GET /api/banks/:bankId/bot-status` for Bank Staff. The Bank Staff Dashboard (`BankOverview.tsx`) actively polls this endpoint, resolving the Discord gateway connection state, bot user tag, and live WebSocket ping (ms), eliminating discrepancies where a live bot appeared offline due to stale database fields.
+- **Default Messages & Attribution**: Embeds and notifications automatically format footers using the bank name and platform default: `<Bank Name> • Powered by - Slate Banking Platform`. Custom footers set by bank operators in Bank Settings override this default message.
+- **Shutdowns**: `botManager.stopBankBot(bankId)` safely terminates the client and cleans up gateway listeners.
 - **Use Case**: Each bank bot exposes a single slash command (`/bank`) plus auto-updating public and staff channel panels spawned from Bank Settings. Copy, color, logo, footer, presence, and stats are owned by the bank.
 
 ---
@@ -268,7 +269,7 @@ Contained within `BankTools.tsx` and the `/api/banks/:bankId/tools/*` endpoints 
 
 ## Developer Guide: Expanding the Code
 
-To expand Slate SaaS, always follow the tri-level approach:
+To expand Slate Banking Platform, always follow the tri-level approach:
 1. **Schema Definitions (`src/db/schema.ts`)**: Add your Drizzle-ORM tables or columns. Push structural changes using `npx -y drizzle-kit push`.
 2. **Server Endpoints (`server.ts`)**: Construct your Express router mappings making sure to use `await db.select()`, `await db.insert()` inside logic structures. Ensure new APIs correctly implement the `requireBankStaff` or `requireGlobalAdmin` middleware when mutating sensitive arrays. Note that the frontend proxies `/api/*` to the Node.js backend.
 3. **Frontend UIs (`src/pages/*`)**: Utilize modern React functional structures, consume the data in `useEffect`, and leverage Tailwind CSS with Lucide React Icons for a polished, highly-crafted professional dark aesthetic. Components should generally align strictly to the `BankAdminLayout` or `DashboardLayout` for seamless auth ingestion.
@@ -623,7 +624,7 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 
 ## CityCorp Corporation ID Finder & Inspector Utility
 - **Interactive Corp ID Search Endpoint (`GET /api/banks/corp-finder`)**:
-  - Engineered a dedicated search and inspection backend that scans all registered tenant banks and bank accounts across Slate SaaS to locate and cross-reference configured CityCorp Corporation IDs.
+  - Engineered a dedicated search and inspection backend that scans all registered tenant banks and bank accounts across Slate Banking Platform to locate and cross-reference configured CityCorp Corporation IDs.
   - Integrates directly with the `https://api.cityrp.org/citycorp/corp/list` endpoint to search the global CityCorp registry using any active tenant API credentials.
   - Features a live **CityCorp API Ping Verifier** that pings `https://api.cityrp.org/citycorp/accounts/list?corp_id={id}` in real-time, verifying network connectivity, latency (ms), registered account counts, and sample account names for any candidate Corp ID.
 - **Global Corp ID Finder (`Overview.tsx`)**:
@@ -663,7 +664,7 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Implemented direct binary `.db` database file and `.sql` script dump ingestion for banks migrating from legacy bots/frameworks.
   - Automatically handles binary base64 decoding and safe server-side query processing using `better-sqlite3`.
   - Parses and maps legacy table structures: `accounts`, `loan_products`, `loans`, `loan_applications`, `transactions`, `invoices`, and `payroll_entries`.
-  - Restores accounts, customer KYC notes, double-entry ledger history, active loan terms, credit applications, invoices, and recurring payroll jobs atomically into Slate SaaS.
+  - Restores accounts, customer KYC notes, double-entry ledger history, active loan terms, credit applications, invoices, and recurring payroll jobs atomically into Slate Banking Platform.
   - Displays a detailed visual breakdown badge summary (Accounts, Customers, Ledger Transactions, Loans, Loan Products, Invoices, Payrolls, and Detected Tables) in the Bank Tools operator interface.
 
 ## Global Admin Access & Secure Authentication
@@ -746,7 +747,7 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
 
 ### 🌐 Official CityRP API v1.0.0 (OAS 3.0) Integration Standard
 
-Slate SaaS integrates natively with the official CityRP API specification (OAS 3.0 / `https://api.cityrp.org`).
+Slate Banking Platform integrates natively with the official CityRP API specification (OAS 3.0 / `https://api.cityrp.org`).
 
 #### 1. Core Services & Base URLs
 - **Auth API (`https://api.cityrp.org/auth`)**: OAuth 2.0 authorization code exchange service (`POST /auth/token`). Used exclusively when an application needs permission to act on behalf of another consenting player.
@@ -1173,6 +1174,47 @@ Staff desks do **not** record transfers. CityCorp already books every movement. 
 - **Bank-Specific Discord Bot Resolution**: Resolved an issue where Discord account linking fell back to the global SaaS platform bot credentials (`process.env.DISCORD_CLIENT_ID`) when banks accessed on the main platform domain or without custom domains. Bank-specific `discordClientId` and `discordClientSecret` stored in the `banks` table are now universally prioritized across both `/api/auth/url` initiation and `/api/auth/discord/callback` token exchange. The Customer Portal (`CitizenPortal.tsx`) now explicitly passes the target bank ID or presents a bank selection dialog when multiple institutions exist.
 - **Customer Portal Select & Option Visibility**: Fixed an issue where dropdown menus in the customer portal rendered invisible or unreadable text when native OS / browser popovers opened with white backgrounds against white option text. Standardized `color-scheme: dark` across all form elements, and explicitly applied dark background (`#18181c`) and high-contrast text (`#f4f4f5`) across all `<select>` and `<option>` components in `BankPortal.tsx` and global styles.
 - **Bonds & Vault Tiers Catalog Accuracy**: Removed hardcoded fallback dummy tiers (7, 30, 90, 180, 365 days) from `portal.ts`, `citizen.ts`, and `BankSettings.tsx`. Banks that have not explicitly defined bond terms in `bank_settings.vaultTiers` now accurately return an empty catalog, completely hiding the "Buy a bond" section from customer portals until terms are configured. The staff settings screen now provides a clear active term count, empty-state banner, and a single-click "Clear all" utility.
+- **Discord Bot Account Linking & Cross-Window Synchronization**:
+  - **Partitioned & Cross-Site Cookie Persistence**: Configured `oauth_nonce` and `auth_token` cookies with `sameSite: 'none'`, `secure: true`, and `partitioned: true` (CHIPS compliance), guaranteeing that OAuth cookies survive cross-site redirects in popup windows, browser privacy partitions, and iframe-nested portals.
+  - **Tamper-Resistant Cryptographic State Token (`linkToken`)**: The `/api/auth/url?provider=discord` endpoint encodes an HMAC-SHA256 signed `linkToken` into the OAuth `state` query parameter containing the user's active session identity and cryptographic nonce. In the event that third-party cookies or storage partitioning block cookie transmission during Discord's redirect, `/api/auth/discord/callback` validates the state's `linkToken` directly, preventing "Invalid OAuth state" or "OAuth state expired" errors.
+  - **Multi-Channel Opener Notification (`postMessage` + `BroadcastChannel` + `localStorage`)**: Upon successful linkage, the callback page broadcasts completion signals across three concurrent channels: direct `window.opener.postMessage`, a native cross-tab `BroadcastChannel('oauth_channel')`, and `localStorage.setItem('oauth_auth_success', Date.now())`.
+  - **Popup Lifecycle Polling & Real-Time Session Refresh**: In `AuthContext.tsx`, `popupPollRef` runs a high-frequency polling loop (`setInterval` every 500ms) on the OAuth popup window handle. As soon as the popup closes (whether via automatic `window.close()` or manual user dismissal), the application triggers an immediate `checkSession()` call to pull the freshly linked Discord identity and update the UI instantly without requiring a page refresh.
+  - **Session Re-Issuance & Double Identity Binding**: Upon completing Discord token exchange, `/api/auth/discord/callback` binds the Discord snowflake across both the `users` table and `bank_customers` rows matching the player's Minecraft UUID, Discord ID, and Minecraft username. It then re-issues an updated JWT `auth_token` cookie containing the new `linkedDiscordId`, ensuring subsequent API calls and `/api/auth/me` reflect the linked bot state immediately.
+  - **User Feedback & Status Badging**: Both `BankPortal.tsx` and `CitizenPortal.tsx` now prominently display an emerald "Discord bot linked" status badge with the linked ID once connected, and render a high-visibility error alert banner if OAuth authorization is denied or rejected by Discord.
+
+---
+
+## 🎨 Discord Terminal GUI Overhaul, Privacy & Granular Controls (Sep 2026)
+
+### 1. Distinct Visual Styles (`discordGuiStyle`)
+The platform supports configurable visual presentation styles for the Discord public lobby and staff operations desks:
+- **`executive` (Institutional & Corporate)**:
+  - High-contrast typography paired with structured markdown code blocks (`fix`, `yaml`, and `elm`).
+  - Distinct box metrics displaying custodial deposit totals and active ledger counts.
+  - Formal clearinghouse network status indicators and institutional terminal timestamps.
+- **`cyber` (Cyber Telemetry)**:
+  - ANSI colored terminal console blocks (`[SYSTEM TELEMETRY]`, `DEPOSITS`, `ACCOUNTS`, `CLEARING`).
+  - Terminal code block formatting tailored for gaming, cyberpunk, and high-tech roleplaying communities.
+- **`minimal` (Clean & Distilled)**:
+  - Compact inline bullet rows with clean monetary formatting and minimal negative space.
+  - Avoids block clutter while keeping essential indicators immediately accessible.
+
+### 2. Granular Public Statistics Toggles
+Bank managers can fine-tune what financial figures are visible to the public in Discord via `BankSettings.tsx`:
+- **`discordShowStats`**: Master switch controlling all public statistical metrics.
+- **`discordShowDeposits`**: Granular toggle to show or hide the bank's Total Custodial Deposits figure independently.
+- **`discordShowAccounts`**: Granular toggle to show or hide the Active Member Ledgers count independently.
+- When both are enabled, the embed displays a multi-column clearinghouse layout; if only one is enabled, it renders a dedicated prominent panel; if neither is enabled, the stats section is cleanly omitted.
+
+### 3. Comprehensive Discord Interaction Privacy Architecture
+To prevent public leakage of account information or user status:
+- **Strict Ephemeral Isolation**: All interaction responses originating from the public or staff lobby terminals (dashboard views, transfers, transaction statements, sync checks, rate queries, and loan applications) are strictly ephemeral (`ephemeral: true`).
+- **Zero Public Mutation on Unlinked Clicks**: If an unlinked user clicks "My Dashboard" or "Transfer" on a public panel, the persistent public channel message is never altered. Instead, the bot detects interaction ephemeral state (`isMessageEphemeral`) and delivers a dedicated, private onboarding guide with Minecraft avatar integration (`buildNotLinkedEmbed`) visible only to that user.
+- **Resilient Fallback Handling**: `safeReplyOrUpdate` validates whether an interaction has been replied to, deferred, or represents an ephemeral message, preventing Discord `InteractionAlreadyReplied` and `UnknownInteraction` runtime exceptions.
+
+### 4. Tenant Search Engine & Social Embed Metadata (`metaTitle`, `metaDescription`, `metaOgImage`)
+- Bank settings now include dedicated OpenGraph and search engine optimization fields stored in `bank_settings`.
+- Allows bank owners to customize how their institution previews when shared in Discord channels, Twitter/X cards, and search engine results, supporting custom page titles, descriptive summaries, and rich social banner image URLs.
 
 
 

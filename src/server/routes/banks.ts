@@ -1482,7 +1482,14 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
           enableSubscriptions: true,
           enableEscrow: true,
           enableTreasury: true,
-          enableAccountTiers: true
+          enableAccountTiers: true,
+          discordShowStats: true,
+          discordShowDeposits: true,
+          discordShowAccounts: true,
+          discordGuiStyle: "executive",
+          metaTitle: "",
+          metaDescription: "",
+          metaKeywords: "",
         } as any;
       }
       res.json({
@@ -1620,7 +1627,13 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         discordWelcome: req.body.discordWelcome,
         discordFooter: req.body.discordFooter,
         discordBotActivity: req.body.discordBotActivity,
-        discordShowStats: req.body.discordShowStats,
+        discordShowStats: req.body.discordShowStats === undefined ? true : (req.body.discordShowStats === true || req.body.discordShowStats === 'true' || req.body.discordShowStats === 'on'),
+        discordShowDeposits: req.body.discordShowDeposits === undefined ? true : (req.body.discordShowDeposits === true || req.body.discordShowDeposits === 'true' || req.body.discordShowDeposits === 'on'),
+        discordShowAccounts: req.body.discordShowAccounts === undefined ? true : (req.body.discordShowAccounts === true || req.body.discordShowAccounts === 'true' || req.body.discordShowAccounts === 'on'),
+        discordGuiStyle: req.body.discordGuiStyle || 'executive',
+        metaTitle: req.body.metaTitle ? String(req.body.metaTitle).trim() : null,
+        metaDescription: req.body.metaDescription ? String(req.body.metaDescription).trim() : null,
+        metaKeywords: req.body.metaKeywords ? String(req.body.metaKeywords).trim() : null,
       };
 
       const existing = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bId));

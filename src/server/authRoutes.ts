@@ -179,13 +179,36 @@ export function registerAuthRoutes(app: express.Express) {
         clientId = bank.discordClientId;
       }
 
+      if (!clientId) {
+        return res.status(400).json({
+          error: "Discord OAuth is not configured. Please set DISCORD_CLIENT_ID in your environment or configure it in the bank settings."
+        });
+      }
+
       const redirectUri = await getRedirectUri(req);
       const returnTo = sanitizeReturnTo(req.query.returnTo);
       const { v4: uuidv4 } = await import("uuid");
       const nonce = uuidv4();
-      res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
+      res.cookie('oauth_nonce', nonce, {
+        maxAge: 10 * 60 * 1000,
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        partitioned: true
+      });
       const rememberMe = req.query.rememberMe !== 'false';
-      const stateObj: any = { intent: 'link', rememberMe, nonce };
+
+      // Cryptographically sign a linkToken so user identity and nonce persist even if cross-site iframe cookies are partitioned
+      const linkToken = jwt.sign({
+        intent: 'link',
+        discordId: decodedSession.discordId,
+        mcUuid: decodedSession.mcUuid || null,
+        username: decodedSession.username || null,
+        bankId: bank?.id || null,
+        nonce
+      }, JWT_SECRET, { expiresIn: '15m' });
+
+      const stateObj: any = { intent: 'link', rememberMe, nonce, linkToken };
       if (bank) stateObj.bankId = bank.id;
       stateObj.returnTo = returnTo;
       const state = JSON.stringify(stateObj);
@@ -220,7 +243,13 @@ export function registerAuthRoutes(app: express.Express) {
     const redirectUri = process.env.CITYRP_REDIRECT_URI || await getRedirectUri(req, callbackPath);
     const { v4: uuidv4 } = await import("uuid");
     const nonce = uuidv4();
-    res.cookie('oauth_nonce', nonce, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: true, sameSite: 'lax' });
+    res.cookie('oauth_nonce', nonce, {
+      maxAge: 10 * 60 * 1000,
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      partitioned: true
+    });
 
     const appIdForUrl = bank?.cityCorpAppId || process.env.CITYRP_APP_ID;
     if (!appIdForUrl && !bank?.cityCorpAuthUrl) {
@@ -504,9 +533,10 @@ export function registerAuthRoutes(app: express.Express) {
       const signedToken = jwt.sign(payload, JWT_SECRET, { expiresIn: tokenExpiry });
       res.cookie('auth_token', signedToken, {
         secure: true,
-        sameSite: 'lax',
+        sameSite: 'none',
         httpOnly: true,
-        maxAge: cookieMaxAge
+        maxAge: cookieMaxAge,
+        partitioned: true
       });
 
       res.send(`
@@ -515,10 +545,18 @@ export function registerAuthRoutes(app: express.Express) {
             <script>
               try {
                 if (window.opener) {
-                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, window.location.origin);
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
                 }
               } catch(e) { console.error("Caught error:", e); }
               
+              try {
+                if ('BroadcastChannel' in window) {
+                  const bc = new BroadcastChannel('oauth_channel');
+                  bc.postMessage({ type: 'OAUTH_AUTH_SUCCESS' });
+                  bc.close();
+                }
+              } catch(e) {}
+
               try {
                 localStorage.setItem('oauth_auth_success', Date.now().toString());
               } catch(e) { console.error("Caught error:", e); }
@@ -547,46 +585,88 @@ export function registerAuthRoutes(app: express.Express) {
   });
 
 
-  app.get('/api/auth/discord/callback', async (req, res) => {
+  app.get(['/api/auth/discord/callback', '/api/auth/discord/callback/'], async (req, res) => {
     const { db } = await import("../db/index");
     const { banks, bankCustomers, users } = await import("../db/schema");
     const { eq, or: drizzleOr } = await import("drizzle-orm");
-    const { code, state } = req.query;
-    const expectedNonce = req.cookies.oauth_nonce;
-    res.clearCookie('oauth_nonce');
-    if (!code) return res.status(400).send("No code provided");
+    const { code, state, error, error_description } = req.query;
+
+    if (error) {
+      return res.status(400).send(`
+        <html style="background: #0a0a0c; color: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <body style="margin: 0; padding: 2rem; text-align: center; background: #0a0a0c; color: #f3f4f6;">
+            <div style="max-width: 420px; margin: 40px auto; padding: 2rem; border-radius: 16px; background: #121316; border: 1px solid #ef444440;">
+              <h2 style="margin: 0 0 8px; color: #ef4444;">Discord Authorization Denied</h2>
+              <p style="color: #9ca3af; font-size: 0.875rem;">${error}: ${error_description || "Cancelled or rejected"}</p>
+              <button onclick="window.close()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer;">Close Window</button>
+            </div>
+            <script>
+              try {
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(String(error_description || error))} }, '*');
+                }
+              } catch(e) {}
+            </script>
+          </body>
+        </html>
+      `);
+    }
+
+    const expectedNonce = req.cookies?.oauth_nonce;
+    res.clearCookie('oauth_nonce', { secure: true, sameSite: 'none', httpOnly: true });
+
+    if (!code) return res.status(400).send("No authorization code provided by Discord.");
     if (!state) return res.status(400).send("Missing OAuth state. Please try again.");
-    if (!expectedNonce) return res.status(400).send("Missing OAuth nonce. Please try again.");
 
     let intent = 'login';
     let bankId = null;
     let returnTo = '/portal';
+    let linkPayload: any = null;
+    let decodedState: any = null;
+
     try {
-      const decodedState = JSON.parse(decodeURIComponent(state as string));
-      if (!decodedState.nonce || decodedState.nonce !== expectedNonce) {
-         return res.status(400).send("Invalid OAuth state / nonce. Please try again.");
-      }
+      decodedState = JSON.parse(decodeURIComponent(state as string));
       intent = decodedState.intent || 'login';
       bankId = decodedState.bankId;
       if (decodedState.returnTo) returnTo = sanitizeReturnTo(decodedState.returnTo);
+
+      if (decodedState.linkToken) {
+        try {
+          linkPayload = jwt.verify(decodedState.linkToken, JWT_SECRET, { algorithms: ["HS256"] });
+        } catch (e) {
+          console.error("Failed to verify linkToken:", e);
+        }
+      }
     } catch (e) {
-        return res.status(400).send("Invalid OAuth state. Please try again.");
+      return res.status(400).send("Invalid OAuth state parameter. Please try again.");
+    }
+
+    const isNonceValid = (expectedNonce && decodedState?.nonce === expectedNonce) || (linkPayload && linkPayload.nonce === decodedState?.nonce);
+    if (!isNonceValid) {
+      return res.status(400).send("OAuth state or session expired. Please open your portal and try linking again.");
     }
 
     if (intent !== 'link') {
       return res.status(400).send("Discord is not a sign-in method. Sign in with CityCorp, then link Discord from account settings.");
     }
 
-    const authToken = req.cookies.auth_token;
-    if (!authToken) return res.status(401).send("Sign in with CityCorp first, then link Discord.");
-    let decodedSession: any;
-    try {
-      decodedSession = jwt.verify(authToken, JWT_SECRET, { algorithms: ["HS256"] });
-    } catch {
-      return res.status(401).send("Invalid session. Sign in with CityCorp first.");
+    let decodedSession: any = null;
+    const authToken = req.cookies?.auth_token;
+    if (authToken) {
+      try {
+        decodedSession = jwt.verify(authToken, JWT_SECRET, { algorithms: ["HS256"] });
+      } catch (e) {}
     }
+    if (!decodedSession && linkPayload) {
+      decodedSession = {
+        discordId: linkPayload.discordId,
+        mcUuid: linkPayload.mcUuid,
+        username: linkPayload.username,
+      };
+    }
+
     if (!decodedSession?.discordId && !decodedSession?.mcUuid) {
-      return res.status(401).send("Invalid session. Sign in with CityCorp first.");
+      return res.status(401).send("Sign in with CityCorp first, then link Discord.");
     }
 
     const hostname = req.hostname;
@@ -596,6 +676,8 @@ export function registerAuthRoutes(app: express.Express) {
     let bankToUse = null;
     if (bankId) {
        bankToUse = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+    } else if (linkPayload?.bankId) {
+       bankToUse = await db.select().from(banks).where(eq(banks.id, linkPayload.bankId)).get();
     } else if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('run.app')) {
        try {
          const all = await db.select().from(banks);
@@ -631,6 +713,10 @@ export function registerAuthRoutes(app: express.Express) {
        clientSecret = bankToUse.discordClientSecret;
     }
 
+    if (!clientId || !clientSecret) {
+      return res.status(400).send("Discord OAuth credentials are not configured on the server or bank.");
+    }
+
     const redirectUri = await getRedirectUri(req);
 
     try {
@@ -649,7 +735,9 @@ export function registerAuthRoutes(app: express.Express) {
       });
 
       if (!tokenResponse.ok) {
-        throw new Error('Failed to fetch Discord token');
+        const errText = await tokenResponse.text();
+        console.error("Failed to fetch Discord token:", errText);
+        throw new Error('Failed to fetch Discord token: ' + errText);
       }
 
       const tokenData = await tokenResponse.json();
@@ -657,64 +745,149 @@ export function registerAuthRoutes(app: express.Express) {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
       });
       if (!userResponse.ok) {
-        throw new Error('Failed to fetch Discord user');
+        throw new Error('Failed to fetch Discord user profile');
       }
 
       const userData = await userResponse.json();
       const realDiscordId = String(userData.id || "");
       if (!realDiscordId || !/^\d{17,20}$/.test(realDiscordId)) {
-        return res.status(400).send("Discord did not return a valid user id.");
+        return res.status(400).send("Discord did not return a valid user ID.");
       }
 
       const sessionId = decodedSession.discordId;
       const sessionMc = decodedSession.mcUuid;
-      const identityKeys = [sessionId, sessionMc].filter(Boolean);
+      const sessionUser = decodedSession.username;
+      const identityKeys = [sessionId, sessionMc, sessionUser].filter(Boolean);
 
       const taken = await db.select().from(users).where(eq(users.linkedDiscordId, realDiscordId)).get();
       if (taken && taken.discordId !== sessionId && taken.mcUuid !== sessionMc) {
-        return res.status(409).send("That Discord account is already linked to another player.");
+        return res.status(409).send("That Discord account is already linked to another citizen.");
       }
 
       const existingUser = await db.select().from(users).where(
-        drizzleOr(eq(users.discordId, sessionId), sessionMc ? eq(users.mcUuid, sessionMc) : eq(users.discordId, sessionId))
+        drizzleOr(
+          eq(users.discordId, sessionId),
+          sessionMc ? eq(users.mcUuid, sessionMc) : eq(users.discordId, sessionId)
+        )
       ).get();
+
       if (existingUser) {
         await db.update(users).set({ linkedDiscordId: realDiscordId } as any).where(eq(users.id, existingUser.id));
+      } else {
+        const { v4: uuidv4 } = await import("uuid");
+        await db.insert(users).values({
+          id: uuidv4(),
+          discordId: sessionId || ("mc_" + (sessionMc || realDiscordId)),
+          mcUuid: sessionMc || null,
+          mcUsername: sessionUser || userData.username || "Citizen",
+          linkedDiscordId: realDiscordId,
+          createdAt: new Date(),
+        });
       }
 
       for (const key of identityKeys) {
         await db.update(bankCustomers)
           .set({ linkedDiscordId: realDiscordId })
-          .where(drizzleOr(eq(bankCustomers.discordId, key), eq(bankCustomers.mcUuid, key), eq(bankCustomers.linkedDiscordId, key)));
+          .where(drizzleOr(
+            eq(bankCustomers.discordId, key),
+            eq(bankCustomers.mcUuid, key),
+            eq(bankCustomers.linkedDiscordId, key),
+            eq(bankCustomers.mcUsername, key)
+          ));
       }
+
+      // Re-issue updated auth_token cookie
+      const newPayload = {
+        ...decodedSession,
+        linkedDiscordId: realDiscordId
+      };
+      const newSignedToken = jwt.sign(newPayload, JWT_SECRET, { expiresIn: '30d' });
+      res.cookie('auth_token', newSignedToken, {
+        secure: true,
+        sameSite: 'none',
+        httpOnly: true,
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        partitioned: true
+      });
 
       const ip = clientIp(req);
       await logSecurityEvent(ip, "discord_link", "success", sessionId, "Linked Discord " + realDiscordId + " as " + userData.username);
 
       const dest = returnTo || '/portal';
+      const cleanUsername = String(userData.username || "Discord User").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
       res.send(`
-        <html style="background: #0a0a0c; color: white; font-family: sans-serif;">
-          <body style="margin: 0; padding: 2rem; text-align: center;">
+        <html style="background: #0a0a0c; color: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <head>
+            <title>Discord Linked</title>
+          </head>
+          <body style="margin: 0; padding: 2rem; text-align: center; background: #0a0a0c; color: #f3f4f6;">
+            <div style="max-width: 420px; margin: 40px auto; padding: 2rem; border-radius: 16px; background: #121316; border: 1px solid #27272a;">
+              <div style="width: 48px; height: 48px; margin: 0 auto 1rem; border-radius: 50%; background: #22c55e20; color: #22c55e; display: flex; align-items: center; justify-content: center; font-size: 24px;">✓</div>
+              <h2 style="margin: 0 0 8px; font-size: 1.25rem;">Discord Linked</h2>
+              <p style="color: #9ca3af; font-size: 0.875rem; margin: 0 0 1.5rem; line-height: 1.5;">
+                Linked as <strong>${cleanUsername}</strong> (ID: ${realDiscordId}). The banking bot can now access your accounts.
+              </p>
+              <button onclick="window.close()" style="background: #3b82f6; color: white; border: none; border-radius: 8px; padding: 10px 20px; font-size: 0.875rem; font-weight: 600; cursor: pointer;">
+                Done
+              </button>
+            </div>
             <script>
+              const payload = {
+                type: 'OAUTH_AUTH_SUCCESS',
+                linkedDiscordId: ${JSON.stringify(realDiscordId)},
+                discordUsername: ${JSON.stringify(userData.username)}
+              };
               try {
                 if (window.opener) {
-                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, window.location.origin);
+                  window.opener.postMessage(payload, '*');
                 }
               } catch(e) {}
-              try { localStorage.setItem('oauth_auth_success', Date.now().toString()); } catch(e) {}
-              try { window.close(); } catch(e) {}
-              setTimeout(() => { window.location.href = ${JSON.stringify(dest)}; }, 800);
+              try {
+                if (window.parent && window.parent !== window) {
+                  window.parent.postMessage(payload, '*');
+                }
+              } catch(e) {}
+              try {
+                localStorage.setItem('oauth_auth_success', Date.now().toString());
+              } catch(e) {}
+              try {
+                if ('BroadcastChannel' in window) {
+                  const bc = new BroadcastChannel('oauth_channel');
+                  bc.postMessage(payload);
+                  bc.close();
+                }
+              } catch(e) {}
+              setTimeout(() => {
+                try { window.close(); } catch(e) {}
+              }, 600);
+              setTimeout(() => {
+                window.location.href = ${JSON.stringify(dest)};
+              }, 1200);
             </script>
-            <div style="font-family: sans-serif; text-align: center; padding-top: 2rem; color: white; background: #0a0a0c; height: 100vh; margin: 0; box-sizing: border-box;">
-              <h2>Discord linked</h2>
-              <p style="color: rgba(255,255,255,0.7);">The bank bot can see your accounts now. You can close this window.</p>
-            </div>
           </body>
         </html>
       `);
     } catch (e: any) {
-      console.error(e);
-      res.status(500).send("Could not link Discord. Try again from account settings.");
+      console.error("Discord linking callback error:", e);
+      res.status(500).send(`
+        <html style="background: #0a0a0c; color: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <body style="margin: 0; padding: 2rem; text-align: center; background: #0a0a0c; color: #f3f4f6;">
+            <div style="max-width: 420px; margin: 40px auto; padding: 2rem; border-radius: 16px; background: #121316; border: 1px solid #ef444440;">
+              <h2 style="margin: 0 0 8px; color: #ef4444;">Discord Linking Failed</h2>
+              <p style="color: #9ca3af; font-size: 0.875rem;">${e.message || "Could not link Discord."}</p>
+              <button onclick="window.close()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer;">Close Window</button>
+            </div>
+            <script>
+              try {
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(e.message || "Linking failed")} }, '*');
+                }
+              } catch(err) {}
+            </script>
+          </body>
+        </html>
+      `);
     }
   });
 
@@ -737,6 +910,16 @@ export function registerAuthRoutes(app: express.Express) {
           or(eq(bankCustomers.discordId, key), eq(bankCustomers.mcUuid, key), eq(bankCustomers.linkedDiscordId, key))
         );
       }
+      // Re-issue cookie without linkedDiscordId
+      const newPayload = { ...user, linkedDiscordId: null };
+      const newSignedToken = jwt.sign(newPayload, JWT_SECRET, { expiresIn: '30d' });
+      res.cookie('auth_token', newSignedToken, {
+        secure: true,
+        sameSite: 'none',
+        httpOnly: true,
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        partitioned: true
+      });
       res.json({ success: true });
     } catch (e) {
       console.error(e);
@@ -755,12 +938,25 @@ export function registerAuthRoutes(app: express.Express) {
       decoded.isGlobalAdmin = isGlobal;
       try {
         const { db } = await import("../db/index");
-        const { users } = await import("../db/schema");
+        const { users, bankCustomers } = await import("../db/schema");
         const { eq, or } = await import("drizzle-orm");
         const row = await db.select().from(users).where(
           or(eq(users.discordId, decoded.discordId), decoded.mcUuid ? eq(users.mcUuid, decoded.mcUuid) : eq(users.discordId, decoded.discordId))
         ).get();
-        decoded.linkedDiscordId = row?.linkedDiscordId || null;
+        let linked = row?.linkedDiscordId || null;
+        if (!linked) {
+          const cust = await db.select().from(bankCustomers).where(
+            or(
+              eq(bankCustomers.discordId, decoded.discordId),
+              decoded.mcUuid ? eq(bankCustomers.mcUuid, decoded.mcUuid) : eq(bankCustomers.discordId, decoded.discordId),
+              decoded.username ? eq(bankCustomers.mcUsername, decoded.username) : eq(bankCustomers.discordId, decoded.discordId)
+            )
+          ).get();
+          if (cust?.linkedDiscordId) {
+            linked = cust.linkedDiscordId;
+          }
+        }
+        decoded.linkedDiscordId = linked;
         if (row?.mcUuid) decoded.mcUuid = row.mcUuid;
       } catch {}
       res.json(decoded);
@@ -772,7 +968,7 @@ export function registerAuthRoutes(app: express.Express) {
   app.post('/api/auth/logout', (req, res) => {
     res.clearCookie('auth_token', {
       secure: true,
-      sameSite: 'lax',
+      sameSite: 'none',
       httpOnly: true,
     });
     res.json({ success: true });

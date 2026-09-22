@@ -255,7 +255,13 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "discord_footer", "TEXT");
   checkAndAddColumn("bank_settings", "discord_bot_activity", "TEXT");
   checkAndAddColumn("bank_settings", "discord_show_stats", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "discord_show_deposits", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "discord_show_accounts", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "discord_gui_style", "TEXT DEFAULT 'executive'");
   checkAndAddColumn("bank_settings", "discord_notify_customers", "INTEGER DEFAULT 1");
+  checkAndAddColumn("bank_settings", "meta_title", "TEXT");
+  checkAndAddColumn("bank_settings", "meta_description", "TEXT");
+  checkAndAddColumn("bank_settings", "meta_keywords", "TEXT");
 
   // Transactions table
   checkAndAddColumn("transactions", "from_account_id", "TEXT");

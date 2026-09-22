@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowDownLeft, ArrowUpRight, Building2, Check, ChevronRight, Copy, CreditCard,
   FileText, Landmark, Loader2, Lock, LogIn, LogOut, Plus, Send, ShieldCheck,
-  Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock, Link2
+  Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock, Link2, CheckCircle2
 } from "lucide-react";
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
@@ -24,7 +24,7 @@ function greet() {
 export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const params = useParams();
   const bankId = overrideBankId || params.bankId;
-  const { user, login, linkDiscord, logout, isLoading, rememberMe, setRememberMe } = useAuth();
+  const { user, login, linkDiscord, logout, isLoading, rememberMe, setRememberMe, authError, clearAuthError } = useAuth();
 
   const [bank, setBank] = useState<any>(null);
   const [bankNotFound, setBankNotFound] = useState(false);
@@ -547,6 +547,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             <button onClick={() => setOauthSuccess(null)}><X size={14} /></button>
           </div>
         )}
+        {authError && (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200 flex items-center justify-between">
+            <span>{authError}</span>
+            <button onClick={clearAuthError} className="text-rose-400 hover:text-white"><X size={16} /></button>
+          </div>
+        )}
 
         {view === "home" && (
           <div className="space-y-6">
@@ -576,7 +582,22 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               </div>
             </motion.div>
 
-            {!user.linkedDiscordId && (
+            {user.linkedDiscordId ? (
+              <div
+                className="w-full text-left rounded-2xl border p-4 flex items-center justify-between"
+                style={{ borderColor: "rgba(34, 197, 94, 0.25)", background: "rgba(34, 197, 94, 0.05)" }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center text-emerald-400 bg-emerald-500/10">
+                    <CheckCircle2 size={16} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-300 flex items-center gap-2">Discord linked for bank bot</p>
+                    <p className="text-xs text-emerald-200/60 mt-0.5">Discord ID: {user.linkedDiscordId}. The /bank bot can access your accounts.</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
               <button
                 onClick={() => linkDiscord(bankId)}
                 className="w-full text-left rounded-2xl border p-4 flex items-center justify-between"

@@ -106,7 +106,7 @@ export function BankAccounts() {
   };
 
   const handleAutoImport = async () => {
-    if (!confirm("Import and sync all existing CityCorp corporate accounts from in-game into Slate SaaS?")) return;
+    if (!confirm("Import and sync all existing CityCorp corporate accounts from in-game into Slate Banking Platform?")) return;
     setImporting(true);
     setSyncResultMsg(null);
     try {

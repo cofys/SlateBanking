@@ -123,6 +123,12 @@ export function BankSettings() {
       discordFooter: formData.get("discordFooter"),
       discordBotActivity: formData.get("discordBotActivity"),
       discordShowStats: formData.get("discordShowStats") === "on",
+      discordShowDeposits: formData.get("discordShowDeposits") === "on",
+      discordShowAccounts: formData.get("discordShowAccounts") === "on",
+      discordGuiStyle: (formData.get("discordGuiStyle") as string) || "executive",
+      metaTitle: formData.get("metaTitle"),
+      metaDescription: formData.get("metaDescription"),
+      metaOgImage: formData.get("metaOgImage"),
     };
 
     fetch(`/api/banks/${bank.id}/settings`, {
@@ -325,6 +331,43 @@ export function BankSettings() {
             </div>
           </div>
           
+          <div className="mt-6 border-t border-white/10 pt-6">
+            <h4 className="text-sm font-semibold text-white mb-1">Search & Social Embed Metadata</h4>
+            <p className="text-xs text-white/50 mb-4">Customize how your bank displays when shared on Discord, Twitter, Google, and client portals.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Meta Title</label>
+                <input 
+                  name="metaTitle" 
+                  type="text" 
+                  placeholder={`${bank?.name || "Bank"} | Private Institutional Banking`}
+                  defaultValue={settings?.metaTitle || ""} 
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Social Banner Image URL</label>
+                <input 
+                  name="metaOgImage" 
+                  type="text" 
+                  placeholder="https://example.com/banner.png"
+                  defaultValue={settings?.metaOgImage || ""} 
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Meta Description</label>
+                <textarea 
+                  name="metaDescription" 
+                  rows={2}
+                  placeholder={`Institutional banking, real-time clearinghouse fund settlement, and asset management for ${bank?.name || "your bank"}.`}
+                  defaultValue={settings?.metaDescription || ""} 
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="mt-6">
             <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Custom Domain</label>
             <div className="flex bg-[var(--bg-subtle)] border border-white/10 rounded-lg overflow-hidden group focus-within:border-indigo-500 transition-colors">
@@ -483,7 +526,7 @@ export function BankSettings() {
                 name="discordFooter"
                 type="text"
                 maxLength={80}
-                placeholder={bank?.name || "Your bank"}
+                placeholder={`${bank?.name || "Your bank"} • Powered by - Slate Banking Platform`}
                 defaultValue={settings?.discordFooter || ""}
                 className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
               />
@@ -501,22 +544,96 @@ export function BankSettings() {
               <p className="text-xs text-white/40 mt-1.5">What the bot shows as its Discord presence when the bank is open.</p>
             </div>
           </div>
-          <label className="flex items-center gap-4 cursor-pointer group mb-6">
-            <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.discordShowStats !== false ? 'bg-indigo-500' : 'bg-white/10'}`}>
-              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.discordShowStats !== false ? 'translate-x-4' : 'translate-x-0'}`}></div>
+          <div className="mb-6 bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-4">
+            <label className="block text-xs font-semibold text-white/70 mb-2 uppercase tracking-wide">Discord Terminal Visual Style</label>
+            <p className="text-xs text-white/50 mb-3">Choose the aesthetic and embed layout for your bank's public and staff Discord panels.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                { id: 'executive', name: 'Executive', desc: 'Institutional boxes, high-contrast typography, formal clearinghouse styling.' },
+                { id: 'cyber', name: 'Cyber Telemetry', desc: 'ANSI colored terminal console blocks, live fiscal telemetry, tech aesthetics.' },
+                { id: 'minimal', name: 'Minimalist', desc: 'Sleek bullet rows, compact metrics, distilled essential banking data.' }
+              ].map(st => {
+                const currentStyle = settings?.discordGuiStyle || 'executive';
+                const isSelected = currentStyle === st.id;
+                return (
+                  <label 
+                    key={st.id} 
+                    className={`flex flex-col p-3 rounded-lg border cursor-pointer transition-all ${
+                      isSelected 
+                        ? 'border-indigo-500 bg-indigo-500/10 text-white shadow-sm' 
+                        : 'border-white/10 bg-white/[0.02] text-white/70 hover:border-white/20'
+                    }`}
+                  >
+                    <input 
+                      type="radio" 
+                      name="discordGuiStyle" 
+                      value={st.id} 
+                      checked={isSelected}
+                      onChange={() => setSettings({ ...settings, discordGuiStyle: st.id })}
+                      className="hidden" 
+                    />
+                    <span className="text-xs font-bold text-white flex items-center justify-between">
+                      {st.name}
+                      {isSelected && <span className="text-indigo-400 text-[10px] font-mono">SELECTED</span>}
+                    </span>
+                    <span className="text-[11px] text-white/50 mt-1 leading-snug">{st.desc}</span>
+                  </label>
+                );
+              })}
             </div>
-            <input
-              type="checkbox"
-              name="discordShowStats"
-              className="hidden"
-              defaultChecked={settings?.discordShowStats !== false}
-              onChange={(e) => setSettings({ ...settings, discordShowStats: e.target.checked })}
-            />
-            <div className="flex flex-col">
-              <span className="text-sm group-hover:text-indigo-400 transition-colors">Show deposit totals on the public panel</span>
-              <span className="text-xs text-white/50">Turn off if you don't want live deposit and account counts in Discord.</span>
-            </div>
-          </label>
+          </div>
+
+          {/* Master & Granular Stat Toggles */}
+          <div className="mb-6 space-y-4 bg-[var(--bg-subtle)] border border-white/10 rounded-xl p-4">
+            <label className="flex items-center gap-4 cursor-pointer group">
+              <div className={`w-10 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors ${settings?.discordShowStats !== false ? 'bg-indigo-500' : 'bg-white/10'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.discordShowStats !== false ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <input
+                type="checkbox"
+                name="discordShowStats"
+                className="hidden"
+                checked={settings?.discordShowStats !== false}
+                onChange={(e) => setSettings({ ...settings, discordShowStats: e.target.checked })}
+              />
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-white group-hover:text-indigo-400 transition-colors">Display Live Financial Statistics</span>
+                <span className="text-xs text-white/50">Master switch for displaying public metrics on your Discord lobby terminal.</span>
+              </div>
+            </label>
+
+            {settings?.discordShowStats !== false && (
+              <div className="pl-14 pt-2 border-t border-white/5 space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    name="discordShowDeposits"
+                    checked={settings?.discordShowDeposits !== false}
+                    onChange={(e) => setSettings({ ...settings, discordShowDeposits: e.target.checked })}
+                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-white group-hover:text-indigo-300 transition-colors">Show Total Custodial Deposits</span>
+                    <span className="text-[11px] text-white/40">Displays total money deposited across all non-system bank accounts.</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    name="discordShowAccounts"
+                    checked={settings?.discordShowAccounts !== false}
+                    onChange={(e) => setSettings({ ...settings, discordShowAccounts: e.target.checked })}
+                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-white group-hover:text-indigo-300 transition-colors">Show Total Active Member Ledgers</span>
+                    <span className="text-[11px] text-white/40">Displays the count of registered active member bank accounts.</span>
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-[#15151e] p-4 rounded-lg border border-white/5">

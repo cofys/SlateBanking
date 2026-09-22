@@ -7,7 +7,7 @@ export function GlobalSettings() {
   const [admins, setAdmins] = useState<any[]>([]);
   const [newAdminId, setNewAdminId] = useState("");
   const [settings, setSettings] = useState({
-    platformName: "Slate SaaS",
+    platformName: "Slate Banking Platform",
     maintenanceMode: false,
     allowNewBanks: true,
     globalRateLimit: 100,
@@ -274,7 +274,7 @@ function SaasBillingManager() {
   const [formData, setFormData] = useState({
     bankId: "",
     amount: "150.00",
-    period: "Monthly Slate SaaS License - " + new Date().toLocaleString("default", { month: "long", year: "numeric" }),
+    period: "Monthly Slate Banking Platform License - " + new Date().toLocaleString("default", { month: "long", year: "numeric" }),
     dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   });
 

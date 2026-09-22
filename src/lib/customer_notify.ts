@@ -43,7 +43,7 @@ export async function sendCustomerDm(opts: {
       .setColor(color)
       .setTitle(opts.title)
       .setDescription(opts.body)
-      .setFooter({ text: settings?.discordFooter?.trim() || bank.name });
+      .setFooter({ text: settings?.discordFooter?.trim() || `${bank.name} • Powered by - Slate Banking Platform` });
     if (bank.logoUrl || settings?.logoUrl) {
       embed.setThumbnail(bank.logoUrl || settings?.logoUrl || null);
     }

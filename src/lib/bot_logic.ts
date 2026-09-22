@@ -9,14 +9,91 @@ import { SCHEME_HEX } from './theme';
 
 const LINK_DISCORD_MSG = "Link Discord in your bank portal first. Sign in with CityCorp, then tap **Link Discord**. The bot only works after that.";
 
-async function requireLinkedIds(interaction: any): Promise<string[] | null> {
+export function isMessageEphemeral(interaction: any): boolean {
+  try {
+    const flags = interaction.message?.flags;
+    if (!flags) return false;
+    if (typeof flags.has === 'function') {
+      return flags.has(64);
+    }
+    if (typeof flags.bitfield === 'number') {
+      return (flags.bitfield & 64) !== 0;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function buildNotLinkedEmbed(bank: { name: string; brandingColor?: string | null; logoUrl?: string | null; id?: string }, settings?: any) {
+  const color = 0xef4444;
+  const logo = httpsUrl(settings?.logoUrl || bank.logoUrl);
+
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(`🔒  DISCORD ACCOUNT NOT LINKED · ${bank.name.toUpperCase()}`)
+    .setDescription(
+      `Your Discord account is not yet connected to **${bank.name}**.\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `**To link your account in 3 quick steps:**\n\n` +
+      `1️⃣  **Open Web Banking Portal**\n` +
+      `    Click the **Web Banking Portal** link button below.\n\n` +
+      `2️⃣  **Sign In via CityCorp**\n` +
+      `    Log in with your verified Minecraft character credentials.\n\n` +
+      `3️⃣  **Tap “Link Discord”**\n` +
+      `    Authorize Discord in the portal, then return here and tap **🔄 Check Link / Sync**.\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+    )
+    .setFooter({ text: `${footerText(bank, settings)} • Access & Security Protocol`, ...(logo ? { iconURL: logo } : {}) })
+    .setTimestamp();
+
+  if (logo) embed.setThumbnail(logo);
+  return embed;
+}
+
+export function buildNotLinkedComponents(portalUrl?: string | null) {
+  const buttons: ButtonBuilder[] = [
+    new ButtonBuilder().setCustomId('bank_sync_account').setLabel('🔄 Check Link / Sync').setStyle(ButtonStyle.Success)
+  ];
+  if (portalUrl) {
+    buttons.push(new ButtonBuilder().setLabel('🌐 Open Web Banking Portal').setStyle(ButtonStyle.Link).setURL(portalUrl));
+  }
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
+}
+
+async function requireLinkedIds(interaction: any, bankId?: string): Promise<string[] | null> {
   const ids = await getCandidateIdsForDiscordSnowflake(interaction.user.id);
   if (!ids.length) {
-    const content = LINK_DISCORD_MSG;
+    let embed: EmbedBuilder;
+    let row: ActionRowBuilder<ButtonBuilder>;
+    if (bankId) {
+      const b = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+      const bank = b || { name: 'Bank', brandingColor: null, logoUrl: null, id: bankId };
+      const portalUrl = citizenPortalUrl(bank);
+      embed = buildNotLinkedEmbed(bank, settings);
+      row = buildNotLinkedComponents(portalUrl);
+    } else {
+      embed = new EmbedBuilder()
+        .setColor(0xef4444)
+        .setTitle('🔒  DISCORD ACCOUNT NOT LINKED')
+        .setDescription(LINK_DISCORD_MSG)
+        .setTimestamp();
+      row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId('bank_sync_account').setLabel('🔄 Check Link / Sync').setStyle(ButtonStyle.Success)
+      );
+    }
     try {
-      if (interaction.deferred || interaction.replied) await interaction.followUp({ content, ephemeral: true });
-      else if (interaction.isRepliable?.() || interaction.reply) await interaction.reply({ content, ephemeral: true });
-    } catch {}
+      if (interaction.deferred && !interaction.replied) {
+        await interaction.editReply({ embeds: [embed], components: [row] });
+      } else if (interaction.replied) {
+        await interaction.followUp({ embeds: [embed], components: [row], ephemeral: true });
+      } else if (interaction.isRepliable?.() || interaction.reply) {
+        await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      }
+    } catch (err) {
+      console.error("requireLinkedIds reply failed:", err);
+    }
     return null;
   }
   return ids;
@@ -85,7 +162,7 @@ function loansEnabled(settings?: { enableLoans?: boolean | null; loanAllowCitize
 
 function footerText(bank: { name: string }, settings?: { discordFooter?: string | null } | null): string {
   const custom = (settings?.discordFooter || '').trim();
-  return custom || bank.name;
+  return custom || `${bank.name} • Powered by - Slate Banking Platform`;
 }
 
 export async function isBankStaffOrGlobalAdmin(bankId: string, discordId: string): Promise<boolean> {
@@ -181,60 +258,138 @@ export async function buildPublicGUIEmbedAndComponents(bankId: string) {
   const portalUrl = citizenPortalUrl(bank);
   const tagline = (settings?.tagline || '').trim();
   const welcome = (settings?.discordWelcome || '').trim()
-    || `Welcome to **${bank.name}**. Use the buttons below for your dashboard, transfers, and rates — or open the web portal.`;
+    || `Official banking terminal for **${bank.name}**. Access your private dashboard, execute instant transfers, view real-time rates, or link your Minecraft character.`;
   const showStats = settings?.discordShowStats !== false;
-  const statusLine = bank.maintenanceMode ? 'Closed for maintenance' : 'Open';
+  const showDeposits = settings?.discordShowDeposits !== false;
+  const showAccounts = settings?.discordShowAccounts !== false;
+  const style = settings?.discordGuiStyle || 'executive';
+  const isOnline = !bank.maintenanceMode;
+
+  const statusBadge = isOnline 
+    ? '🟢 **OPERATIONAL** · Real-Time Clearinghouse'
+    : '🔴 **MAINTENANCE** · Services Temporarily Suspended';
 
   const embed = new EmbedBuilder()
     .setColor(color)
-    .setTitle(bank.name)
-    .setDescription(
-      (tagline ? `*${tagline}*\n\n` : '') +
-      welcome +
-      `\n\n**Status** · ${statusLine}`
-    )
+    .setTitle(`🏛️  ${bank.name.toUpperCase()}`)
     .setTimestamp();
 
   if (logo) {
     embed.setThumbnail(logo);
-    embed.setAuthor({ name: bank.name, iconURL: logo });
+    embed.setAuthor({ name: `${bank.name} · Institutional Terminal`, iconURL: logo });
   } else {
-    embed.setAuthor({ name: bank.name });
+    embed.setAuthor({ name: `${bank.name} · Institutional Terminal` });
   }
-  embed.setFooter({ text: footerText(bank, settings), ...(logo ? { iconURL: logo } : {}) });
 
-  if (showStats) {
+  let desc = '';
+  if (tagline) {
+    desc += `*“${tagline}”*\n`;
+  }
+  desc += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${welcome}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  desc += `**Network Status**\n${statusBadge}\n`;
+
+  embed.setDescription(desc);
+
+  if (showStats && (showDeposits || showAccounts)) {
     const accounts = await db.select({
       totalBalance: sql<number>`COALESCE(SUM(${bankAccounts.balance}), 0)`,
       count: sql<number>`COUNT(${bankAccounts.id})`
     }).from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.isSystem, false))).get();
 
-    embed.addFields(
-      { name: 'Deposits', value: money(accounts?.totalBalance || 0), inline: true },
-      { name: 'Accounts', value: String(accounts?.count || 0), inline: true },
-      { name: 'Hours', value: statusLine, inline: true },
-    );
+    const totalBalanceFormatted = money(accounts?.totalBalance || 0);
+    const countFormatted = (accounts?.count || 0).toLocaleString('en-US');
+
+    if (style === 'cyber') {
+      let telemetryBox = '```ansi\n\u001b[1;36m[SYSTEM TELEMETRY]\u001b[0m\n';
+      if (showDeposits) telemetryBox += `DEPOSITS : \u001b[1;32m${totalBalanceFormatted}\u001b[0m\n`;
+      if (showAccounts) telemetryBox += `ACCOUNTS : \u001b[1;33m${countFormatted} active\u001b[0m\n`;
+      telemetryBox += `CLEARING : \u001b[1;37mONYX-NET v2.4\u001b[0m\n\`\`\``;
+      embed.addFields({ name: '⚡ Live Fiscal Telemetry', value: telemetryBox, inline: false });
+    } else if (style === 'minimal') {
+      const parts: string[] = [];
+      if (showDeposits) parts.push(`🪙 **Deposits**: \`${totalBalanceFormatted}\``);
+      if (showAccounts) parts.push(`👥 **Accounts**: \`${countFormatted}\``);
+      parts.push(`🌐 **Clearinghouse**: \`Active\``);
+      embed.addFields({ name: '📊 Metrics', value: parts.join('  •  '), inline: false });
+    } else {
+      if (showDeposits && showAccounts) {
+        embed.addFields(
+          {
+            name: '🪙 Custodial Deposits',
+            value: `\`\`\`fix\n${totalBalanceFormatted}\n\`\`\``,
+            inline: true,
+          },
+          {
+            name: '👥 Member Ledgers',
+            value: `\`\`\`yaml\n${countFormatted} Active\n\`\`\``,
+            inline: true,
+          },
+          {
+            name: '⚡ Clearinghouse',
+            value: `\`\`\`elm\nOnyx PSP\n\`\`\``,
+            inline: true,
+          }
+        );
+      } else if (showDeposits) {
+        embed.addFields(
+          {
+            name: '🪙 Total Custodial Deposits',
+            value: `\`\`\`fix\n${totalBalanceFormatted}\n\`\`\``,
+            inline: true,
+          },
+          {
+            name: '⚡ Clearinghouse Facility',
+            value: `\`\`\`elm\nOnyx PSP Realtime\n\`\`\``,
+            inline: true,
+          }
+        );
+      } else if (showAccounts) {
+        embed.addFields(
+          {
+            name: '👥 Active Member Ledgers',
+            value: `\`\`\`yaml\n${countFormatted} Accounts\n\`\`\``,
+            inline: true,
+          },
+          {
+            name: '⚡ Clearinghouse Facility',
+            value: `\`\`\`elm\nOnyx PSP Realtime\n\`\`\``,
+            inline: true,
+          }
+        );
+      }
+    }
   }
 
+  embed.addFields({
+    name: '🏦 Terminal Services',
+    value: '• **Dashboard**: Private account balances and ledger management\n• **Transfers**: Real-time clearinghouse fund settlement\n• **Sync**: Link Discord identity with your Minecraft citizen character',
+    inline: false
+  });
+
+  embed.setFooter({ 
+    text: `${footerText(bank, settings)} • Institutional Banking Terminal`, 
+    ...(logo ? { iconURL: logo } : {}) 
+  });
+
   const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId('bank_gui_dashboard').setLabel('My Dashboard').setStyle(ButtonStyle.Primary).setEmoji('🏦'),
-    new ButtonBuilder().setCustomId('bank_gui_transfer').setLabel('Transfer').setStyle(ButtonStyle.Primary).setEmoji('↔️'),
-    new ButtonBuilder().setCustomId('bank_gui_history').setLabel('History').setStyle(ButtonStyle.Secondary).setEmoji('📄'),
-    new ButtonBuilder().setCustomId('bank_gui_open_acc').setLabel('Sync').setStyle(ButtonStyle.Success).setEmoji('🔄'),
+    new ButtonBuilder().setCustomId('bank_gui_dashboard').setLabel('My Dashboard').setStyle(ButtonStyle.Primary).setEmoji('💳'),
+    new ButtonBuilder().setCustomId('bank_gui_transfer').setLabel('Transfer Funds').setStyle(ButtonStyle.Primary).setEmoji('💸'),
+    new ButtonBuilder().setCustomId('bank_gui_history').setLabel('Statements').setStyle(ButtonStyle.Secondary).setEmoji('📜'),
+    new ButtonBuilder().setCustomId('bank_gui_open_acc').setLabel('Sync / Link').setStyle(ButtonStyle.Success).setEmoji('🔄'),
   );
 
   const row2Buttons: ButtonBuilder[] = [];
   if (loansEnabled(settings)) {
     row2Buttons.push(
-      new ButtonBuilder().setCustomId('bank_gui_apply_loan').setLabel('Apply for a Loan').setStyle(ButtonStyle.Secondary).setEmoji('📝')
+      new ButtonBuilder().setCustomId('bank_gui_apply_loan').setLabel('Apply for Loan').setStyle(ButtonStyle.Secondary).setEmoji('📝')
     );
   }
   row2Buttons.push(
-    new ButtonBuilder().setCustomId('bank_gui_rates').setLabel('Rates').setStyle(ButtonStyle.Secondary).setEmoji('📈')
+    new ButtonBuilder().setCustomId('bank_gui_rates').setLabel('Rates & Terms').setStyle(ButtonStyle.Secondary).setEmoji('📈')
   );
   if (portalUrl) {
     row2Buttons.push(
-      new ButtonBuilder().setLabel('Web Portal').setStyle(ButtonStyle.Link).setURL(portalUrl).setEmoji('🌐')
+      new ButtonBuilder().setLabel('Web Banking Portal').setStyle(ButtonStyle.Link).setURL(portalUrl).setEmoji('🌐')
     );
   }
   const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(...row2Buttons);
@@ -270,28 +425,44 @@ export async function buildStaffPanelEmbedAndComponents(bankId: string) {
 
   const embed = new EmbedBuilder()
     .setColor(color)
-    .setTitle(`${bank.name} · Staff`)
+    .setTitle(`🛡️  ${bank.name.toUpperCase()} · STAFF OPERATIONS DESK`)
     .setDescription(
-      `Teller desk and queue for **${bank.name}**.\n\n` +
-      `**Deposits** · ${money(totalDepositsCents)}\n` +
-      `**Customers** · ${customerCount}\n` +
-      (showLoans ? `**Loan queue** · ${pendingCount} awaiting review\n` : '') +
-      `**Hours** · ${bank.maintenanceMode ? 'Closed for maintenance' : 'Open'}`
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Staff teller terminal, queue supervisor, and member customer lookup.\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `**Operating Status**: ${bank.maintenanceMode ? '🔴 Maintenance Mode (Closed)' : '🟢 Online & Processing'}\n`
     )
-    .setTimestamp()
-    .setFooter({ text: footerText(bank, settings), ...(logo ? { iconURL: logo } : {}) });
+    .addFields(
+      {
+        name: '💰 Customer Vault Float',
+        value: `\`\`\`fix\n${money(totalDepositsCents)}\n\`\`\``,
+        inline: true,
+      },
+      {
+        name: '👥 Customer Registry',
+        value: `\`\`\`yaml\n${customerCount} Registered\n\`\`\``,
+        inline: true,
+      },
+      ...(showLoans ? [{
+        name: '📋 Loan Queue',
+        value: pendingCount > 0 ? `\`\`\`diff\n- ${pendingCount} Awaiting Review\n\`\`\`` : `\`\`\`yaml\n0 Pending Applications\n\`\`\``,
+        inline: true,
+      }] : [])
+    )
+    .setFooter({ text: `${footerText(bank, settings)} • Staff Operations Only`, ...(logo ? { iconURL: logo } : {}) })
+    .setTimestamp();
 
   if (logo) {
     embed.setThumbnail(logo);
-    embed.setAuthor({ name: `${bank.name} Staff`, iconURL: logo });
+    embed.setAuthor({ name: `${bank.name} Staff Desk`, iconURL: logo });
   } else {
-    embed.setAuthor({ name: `${bank.name} Staff` });
+    embed.setAuthor({ name: `${bank.name} Staff Desk` });
   }
 
   const row1Buttons: ButtonBuilder[] = [
-    new ButtonBuilder().setCustomId('staff_gui_overview').setLabel('Vault').setStyle(ButtonStyle.Primary).setEmoji('📊'),
-    new ButtonBuilder().setCustomId('staff_gui_customer_search').setLabel('Lookup').setStyle(ButtonStyle.Secondary).setEmoji('👥'),
-    new ButtonBuilder().setCustomId('staff_gui_audit_logs').setLabel('Audit').setStyle(ButtonStyle.Secondary).setEmoji('📜'),
+    new ButtonBuilder().setCustomId('staff_gui_overview').setLabel('Vault Metrics').setStyle(ButtonStyle.Primary).setEmoji('📊'),
+    new ButtonBuilder().setCustomId('staff_gui_customer_search').setLabel('Lookup Member').setStyle(ButtonStyle.Secondary).setEmoji('👥'),
+    new ButtonBuilder().setCustomId('staff_gui_audit_logs').setLabel('Audit Logs').setStyle(ButtonStyle.Secondary).setEmoji('📜'),
   ];
   if (showLoans) {
     row1Buttons.splice(1, 0,
@@ -305,11 +476,11 @@ export async function buildStaffPanelEmbedAndComponents(bankId: string) {
   const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(...row1Buttons.slice(0, 5));
 
   const row2Buttons: ButtonBuilder[] = [
-    new ButtonBuilder().setCustomId('staff_gui_teller_tx').setLabel('Teller').setStyle(ButtonStyle.Success).setEmoji('💵'),
-    new ButtonBuilder().setCustomId('staff_gui_toggle_status').setLabel('Hours').setStyle(ButtonStyle.Secondary).setEmoji('⚙️'),
+    new ButtonBuilder().setCustomId('staff_gui_teller_tx').setLabel('Teller Cashier').setStyle(ButtonStyle.Success).setEmoji('💵'),
+    new ButtonBuilder().setCustomId('staff_gui_toggle_status').setLabel('Toggle Status').setStyle(ButtonStyle.Secondary).setEmoji('⚙️'),
   ];
   if (staffUrl) {
-    row2Buttons.push(new ButtonBuilder().setLabel('Staff Portal').setStyle(ButtonStyle.Link).setURL(staffUrl).setEmoji('🌐'));
+    row2Buttons.push(new ButtonBuilder().setLabel('Staff Web Portal').setStyle(ButtonStyle.Link).setURL(staffUrl).setEmoji('🌐'));
   }
   const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(...row2Buttons);
 
@@ -366,15 +537,24 @@ export async function refreshBankChannelGUIs(bankId: string, client?: Client | n
 }
 
 async function safeReplyOrUpdate(interaction: any, payload: any) {
+  const isEphemeral = isMessageEphemeral(interaction);
   try {
-    if (interaction.deferred || interaction.replied) {
+    if (interaction.deferred && !interaction.replied) {
       await interaction.editReply(payload);
+    } else if (interaction.replied) {
+      await interaction.followUp({ ...payload, ephemeral: true });
+    } else if (isEphemeral) {
+      await interaction.update(payload);
     } else {
       await interaction.reply({ ...payload, ephemeral: true });
     }
   } catch (err) {
     try {
-      await interaction.update(payload);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ ...payload, ephemeral: true });
+      } else {
+        await interaction.reply({ ...payload, ephemeral: true });
+      }
     } catch (e2) {
       console.error("safeReplyOrUpdate failed completely:", err, e2);
     }
@@ -390,8 +570,9 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
   const logo = httpsUrl(settings?.logoUrl || bank.logoUrl);
   const portalUrl = citizenPortalUrl(bank);
 
-  const ids = await requireLinkedIds(interaction);
+  const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
+
   const accounts = await db.select().from(bankAccounts).where(
     and(
       eq(bankAccounts.bankId, bankId), 
@@ -402,38 +583,49 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
 
   const userMap = await db.select().from(users).where(inArray(users.linkedDiscordId, ids));
   const isLinked = userMap.length > 0;
+  const mcUsername = userMap[0]?.mcUsername || interaction.user.username;
+  const mcHeadUrl = mcUsername && mcUsername !== 'Unknown' ? `https://mc-heads.net/avatar/${encodeURIComponent(mcUsername)}/100.png` : logo;
 
   if (accounts.length === 0) {
     const welcome = (settings?.discordWelcome || '').trim();
     const embed = new EmbedBuilder()
       .setColor(color)
-      .setTitle(bank.name)
+      .setTitle(`🏛️  ${bank.name.toUpperCase()} · CITIZEN ONBOARDING`)
       .setDescription(
-        ((settings?.tagline || '').trim() ? `*${(settings?.tagline || '').trim()}*\n\n` : '') +
-        (welcome || `You don't have an account with **${bank.name}** on this Discord yet.`) +
-        `\n\nOpen the web portal to create an account, then come back and tap **Sync**.`
+        ((settings?.tagline || '').trim() ? `*“${(settings?.tagline || '').trim()}”*\n\n` : '') +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        (welcome || `Welcome to **${bank.name}**. You do not hold an active deposit account with this institution yet.`) +
+        `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `**Next Steps to Open Your Ledger:**\n` +
+        `1️⃣ Click **Web Banking Portal** below\n` +
+        `2️⃣ Create a Personal or Business deposit account\n` +
+        `3️⃣ Return here and click **🔄 Sync / Refresh**`
       )
       .addFields(
         {
-          name: 'Minecraft',
+          name: '🎮 Verified Character',
           value: isLinked
-            ? `Linked as **${userMap[0].mcUsername}**`
-            : 'Not linked yet — sign in through CityCorp on the web portal.',
+            ? `\`${mcUsername}\` (Linked)`
+            : 'Not linked to CityCorp yet.',
+          inline: true,
         },
+        {
+          name: '🏦 Institution',
+          value: `**${bank.name}**`,
+          inline: true,
+        }
       )
-      .setFooter({ text: footerText(bank, settings), ...(logo ? { iconURL: logo } : {}) });
-    if (logo) {
-      embed.setThumbnail(logo);
-      embed.setAuthor({ name: bank.name, iconURL: logo });
-    } else {
-      embed.setAuthor({ name: bank.name });
-    }
+      .setFooter({ text: `${footerText(bank, settings)} • Private Banking Session`, ...(logo ? { iconURL: logo } : {}) })
+      .setTimestamp();
+
+    if (mcHeadUrl) embed.setThumbnail(mcHeadUrl);
+    embed.setAuthor({ name: `${bank.name} Citizen Banking`, ...(logo ? { iconURL: logo } : {}) });
 
     const onboardingButtons: ButtonBuilder[] = [
-      new ButtonBuilder().setCustomId('bank_sync_account').setLabel('Sync').setStyle(ButtonStyle.Primary).setEmoji('🔄'),
+      new ButtonBuilder().setCustomId('bank_sync_account').setLabel('🔄 Sync / Refresh').setStyle(ButtonStyle.Primary),
     ];
     if (portalUrl) {
-      onboardingButtons.push(new ButtonBuilder().setLabel('Web Portal').setStyle(ButtonStyle.Link).setURL(portalUrl).setEmoji('🌐'));
+      onboardingButtons.push(new ButtonBuilder().setLabel('🌐 Web Banking Portal').setStyle(ButtonStyle.Link).setURL(portalUrl));
     }
     const onboardingRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...onboardingButtons);
 
@@ -441,16 +633,13 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
       content: '',
       embeds: [embed],
       components: [onboardingRow],
-      ephemeral: isEphemeral
+      ephemeral: true
     };
 
-    if (!isEphemeral && interaction.channel) {
-      await (interaction.channel as any).send({ embeds: [embed], components: [onboardingRow] });
-      return;
-    }
-
-    if (interaction.deferred || interaction.replied) {
+    if (interaction.deferred && !interaction.replied) {
       await interaction.editReply(msg);
+    } else if (interaction.replied) {
+      await interaction.followUp(msg);
     } else {
       await interaction.reply(msg);
     }
@@ -466,7 +655,6 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
     if (personal) activeAccount = personal;
   }
 
-  const mcUsername = userMap[0]?.mcUsername || interaction.user.username;
   const customer = await db.select().from(bankCustomers).where(
     and(
       eq(bankCustomers.bankId, bankId),
@@ -475,56 +663,82 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
   ).limit(1);
   const registeredAddress = customer[0]?.address || customer[0]?.notes;
 
+  const totalPortfolioCents = accounts.reduce((sum, a) => sum + (Number(a.balance) || 0), 0);
+  const activeBalanceStr = money(activeAccount.balance);
+  const totalPortfolioStr = money(totalPortfolioCents);
+  const style = settings?.discordGuiStyle || 'executive';
+
   const dashboardEmbed = new EmbedBuilder()
     .setColor(color)
-    .setTitle(activeAccount.accountName)
-    .setDescription(`**${money(activeAccount.balance)}**`)
-    .addFields(
-      { name: 'Holder', value: mcUsername, inline: true },
-      { name: 'Type', value: typeLabel(activeAccount.accountType), inline: true },
-      ...(registeredAddress ? [{ name: 'Address', value: String(registeredAddress).slice(0, 256), inline: true }] : []),
-    )
-    .setFooter({ text: footerText(bank, settings), ...(logo ? { iconURL: logo } : {}) })
+    .setTitle(`💳  ${activeAccount.accountName.toUpperCase()}`)
     .setTimestamp();
-  if (logo) {
-    dashboardEmbed.setThumbnail(logo);
-    dashboardEmbed.setAuthor({ name: bank.name, iconURL: logo });
+
+  if (mcHeadUrl) dashboardEmbed.setThumbnail(mcHeadUrl);
+  dashboardEmbed.setAuthor({ name: `${bank.name} · Private Banking Session`, ...(logo ? { iconURL: logo } : {}) });
+  dashboardEmbed.setFooter({ text: `${footerText(bank, settings)} • Ledger ID: ${activeAccount.id.slice(0, 8)}`, ...(logo ? { iconURL: logo } : {}) });
+
+  if (style === 'cyber') {
+    dashboardEmbed.setDescription(
+      `\`\`\`ansi\n` +
+      `\u001b[1;36m[LEDGER ACTIVE]\u001b[0m \u001b[1;37m${activeAccount.accountName}\u001b[0m\n` +
+      `AVAILABLE BALANCE : \u001b[1;32m${activeBalanceStr}\u001b[0m\n` +
+      `NET PORTFOLIO     : \u001b[1;33m${totalPortfolioStr}\u001b[0m (${accounts.length} ledgers)\n` +
+      `CITIZEN ID        : \u001b[1;37m${mcUsername}\u001b[0m\n` +
+      `\`\`\``
+    );
+  } else if (style === 'minimal') {
+    dashboardEmbed.setDescription(
+      `**Balance**: \`${activeBalanceStr}\`  •  **Total Portfolio**: \`${totalPortfolioStr}\`\n` +
+      `**Holder**: \`${mcUsername}\`  •  **Type**: \`${typeLabel(activeAccount.accountType)}\``
+    );
   } else {
-    dashboardEmbed.setAuthor({ name: bank.name });
+    dashboardEmbed.setDescription(
+      `\`\`\`fix\n` +
+      `BALANCE : ${activeBalanceStr}\n` +
+      `\`\`\`\n` +
+      `*Institutional clearing active via Onyx PSP protocol.*`
+    );
+    dashboardEmbed.addFields(
+      { name: '👤 Citizen Holder', value: `**${mcUsername}**`, inline: true },
+      { name: '🏷️ Ledger Class', value: `\`${typeLabel(activeAccount.accountType)}\``, inline: true },
+      { name: '💼 Total Portfolio', value: `**${totalPortfolioStr}** (${accounts.length} ${accounts.length === 1 ? 'ledger' : 'ledgers'})`, inline: true },
+      ...(registeredAddress ? [{ name: '📍 Registered Address', value: String(registeredAddress).slice(0, 256), inline: true }] : []),
+      { name: '🛡️ Account Status', value: activeAccount.isFrozen ? '❄️ **FROZEN**' : '🟢 **Active & Verified**', inline: true },
+    );
   }
 
   const selectMenuOptions = accounts.slice(0, 25).map(acc => ({
     label: `${acc.accountName}`.slice(0, 100),
     value: `select_acc_${acc.id}`,
     description: `${typeLabel(acc.accountType)} · ${money(acc.balance)}`.slice(0, 100),
-    default: acc.id === activeAccount.id
+    default: acc.id === activeAccount.id,
+    emoji: acc.accountType === 'business' ? '🏢' : '👤'
   }));
 
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId('bank_select_account')
-    .setPlaceholder('Switch account')
+    .setPlaceholder('Switch active account ledger...')
     .addOptions(selectMenuOptions);
   
   const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
   const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(`bank_transfer_${activeAccount.id}`).setLabel('Transfer').setStyle(ButtonStyle.Primary).setEmoji('↔️'),
-    new ButtonBuilder().setCustomId('bank_history').setLabel('Activity').setStyle(ButtonStyle.Secondary).setEmoji('📄'),
-    new ButtonBuilder().setCustomId('bank_sync_account').setLabel('Sync').setStyle(ButtonStyle.Success).setEmoji('🔄')
+    new ButtonBuilder().setCustomId(`bank_transfer_${activeAccount.id}`).setLabel('Transfer Funds').setStyle(ButtonStyle.Primary).setEmoji('💸'),
+    new ButtonBuilder().setCustomId('bank_history').setLabel('Statements').setStyle(ButtonStyle.Secondary).setEmoji('📜'),
+    new ButtonBuilder().setCustomId('bank_sync_account').setLabel('Sync / Refresh').setStyle(ButtonStyle.Success).setEmoji('🔄')
   );
 
   const row2Buttons: ButtonBuilder[] = [
     new ButtonBuilder().setCustomId('bank_open_business_modal').setLabel('New Business').setStyle(ButtonStyle.Success).setEmoji('🏢'),
   ];
   if (loansEnabled(settings) || accounts.length > 0) {
-    // Always allow viewing existing loans; hide apply elsewhere.
     if (settings?.enableLoans !== false) {
-      row2Buttons.push(new ButtonBuilder().setCustomId('bank_view_loans').setLabel('Loans').setStyle(ButtonStyle.Secondary).setEmoji('📄'));
+      row2Buttons.push(new ButtonBuilder().setCustomId('bank_view_loans').setLabel('Loans').setStyle(ButtonStyle.Secondary).setEmoji('📝'));
     }
   }
   row2Buttons.push(new ButtonBuilder().setCustomId('bank_view_settings').setLabel('Profile').setStyle(ButtonStyle.Secondary).setEmoji('⚙️'));
   if (portalUrl && row2Buttons.length < 5) {
-    row2Buttons.push(new ButtonBuilder().setLabel('Portal').setStyle(ButtonStyle.Link).setURL(portalUrl).setEmoji('🌐'));
+    row2Buttons.push(new ButtonBuilder().setLabel('Web Portal').setStyle(ButtonStyle.Link).setURL(portalUrl).setEmoji('🌐'));
   }
   const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(...row2Buttons);
 
@@ -532,16 +746,13 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
     content: '',
     embeds: [dashboardEmbed],
     components: [selectRow, row1, row2],
-    ephemeral: isEphemeral
+    ephemeral: true
   };
 
-  if (!isEphemeral && interaction.channel) {
-    await (interaction.channel as any).send({ embeds: [dashboardEmbed], components: [selectRow, row1, row2] });
-    return;
-  }
-
-  if (interaction.deferred || interaction.replied) {
+  if (interaction.deferred && !interaction.replied) {
     await interaction.editReply(msg);
+  } else if (interaction.replied) {
+    await interaction.followUp(msg);
   } else {
     await interaction.reply(msg);
   }
@@ -549,38 +760,59 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
 
 async function handleButton(bankId: string, interaction: ButtonInteraction) {
   const cid = interaction.customId;
+  const isEphemeral = isMessageEphemeral(interaction);
 
   if (cid === 'bank_main_menu' || cid === 'bank_gui_dashboard') {
-    await interaction.deferUpdate();
-    await showMainMenu(bankId, interaction);
+    if (isEphemeral) {
+      await interaction.deferUpdate();
+    } else {
+      await interaction.deferReply({ ephemeral: true });
+    }
+    await showMainMenu(bankId, interaction, true);
     return;
   }
   
   if (cid === 'bank_balances') {
+    if (isEphemeral) {
+      await interaction.deferUpdate();
+    } else {
+      await interaction.deferReply({ ephemeral: true });
+    }
     await handleBalance(bankId, interaction);
   } else if (cid === 'bank_history' || cid === 'bank_gui_history') {
+    if (isEphemeral) {
+      await interaction.deferUpdate();
+    } else {
+      await interaction.deferReply({ ephemeral: true });
+    }
     await handleHistory(bankId, interaction);
   } else if (cid === 'bank_in_game_info' || cid === 'bank_gui_ingame') {
     await safeReplyOrUpdate(interaction, { 
-      content: 'ℹ️ Account management, balances, and transfers are synchronized via the web portal or the **🔄 Sync Account** button on your banking menu.', 
+      content: 'ℹ️ Account management, balances, and transfers are synchronized via the web portal or the **🔄 Sync / Link** button on your banking menu.', 
       components: [backButtonRow] 
     });
   } else if (cid === 'bank_sync_account' || cid === 'bank_open_account' || cid === 'bank_gui_open_acc') {
+    if (isEphemeral) {
+      await interaction.deferUpdate();
+    } else {
+      await interaction.deferReply({ ephemeral: true });
+    }
+
     const b = await db.select().from(banks).where(eq(banks.id, bankId));
     if (b.length === 0) return;
     const bank = b[0];
+    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
     const portalUrl = citizenPortalUrl(bank);
 
     const ids = await getCandidateIdsForDiscordSnowflake(interaction.user.id);
     const isLinked = ids.length > 0;
 
     if (!isLinked) {
+      const notLinkedEmbed = buildNotLinkedEmbed(bank, settings);
+      const notLinkedRow = buildNotLinkedComponents(portalUrl);
       await safeReplyOrUpdate(interaction, { 
-        content: `Your Discord isn't linked yet.\n\n` +
-          `1. Open the **${bank.name}** ${portalUrl ? `[web portal](${portalUrl})` : 'web portal'} and sign in with CityCorp.\n` +
-          `2. Tap **Link Discord**.\n` +
-          `3. Come back and tap **Sync**.`,
-        components: [backButtonRow]
+        embeds: [notLinkedEmbed],
+        components: [notLinkedRow]
       });
       return;
     }
@@ -594,21 +826,12 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     );
 
     if (accounts.length === 0) {
-      await safeReplyOrUpdate(interaction, {
-        content: `No **${bank.name}** account is linked to this Discord yet.\n\n` +
-          `Open ${portalUrl ? `the **[web portal](${portalUrl})**` : 'the web portal'}, create an account, then tap **Sync**.`,
-        components: [backButtonRow]
-      });
+      await showMainMenu(bankId, interaction, true);
       return;
     }
 
     // Accounts exist! Render dashboard
-    if (interaction.deferred || interaction.replied) {
-      await showMainMenu(bankId, interaction, true);
-    } else {
-      await interaction.deferUpdate();
-      await showMainMenu(bankId, interaction, true);
-    }
+    await showMainMenu(bankId, interaction, true);
   } else if (cid === 'bank_open_business_modal') {
     const userMap = await db.select().from(users).where(
       or(eq(users.linkedDiscordId, interaction.user.id), eq(users.discordId, interaction.user.id))
@@ -850,8 +1073,15 @@ const backButtonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
 );
 
 async function handleBalance(bankId: string, interaction: ButtonInteraction) {
-  const ids = await requireLinkedIds(interaction);
+  const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
+
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  const bank = b[0];
+  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+  const color = brandColor(bank, settings);
+  const logo = httpsUrl(settings?.logoUrl || bank?.logoUrl);
+
   const accounts = await db.select().from(bankAccounts).where(
     and(
       eq(bankAccounts.bankId, bankId), 
@@ -864,16 +1094,24 @@ async function handleBalance(bankId: string, interaction: ButtonInteraction) {
     return;
   }
 
-  const list = accounts.map(a => `**${a.accountName}**: $${(a.balance / 100).toFixed(2)}`).join('\n');
+  const balanceEmbed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(`💳  ${bank?.name?.toUpperCase() || 'BANK'} · ACCOUNT LEDGERS`)
+    .setDescription(
+      accounts.map(a => `• **${a.accountName}** (\`${typeLabel(a.accountType)}\`): \`${money(a.balance)}\``).join('\n')
+    )
+    .setFooter({ text: `${footerText(bank, settings)} • Private Account Ledger`, ...(logo ? { iconURL: logo } : {}) })
+    .setTimestamp();
+
   await safeReplyOrUpdate(interaction, { 
-    content: `🏦 **Your Open Accounts**\n${list}`, 
+    embeds: [balanceEmbed], 
     components: [backButtonRow]
   });
 }
 
 async function handleOpenAccount(bankId: string, interaction: ModalSubmitInteraction, _name: string, _type: string = 'personal') {
   await interaction.deferReply({ ephemeral: true });
-  const ids = await requireLinkedIds(interaction);
+  const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
   await interaction.editReply({ content: 'Open new accounts in the bank portal after signing in with CityCorp. Discord only operates accounts you already hold.', components: [backButtonRow] });
 }
@@ -882,7 +1120,7 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
   await interaction.deferReply({ ephemeral: true });
   const amountInCents = Math.round(amount * 100);
 
-  const ids = await requireLinkedIds(interaction);
+  const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
 
   // Source accounts — must belong to this bank and this user
@@ -953,9 +1191,15 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
 
 async function handleHistory(bankId: string, interaction: ButtonInteraction) {
   const { or, desc } = await import('drizzle-orm');
-  const ids = await requireLinkedIds(interaction);
+  const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
   
+  const b = await db.select().from(banks).where(eq(banks.id, bankId));
+  const bank = b[0];
+  const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+  const color = brandColor(bank, settings);
+  const logo = httpsUrl(settings?.logoUrl || bank?.logoUrl);
+
   const myAccounts = await db.select().from(bankAccounts)
     .where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, ids)));
     
@@ -975,10 +1219,15 @@ async function handleHistory(bankId: string, interaction: ButtonInteraction) {
       )
     ))
     .orderBy(desc(transactions.timestamp))
-    .limit(15);
+    .limit(10);
     
   if (txHistory.length === 0) {
-    await safeReplyOrUpdate(interaction, { content: 'No recent transactions found.', components: [backButtonRow] });
+    const emptyEmbed = new EmbedBuilder()
+      .setColor(color)
+      .setTitle(`📜  ${bank?.name?.toUpperCase() || 'BANK'} · STATEMENTS`)
+      .setDescription('No recent transactions found on your active ledgers.')
+      .setTimestamp();
+    await safeReplyOrUpdate(interaction, { embeds: [emptyEmbed], components: [backButtonRow] });
     return;
   }
   
@@ -986,16 +1235,26 @@ async function handleHistory(bankId: string, interaction: ButtonInteraction) {
   for (const tx of txHistory) {
     let prefix = '';
     if (accountIds.includes(tx.fromAccountId!) && accountIds.includes(tx.toAccountId!)) {
-      prefix = '🔄 Internal: ';
+      prefix = '🔄 **Internal**';
     } else if (accountIds.includes(tx.fromAccountId!)) {
-      prefix = '🔴 Out: ';
+      prefix = '🔴 **Debit**';
     } else {
-      prefix = '🟢 In: ';
+      prefix = '🟢 **Credit**';
     }
-    historyTxt += `${prefix} $${(tx.amount / 100).toFixed(2)} (${tx.type}) - <t:${Math.floor(tx.timestamp.getTime()/1000)}:R> - ${tx.description}\n`;
+    const amt = money(tx.amount);
+    const timeStr = `<t:${Math.floor(tx.timestamp.getTime()/1000)}:R>`;
+    const desc = tx.description ? `*“${tx.description.slice(0, 50)}”*` : `Type: ${tx.type}`;
+    historyTxt += `${prefix} \`${amt}\` • ${timeStr}\n↳ ${desc}\n\n`;
   }
   
-  await safeReplyOrUpdate(interaction, { content: `📜 **Your Recent Transactions**\n\n${historyTxt}`, components: [backButtonRow] });
+  const historyEmbed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(`📜  ${bank?.name?.toUpperCase() || 'BANK'} · RECENT STATEMENTS`)
+    .setDescription(`Ledger transaction history across ${myAccounts.length} active account${myAccounts.length === 1 ? '' : 's'}:\n\n` + historyTxt)
+    .setFooter({ text: `${footerText(bank, settings)} • Audited Statements`, ...(logo ? { iconURL: logo } : {}) })
+    .setTimestamp();
+
+  await safeReplyOrUpdate(interaction, { embeds: [historyEmbed], components: [backButtonRow] });
 }
 
 async function handleViewLoans(bankId: string, interaction: ButtonInteraction) {
@@ -1081,7 +1340,7 @@ async function handleApplyLoanModal(bankId: string, interaction: ModalSubmitInte
     return;
   }
 
-  const ids = await requireLinkedIds(interaction);
+  const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
   const userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, ids)));
   const liveAccs = userAccs.filter(a => a.isActive && !a.isFrozen && a.existsInGame !== false);

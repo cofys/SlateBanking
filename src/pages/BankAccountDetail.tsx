@@ -711,9 +711,9 @@ export function BankAccountDetail() {
               {/* Legal disclosures & Stamp */}
               <div className="border-t border-slate-200 pt-8 mt-12 flex justify-between items-end text-[10px] text-slate-400 leading-normal">
                 <div>
-                  <p className="font-semibold text-slate-500 uppercase tracking-wide mb-1">Slate SaaS Regulatory Compliance</p>
+                  <p className="font-semibold text-slate-500 uppercase tracking-wide mb-1">Slate Banking Platform Regulatory Compliance</p>
                   <p className="max-w-xl">
-                    This document serves as an official accounting of transactions recorded securely on the Slate distributed SaaS database ledger. Deposits and transfers are cleared in accordance with the Onyx Global Network bylaws. Please report any discrepancies to your bank operator immediately.
+                    This document serves as an official accounting of transactions recorded securely on the Slate distributed banking platform ledger. Deposits and transfers are cleared in accordance with the Onyx Global Network bylaws. Please report any discrepancies to your bank operator immediately.
                   </p>
                 </div>
                 <div className="text-right">

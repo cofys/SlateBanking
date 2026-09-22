@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { formatMoney } from "../lib/utils";
-import { Building2, ChevronRight, LogOut, Wallet, X, Bot, Link2 } from "lucide-react";
+import { Building2, ChevronRight, LogOut, Wallet, X, Bot, Link2, CheckCircle2 } from "lucide-react";
 import { AuthScreen, BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
 import { hexOr, withAlpha } from "../lib/theme";
 import { motion } from "motion/react";
 
 export function CitizenPortal() {
-  const { user, login, linkDiscord, logout, isLoading, rememberMe, setRememberMe } = useAuth();
+  const { user, login, linkDiscord, logout, isLoading, rememberMe, setRememberMe, authError, clearAuthError } = useAuth();
   const [mine, setMine] = useState<any>(null);
   const [directory, setDirectory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -111,6 +111,12 @@ export function CitizenPortal() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-10 space-y-10 page-enter">
+        {authError && (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200 flex items-center justify-between">
+            <span>{authError}</span>
+            <button onClick={clearAuthError} className="text-rose-400 hover:text-white"><X size={16} /></button>
+          </div>
+        )}
         <section className="p-7 border" style={{ borderRadius: "var(--radius-xl)", borderColor: "var(--border)", background: "linear-gradient(165deg, color-mix(in oklab, var(--accent) 18%, transparent), var(--bg-elevated) 58%)" }}>
           <p className="text-sm flex items-center gap-2" style={{ color: "var(--fg-muted)" }}>
             <Wallet size={14} /> {user.username}
@@ -119,8 +125,13 @@ export function CitizenPortal() {
           <p className="text-sm mt-2 max-w-xl" style={{ color: "var(--fg-muted)" }}>
             Each bank has its own customer portal. Send money inside that bank. Pay another bank with Onyx.
           </p>
-          <div className="flex flex-wrap gap-2 mt-6">
-            {!user.linkedDiscordId && (
+          <div className="flex flex-wrap items-center gap-2 mt-6">
+            {user.linkedDiscordId ? (
+              <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-xs font-medium text-emerald-300">
+                <CheckCircle2 size={15} />
+                <span>Discord bot linked ({user.linkedDiscordId})</span>
+              </div>
+            ) : (
               <button onClick={() => handleConnectDiscord()} className="text-sm font-semibold px-4 py-2.5 rounded-xl border flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
                 <Bot size={15} /> Connect Discord bot
               </button>

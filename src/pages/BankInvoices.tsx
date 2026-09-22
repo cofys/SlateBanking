@@ -802,7 +802,7 @@ export function BankInvoices() {
               {/* Legal disclosure and Stamp */}
               <div className="border-t border-slate-200 pt-8 mt-12 flex justify-between items-end text-[10px] text-slate-400 leading-normal">
                 <div>
-                  <p className="font-bold text-slate-500 uppercase tracking-wide mb-1">Slate SaaS Global Clearing System Invoice</p>
+                  <p className="font-bold text-slate-500 uppercase tracking-wide mb-1">Slate Banking Platform Global Clearing System Invoice</p>
                   <p className="max-w-xl">
                     This invoice was generated electronically via the secure Onyx Global Clearing and settlement network. Authorized agents can trace transaction reference hashes using internal audit trails. Settlement must occur directly from registered bank balances.
                   </p>

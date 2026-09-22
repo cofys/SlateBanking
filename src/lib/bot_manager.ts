@@ -106,6 +106,15 @@ export class BotManager {
       console.log(`[BankBot ${bankId}] Logged in as ${client.user?.tag}`);
       const instance = this.instances.get(bankId);
       if (instance) instance.status = 'online';
+
+      try {
+        const { db } = await import("../db/index");
+        const { banks } = await import("../db/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(banks).set({ status: 'online' }).where(eq(banks.id, bankId));
+      } catch (e) {
+        console.error(`[BankBot ${bankId}] Failed to sync online status in db:`, e);
+      }
       
       // Update Discord presence to reflect maintenance mode or active state
       await this.updateBankBotPresence(bankId);
@@ -125,10 +134,16 @@ export class BotManager {
       }
     });
 
-    client.on('error', (err) => {
+    client.on('error', async (err) => {
       console.error(`[BankBot ${bankId}] Error:`, err);
       const instance = this.instances.get(bankId);
       if (instance) instance.status = 'error';
+      try {
+        const { db } = await import("../db/index");
+        const { banks } = await import("../db/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(banks).set({ status: 'error' }).where(eq(banks.id, bankId));
+      } catch {}
     });
 
     client.on('interactionCreate', async (interaction) => {
@@ -141,6 +156,12 @@ export class BotManager {
       console.error(`[BankBot ${bankId}] Failed to login:`, error);
       const instance = this.instances.get(bankId);
       if (instance) instance.status = 'error';
+      try {
+        const { db } = await import("../db/index");
+        const { banks } = await import("../db/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(banks).set({ status: 'error' }).where(eq(banks.id, bankId));
+      } catch {}
     }
   }
 
@@ -149,6 +170,12 @@ export class BotManager {
     if (instance) {
        instance.client.destroy();
        this.instances.delete(bankId);
+       try {
+         const { db } = await import("../db/index");
+         const { banks } = await import("../db/schema");
+         const { eq } = await import("drizzle-orm");
+         await db.update(banks).set({ status: 'offline' }).where(eq(banks.id, bankId));
+       } catch {}
     }
   }
 
@@ -241,10 +268,17 @@ export class BotManager {
     }
   }
 
+  isBankBotOnline(bankId: string): boolean {
+    const instance = this.instances.get(bankId);
+    if (!instance) return false;
+    return instance.status === 'online' || (instance.client?.isReady?.() ?? false);
+  }
+
   getBankStatuses() {
     const statuses: Record<string, string> = {};
     for (const [id, instance] of this.instances.entries()) {
-      statuses[id] = instance.status;
+      const isOnline = instance.status === 'online' || (instance.client?.isReady?.() ?? false);
+      statuses[id] = isOnline ? 'online' : instance.status;
     }
     return statuses;
   }

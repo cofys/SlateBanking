@@ -216,7 +216,15 @@ export const bankSettings = sqliteTable("bank_settings", {
   discordFooter: text("discord_footer"),
   discordBotActivity: text("discord_bot_activity"),
   discordShowStats: integer("discord_show_stats", { mode: "boolean" }).default(true),
+  discordShowDeposits: integer("discord_show_deposits", { mode: "boolean" }).default(true),
+  discordShowAccounts: integer("discord_show_accounts", { mode: "boolean" }).default(true),
+  discordGuiStyle: text("discord_gui_style").default("executive"), // 'executive' | 'cyber' | 'minimal'
   discordNotifyCustomers: integer("discord_notify_customers", { mode: "boolean" }).default(true),
+
+  // Bank Portal SEO & Public Metadata
+  metaTitle: text("meta_title"),
+  metaDescription: text("meta_description"),
+  metaKeywords: text("meta_keywords"),
 });
 
 export const escrows = sqliteTable("escrows", {
