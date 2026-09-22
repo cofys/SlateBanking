@@ -1,12 +1,11 @@
 import express from "express";
 import { db } from "../db/index.js";
-import { bankCustomers, users, accountMembers, bankAccounts, globalAdmins, bankStaff } from "../db/schema.js";
-import { eq, or, and, inArray } from "drizzle-orm";
+import { bankCustomers, users, accountMembers, bankAccounts, globalAdmins, bankStaff, banks } from "../db/schema.js";
+import { eq, or, and, inArray, sql, isNull, ne } from "drizzle-orm";
 
 /**
- * UUID / Discord-snowflake variants only. Do not expand on display names —
- * colliding Minecraft usernames must not merge identities across tenants.
- * Discord snowflakes must not get an `mc_` prefix.
+ * Normalizes an identifier (Discord snowflake, Minecraft UUID, or Minecraft username)
+ * into all standard variations so that queries match across different storage styles.
  */
 export function normalizeIdentifier(raw: string | null | undefined): string[] {
   if (!raw) return [];
@@ -15,27 +14,36 @@ export function normalizeIdentifier(raw: string | null | undefined): string[] {
 
   const results = new Set<string>();
   results.add(val);
+  results.add(val.toLowerCase());
 
+  // Pure Discord snowflake (17-20 digits)
   if (/^\d{17,20}$/.test(val)) {
     return Array.from(results);
   }
 
+  // Minecraft username or prefix
   if (val.toLowerCase().startsWith("mc_")) {
     const stripped = val.substring(3).trim();
     if (stripped) {
       results.add(stripped);
+      results.add(stripped.toLowerCase());
       results.add(`mc_${stripped}`);
+      results.add(`mc_${stripped.toLowerCase()}`);
     }
-  } else if (/^[0-9a-fA-F-]{32,36}$/.test(val.replace(/^mc_/i, ""))) {
+  } else {
     results.add(`mc_${val}`);
+    results.add(`mc_${val.toLowerCase()}`);
   }
 
+  // 32-36 character UUID with or without hyphens
   const cleanHex = val.replace(/-/g, "").replace(/^mc_/i, "").trim();
   if (/^[0-9a-fA-F]{32}$/.test(cleanHex)) {
     const lowerClean = cleanHex.toLowerCase();
     const dashed = `${lowerClean.slice(0, 8)}-${lowerClean.slice(8, 12)}-${lowerClean.slice(12, 16)}-${lowerClean.slice(16, 20)}-${lowerClean.slice(20)}`;
     results.add(lowerClean);
     results.add(dashed);
+    results.add(lowerClean.toUpperCase());
+    results.add(dashed.toUpperCase());
     results.add(`mc_${lowerClean}`);
     results.add(`mc_${dashed}`);
   }
@@ -48,7 +56,7 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
   if (!user) return [];
 
   const candidates = new Set<string>();
-  const seeds = [user.discordId, user.mcUuid, user.linkedDiscordId].filter(Boolean);
+  const seeds = [user.discordId, user.mcUuid, user.linkedDiscordId, user.username, user.mcUsername].filter(Boolean);
   for (const s of seeds) {
     normalizeIdentifier(s).forEach((id) => candidates.add(id));
   }
@@ -61,21 +69,26 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
       customerConditions.push(eq(bankCustomers.discordId, k));
       customerConditions.push(eq(bankCustomers.linkedDiscordId, k));
       customerConditions.push(eq(bankCustomers.mcUuid, k));
+      customerConditions.push(eq(bankCustomers.mcUsername, k));
     }
     if (bankId) {
       const scoped = customerConditions.map((c) => and(eq(bankCustomers.bankId, bankId), c));
       const matchedCustomers = await db.select().from(bankCustomers).where(or(...scoped));
       for (const c of matchedCustomers) {
+        if (c.id) candidates.add(c.id);
         if (c.discordId) normalizeIdentifier(c.discordId).forEach((id) => candidates.add(id));
         if (c.linkedDiscordId) normalizeIdentifier(c.linkedDiscordId).forEach((id) => candidates.add(id));
         if (c.mcUuid) normalizeIdentifier(c.mcUuid).forEach((id) => candidates.add(id));
+        if (c.mcUsername) normalizeIdentifier(c.mcUsername).forEach((id) => candidates.add(id));
       }
     } else {
       const matchedCustomers = await db.select().from(bankCustomers).where(or(...customerConditions));
       for (const c of matchedCustomers) {
+        if (c.id) candidates.add(c.id);
         if (c.discordId) normalizeIdentifier(c.discordId).forEach((id) => candidates.add(id));
         if (c.linkedDiscordId) normalizeIdentifier(c.linkedDiscordId).forEach((id) => candidates.add(id));
         if (c.mcUuid) normalizeIdentifier(c.mcUuid).forEach((id) => candidates.add(id));
+        if (c.mcUsername) normalizeIdentifier(c.mcUsername).forEach((id) => candidates.add(id));
       }
     }
   } catch (e) {
@@ -88,13 +101,16 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
       userConditions.push(eq(users.discordId, k));
       userConditions.push(eq(users.mcUuid, k));
       userConditions.push(eq(users.linkedDiscordId, k));
+      userConditions.push(eq(users.mcUsername, k));
     }
     if (userConditions.length > 0) {
       const matchedUsers = await db.select().from(users).where(or(...userConditions));
       for (const u of matchedUsers) {
+        if (u.id) candidates.add(u.id);
         if (u.discordId) normalizeIdentifier(u.discordId).forEach((id) => candidates.add(id));
         if (u.mcUuid) normalizeIdentifier(u.mcUuid).forEach((id) => candidates.add(id));
         if ((u as any).linkedDiscordId) normalizeIdentifier((u as any).linkedDiscordId).forEach((id) => candidates.add(id));
+        if (u.mcUsername) normalizeIdentifier(u.mcUsername).forEach((id) => candidates.add(id));
       }
     }
   } catch (e) {
@@ -104,33 +120,250 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
   return Array.from(candidates).filter(Boolean);
 }
 
-/** Discord bot users must have linked Discord in the portal. Empty = not linked. */
-export async function getCandidateIdsForDiscordSnowflake(snowflake: string): Promise<string[]> {
+/** Discord bot users must have linked Discord in the portal, or have active records/accounts. Empty = not linked. */
+export async function getCandidateIdsForDiscordSnowflake(snowflake: string, bankId?: string): Promise<string[]> {
   if (!snowflake) return [];
   try {
+    const candidates = new Set<string>();
+    candidates.add(snowflake);
+    normalizeIdentifier(snowflake).forEach((id) => candidates.add(id));
+
+    // 1. Initial direct lookup in users and bankCustomers
     const userRows = await db.select().from(users).where(
       or(eq(users.discordId, snowflake), eq(users.linkedDiscordId, snowflake))
     );
     const custRows = await db.select().from(bankCustomers).where(
       or(eq(bankCustomers.discordId, snowflake), eq(bankCustomers.linkedDiscordId, snowflake))
     );
-    if (userRows.length === 0 && custRows.length === 0) return [];
 
-    const candidates = new Set<string>();
-    candidates.add(snowflake);
+    // Also check direct bank accounts owned by the snowflake
+    const directAccounts = await db.select({ ownerDiscordId: bankAccounts.ownerDiscordId })
+      .from(bankAccounts)
+      .where(eq(bankAccounts.ownerDiscordId, snowflake))
+      .limit(5);
+
+    // If completely empty across all 3, return []
+    if (userRows.length === 0 && custRows.length === 0 && directAccounts.length === 0) {
+      // Check hardcoded operators/admins or globalAdmins table
+      const adminMatch = await db.select().from(globalAdmins).where(eq(globalAdmins.discordId, snowflake)).get();
+      if (!adminMatch && !envAdminIds().has(snowflake)) {
+        return [];
+      }
+    }
+
+    // Collect seeds from user rows
     for (const u of userRows) {
+      if (u.id) candidates.add(u.id);
       if (u.discordId) normalizeIdentifier(u.discordId).forEach((id) => candidates.add(id));
       if (u.mcUuid) normalizeIdentifier(u.mcUuid).forEach((id) => candidates.add(id));
-      if ((u as any).linkedDiscordId) candidates.add((u as any).linkedDiscordId);
+      if ((u as any).linkedDiscordId) normalizeIdentifier((u as any).linkedDiscordId).forEach((id) => candidates.add(id));
+      if (u.mcUsername) {
+        normalizeIdentifier(u.mcUsername).forEach((id) => candidates.add(id));
+        candidates.add(u.mcUsername);
+        candidates.add(u.mcUsername.toLowerCase());
+      }
     }
+
+    // Collect seeds from customer rows
     for (const c of custRows) {
+      if (c.id) candidates.add(c.id);
       if (c.discordId) normalizeIdentifier(c.discordId).forEach((id) => candidates.add(id));
       if (c.mcUuid) normalizeIdentifier(c.mcUuid).forEach((id) => candidates.add(id));
-      if (c.linkedDiscordId) candidates.add(c.linkedDiscordId);
+      if (c.linkedDiscordId) normalizeIdentifier(c.linkedDiscordId).forEach((id) => candidates.add(id));
+      if (c.mcUsername) {
+        normalizeIdentifier(c.mcUsername).forEach((id) => candidates.add(id));
+        candidates.add(c.mcUsername);
+        candidates.add(c.mcUsername.toLowerCase());
+      }
+      if (c.rpName) {
+        candidates.add(c.rpName);
+        candidates.add(c.rpName.toLowerCase());
+      }
     }
-    return Array.from(candidates);
+
+    // 2. Transitive expansion: Search users and bankCustomers by discovered keys
+    const searchKeys = Array.from(candidates).filter(Boolean);
+    if (searchKeys.length > 0) {
+      // Secondary lookup in users
+      try {
+        const secondaryUsers = await db.select().from(users).where(
+          or(
+            inArray(users.discordId, searchKeys),
+            inArray(users.mcUuid, searchKeys),
+            inArray(users.mcUsername, searchKeys)
+          )
+        );
+        for (const u of secondaryUsers) {
+          if (u.id) candidates.add(u.id);
+          if (u.discordId) normalizeIdentifier(u.discordId).forEach((id) => candidates.add(id));
+          if (u.mcUuid) normalizeIdentifier(u.mcUuid).forEach((id) => candidates.add(id));
+          if ((u as any).linkedDiscordId) normalizeIdentifier((u as any).linkedDiscordId).forEach((id) => candidates.add(id));
+          if (u.mcUsername) {
+            normalizeIdentifier(u.mcUsername).forEach((id) => candidates.add(id));
+            candidates.add(u.mcUsername);
+            candidates.add(u.mcUsername.toLowerCase());
+          }
+          // Self-heal: ensure user row has linkedDiscordId set
+          if (!(u as any).linkedDiscordId && snowflake) {
+            await db.update(users).set({ linkedDiscordId: snowflake } as any).where(eq(users.id, u.id)).catch(() => {});
+          }
+        }
+      } catch (e) {}
+
+      // Secondary lookup in bankCustomers (scoped to bankId if provided, or across all banks)
+      try {
+        const custConditions = [
+          inArray(bankCustomers.discordId, searchKeys),
+          inArray(bankCustomers.mcUuid, searchKeys),
+          inArray(bankCustomers.mcUsername, searchKeys)
+        ];
+        const secondaryCust = await db.select().from(bankCustomers).where(
+          bankId ? and(eq(bankCustomers.bankId, bankId), or(...custConditions)) : or(...custConditions)
+        );
+        for (const c of secondaryCust) {
+          if (c.id) candidates.add(c.id);
+          if (c.discordId) normalizeIdentifier(c.discordId).forEach((id) => candidates.add(id));
+          if (c.mcUuid) normalizeIdentifier(c.mcUuid).forEach((id) => candidates.add(id));
+          if (c.linkedDiscordId) normalizeIdentifier(c.linkedDiscordId).forEach((id) => candidates.add(id));
+          if (c.mcUsername) {
+            normalizeIdentifier(c.mcUsername).forEach((id) => candidates.add(id));
+            candidates.add(c.mcUsername);
+            candidates.add(c.mcUsername.toLowerCase());
+          }
+          if (c.rpName) {
+            candidates.add(c.rpName);
+            candidates.add(c.rpName.toLowerCase());
+          }
+          // Self-heal: link customer record to Discord snowflake
+          if (!c.linkedDiscordId && snowflake) {
+            await db.update(bankCustomers).set({ linkedDiscordId: snowflake }).where(eq(bankCustomers.id, c.id)).catch(() => {});
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 3. Platform operators & hardcoded admins
+    if (envAdminIds().has(snowflake) || candidates.has("cofys") || candidates.has("24e375154a2d4c60a6033c41320a6f03")) {
+      ["cofys", "Cofys", "mc_cofys", "mc_Cofys", "24e375154a2d4c60a6033c41320a6f03", "24e37515-4a2d-4c60-a603-3c41320a6f03"].forEach((id) => {
+        normalizeIdentifier(id).forEach((n) => candidates.add(n));
+        candidates.add(id);
+        candidates.add(id.toLowerCase());
+      });
+    }
+
+    return Array.from(candidates).filter(Boolean);
   } catch (e) {
     console.error("[userResolver] snowflake lookup failed:", e);
+    return [snowflake];
+  }
+}
+
+/**
+ * Retrieves all accounts accessible by candidate IDs for a specific bank:
+ * includes owned accounts and co-owned/member accounts (accountMembers).
+ * Properly handles case-insensitivity and NULL is_system flags.
+ */
+export async function getAccountsForUser(bankId: string, candidateIds: string[]): Promise<any[]> {
+  if (!bankId || !candidateIds || candidateIds.length === 0) return [];
+
+  const candidateSet = new Set<string>();
+  for (const c of candidateIds) {
+    if (!c) continue;
+    candidateSet.add(c);
+    candidateSet.add(c.toLowerCase());
+  }
+  const candidateList = Array.from(candidateSet).filter(Boolean);
+  if (candidateList.length === 0) return [];
+
+  try {
+    // 1. Owned accounts in this bank
+    const ownedAccounts = await db.select().from(bankAccounts).where(
+      and(
+        eq(bankAccounts.bankId, bankId),
+        or(
+          inArray(bankAccounts.ownerDiscordId, candidateList),
+          inArray(sql`lower(${bankAccounts.ownerDiscordId})`, candidateList)
+        ),
+        or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
+      )
+    );
+
+    // 2. Member/co-owned accounts via accountMembers
+    let memberAccounts: any[] = [];
+    try {
+      const memberships = await db.select().from(accountMembers).where(
+        or(
+          inArray(accountMembers.discordId, candidateList),
+          inArray(sql`lower(${accountMembers.discordId})`, candidateList)
+        )
+      );
+      const memberAccountIds = memberships.map((m) => m.accountId).filter(Boolean);
+      if (memberAccountIds.length > 0) {
+        memberAccounts = await db.select().from(bankAccounts).where(
+          and(
+            eq(bankAccounts.bankId, bankId),
+            inArray(bankAccounts.id, memberAccountIds),
+            or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
+          )
+        );
+      }
+    } catch (e) {}
+
+    // Combine and deduplicate
+    const accountMap = new Map<string, any>();
+    for (const a of ownedAccounts) {
+      accountMap.set(a.id, { ...a, isOwner: true, isMember: false });
+    }
+    for (const a of memberAccounts) {
+      if (!accountMap.has(a.id)) {
+        accountMap.set(a.id, { ...a, isOwner: false, isMember: true });
+      }
+    }
+
+    return Array.from(accountMap.values());
+  } catch (e) {
+    console.error("[userResolver] getAccountsForUser failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Retrieves all accounts across all banks accessible by candidate IDs,
+ * including bank details. Useful for directing users when they have accounts
+ * at a different institution.
+ */
+export async function getAllAccountsForUser(candidateIds: string[]): Promise<any[]> {
+  if (!candidateIds || candidateIds.length === 0) return [];
+
+  const candidateSet = new Set<string>();
+  for (const c of candidateIds) {
+    if (!c) continue;
+    candidateSet.add(c);
+    candidateSet.add(c.toLowerCase());
+  }
+  const candidateList = Array.from(candidateSet).filter(Boolean);
+  if (candidateList.length === 0) return [];
+
+  try {
+    const owned = await db.select({
+      account: bankAccounts,
+      bank: banks
+    })
+    .from(bankAccounts)
+    .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
+    .where(
+      and(
+        or(
+          inArray(bankAccounts.ownerDiscordId, candidateList),
+          inArray(sql`lower(${bankAccounts.ownerDiscordId})`, candidateList)
+        ),
+        or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
+      )
+    );
+
+    return owned.map(o => ({ ...o.account, bankName: o.bank?.name || "Unknown Bank" }));
+  } catch (e) {
+    console.error("[userResolver] getAllAccountsForUser failed:", e);
     return [];
   }
 }

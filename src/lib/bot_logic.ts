@@ -4,7 +4,7 @@ import { banks, bankAccounts, transactions, users, bankCustomers, loans, bankSet
 import { eq, and, sql, or, desc, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { CityCorpClient } from './citycorp_api';
-import { getCandidateIdsForDiscordSnowflake } from '../server/userResolver';
+import { getCandidateIdsForDiscordSnowflake, getAccountsForUser, getAllAccountsForUser } from '../server/userResolver';
 import { SCHEME_HEX } from './theme';
 
 const LINK_DISCORD_MSG = "Link Discord in your bank portal first. Sign in with CityCorp, then tap **Link Discord**. The bot only works after that.";
@@ -573,20 +573,20 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
   const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
 
-  const accounts = await db.select().from(bankAccounts).where(
-    and(
-      eq(bankAccounts.bankId, bankId), 
-      inArray(bankAccounts.ownerDiscordId, ids),
-      eq(bankAccounts.isSystem, false)
-    )
-  );
+  const accounts = await getAccountsForUser(bankId, ids);
 
-  const userMap = await db.select().from(users).where(inArray(users.linkedDiscordId, ids));
-  const isLinked = userMap.length > 0;
-  const mcUsername = userMap[0]?.mcUsername || interaction.user.username;
+  const userMap = await db.select().from(users).where(
+    or(inArray(users.linkedDiscordId, ids), inArray(users.discordId, ids))
+  );
+  const isLinked = userMap.length > 0 || ids.length > 0;
+  const mcUsername = userMap[0]?.mcUsername || userMap[0]?.discordId?.replace(/^mc_/, '') || interaction.user.username;
   const mcHeadUrl = mcUsername && mcUsername !== 'Unknown' ? `https://mc-heads.net/avatar/${encodeURIComponent(mcUsername)}/100.png` : logo;
 
   if (accounts.length === 0) {
+    const allAccounts = await getAllAccountsForUser(ids);
+    const otherBanks = Array.from(new Set(allAccounts.map(a => a.bankName))).filter(Boolean);
+    const hasOtherBanks = otherBanks.length > 0;
+
     const welcome = (settings?.discordWelcome || '').trim();
     const embed = new EmbedBuilder()
       .setColor(color)
@@ -596,9 +596,12 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         (welcome || `Welcome to **${bank.name}**. You do not hold an active deposit account with this institution yet.`) +
         `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        (hasOtherBanks
+          ? `ℹ️ **Other Institutional Portfolios**:\nYou have **${allAccounts.length}** account(s) registered with **${otherBanks.join(', ')}**, but no account opened with **${bank.name}** yet.\n\n`
+          : '') +
         `**Next Steps to Open Your Ledger:**\n` +
         `1️⃣ Click **Web Banking Portal** below\n` +
-        `2️⃣ Create a Personal or Business deposit account\n` +
+        `2️⃣ Create a Personal or Business deposit account under **${bank.name}**\n` +
         `3️⃣ Return here and click **🔄 Sync / Refresh**`
       )
       .addFields(
@@ -613,7 +616,12 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
           name: '🏦 Institution',
           value: `**${bank.name}**`,
           inline: true,
-        }
+        },
+        ...(hasOtherBanks ? [{
+          name: '🌐 Other Bank Accounts',
+          value: `Held at: **${otherBanks.join(', ')}**`,
+          inline: false,
+        }] : [])
       )
       .setFooter({ text: `${footerText(bank, settings)} • Private Banking Session`, ...(logo ? { iconURL: logo } : {}) })
       .setTimestamp();
@@ -651,14 +659,17 @@ async function showMainMenu(bankId: string, interaction: any, isEphemeral: boole
     const found = accounts.find(a => a.id === activeAccountId);
     if (found) activeAccount = found;
   } else {
-    const personal = accounts.find(a => a.accountType === 'personal');
+    const personal = accounts.find(a => a.accountType?.startsWith('personal'));
     if (personal) activeAccount = personal;
   }
 
   const customer = await db.select().from(bankCustomers).where(
     and(
       eq(bankCustomers.bankId, bankId),
-      eq(bankCustomers.discordId, interaction.user.id)
+      or(
+        inArray(bankCustomers.discordId, ids),
+        inArray(bankCustomers.linkedDiscordId, ids)
+      )
     )
   ).limit(1);
   const registeredAddress = customer[0]?.address || customer[0]?.notes;
@@ -797,40 +808,6 @@ async function handleButton(bankId: string, interaction: ButtonInteraction) {
     } else {
       await interaction.deferReply({ ephemeral: true });
     }
-
-    const b = await db.select().from(banks).where(eq(banks.id, bankId));
-    if (b.length === 0) return;
-    const bank = b[0];
-    const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-    const portalUrl = citizenPortalUrl(bank);
-
-    const ids = await getCandidateIdsForDiscordSnowflake(interaction.user.id);
-    const isLinked = ids.length > 0;
-
-    if (!isLinked) {
-      const notLinkedEmbed = buildNotLinkedEmbed(bank, settings);
-      const notLinkedRow = buildNotLinkedComponents(portalUrl);
-      await safeReplyOrUpdate(interaction, { 
-        embeds: [notLinkedEmbed],
-        components: [notLinkedRow]
-      });
-      return;
-    }
-
-    const accounts = await db.select().from(bankAccounts).where(
-      and(
-        eq(bankAccounts.bankId, bankId), 
-        inArray(bankAccounts.ownerDiscordId, ids),
-        eq(bankAccounts.isSystem, false)
-      )
-    );
-
-    if (accounts.length === 0) {
-      await showMainMenu(bankId, interaction, true);
-      return;
-    }
-
-    // Accounts exist! Render dashboard
     await showMainMenu(bankId, interaction, true);
   } else if (cid === 'bank_open_business_modal') {
     const userMap = await db.select().from(users).where(
@@ -1082,12 +1059,7 @@ async function handleBalance(bankId: string, interaction: ButtonInteraction) {
   const color = brandColor(bank, settings);
   const logo = httpsUrl(settings?.logoUrl || bank?.logoUrl);
 
-  const accounts = await db.select().from(bankAccounts).where(
-    and(
-      eq(bankAccounts.bankId, bankId), 
-      inArray(bankAccounts.ownerDiscordId, ids)
-    )
-  );
+  const accounts = await getAccountsForUser(bankId, ids);
 
   if (accounts.length === 0) {
     await safeReplyOrUpdate(interaction, { content: 'You do not have any bank accounts registered here. Create an account on the web portal and click "Sync Account".', components: [backButtonRow] });
@@ -1124,30 +1096,15 @@ async function handleTransfer(bankId: string, interaction: ModalSubmitInteractio
   if (!ids) return;
 
   // Source accounts — must belong to this bank and this user
-  let sourceAccount;
-  if (sourceAccId) {
-    const accs = await db.select().from(bankAccounts).where(
-      and(
-        eq(bankAccounts.id, sourceAccId),
-        eq(bankAccounts.bankId, bankId),
-        inArray(bankAccounts.ownerDiscordId, ids)
-      )
-    );
-    if (accs.length > 0) sourceAccount = accs[0];
-  }
+  const userAccounts = await getAccountsForUser(bankId, ids);
+  let sourceAccount = sourceAccId ? userAccounts.find(a => a.id === sourceAccId) : null;
 
   if (!sourceAccount) {
-    const sourceAccounts = await db.select().from(bankAccounts).where(
-      and(
-        eq(bankAccounts.bankId, bankId), 
-        inArray(bankAccounts.ownerDiscordId, ids)
-      )
-    );
-    if (sourceAccounts.length === 0) {
+    if (userAccounts.length === 0) {
       await interaction.editReply({ content: 'You do not have any bank accounts open here.' });
       return;
     }
-    sourceAccount = sourceAccounts[0];
+    sourceAccount = userAccounts[0];
   }
 
   if (sourceAccount.balance < amountInCents) {
@@ -1200,8 +1157,7 @@ async function handleHistory(bankId: string, interaction: ButtonInteraction) {
   const color = brandColor(bank, settings);
   const logo = httpsUrl(settings?.logoUrl || bank?.logoUrl);
 
-  const myAccounts = await db.select().from(bankAccounts)
-    .where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, ids)));
+  const myAccounts = await getAccountsForUser(bankId, ids);
     
   if (myAccounts.length === 0) {
     await safeReplyOrUpdate(interaction, { content: 'You have no accounts in this bank.', components: [backButtonRow] });
@@ -1342,7 +1298,7 @@ async function handleApplyLoanModal(bankId: string, interaction: ModalSubmitInte
 
   const ids = await requireLinkedIds(interaction, bankId);
   if (!ids) return;
-  const userAccs = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, ids)));
+  const userAccs = await getAccountsForUser(bankId, ids);
   const liveAccs = userAccs.filter(a => a.isActive && !a.isFrozen && a.existsInGame !== false);
   if (liveAccs.length === 0) {
     await interaction.editReply({ content: '❌ You need an existing CityCorp-linked account at this bank before applying for a loan. Open an account first.' });
