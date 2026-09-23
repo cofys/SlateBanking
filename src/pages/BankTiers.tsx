@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Layers, Plus, Trash2, Save, Loader2, AlertCircle } from "lucide-react";
+import { Layers, Plus, Trash2, Save, Loader2, AlertCircle, ShieldAlert, Sliders, Users, Ban } from "lucide-react";
 
 export function BankTiers() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -46,6 +46,9 @@ export function BankTiers() {
         maxAutoApproveLoanAmount: 1000000,
         isDefault: tiers.length === 0, // First tier is default
         isPrivate: false,
+        maxAccountsPerUser: null,
+        exclusiveGroup: null,
+        mutuallyExclusiveTierIds: [],
       },
     ]);
   };
@@ -279,6 +282,126 @@ export function BankTiers() {
                           </>
                         )}
                       </select>
+                    </div>
+                  </div>
+
+                  {/* Tier Holding Limits & Exclusivity (Prevent hoarding & enforce one-or-other policies) */}
+                  <div className="lg:col-span-4 bg-white/[0.02] border border-white/10 rounded-xl p-4 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-white/5 pb-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert size={16} className="text-amber-400" />
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">Account Holding Limits & Exclusivity Rules</h4>
+                      </div>
+                      <span className="text-[11px] text-white/40">Prevent account hoarding and set mutual exclusivity</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Max Accounts per Citizen */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs font-medium text-white/80">Max Accounts per Citizen</label>
+                          <span className="text-[10px] font-mono text-amber-300">
+                            {tier.maxAccountsPerUser ? `${tier.maxAccountsPerUser} max` : "Unlimited"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="1"
+                            value={tier.maxAccountsPerUser ?? ""}
+                            onChange={(e) => updateTier(tier.id, "maxAccountsPerUser", e.target.value ? parseInt(e.target.value, 10) : null)}
+                            className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                            placeholder="Unlimited"
+                          />
+                          <div className="flex gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => updateTier(tier.id, "maxAccountsPerUser", 1)}
+                              className={`px-2 py-1 text-xs rounded border transition-colors ${tier.maxAccountsPerUser === 1 ? "bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold" : "bg-white/5 border-white/10 text-white/50 hover:text-white"}`}
+                              title="Limit to 1 account per citizen"
+                            >
+                              1
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateTier(tier.id, "maxAccountsPerUser", 2)}
+                              className={`px-2 py-1 text-xs rounded border transition-colors ${tier.maxAccountsPerUser === 2 ? "bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold" : "bg-white/5 border-white/10 text-white/50 hover:text-white"}`}
+                              title="Limit to 2 accounts per citizen"
+                            >
+                              2
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateTier(tier.id, "maxAccountsPerUser", null)}
+                              className={`px-2 py-1 text-xs rounded border transition-colors ${tier.maxAccountsPerUser === null || tier.maxAccountsPerUser === undefined ? "bg-white/20 border-white/40 text-white font-bold" : "bg-white/5 border-white/10 text-white/50 hover:text-white"}`}
+                              title="Unlimited accounts"
+                            >
+                              ∞
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-white/40 mt-1">Maximum accounts of this tier a single client may hold.</p>
+                      </div>
+
+                      {/* Exclusivity Suite / Group */}
+                      <div>
+                        <label className="block text-xs font-medium text-white/80 mb-1">Exclusivity Suite / Group (Optional)</label>
+                        <input
+                          type="text"
+                          value={tier.exclusiveGroup || ""}
+                          onChange={(e) => updateTier(tier.id, "exclusiveGroup", e.target.value.trim() || null)}
+                          className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                          placeholder="e.g. checking_suite, premium"
+                        />
+                        <p className="text-[10px] text-white/40 mt-1">Clients can only hold at most 1 tier in the same named suite.</p>
+                      </div>
+
+                      {/* Mutually Exclusive Tiers Selector */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs font-medium text-white/80">Mutually Exclusive Tiers</label>
+                          <span className="text-[10px] text-rose-300 font-mono">
+                            {Array.isArray(tier.mutuallyExclusiveTierIds) && tier.mutuallyExclusiveTierIds.length > 0
+                              ? `${tier.mutuallyExclusiveTierIds.length} restricted`
+                              : "None"}
+                          </span>
+                        </div>
+                        <div className="bg-[var(--bg-subtle)] border border-white/10 rounded-lg p-1.5 max-h-32 overflow-y-auto space-y-1">
+                          {tiers.filter((o) => o.id !== tier.id).length === 0 ? (
+                            <span className="text-[10px] text-white/30 italic block py-1">Add another tier first to configure conflict rules.</span>
+                          ) : (
+                            tiers
+                              .filter((o) => o.id !== tier.id)
+                              .map((other) => {
+                                const currentBlocked = Array.isArray(tier.mutuallyExclusiveTierIds) ? tier.mutuallyExclusiveTierIds : [];
+                                const isBlocked = currentBlocked.includes(other.id);
+                                return (
+                                  <button
+                                    key={other.id}
+                                    type="button"
+                                    onClick={() => {
+                                      const next = isBlocked
+                                        ? currentBlocked.filter((x: string) => x !== other.id)
+                                        : [...currentBlocked, other.id];
+                                      updateTier(tier.id, "mutuallyExclusiveTierIds", next);
+                                    }}
+                                    className={`w-full text-left text-xs px-2 py-1 rounded flex items-center justify-between border transition-all ${
+                                      isBlocked
+                                        ? "bg-rose-500/15 border-rose-500/40 text-rose-300 font-medium"
+                                        : "bg-white/5 border-white/5 text-white/60 hover:text-white hover:bg-white/10"
+                                    }`}
+                                  >
+                                    <span className="truncate">{other.name} ({other.type})</span>
+                                    <span className="text-[10px] shrink-0 ml-1">
+                                      {isBlocked ? "Exclusive (1 or other)" : "+ Block concurrent"}
+                                    </span>
+                                  </button>
+                                );
+                              })
+                          )}
+                        </div>
+                        <p className="text-[10px] text-white/40 mt-1">If set, having one tier prevents opening the other.</p>
+                      </div>
                     </div>
                   </div>
 

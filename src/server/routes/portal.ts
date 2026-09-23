@@ -378,7 +378,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       )
       .orderBy(desc(invoices.createdAt));
 
-      // Get user cards (owned and employee-assigned corporate cards)
+      // Get user cards
       const userCards = await db.select({
          id: cards.id,
          bankId: cards.bankId,
@@ -392,46 +392,11 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
          creditLimit: cards.creditLimit,
          creditUsed: cards.creditUsed,
          productId: cards.productId,
-         isCorporate: cards.isCorporate,
-         assignedMcUsername: cards.assignedMcUsername,
-         assignedDiscordId: cards.assignedDiscordId,
-         cardLabel: cards.cardLabel,
-         spendingLimitDailyCents: cards.spendingLimitDailyCents,
-         dailySpentCents: cards.dailySpentCents,
-         lastDailySpentResetAt: cards.lastDailySpentResetAt,
-         allowCashAdvance: cards.allowCashAdvance,
-         allowOnyxTransactions: cards.allowOnyxTransactions,
       })
       .from(cards)
       .leftJoin(banks, eq(cards.bankId, banks.id))
       .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
-      .where(and(
-        eq(cards.bankId, bankId),
-        or(
-          accountIds.length > 0 ? inArray(cards.accountId, accountIds) : sql`1=0`,
-          customer?.mcUsername ? sql`lower(${cards.assignedMcUsername}) = lower(${customer.mcUsername})` : sql`1=0`,
-          candidateIds.length > 0 ? inArray(cards.assignedDiscordId, candidateIds) : sql`1=0`
-        )
-      ));
-
-      // Check daily reset on returned cards
-      const now = new Date();
-      const mappedCards = userCards.map((c: any) => {
-        let currentDailySpent = c.dailySpentCents || 0;
-        if (c.lastDailySpentResetAt) {
-          const resetDate = new Date(c.lastDailySpentResetAt);
-          const diffHours = (now.getTime() - resetDate.getTime()) / (1000 * 60 * 60);
-          if (diffHours >= 24 || resetDate.getUTCDate() !== now.getUTCDate()) {
-            currentDailySpent = 0;
-          }
-        }
-        return {
-          ...c,
-          dailySpentCents: currentDailySpent,
-          cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
-          isAssignedToMe: !accountIds.includes(c.accountId),
-        };
-      });
+      .where(and(inArray(cards.accountId, accountIds), eq(cards.bankId, bankId)));
 
       // Get user loans
       // Get user subscriptions with account names
@@ -457,7 +422,10 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         accounts: userAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
-        cards: mappedCards,
+        cards: userCards.map((c: any) => ({
+          ...c,
+          cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
+        })),
         loans: userLoans.map((l: any) => ({
           ...l,
           amount: l.principalAmount,
@@ -701,9 +669,7 @@ portalRouter.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async 
       if (!card || card.bankId !== bankId) return res.status(404).json({ error: "Card not found" });
 
       const [account] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId));
-      const isAssigned = (card.assignedDiscordId && candidateIds.includes(card.assignedDiscordId)) ||
-        (card.assignedMcUsername && candidateIds.some((cid: string) => cid.toLowerCase() === card.assignedMcUsername?.toLowerCase()));
-      if (!account || (!(await isUserAccountOwnerOrMember(account, candidateIds)) && !isAssigned)) {
+      if (!account || !(await isUserAccountOwnerOrMember(account, candidateIds))) {
          return res.status(403).json({ error: "Unauthorized" });
       }
 
@@ -1005,6 +971,89 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       if (personalAccs.length === 0) {
         return res.status(400).json({ 
           error: `Bank Policy Violation: ${bank.name} requires you to open at least one Personal Account before registering a Business Account.` 
+        });
+      }
+    }
+
+    // 2.3 Enforce Configurable Account Tier Limits and Mutual Exclusivity
+    const userExistingAccounts = await db.select()
+      .from(bankAccounts)
+      .where(and(
+        eq(bankAccounts.bankId, bankId),
+        inArray(bankAccounts.ownerDiscordId, candidateIds),
+        eq(bankAccounts.isActive, true)
+      ));
+
+    // A. Specific Tier Limit (Max accounts per citizen/entity of this tier)
+    if (selectedTier && typeof selectedTier.maxAccountsPerUser === "number" && selectedTier.maxAccountsPerUser > 0) {
+      const currentTierCount = userExistingAccounts.filter(a => a.tierId === selectedTier.id).length;
+      if (currentTierCount >= selectedTier.maxAccountsPerUser) {
+        return res.status(400).json({
+          error: `Account Limit Reached: You may only hold up to ${selectedTier.maxAccountsPerUser} account(s) of the '${selectedTier.name}' tier (you currently have ${currentTierCount}).`
+        });
+      }
+    }
+
+    // B. Mutually Exclusive Tiers ("Only allowing one or the other")
+    if (selectedTier) {
+      const blockedTierIds = new Set<string>(Array.isArray(selectedTier.mutuallyExclusiveTierIds) ? selectedTier.mutuallyExclusiveTierIds : []);
+      for (const existingAcc of userExistingAccounts) {
+        if (!existingAcc.tierId) continue;
+        const existingTier = rawAccountTiers.find((t: any) => t.id === existingAcc.tierId);
+        if (!existingTier) continue;
+
+        // Forward check: selected tier blocks existing tier
+        if (blockedTierIds.has(existingTier.id)) {
+          return res.status(400).json({
+            error: `Policy Restriction: The '${selectedTier.name}' tier cannot be held simultaneously with '${existingTier.name}' (only one or the other is permitted). You already hold account '${existingAcc.accountName}'.`
+          });
+        }
+
+        // Reverse check: existing tier blocks selected tier
+        if (Array.isArray(existingTier.mutuallyExclusiveTierIds) && existingTier.mutuallyExclusiveTierIds.includes(selectedTier.id)) {
+          return res.status(400).json({
+            error: `Policy Restriction: Your existing tier '${existingTier.name}' prohibits opening a '${selectedTier.name}' account (only one or the other is permitted).`
+          });
+        }
+      }
+    }
+
+    // C. Exclusivity Group (e.g. only one tier from "personal_checking_suite")
+    if (selectedTier && selectedTier.exclusiveGroup) {
+      for (const existingAcc of userExistingAccounts) {
+        if (!existingAcc.tierId || existingAcc.tierId === selectedTier.id) continue;
+        const existingTier = rawAccountTiers.find((t: any) => t.id === existingAcc.tierId);
+        if (existingTier && existingTier.exclusiveGroup && existingTier.exclusiveGroup === selectedTier.exclusiveGroup) {
+          return res.status(400).json({
+            error: `Category Restriction: You already hold account '${existingAcc.accountName}' under the '${existingTier.name}' tier in group '${selectedTier.exclusiveGroup}'. Only one account from this category is permitted.`
+          });
+        }
+      }
+    }
+
+    // D. Global Bank-Wide Limits
+    if (!isBusiness && typeof settings?.maxPersonalAccountsPerUser === "number" && settings.maxPersonalAccountsPerUser > 0) {
+      const personalCount = userExistingAccounts.filter(a => !a.accountType?.includes("business")).length;
+      if (personalCount >= settings.maxPersonalAccountsPerUser) {
+        return res.status(400).json({
+          error: `Bank Limit Reached: Maximum of ${settings.maxPersonalAccountsPerUser} personal account(s) allowed per client at this bank.`
+        });
+      }
+    }
+
+    if (isBusiness && typeof settings?.maxBusinessAccountsPerUser === "number" && settings.maxBusinessAccountsPerUser > 0) {
+      const bizCount = userExistingAccounts.filter(a => a.accountType?.includes("business")).length;
+      if (bizCount >= settings.maxBusinessAccountsPerUser) {
+        return res.status(400).json({
+          error: `Bank Limit Reached: Maximum of ${settings.maxBusinessAccountsPerUser} business account(s) allowed per client at this bank.`
+        });
+      }
+    }
+
+    if (typeof settings?.maxTotalAccountsPerUser === "number" && settings.maxTotalAccountsPerUser > 0) {
+      if (userExistingAccounts.length >= settings.maxTotalAccountsPerUser) {
+        return res.status(400).json({
+          error: `Bank Limit Reached: Maximum of ${settings.maxTotalAccountsPerUser} total account(s) allowed per client at this bank.`
         });
       }
     }
@@ -1470,331 +1519,25 @@ portalRouter.post("/api/portal/:bankId/bonds", requireAuth, async (req: express.
   }
 });
 
-// -----------------------------------------------------------------------------------------------------
-// Card Lock / Unlock Toggle
-// -----------------------------------------------------------------------------------------------------
-
-portalRouter.post("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async (req: express.Request, res: express.Response) => {
-  const { db } = await import("../../db/index.js");
-  const { cards, bankAccounts, bankCustomers } = await import("../../db/schema.js");
-  const { eq, and } = await import("drizzle-orm");
-  try {
-    const { bankId, cardId } = req.params;
-    const { isLocked } = req.body;
-    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
-
-    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.bankId, bankId))).get();
-    if (!card) return res.status(404).json({ error: "Card not found" });
-
-    const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
-    const isOwnerOrMember = acc ? await isUserAccountOwnerOrMember(acc, candidateIds) : false;
-
-    // Also allow assigned employee to lock/unlock their own card
-    const customer = await db.select().from(bankCustomers).where(and(eq(bankCustomers.bankId, bankId), inArray(bankCustomers.discordId, candidateIds))).get();
-    const isAssigned = (card.assignedDiscordId && candidateIds.includes(card.assignedDiscordId)) ||
-      (customer?.mcUsername && card.assignedMcUsername && card.assignedMcUsername.toLowerCase() === customer.mcUsername.toLowerCase());
-
-    if (!isOwnerOrMember && !isAssigned) {
-      return res.status(403).json({ error: "Unauthorized to change lock status on this card" });
-    }
-
-    const newLockState = isLocked !== undefined ? !!isLocked : !card.isLocked;
-    await db.update(cards).set({ isLocked: newLockState }).where(eq(cards.id, card.id));
-    res.json({ success: true, isLocked: newLockState });
-  } catch (e: any) {
-    console.error(e);
-    res.status(500).json({ error: e.message || "Failed to toggle card lock" });
-  }
-});
-
-// -----------------------------------------------------------------------------------------------------
-// Corporate Department Cards Management (for Business Accounts)
-// -----------------------------------------------------------------------------------------------------
-
-portalRouter.post("/api/portal/:bankId/corporate-cards", requireAuth, async (req: express.Request, res: express.Response) => {
-  const { db } = await import("../../db/index.js");
-  const { cards, bankAccounts, banks } = await import("../../db/schema.js");
-  const { eq, and } = await import("drizzle-orm");
-  const { v4: uuidv4 } = await import("uuid");
-  const { randomInt } = await import("crypto");
-
-  try {
-    const { bankId } = req.params;
-    const {
-      accountId,
-      assignedMcUsername,
-      assignedDiscordId,
-      cardLabel,
-      cardType = "debit",
-      spendingLimitDaily = 0,
-      allowCashAdvance = true,
-      allowOnyxTransactions = true,
-    } = req.body;
-
-    if (!accountId) return res.status(400).json({ error: "Funding account is required" });
-    if (!assignedMcUsername || !String(assignedMcUsername).trim()) {
-      return res.status(400).json({ error: "Employee Minecraft username is required" });
-    }
-
-    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
-    const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
-    if (!acc) return res.status(404).json({ error: "Account not found" });
-
-    const isAuthorized = await isUserAccountOwnerOrMember(acc, candidateIds);
-    if (!isAuthorized) return res.status(403).json({ error: "Only business owners and managers can issue corporate cards" });
-
-    const cleanMcUsername = String(assignedMcUsername).trim();
-    const cleanDiscordId = assignedDiscordId ? String(assignedDiscordId).trim().replace(/^<@!?/, "").replace(/>$/, "") : null;
-    const cleanLabel = cardLabel ? String(cardLabel).trim().slice(0, 60) : "Corporate Department Card";
-    const dailyLimitCents = Math.max(0, Math.round(parseFloat(spendingLimitDaily || "0") * 100));
-
-    const cardNumber = Array.from({ length: 16 }, () => randomInt(0, 10)).join("");
-    const cvv = Array.from({ length: 3 }, () => randomInt(0, 10)).join("");
-    const nextYear = new Date();
-    nextYear.setFullYear(nextYear.getFullYear() + 4);
-    const expiryDate = `${(nextYear.getMonth() + 1).toString().padStart(2, "0")}/${nextYear.getFullYear().toString().slice(-2)}`;
-
-    const newCard = {
-      id: `crd_${uuidv4().substring(0, 8)}`,
-      bankId,
-      accountId,
-      cardNumber,
-      cvv,
-      expiryDate,
-      type: cardType === "credit" ? "credit" : "debit",
-      creditLimit: cardType === "credit" ? 500000 : 0, // $5,000 credit limit if credit type
-      creditUsed: 0,
-      apr: cardType === "credit" ? 1499 : 0,
-      isLocked: false,
-      isCorporate: true,
-      assignedMcUsername: cleanMcUsername,
-      assignedDiscordId: cleanDiscordId,
-      cardLabel: cleanLabel,
-      spendingLimitDailyCents: dailyLimitCents,
-      dailySpentCents: 0,
-      lastDailySpentResetAt: new Date(),
-      allowCashAdvance: !!allowCashAdvance,
-      allowOnyxTransactions: !!allowOnyxTransactions,
-      createdAt: new Date(),
-    };
-
-    await db.insert(cards).values(newCard as any);
-
-    res.json({
-      success: true,
-      card: {
-        ...newCard,
-        cardNumber: `•••• ${cardNumber.slice(-4)}`,
-        last4: cardNumber.slice(-4),
-        cvv: undefined,
-      },
-    });
-  } catch (e: any) {
-    console.error(e);
-    res.status(500).json({ error: e.message || "Failed to issue corporate card" });
-  }
-});
-
-portalRouter.patch("/api/portal/:bankId/corporate-cards/:cardId", requireAuth, async (req: express.Request, res: express.Response) => {
-  const { db } = await import("../../db/index.js");
-  const { cards, bankAccounts } = await import("../../db/schema.js");
-  const { eq, and } = await import("drizzle-orm");
-
-  try {
-    const { bankId, cardId } = req.params;
-    const {
-      spendingLimitDaily,
-      allowCashAdvance,
-      allowOnyxTransactions,
-      cardLabel,
-      assignedMcUsername,
-      assignedDiscordId,
-      isLocked,
-    } = req.body;
-
-    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
-    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.bankId, bankId))).get();
-    if (!card) return res.status(404).json({ error: "Card not found" });
-
-    const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
-    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
-      return res.status(403).json({ error: "Unauthorized" });
-    }
-
-    const updates: any = {};
-    if (spendingLimitDaily !== undefined) {
-      updates.spendingLimitDailyCents = Math.max(0, Math.round(parseFloat(spendingLimitDaily) * 100));
-    }
-    if (allowCashAdvance !== undefined) updates.allowCashAdvance = !!allowCashAdvance;
-    if (allowOnyxTransactions !== undefined) updates.allowOnyxTransactions = !!allowOnyxTransactions;
-    if (cardLabel !== undefined) updates.cardLabel = String(cardLabel).trim().slice(0, 60);
-    if (assignedMcUsername !== undefined) updates.assignedMcUsername = String(assignedMcUsername).trim();
-    if (assignedDiscordId !== undefined) {
-      updates.assignedDiscordId = assignedDiscordId ? String(assignedDiscordId).trim().replace(/^<@!?/, "").replace(/>$/, "") : null;
-    }
-    if (isLocked !== undefined) updates.isLocked = !!isLocked;
-
-    await db.update(cards).set(updates).where(eq(cards.id, cardId));
-    const updated = await db.select().from(cards).where(eq(cards.id, cardId)).get();
-    res.json({ success: true, card: updated });
-  } catch (e: any) {
-    console.error(e);
-    res.status(500).json({ error: e.message || "Failed to update corporate card" });
-  }
-});
-
-portalRouter.delete("/api/portal/:bankId/corporate-cards/:cardId", requireAuth, async (req: express.Request, res: express.Response) => {
-  const { db } = await import("../../db/index.js");
-  const { cards, bankAccounts } = await import("../../db/schema.js");
-  const { eq, and } = await import("drizzle-orm");
-
-  try {
-    const { bankId, cardId } = req.params;
-    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
-    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.bankId, bankId))).get();
-    if (!card) return res.status(404).json({ error: "Card not found" });
-
-    const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
-    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
-      return res.status(403).json({ error: "Unauthorized" });
-    }
-
-    await db.delete(cards).where(eq(cards.id, cardId));
-    res.json({ success: true });
-  } catch (e: any) {
-    console.error(e);
-    res.status(500).json({ error: e.message || "Failed to revoke corporate card" });
-  }
-});
-
-// -----------------------------------------------------------------------------------------------------
-// Cash Advance for Personal Credit & Corporate Department Cards
-// -----------------------------------------------------------------------------------------------------
-
 portalRouter.post("/api/portal/:bankId/cards/:cardId/cash-advance", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index.js");
-  const { cards, bankAccounts, creditProducts, bankCustomers, transactions } = await import("../../db/schema.js");
-  const { eq, and, sql, inArray } = await import("drizzle-orm");
-  const { v4: uuidv4 } = await import("uuid");
-
+  const { cards, bankAccounts, creditProducts } = await import("../../db/schema.js");
+  const { eq, and, sql } = await import("drizzle-orm");
   try {
     const bankId = req.params.bankId;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
     const amountCents = Math.round(parseFloat(req.body.amount) * 100);
-    const destinationAccountId = req.body.destinationAccountId;
     if (!Number.isFinite(amountCents) || amountCents <= 0) return res.status(400).json({ error: "Invalid amount" });
 
     const card = await db.select().from(cards).where(and(eq(cards.id, req.params.cardId), eq(cards.bankId, bankId))).get();
     if (!card) return res.status(404).json({ error: "Card not found" });
     if (card.isLocked) return res.status(400).json({ error: "Card is locked" });
-
-    const fundingAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
-    if (!fundingAcc) return res.status(404).json({ error: "Funding account not found" });
-
-    const isOwnerOrMember = await isUserAccountOwnerOrMember(fundingAcc, candidateIds);
-    const customer = await db.select().from(bankCustomers).where(and(eq(bankCustomers.bankId, bankId), inArray(bankCustomers.discordId, candidateIds))).get();
-    const isAssigned = (card.assignedDiscordId && candidateIds.includes(card.assignedDiscordId)) ||
-      (customer?.mcUsername && card.assignedMcUsername && card.assignedMcUsername.toLowerCase() === customer.mcUsername.toLowerCase());
-
-    if (!isOwnerOrMember && !isAssigned) {
-      return res.status(403).json({ error: "Unauthorized to draw funds with this card" });
-    }
-
-    // Check Corporate Permissions & Daily Limits
-    if (card.isCorporate) {
-      if (card.allowCashAdvance === false) {
-        return res.status(400).json({ error: "Cash advances are disabled for this corporate card." });
-      }
-
-      // Check & reset daily spent
-      const now = new Date();
-      let currentDailySpent = card.dailySpentCents || 0;
-      if (card.lastDailySpentResetAt) {
-        const resetDate = new Date(card.lastDailySpentResetAt);
-        const diffHours = (now.getTime() - resetDate.getTime()) / (1000 * 60 * 60);
-        if (diffHours >= 24 || resetDate.getUTCDate() !== now.getUTCDate()) {
-          currentDailySpent = 0;
-        }
-      }
-
-      const dailyLimit = card.spendingLimitDailyCents || 0;
-      if (dailyLimit > 0 && currentDailySpent + amountCents > dailyLimit) {
-        return res.status(400).json({
-          error: `Draw exceeds card daily limit of $${(dailyLimit / 100).toFixed(2)}. Spent today: $${(currentDailySpent / 100).toFixed(2)}.`,
-        });
-      }
-
-      // Resolve destination account (employee's account or owner's chosen account)
-      let destAcc: any = null;
-      if (destinationAccountId) {
-        destAcc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, destinationAccountId), eq(bankAccounts.bankId, bankId))).get();
-        if (!destAcc || !(await isUserAccountOwnerOrMember(destAcc, candidateIds))) {
-          return res.status(400).json({ error: "Invalid destination account" });
-        }
-      } else {
-        // Find default personal account for the caller
-        destAcc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, candidateIds))).get();
-        if (!destAcc) destAcc = fundingAcc;
-      }
-
-      if (card.type === "credit") {
-        if ((card.creditUsed || 0) + amountCents > (card.creditLimit || 0)) {
-          return res.status(400).json({ error: "Exceeds card credit limit." });
-        }
-
-        const { disburseFromPoolOrOperating } = await import("../../lib/citycorp_money.js");
-        await disburseFromPoolOrOperating({
-          bankId,
-          toAccount: destAcc,
-          amountCents,
-          description: `Corp Card Advance · ${card.cardLabel || "Card"} (${card.assignedMcUsername || "Employee"})`,
-        });
-
-        await db.update(cards).set({
-          creditUsed: sql`${cards.creditUsed} + ${amountCents}`,
-          dailySpentCents: currentDailySpent + amountCents,
-          lastDailySpentResetAt: now,
-        }).where(eq(cards.id, card.id));
-
-        return res.json({
-          success: true,
-          advancedCents: amountCents,
-          feeCents: 0,
-          creditUsed: (card.creditUsed || 0) + amountCents,
-          dailySpentCents: currentDailySpent + amountCents,
-        });
-      } else {
-        // Corporate Debit: check balance on funding business account
-        if (fundingAcc.balance < amountCents) {
-          return res.status(400).json({ error: `Insufficient business account balance ($${(fundingAcc.balance / 100).toFixed(2)} available).` });
-        }
-
-        const { executeSameBankBookTransfer } = await import("../../lib/citycorp_money.js");
-        await executeSameBankBookTransfer({
-          sourceAccount: fundingAcc,
-          destAccount: destAcc,
-          desiredCents: amountCents,
-          mode: "from_payment",
-          description: `Corp Card Debit Draw · ${card.cardLabel || "Card"} (${card.assignedMcUsername || "Employee"})`,
-          type: "cash_advance",
-        });
-
-        await db.update(cards).set({
-          dailySpentCents: currentDailySpent + amountCents,
-          lastDailySpentResetAt: now,
-        }).where(eq(cards.id, card.id));
-
-        return res.json({
-          success: true,
-          advancedCents: amountCents,
-          feeCents: 0,
-          dailySpentCents: currentDailySpent + amountCents,
-        });
-      }
-    }
-
-    // Standard Non-Corporate Card Cash Advance
     if (card.type !== "credit") return res.status(400).json({ error: "Cash advances are for credit cards." });
+
+    const acc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, card.accountId)).get();
+    if (!acc || !(await isUserAccountOwnerOrMember(acc, candidateIds))) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
 
     let product: any = null;
     if ((card as any).productId) {
@@ -1814,7 +1557,7 @@ portalRouter.post("/api/portal/:bankId/cards/:cardId/cash-advance", requireAuth,
     const { disburseFromPoolOrOperating } = await import("../../lib/citycorp_money.js");
     await disburseFromPoolOrOperating({
       bankId,
-      toAccount: fundingAcc,
+      toAccount: acc,
       amountCents,
       description: `Cash advance · card ${String(card.cardNumber || "").slice(-4)}`,
     });

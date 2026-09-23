@@ -17,6 +17,9 @@ export function BankSettings() {
   const [businessPrefix, setBusinessPrefix] = useState("CORP-");
   const [personalNamingMode, setPersonalNamingMode] = useState("custom");
   const [businessNamingMode, setBusinessNamingMode] = useState("business_name");
+  const [maxPersonalAccounts, setMaxPersonalAccounts] = useState<string>("");
+  const [maxBusinessAccounts, setMaxBusinessAccounts] = useState<string>("");
+  const [maxTotalAccounts, setMaxTotalAccounts] = useState<string>("");
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -49,6 +52,9 @@ export function BankSettings() {
           setBusinessPrefix(data.businessAccountPrefix ?? "CORP-");
           setPersonalNamingMode(data.personalAccountNamingMode ?? "custom");
           setBusinessNamingMode(data.businessAccountNamingMode ?? "business_name");
+          setMaxPersonalAccounts(data.maxPersonalAccountsPerUser != null ? String(data.maxPersonalAccountsPerUser) : "");
+          setMaxBusinessAccounts(data.maxBusinessAccountsPerUser != null ? String(data.maxBusinessAccountsPerUser) : "");
+          setMaxTotalAccounts(data.maxTotalAccountsPerUser != null ? String(data.maxTotalAccountsPerUser) : "");
           setLoading(false);
         });
     }
@@ -63,6 +69,9 @@ export function BankSettings() {
       businessAccountPrefix: (formData.get("businessAccountPrefix") as string) || "CORP-",
       personalAccountNamingMode: (formData.get("personalAccountNamingMode") as string) || "custom",
       businessAccountNamingMode: (formData.get("businessAccountNamingMode") as string) || "business_name",
+      maxPersonalAccountsPerUser: formData.get("maxPersonalAccountsPerUser") && !isNaN(parseInt(formData.get("maxPersonalAccountsPerUser") as string, 10)) ? parseInt(formData.get("maxPersonalAccountsPerUser") as string, 10) : null,
+      maxBusinessAccountsPerUser: formData.get("maxBusinessAccountsPerUser") && !isNaN(parseInt(formData.get("maxBusinessAccountsPerUser") as string, 10)) ? parseInt(formData.get("maxBusinessAccountsPerUser") as string, 10) : null,
+      maxTotalAccountsPerUser: formData.get("maxTotalAccountsPerUser") && !isNaN(parseInt(formData.get("maxTotalAccountsPerUser") as string, 10)) ? parseInt(formData.get("maxTotalAccountsPerUser") as string, 10) : null,
       withdrawFeePercent: parseFloat(formData.get("withdrawFeePercent") as string) || 0,
       depositFeePercent: parseFloat(formData.get("depositFeePercent") as string) || 0,
       transferFeePercent: parseFloat(formData.get("transferFeePercent") as string) || 0,
@@ -374,6 +383,61 @@ export function BankSettings() {
                 <p className="text-[11px] text-white/40 mt-1">
                   Select how enterprise accounts format their institutional entity name.
                 </p>
+              </div>
+
+              {/* Citizen Account Holding Limits (Bank-Wide) */}
+              <div className="md:col-span-2 pt-4 border-t border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield size={16} className="text-amber-400" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">Citizen Account Holding Caps</span>
+                  </div>
+                  <span className="text-[11px] text-white/40">Global ceiling across all account tiers (blank or 0 = unlimited)</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-white/50 mb-1">Max Personal Accounts</label>
+                    <input
+                      name="maxPersonalAccountsPerUser"
+                      type="number"
+                      min="1"
+                      value={maxPersonalAccounts}
+                      onChange={(e) => setMaxPersonalAccounts(e.target.value)}
+                      placeholder="Unlimited (e.g. 2)"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                    />
+                    <p className="text-[10px] text-white/40 mt-1">Max personal accounts a citizen can register.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-white/50 mb-1">Max Business Accounts</label>
+                    <input
+                      name="maxBusinessAccountsPerUser"
+                      type="number"
+                      min="1"
+                      value={maxBusinessAccounts}
+                      onChange={(e) => setMaxBusinessAccounts(e.target.value)}
+                      placeholder="Unlimited (e.g. 5)"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                    />
+                    <p className="text-[10px] text-white/40 mt-1">Max business accounts a customer can hold.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-white/50 mb-1">Max Total Combined</label>
+                    <input
+                      name="maxTotalAccountsPerUser"
+                      type="number"
+                      min="1"
+                      value={maxTotalAccounts}
+                      onChange={(e) => setMaxTotalAccounts(e.target.value)}
+                      placeholder="Unlimited (e.g. 6)"
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                    />
+                    <p className="text-[10px] text-white/40 mt-1">Absolute ceiling of active accounts per client.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -8,6 +8,14 @@ interface BotInstance {
   status: 'offline' | 'online' | 'error';
 }
 
+export function isValidDiscordToken(token?: string | null): boolean {
+  if (!token) return false;
+  const trimmed = token.trim();
+  if (trimmed.length < 50) return false;
+  const parts = trimmed.split('.');
+  return parts.length >= 3;
+}
+
 export class BotManager {
   private instances: Map<string, BotInstance> = new Map();
 
@@ -90,6 +98,17 @@ export class BotManager {
   }
 
   async provisionBankBot(bankId: string, token: string) {
+    if (!isValidDiscordToken(token)) {
+      console.warn(`[BankBot ${bankId}] Skipping bot startup: Discord token is missing or not a valid bot token format.`);
+      try {
+        const { db } = await import("../db/index");
+        const { banks } = await import("../db/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(banks).set({ status: 'offline' }).where(eq(banks.id, bankId));
+      } catch {}
+      return;
+    }
+
     if (this.instances.has(bankId)) {
       throw new Error(`Bot for bank ${bankId} is already running.`);
     }
@@ -151,11 +170,12 @@ export class BotManager {
     });
 
     try {
-      await client.login(token);
+      await client.login(token.trim());
     } catch (error) {
       console.error(`[BankBot ${bankId}] Failed to login:`, error);
       const instance = this.instances.get(bankId);
       if (instance) instance.status = 'error';
+      this.instances.delete(bankId);
       try {
         const { db } = await import("../db/index");
         const { banks } = await import("../db/schema");

@@ -1664,6 +1664,9 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         businessAccountPrefix: req.body.businessAccountPrefix !== undefined ? String(req.body.businessAccountPrefix).trim() : "CORP-",
         personalAccountNamingMode: req.body.personalAccountNamingMode !== undefined ? String(req.body.personalAccountNamingMode).trim() : "custom",
         businessAccountNamingMode: req.body.businessAccountNamingMode !== undefined ? String(req.body.businessAccountNamingMode).trim() : "business_name",
+        maxPersonalAccountsPerUser: req.body.maxPersonalAccountsPerUser !== undefined && req.body.maxPersonalAccountsPerUser !== "" && !isNaN(Number(req.body.maxPersonalAccountsPerUser)) ? Number(req.body.maxPersonalAccountsPerUser) : null,
+        maxBusinessAccountsPerUser: req.body.maxBusinessAccountsPerUser !== undefined && req.body.maxBusinessAccountsPerUser !== "" && !isNaN(Number(req.body.maxBusinessAccountsPerUser)) ? Number(req.body.maxBusinessAccountsPerUser) : null,
+        maxTotalAccountsPerUser: req.body.maxTotalAccountsPerUser !== undefined && req.body.maxTotalAccountsPerUser !== "" && !isNaN(Number(req.body.maxTotalAccountsPerUser)) ? Number(req.body.maxTotalAccountsPerUser) : null,
         metaTitle: req.body.metaTitle ? String(req.body.metaTitle).trim() : null,
         metaDescription: req.body.metaDescription ? String(req.body.metaDescription).trim() : null,
         metaKeywords: req.body.metaKeywords ? String(req.body.metaKeywords).trim() : null,
@@ -2147,6 +2150,90 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
         }).onConflictDoNothing();
       }
 
+      // 4.5 Tier Limits and Exclusivity Validation (Staff can bypass with bypassLimits: true)
+      const assignedTierId = (req.body.tierId || tierId) || (settings?.enableAccountTiers && settings?.accountTiers?.find((t: any) => t.isDefault && t.type === finalAccountType)?.id) || null;
+      if (assignedTierId && !req.body.bypassLimits) {
+        const rawAccountTiers = Array.isArray(settings?.accountTiers) ? settings.accountTiers : [];
+        const chosenTier = rawAccountTiers.find((t: any) => t.id === assignedTierId);
+
+        const existingAccounts = await db.select().from(bankAccounts).where(
+          and(
+            eq(bankAccounts.bankId, req.params.bankId),
+            eq(bankAccounts.ownerDiscordId, finalOwner),
+            eq(bankAccounts.isActive, true)
+          )
+        );
+
+        if (chosenTier) {
+          // Max tier accounts limit
+          if (typeof chosenTier.maxAccountsPerUser === "number" && chosenTier.maxAccountsPerUser > 0) {
+            const currentTierCount = existingAccounts.filter(a => a.tierId === chosenTier.id).length;
+            if (currentTierCount >= chosenTier.maxAccountsPerUser) {
+              return res.status(400).json({
+                error: `Tier Limit Reached: Citizen '${finalOwner}' already has ${currentTierCount} account(s) of tier '${chosenTier.name}' (limit is ${chosenTier.maxAccountsPerUser}). Enable 'Bypass Limits' in staff options if authorized.`
+              });
+            }
+          }
+
+          // Mutually exclusive tiers
+          const blockedTierIds = new Set<string>(Array.isArray(chosenTier.mutuallyExclusiveTierIds) ? chosenTier.mutuallyExclusiveTierIds : []);
+          for (const ea of existingAccounts) {
+            if (!ea.tierId) continue;
+            const exTier = rawAccountTiers.find((t: any) => t.id === ea.tierId);
+            if (!exTier) continue;
+            if (blockedTierIds.has(exTier.id)) {
+              return res.status(400).json({
+                error: `Policy Restriction: Tier '${chosenTier.name}' is mutually exclusive with existing tier '${exTier.name}'. Only one or the other may be held.`
+              });
+            }
+            if (Array.isArray(exTier.mutuallyExclusiveTierIds) && exTier.mutuallyExclusiveTierIds.includes(chosenTier.id)) {
+              return res.status(400).json({
+                error: `Policy Restriction: Existing tier '${exTier.name}' is mutually exclusive with tier '${chosenTier.name}'.`
+              });
+            }
+          }
+
+          // Exclusivity group
+          if (chosenTier.exclusiveGroup) {
+            for (const ea of existingAccounts) {
+              if (!ea.tierId || ea.tierId === chosenTier.id) continue;
+              const exTier = rawAccountTiers.find((t: any) => t.id === ea.tierId);
+              if (exTier && exTier.exclusiveGroup === chosenTier.exclusiveGroup) {
+                return res.status(400).json({
+                  error: `Exclusivity Group Conflict: Already holding '${exTier.name}' in group '${chosenTier.exclusiveGroup}'.`
+                });
+              }
+            }
+          }
+        }
+
+        // Global bank limits
+        const isBiz = finalAccountType.includes("business");
+        if (!isBiz && typeof settings?.maxPersonalAccountsPerUser === "number" && settings.maxPersonalAccountsPerUser > 0) {
+          const personalCount = existingAccounts.filter(a => !a.accountType?.includes("business")).length;
+          if (personalCount >= settings.maxPersonalAccountsPerUser) {
+            return res.status(400).json({
+              error: `Bank Limit: Maximum of ${settings.maxPersonalAccountsPerUser} personal account(s) allowed per citizen.`
+            });
+          }
+        }
+        if (isBiz && typeof settings?.maxBusinessAccountsPerUser === "number" && settings.maxBusinessAccountsPerUser > 0) {
+          const bizCount = existingAccounts.filter(a => a.accountType?.includes("business")).length;
+          if (bizCount >= settings.maxBusinessAccountsPerUser) {
+            return res.status(400).json({
+              error: `Bank Limit: Maximum of ${settings.maxBusinessAccountsPerUser} business account(s) allowed per entity.`
+            });
+          }
+        }
+        if (typeof settings?.maxTotalAccountsPerUser === "number" && settings.maxTotalAccountsPerUser > 0) {
+          if (existingAccounts.length >= settings.maxTotalAccountsPerUser) {
+            return res.status(400).json({
+              error: `Bank Limit: Maximum of ${settings.maxTotalAccountsPerUser} total account(s) allowed per customer.`
+            });
+          }
+        }
+      }
+
       // 5. Create in local DB
       const newAccount = {
         id: uuidv4(),
@@ -2154,7 +2241,7 @@ banksRouter.post("/api/banks/:bankId/accounts", requireBankStaff, async (req: ex
         ownerDiscordId: finalOwner,
         accountName,
         accountType: finalAccountType,
-        tierId: (req.body.tierId || tierId) || (settings?.enableAccountTiers && settings?.accountTiers?.find((t: any) => t.isDefault && t.type === finalAccountType)?.id) || null,
+        tierId: assignedTierId,
         balance: req.body.initialBalanceCents || 0,
         createdAt: new Date(),
       };
@@ -4053,15 +4140,6 @@ banksRouter.get("/api/banks/:bankId/cards", requireBankStaff, async (req: expres
          creditLimit: cards.creditLimit,
          creditUsed: cards.creditUsed,
          productId: cards.productId,
-         isCorporate: cards.isCorporate,
-         assignedMcUsername: cards.assignedMcUsername,
-         assignedDiscordId: cards.assignedDiscordId,
-         cardLabel: cards.cardLabel,
-         spendingLimitDailyCents: cards.spendingLimitDailyCents,
-         dailySpentCents: cards.dailySpentCents,
-         lastDailySpentResetAt: cards.lastDailySpentResetAt,
-         allowCashAdvance: cards.allowCashAdvance,
-         allowOnyxTransactions: cards.allowOnyxTransactions,
          createdAt: cards.createdAt,
          accountId: cards.accountId,
          accountName: bankAccounts.accountName,
@@ -4129,20 +4207,7 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
     const { v4: uuidv4 } = await import("uuid");
     const { randomInt } = await import("crypto");
     try {
-       const { 
-         accountId, 
-         creditLimit, 
-         creditApr, 
-         productId, 
-         type = "credit",
-         isCorporate = false,
-         assignedMcUsername = null,
-         assignedDiscordId = null,
-         cardLabel = null,
-         spendingLimitDaily = 0,
-         allowCashAdvance = true,
-         allowOnyxTransactions = true,
-       } = req.body;
+       const { accountId, creditLimit, creditApr, productId } = req.body;
        if (!accountId) return res.status(400).json({ error: "Missing fields" });
        
        // check account exists in bank
@@ -4156,8 +4221,6 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
        nextYear.setFullYear(nextYear.getFullYear() + 4);
        const expiryDate = `${(nextYear.getMonth() + 1).toString().padStart(2, '0')}/${nextYear.getFullYear().toString().slice(-2)}`;
 
-       const dailyLimitCents = Math.max(0, Math.round(parseFloat(spendingLimitDaily || "0") * 100));
-
        const result = await db.insert(cards).values({
          id: uuidv4(),
          bankId: req.params.bankId,
@@ -4165,21 +4228,12 @@ banksRouter.post("/api/banks/:bankId/cards", requireBankStaff, async (req: expre
          cardNumber,
          cvv,
          expiryDate,
-         type: type === "debit" ? "debit" : "credit",
-         creditLimit: type === "debit" ? 0 : (creditLimit ? parseInt(creditLimit) : 1000000),
+         type: "credit",
+         creditLimit: creditLimit ? parseInt(creditLimit) : 1000000,
          creditUsed: 0,
-         apr: type === "debit" ? 0 : (creditApr ? parseInt(creditApr) : 1999),
+         apr: creditApr ? parseInt(creditApr) : 1999,
          isLocked: false,
          productId: productId || null,
-         isCorporate: !!isCorporate,
-         assignedMcUsername: assignedMcUsername ? String(assignedMcUsername).trim() : null,
-         assignedDiscordId: assignedDiscordId ? String(assignedDiscordId).trim().replace(/^<@!?/, "").replace(/>$/, "") : null,
-         cardLabel: cardLabel ? String(cardLabel).trim() : (isCorporate ? "Corporate Department Card" : null),
-         spendingLimitDailyCents: dailyLimitCents,
-         dailySpentCents: 0,
-         lastDailySpentResetAt: new Date(),
-         allowCashAdvance: allowCashAdvance !== undefined ? !!allowCashAdvance : true,
-         allowOnyxTransactions: allowOnyxTransactions !== undefined ? !!allowOnyxTransactions : true,
          nextPaymentDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })(),
          createdAt: new Date(),
        }).returning().get();

@@ -878,6 +878,18 @@ Scopes use a dot-separated naming convention:
 - **Tier Configuration**: Banks can toggle the "Custom Account Tiers" feature in the Settings page or directly configure tiers in the "Account Tiers" page under "Products & Services". Saving account tiers automatically activates the feature for the bank.
 - **Granular Rulesets**: Within the Account Tiers UI, bank staff can create tiers (e.g., Gold Savings, Premium Checking) customized with a monthly fee, minimum balance requirements, and custom APY/transfer/deposit/withdraw fee percentages.
 - **Private Tiers**: Tiers can be marked as "Private (Staff Only)". Private tiers are ignored by public catalog and automated tier assignment logic when citizens register new accounts, ensuring they are strictly handed out by bank staff.
+- **Configurable Holding Limits (`maxAccountsPerUser`)**: Banks can restrict how many accounts an individual citizen can register or hold under each tier (e.g., limit citizens to exactly 1 "Free Student Checking" or 2 "Standard Personal" accounts). Leaving blank or 0 permits unlimited accounts.
+- **Advanced Mutual Exclusivity & Category Suites**:
+  - **Direct Mutual Exclusivity (`mutuallyExclusiveTierIds`)**: Staff can designate specific tiers that cannot be held concurrently with each other (bidirectional constraint: holding Tier A blocks registering Tier B, and vice versa). For instance, a citizen holding a "High-Yield Starter Tier" cannot simultaneously hold a "Zero-Fee Promotional Tier".
+  - **Category / Suite Grouping (`exclusiveGroup`)**: Assigning an exclusivity group tag (such as `personal_checking_suite` or `wealth_tier`) enforces that a client may hold at most one account across all tiers sharing that group tag.
+- **Bank-Wide Account Holding Ceilings**: In `Bank Settings`, administrators can define global ceilings across all account tiers:
+  - `maxPersonalAccountsPerUser`: Global ceiling on active personal accounts per citizen.
+  - `maxBusinessAccountsPerUser`: Global ceiling on active business accounts per customer.
+  - `maxTotalAccountsPerUser`: Absolute ceiling of total combined active accounts per customer.
+- **Full-Stack Multi-Channel Enforcement**:
+  - **Citizen Self-Service Onboarding (`POST /api/citizen/accounts/register`)**: Validates candidate identity across CityCorp UUID, Discord ID, and verified handles, ensuring strict adherence to tier limits, exclusivity rules, and bank-wide caps before account creation.
+  - **Staff Manual Creation (`POST /api/banks/:bankId/accounts`)**: Automatically validates limits for staff members with an optional staff override (`bypassLimits: true`) for executive exceptions.
+  - **Reactive Citizen UI (`BankPortal.tsx`)**: The tier selection dropdown displays live holding counts and limit badges (`[Limit Reached: X/Y]`), presents contextual policy warnings for exclusivity conflicts, and disables the submit button if the client is ineligible.
 - **Customer Portal Integration**: The Customer Portal (`BankPortal.tsx`) pulls available tiers directly from the bank's configuration (`/api/portal/:bankId/info` and `/api/portal/:bankId/catalog`). When custom account tiers exist, the "Open an account" form dynamically renders each tier option complete with fee, yield (APY), category, and perk summaries, and automatically associates the created account with the designated `tierId`.
 - **Dynamic Tier Registration**: If a bank has public tiers enabled, the registration flows automatically present the dynamic list of available public tiers, allowing users to choose an upgraded tier immediately upon opening an account.
 - **Customer Upgrades**: Citizens can upgrade their existing account's tier directly from their customer portal. An "Upgrade" button is displayed on eligible account cards, which opens a modal allowing them to select a new public tier of the same account type.
@@ -909,7 +921,9 @@ As of the latest update, both Global Admins (via the Banks list) and Bank Admins
 *Schema structures for \`global_sanctions\` and \`global_announcements\` have been added to the database to support upcoming system-wide enforcement and broadcast tools.*
 
 ## Bot Fleet Management
-Global Admins have access to the Bot Fleet Management panel in Global Settings to monitor the connection status of all provisioned Discord bots across the network.
+- **Centralized Fleet Oversight**: Global Admins have access to the Bot Fleet Management panel in Global Settings to monitor the connection status of all provisioned Discord bots across the network.
+- **Safe Provisioning & Token Validation (`isValidDiscordToken`)**: The Bot Manager inspects bank Discord bot tokens before initialization. If a token is missing, empty, or placeholder text (e.g. failing standard segment/length checks), the bot manager skips the login attempt and safely marks the bot instance as `offline` without crashing or raising unhandled exceptions.
+- **Error Recovery & Re-provisioning**: If Discord API returns a login rejection (`TokenInvalid`), the instance is marked as `error` and removed from active cache so bank administrators can provide a fresh valid token in Bank Settings without requiring a server reboot.
 
 ## Clearinghouse Global Views
 A Global Clearinghouse Balances panel has been added to Global Settings, allowing Global Admins to view all Onyx Clearinghouse balances centrally without navigating to each bank's portal.
@@ -1323,30 +1337,4 @@ To ensure mathematical parity between Slate's quote engine and in-game CityCorp 
     - Resolves each participant's account identifier (by username, account ID, or Discord ID).
     - Automatically creates formal Slate payment request invoices under the target accounts with memo references (`Split Bill: <Memo>`), payable directly through their portal with one click.
     - Reimbursed funds settle directly into the initiator's chosen receiving account.
-
-### 12. Transaction Memo Details & Full Audit Inspection
-- **Interactive Transaction Detail Modal (`BankPortal.tsx`)**:
-  - Users can click on any transaction row or memo in the Activity Ledger or Home recent transactions to launch an inspection modal.
-  - Displays formatted amount and direction badges (Credit vs Debit), full un-truncated memo/notes, counterparty names and account IDs, transaction classification, exact settlement timestamp, and one-click copyable reference IDs.
-  - Provides a direct "Split Bill" action modal trigger for outbound debit payments.
-
-### 13. Configurable Account Number Prefixes & Naming Schemes
-- **Customizable Bank & Account Tier Identifiers**:
-  - Bank staff can configure standard account prefixes (e.g. `ACC`, `BNK`, `CORP`, `ROYAL`) and naming conventions in `Bank Settings` and `Account Tiers`.
-  - Supports personal account custom naming, discord username auto-population, and dedicated business account naming conventions (`BIZ-name` / `CORP-name`).
-  - Account prefix settings are evaluated dynamically during account creation and tier selection.
-
-### 14. Corporate Department Cards for Employee Spending
-- **Department Expense Cards & Employee Assignment (`/api/portal/:bankId/corporate-cards`)**:
-  - Business account owners and managers can issue corporate debit or credit cards linked directly to their business balance.
-  - **Employee Identification via Minecraft & Discord**:
-    - Cards can be assigned to specific employees by their **Minecraft Username** (with automated 3D avatar rendering from Mojang/Crafatar APIs) or Discord Snowflake ID.
-    - Assigned employees can view and lock/unlock their assigned cards in the customer portal.
-  - **Customizable Spending Controls & Permissions**:
-    - **Daily Spending Limit**: Configurable daily spending cap (`spendingLimitDailyCents`). Spending is automatically tracked (`dailySpentCents`) and resets every 24 hours.
-    - **Onyx Point-of-Sale Controls**: `allowOnyxTransactions` toggle permits or blocks card usage at physical Onyx merchant terminals and web checkout widgets.
-    - **Cash Advance Controls**: `allowCashAdvance` toggle allows or restricts drawing cash against the corporate card.
-  - **Onyx Checkout Enforcement (`onyx.ts`)**:
-    - When an Onyx transaction is executed with a corporate card, Onyx validates employee authorization, active lock status, Onyx POS permissions, and verifies that the charge does not exceed the remaining daily spending allowance before debiting the company's ledger.
-
 

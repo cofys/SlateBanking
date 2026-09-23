@@ -15,6 +15,7 @@ export function normalizeIdentifier(raw: string | null | undefined): string[] {
   const results = new Set<string>();
   results.add(val);
   results.add(val.toLowerCase());
+  results.add(val.toUpperCase());
 
   // Pure Discord snowflake (17-20 digits)
   if (/^\d{17,20}$/.test(val)) {
@@ -27,12 +28,15 @@ export function normalizeIdentifier(raw: string | null | undefined): string[] {
     if (stripped) {
       results.add(stripped);
       results.add(stripped.toLowerCase());
+      results.add(stripped.toUpperCase());
       results.add(`mc_${stripped}`);
       results.add(`mc_${stripped.toLowerCase()}`);
+      results.add(`mc_${stripped.toUpperCase()}`);
     }
   } else {
     results.add(`mc_${val}`);
     results.add(`mc_${val.toLowerCase()}`);
+    results.add(`mc_${val.toUpperCase()}`);
   }
 
   // 32-36 character UUID with or without hyphens
@@ -46,6 +50,8 @@ export function normalizeIdentifier(raw: string | null | undefined): string[] {
     results.add(dashed.toUpperCase());
     results.add(`mc_${lowerClean}`);
     results.add(`mc_${dashed}`);
+    results.add(`mc_${lowerClean.toUpperCase()}`);
+    results.add(`mc_${dashed.toUpperCase()}`);
   }
 
   return Array.from(results);
@@ -56,7 +62,20 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
   if (!user) return [];
 
   const candidates = new Set<string>();
-  const seeds = [user.discordId, user.mcUuid, user.linkedDiscordId, user.username, user.mcUsername].filter(Boolean);
+  const seeds = [
+    user.id,
+    user.discordId,
+    user.mcUuid,
+    user.linkedDiscordId,
+    user.username,
+    user.mcUsername,
+    user.displayName,
+    (user as any).global_name,
+    (user as any).rpName,
+    (user as any).rp_name,
+    (user as any).email
+  ].filter(Boolean);
+
   for (const s of seeds) {
     normalizeIdentifier(s).forEach((id) => candidates.add(id));
   }
@@ -70,25 +89,23 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
       customerConditions.push(eq(bankCustomers.linkedDiscordId, k));
       customerConditions.push(eq(bankCustomers.mcUuid, k));
       customerConditions.push(eq(bankCustomers.mcUsername, k));
+      customerConditions.push(eq(bankCustomers.rpName, k));
+      customerConditions.push(eq(bankCustomers.id, k));
     }
-    if (bankId) {
-      const scoped = customerConditions.map((c) => and(eq(bankCustomers.bankId, bankId), c));
-      const matchedCustomers = await db.select().from(bankCustomers).where(or(...scoped));
-      for (const c of matchedCustomers) {
-        if (c.id) candidates.add(c.id);
-        if (c.discordId) normalizeIdentifier(c.discordId).forEach((id) => candidates.add(id));
-        if (c.linkedDiscordId) normalizeIdentifier(c.linkedDiscordId).forEach((id) => candidates.add(id));
-        if (c.mcUuid) normalizeIdentifier(c.mcUuid).forEach((id) => candidates.add(id));
-        if (c.mcUsername) normalizeIdentifier(c.mcUsername).forEach((id) => candidates.add(id));
+    // Search bankCustomers globally so cross-bank identities and links are always preserved
+    const matchedCustomers = await db.select().from(bankCustomers).where(or(...customerConditions));
+    for (const c of matchedCustomers) {
+      if (c.id) candidates.add(c.id);
+      if (c.discordId) normalizeIdentifier(c.discordId).forEach((id) => candidates.add(id));
+      if (c.linkedDiscordId) normalizeIdentifier(c.linkedDiscordId).forEach((id) => candidates.add(id));
+      if (c.mcUuid) normalizeIdentifier(c.mcUuid).forEach((id) => candidates.add(id));
+      if (c.mcUsername) {
+        candidates.add(c.mcUsername);
+        normalizeIdentifier(c.mcUsername).forEach((id) => candidates.add(id));
       }
-    } else {
-      const matchedCustomers = await db.select().from(bankCustomers).where(or(...customerConditions));
-      for (const c of matchedCustomers) {
-        if (c.id) candidates.add(c.id);
-        if (c.discordId) normalizeIdentifier(c.discordId).forEach((id) => candidates.add(id));
-        if (c.linkedDiscordId) normalizeIdentifier(c.linkedDiscordId).forEach((id) => candidates.add(id));
-        if (c.mcUuid) normalizeIdentifier(c.mcUuid).forEach((id) => candidates.add(id));
-        if (c.mcUsername) normalizeIdentifier(c.mcUsername).forEach((id) => candidates.add(id));
+      if (c.rpName) {
+        candidates.add(c.rpName);
+        normalizeIdentifier(c.rpName).forEach((id) => candidates.add(id));
       }
     }
   } catch (e) {
@@ -102,6 +119,8 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
       userConditions.push(eq(users.mcUuid, k));
       userConditions.push(eq(users.linkedDiscordId, k));
       userConditions.push(eq(users.mcUsername, k));
+      userConditions.push(eq(users.rpName, k));
+      userConditions.push(eq(users.id, k));
     }
     if (userConditions.length > 0) {
       const matchedUsers = await db.select().from(users).where(or(...userConditions));
@@ -110,11 +129,36 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
         if (u.discordId) normalizeIdentifier(u.discordId).forEach((id) => candidates.add(id));
         if (u.mcUuid) normalizeIdentifier(u.mcUuid).forEach((id) => candidates.add(id));
         if ((u as any).linkedDiscordId) normalizeIdentifier((u as any).linkedDiscordId).forEach((id) => candidates.add(id));
-        if (u.mcUsername) normalizeIdentifier(u.mcUsername).forEach((id) => candidates.add(id));
+        if (u.mcUsername) {
+          candidates.add(u.mcUsername);
+          normalizeIdentifier(u.mcUsername).forEach((id) => candidates.add(id));
+        }
+        if (u.rpName) {
+          candidates.add(u.rpName);
+          normalizeIdentifier(u.rpName).forEach((id) => candidates.add(id));
+        }
       }
     }
   } catch (e) {
     console.error("[userResolver] Error querying users table:", e);
+  }
+
+  // Also query bankAccounts directly to capture any account where ownerDiscordId was saved with case variations
+  try {
+    const searchKeysList = Array.from(candidates);
+    const accConditions = searchKeysList.slice(0, 50).map(k => eq(bankAccounts.ownerDiscordId, k));
+    if (accConditions.length > 0) {
+      const accRows = await db.select({ ownerDiscordId: bankAccounts.ownerDiscordId })
+        .from(bankAccounts)
+        .where(or(...accConditions));
+      for (const a of accRows) {
+        if (a.ownerDiscordId) {
+          candidates.add(a.ownerDiscordId);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[userResolver] Error querying bankAccounts in userResolver:", e);
   }
 
   return Array.from(candidates).filter(Boolean);
