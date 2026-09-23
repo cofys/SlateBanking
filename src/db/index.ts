@@ -200,6 +200,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "auto_approve_loans", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "auto_approve_credit_cards", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "max_auto_approve_loan_amount", "INTEGER DEFAULT 1000000");
+  checkAndAddColumn("bank_settings", "auto_provision_in_game", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "vault_tiers", "TEXT");
   checkAndAddColumn("bank_settings", "login_bg_url", "TEXT");
   checkAndAddColumn("bank_settings", "loan_pool_account", "TEXT");
@@ -208,6 +209,10 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "savings_apy_percent", "INTEGER DEFAULT 300");
   checkAndAddColumn("bank_settings", "require_personal_for_business", "INTEGER DEFAULT 1");
   checkAndAddColumn("bank_settings", "last_interest_accrual_at", "INTEGER");
+  checkAndAddColumn("bank_settings", "daily_backup_enabled", "INTEGER DEFAULT 0");
+  checkAndAddColumn("bank_settings", "backup_webhook_url", "TEXT");
+  checkAndAddColumn("bank_settings", "backup_encryption_passphrase", "TEXT");
+  checkAndAddColumn("bank_settings", "last_daily_backup_at", "INTEGER");
   checkAndAddColumn("bank_settings", "enable_google_docs_contracts", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "google_docs_loan_template_url", "TEXT");
   checkAndAddColumn("bank_settings", "google_docs_credit_template_url", "TEXT");

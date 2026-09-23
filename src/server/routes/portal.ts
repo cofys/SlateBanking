@@ -1106,6 +1106,50 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       }
     }
 
+    // 2.9 In-Game CityCorp Provisioning vs Staff Review
+    let existsInGame = false;
+    let syncError: string | null = null;
+    const { bankCustomers } = await import("../../db/schema");
+    const customer = await db.select().from(bankCustomers).where(and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, primaryId))).get();
+    const playerUuid = customer?.mcUuid || userRow?.mcUuid;
+
+    if (settings?.autoProvisionInGame) {
+      if (bank.corpId && bank.corpApiUuid && bank.corpApiKey) {
+        try {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          const createRes = await client.createAccount(finalAccountName);
+
+          if (createRes.success || (createRes.message && createRes.message.includes("already exists"))) {
+            existsInGame = true;
+            if (playerUuid) {
+              try {
+                await client.addSubuser(finalAccountName, playerUuid);
+              } catch (subErr) {
+                console.error("[AccountRegister] Non-fatal subuser add error:", subErr);
+              }
+            }
+
+            // Sync fee policy to CityCorp
+            const wFee = settings.withdrawFeePercent ? (Number(settings.withdrawFeePercent) > 100 ? Number(settings.withdrawFeePercent) / 100 : Number(settings.withdrawFeePercent)) : 0;
+            const dFee = settings.depositFeePercent ? (Number(settings.depositFeePercent) > 100 ? Number(settings.depositFeePercent) / 100 : Number(settings.depositFeePercent)) : 0;
+            if (wFee > 0) client.setAccountFee(finalAccountName, "WITHDRAW", wFee).catch(() => {});
+            if (dFee > 0) client.setAccountFee(finalAccountName, "DEPOSIT", dFee).catch(() => {});
+          } else {
+            syncError = createRes.message || "Failed to create CityCorp account";
+          }
+        } catch (ccErr: any) {
+          console.error("[AccountRegister] CityCorp auto-provision error:", ccErr);
+          syncError = ccErr.message || "CityCorp API error";
+        }
+      } else {
+        syncError = "CityCorp API not configured for this bank";
+      }
+    } else {
+      existsInGame = false;
+      syncError = "Pending staff review and in-game provisioning";
+    }
+
     // 3. Create Account
     const cleanPrefixForId = configuredPrefix ? configuredPrefix.replace(/[^a-zA-Z0-9_-]/g, '') : "ACC-";
     const id = `${cleanPrefixForId}${uuidv4().substring(0, 8).toUpperCase()}`;
@@ -1120,8 +1164,23 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       businessSector: type === "business" ? (businessSector || "General Commerce") : null,
       balance: 0,
       isActive: true,
+      existsInGame,
+      syncError: existsInGame ? null : syncError,
+      lastSyncedAt: existsInGame ? new Date() : null,
       createdAt: new Date()
     });
+
+    if (existsInGame) {
+      try {
+        const { syncSingleAccount } = await import("../sync_jobs");
+        const newlyInserted = await db.select().from(bankAccounts).where(eq(bankAccounts.id, id)).get();
+        if (newlyInserted) {
+          await syncSingleAccount(newlyInserted, bank);
+        }
+      } catch (syncErr) {
+        console.error("[AccountRegister] Post-provision sync error:", syncErr);
+      }
+    }
 
     // 3.5. Auto-Provision Credit Card if Tier specifies a Credit Limit
     let provisionedCardInfo: any = null;
@@ -1181,6 +1240,7 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
         { name: "Account ID", value: `\`${id}\``, inline: true },
         { name: "Account Type", value: type.toUpperCase(), inline: true },
         { name: "Owner Discord ID", value: `<@${primaryId}>`, inline: true },
+        { name: "In-Game Provisioning", value: existsInGame ? "✅ Auto-Provisioned In-Game" : "🛡️ Pending Staff Review", inline: true },
         ...(type === "business" ? [
           { name: "In-Game Corp Name", value: `\`${businessTaxId || accountName.trim()}\``, inline: true },
           { name: "Merchant Terminal ID", value: `\`${merchantInfo?.merchantId}\``, inline: true }
@@ -1188,9 +1248,15 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       ]
     });
 
+    const successMessage = existsInGame
+      ? (type === "business" ? "Business Account registered and provisioned in CityCorp in-game!" : "Personal Account opened and provisioned in CityCorp in-game!")
+      : (settings?.autoProvisionInGame
+          ? `Account registered on Slate. In-game provisioning notice: ${syncError || "Pending synchronization"}`
+          : "Account registered successfully. Bank staff will review and provision your in-game account shortly.");
+
     res.json({
       success: true,
-      message: type === "business" ? "Business Account registered with Onyx Merchant Terminal integration!" : "Personal Account opened successfully.",
+      message: successMessage,
       account: {
         id,
         bankId,
@@ -1198,7 +1264,8 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
         accountType: type,
         businessTaxId,
         businessSector,
-        merchantInfo
+        merchantInfo,
+        existsInGame
       }
     });
 

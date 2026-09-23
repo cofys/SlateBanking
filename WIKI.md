@@ -1346,3 +1346,53 @@ To ensure mathematical parity between Slate's quote engine and in-game CityCorp 
     - Automatically creates formal Slate payment request invoices under the target accounts with memo references (`Split Bill: <Memo>`), payable directly through their portal with one click.
     - Reimbursed funds settle directly into the initiator's chosen receiving account.
 
+### 12. In-Game Account Auto-Provisioning & Staff Review Policy (`autoProvisionInGame`)
+- **Regulatory Gatekeeping vs Instant Onboarding**:
+  - Banks can govern whether citizen accounts created through the web portal are automatically created in the CityCorp in-game Minecraft plugin or require staff inspection and manual approval prior to in-game activation.
+  - Controlled by the `autoProvisionInGame` boolean in `bank_settings` (accessible via **Bank Settings &rarr; In-Game Account Provisioning & Staff Review**).
+  - **Staff Review Required (Default: `autoProvisionInGame = false`)**:
+    - Recommended for strict roleplay servers and institutional banks maintaining KYC standards.
+    - When a user registers a new account on the customer portal, the account record is created in Slate's SQLite database with `existsInGame = false`.
+    - The account is automatically routed to the **Staff Desk Queue** (`/api/banks/:bankId/desk/queue`) categorized as `account_pending_provision` with severity `warning` and action `Review & Provision`.
+    - In **Customer Accounts** (`/bank/:bankId/accounts`), accounts display a prominent `⚠️ Not Found In-Game` badge, and staff can filter accounts via quick tabs: `All Accounts`, `⚠️ Pending In-Game`, and `Active In-Game`.
+    - Staff inspect user credentials and click **"Review & Provision"** (`POST /api/banks/:bankId/accounts/:accountId/provision-game`).
+    - The server makes the external CityCorp API call to create the corporate bank account, binds the user's Minecraft UUID as a subuser, applies bank withdrawal and deposit fees to CityCorp, marks `existsInGame = true`, and links the user's Minecraft UUID to the bank customer profile.
+  - **Instant Auto-Provisioning (`autoProvisionInGame = true`)**:
+    - When enabled, the registration flow (`POST /api/portal/:bankId/accounts`) immediately invokes CityCorp in-game creation upon registration.
+    - The player's Minecraft UUID is bound, fees are synchronized, and the account is ready for instant in-game and web transactions immediately without staff delay.
+
+### 13. Tenant-Isolated Encrypted Daily Webhook Backups (`dailyBackupEnabled`)
+- **Automated Cryptographic Backup Architecture (`src/server/backup_service.ts`)**:
+  - Banks have the option to configure an automated daily encrypted backup dispatched to their private Discord webhook as a downloadable file attachment.
+  - **Strict Tenant Isolation**: Unlike global database snapshots, the daily backup service extracts **only that specific bank's data**, guaranteeing that customer records, transaction histories, ledgers, and API keys of neighboring banks are completely excluded.
+  - **Extracted Tenant Dataset**:
+    - Bank core configuration (`banks` table row, with `corpApiKey` redacted).
+    - Bank operational settings (`bank_settings` table row, with secret API tokens redacted).
+    - All verified bank customers (`bank_customers` table).
+    - All customer bank accounts (`bank_accounts` table).
+    - Double-entry transaction history (`transactions` table).
+    - Issued debit/credit cards (`cards` table).
+    - Loans, debt records, and repayments (`loans` table).
+    - Credit card applications (`credit_card_applications` table).
+    - Direct debit mandates & recurring subscriptions (`subscriptions` table).
+    - Corporate payroll configurations (`payrolls` table).
+    - Institutional escrow contracts (`escrows` table).
+    - Audited system operation logs (`audit_logs` table).
+  - **Cryptographic Encryption Standard (AES-256-GCM)**:
+    - Backup archives are encrypted using authenticated **AES-256-GCM** with a 128-bit authentication tag.
+    - Encryption keys are derived using **PBKDF2** with **100,000 iterations** of SHA-512 and a cryptographically secure 32-byte random salt (`crypto.randomBytes(32)`).
+    - A fresh, unique 12-byte initialization vector (`crypto.randomBytes(12)`) is generated for every backup dispatch.
+    - Banks can configure a custom `backupEncryptionPassphrase` in settings or let Slate generate an institution-bound recovery secret.
+    - Output format: `.slate.enc` envelope containing `salt`, `iv`, `authTag`, `bankId`, `version`, `timestamp`, and `cipherHex`.
+  - **Discord Webhook File Attachment Delivery**:
+    - Dispatched via Discord multipart `FormData` webhook to `backupWebhookUrl` (or falling back to `discordWebhookUrl`).
+    - Accompanied by a stylized, institutional dark-theme Discord embed summarizing timestamp, total file size, backup digest, and quantitative metrics (accounts, customers, transactions, active loans).
+  - **Automated 24-Hour Cron Engine (`src/lib/cron.ts`)**:
+    - Scheduled background runner executes every 15 minutes checking all banks with `dailyBackupEnabled = true`.
+    - If more than 20 hours have elapsed since `lastDailyBackupAt`, the backup job executes, updates `lastDailyBackupAt`, and records an audit log.
+  - **Staff Controls & Offline Decryption Tools**:
+    - **Trigger Now (`POST /api/banks/:bankId/backup/trigger`)**: Allows staff to immediately generate and post an encrypted backup to the configured Discord webhook.
+    - **Direct Download (`GET /api/banks/:bankId/backup/download`)**: Direct browser download of `{bankId}_backup_{timestamp}.slate.enc` for offline physical storage or cold recovery.
+    - **Passphrase Decryption Verifier (`POST /api/banks/:bankId/backup/verify-decrypt`)**: In-app cryptographic testing interface allowing staff to verify that their recovery passphrase successfully unpacks and decrypts the bank's live encrypted snapshot.
+
+

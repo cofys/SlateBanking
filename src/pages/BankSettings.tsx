@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Building2, AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search, Landmark, Percent, Copy, Check, User } from "lucide-react";
+import { Building2, AlertTriangle, Save, Loader2, Paintbrush, Bell, Shield, Wallet, Settings, Layers, Bot, Search, Landmark, Percent, Copy, Check, User, Gamepad2, Zap, Database, Lock, Key, Download, Send, Eye, EyeOff, ShieldCheck, CheckCircle2 } from "lucide-react";
 import { SchemeSwatches } from "../components/ui/chrome";
 import { SCHEME_HEX, accentForeground, type ColorSchemeId } from "../lib/theme";
 
@@ -21,10 +21,73 @@ export function BankSettings() {
   const [maxBusinessAccounts, setMaxBusinessAccounts] = useState<string>("");
   const [maxTotalAccounts, setMaxTotalAccounts] = useState<string>("");
 
+  // Automated daily backup and provisioning state
+  const [triggeringBackup, setTriggeringBackup] = useState(false);
+  const [backupStatusMsg, setBackupStatusMsg] = useState<{ text: string; success: boolean } | null>(null);
+  const [showPassphrase, setShowPassphrase] = useState(false);
+  const [testPassphrase, setTestPassphrase] = useState("");
+  const [testingPassphrase, setTestingPassphrase] = useState(false);
+  const [testResult, setTestResult] = useState<{ text: string; success: boolean } | null>(null);
+
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2500);
+  };
+
+  const handleTriggerBackup = async () => {
+    if (!bank?.id) return;
+    setTriggeringBackup(true);
+    setBackupStatusMsg(null);
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/backup/trigger`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: settings?.backupWebhookUrl || undefined
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBackupStatusMsg({ 
+          text: `Backup successfully dispatched! File "${data.result?.fileName}" (${(data.result?.fileSizeBytes / 1024).toFixed(1)} KB) posted with AES-256-GCM encryption.`, 
+          success: true 
+        });
+        setSettings((prev: any) => ({ ...prev, lastDailyBackupAt: new Date().toISOString() }));
+      } else {
+        setBackupStatusMsg({ text: data.error || "Failed to trigger backup", success: false });
+      }
+    } catch (e: any) {
+      setBackupStatusMsg({ text: e.message || "Network error triggering backup", success: false });
+    } finally {
+      setTriggeringBackup(false);
+    }
+  };
+
+  const handleTestPassphrase = async () => {
+    if (!bank?.id || !testPassphrase) return;
+    setTestingPassphrase(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/backup/verify-decrypt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passphrase: testPassphrase })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTestResult({ 
+          text: `Passphrase verified! Decrypted snapshot for ${data.bankName} (${data.stats?.accounts || 0} accounts, ${data.stats?.customers || 0} customers, ${data.stats?.transactions || 0} transactions).`, 
+          success: true 
+        });
+      } else {
+        setTestResult({ text: data.error || "Verification failed.", success: false });
+      }
+    } catch (e: any) {
+      setTestResult({ text: e.message || "Network error", success: false });
+    } finally {
+      setTestingPassphrase(false);
+    }
   };
 
   const isDefaultDummyVaultTiers = (tiers: any[]): boolean => {
@@ -110,6 +173,10 @@ export function BankSettings() {
       autoApproveLoans: formData.get("autoApproveLoans") === "on",
       autoApproveCreditCards: formData.get("autoApproveCreditCards") === "on",
       maxAutoApproveLoanAmount: Math.round((parseFloat(formData.get("maxAutoApproveLoanAmount") as string) || 10000) * 100),
+      autoProvisionInGame: formData.get("autoProvisionInGame") === "on",
+      dailyBackupEnabled: formData.get("dailyBackupEnabled") === "on",
+      backupWebhookUrl: formData.get("backupWebhookUrl") ? String(formData.get("backupWebhookUrl")).trim() : null,
+      backupEncryptionPassphrase: formData.get("backupEncryptionPassphrase") ? String(formData.get("backupEncryptionPassphrase")).trim() : null,
       customDomain: formData.get("customDomain"),
       discordClientId: formData.get("discordClientId"),
       discordClientSecret: formData.get("discordClientSecret"),
@@ -438,6 +505,77 @@ export function BankSettings() {
                     <p className="text-[10px] text-white/40 mt-1">Absolute ceiling of active accounts per client.</p>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* In-Game Provisioning & Staff Review Policy */}
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2 text-lg font-semibold">
+              <Gamepad2 className="text-emerald-400" size={20} />
+              In-Game Account Provisioning & Staff Review
+            </div>
+            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider self-start sm:self-auto ${
+              settings?.autoProvisionInGame 
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                : "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+            }`}>
+              {settings?.autoProvisionInGame ? "⚡ Instant Auto-Provisioning" : "🛡️ Staff Review Required (Default)"}
+            </span>
+          </div>
+          <p className="text-xs text-white/60 mb-6">
+            Control whether citizen accounts opened through the web portal are automatically provisioned in CityCorp in-game or held in the Staff Desk queue for manual review and approval.
+          </p>
+
+          <div className="bg-black/20 border border-white/5 rounded-xl p-5 space-y-4">
+            <label className="flex items-start gap-4 cursor-pointer group">
+              <div className={`w-11 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors mt-0.5 ${settings?.autoProvisionInGame ? 'bg-emerald-500' : 'bg-white/15'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.autoProvisionInGame ? 'translate-x-5' : 'translate-x-0'}`}></div>
+              </div>
+              <input 
+                type="checkbox" 
+                name="autoProvisionInGame" 
+                className="hidden" 
+                checked={!!settings?.autoProvisionInGame} 
+                onChange={(e) => setSettings({ ...settings, autoProvisionInGame: e.target.checked })} 
+              />
+              <div className="space-y-1">
+                <span className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors block">
+                  Auto-Provision In-Game Accounts on Registration
+                </span>
+                <p className="text-xs text-white/50 leading-relaxed">
+                  When enabled, Slate immediately makes the CityCorp API call upon citizen registration, adds their Minecraft UUID as an account subuser, applies bank withdrawal/deposit fee policies, and activates in-game balance synchronization immediately.
+                </p>
+              </div>
+            </label>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-white/5">
+              <div className={`p-4 rounded-xl border transition-all ${
+                !settings?.autoProvisionInGame 
+                  ? "bg-amber-500/10 border-amber-500/40 text-white shadow-inner" 
+                  : "bg-white/[0.02] border-white/5 text-white/40"
+              }`}>
+                <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider mb-1.5 text-amber-300">
+                  <Shield size={14} /> Require Staff Review First (Default)
+                </div>
+                <p className="text-xs text-white/60 leading-relaxed">
+                  Recommended for tight regulatory oversight. Newly opened accounts are created on Slate with status <span className="font-mono text-amber-200">Not Found In-Game</span> and held in the <strong>Staff Desk Queue</strong>. Staff can inspect KYC records, then click <em>"Review & Provision"</em> to push into CityCorp in-game.
+                </p>
+              </div>
+
+              <div className={`p-4 rounded-xl border transition-all ${
+                settings?.autoProvisionInGame 
+                  ? "bg-emerald-500/10 border-emerald-500/40 text-white shadow-inner" 
+                  : "bg-white/[0.02] border-white/5 text-white/40"
+              }`}>
+                <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider mb-1.5 text-emerald-300">
+                  <Zap size={14} /> Instant Auto-Provisioning
+                </div>
+                <p className="text-xs text-white/60 leading-relaxed">
+                  Frictionless instant onboarding. As soon as a user verifies and opens an account, Slate creates the CityCorp bank account in real-time, binds player permissions, and enables instant teller transactions.
+                </p>
               </div>
             </div>
           </div>
@@ -1019,6 +1157,184 @@ export function BankSettings() {
              </div>
           </label>
          </div>
+
+        {/* Automated Daily Encrypted Backups & Webhook Archive */}
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2 text-lg font-semibold">
+              <Database className="text-emerald-400" size={20} />
+              Automated Daily Encrypted Backups
+            </div>
+            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider self-start sm:self-auto ${
+              settings?.dailyBackupEnabled 
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                : "bg-white/5 text-white/40 border border-white/10"
+            }`}>
+              {settings?.dailyBackupEnabled ? "Active (Daily Webhook Dispatch)" : "Disabled"}
+            </span>
+          </div>
+          <p className="text-xs text-white/60 mb-6">
+            Automatically package a comprehensive, tenant-isolated snapshot of all of <strong>{bank?.name || "your bank"}</strong>'s data—including account balances, KYC customer identities, ledgers, loans, cards, and transaction history—into an encrypted file attachment posted daily to your Discord webhook.
+          </p>
+
+          {/* Backup Status notification */}
+          {backupStatusMsg && (
+            <div className={`p-4 rounded-xl mb-6 text-sm font-medium border flex items-center justify-between animate-in fade-in ${
+              backupStatusMsg.success 
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" 
+                : "bg-rose-500/10 border-rose-500/30 text-rose-300"
+            }`}>
+              <div className="flex items-center gap-2">
+                {backupStatusMsg.success ? <CheckCircle2 size={16} className="text-emerald-400 shrink-0" /> : <AlertTriangle size={16} className="text-rose-400 shrink-0" />}
+                <span>{backupStatusMsg.text}</span>
+              </div>
+              <button type="button" onClick={() => setBackupStatusMsg(null)} className="text-white/40 hover:text-white text-xs ml-4">Dismiss</button>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            {/* Enable Toggle */}
+            <label className="flex items-start gap-4 cursor-pointer group bg-black/20 border border-white/5 p-4 rounded-xl">
+              <div className={`w-11 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors mt-0.5 ${settings?.dailyBackupEnabled ? 'bg-emerald-500' : 'bg-white/15'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings?.dailyBackupEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
+              </div>
+              <input 
+                type="checkbox" 
+                name="dailyBackupEnabled" 
+                className="hidden" 
+                checked={!!settings?.dailyBackupEnabled} 
+                onChange={(e) => setSettings({ ...settings, dailyBackupEnabled: e.target.checked })} 
+              />
+              <div className="space-y-1">
+                <span className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors block">
+                  Enable Automated Daily Encrypted Webhook Backups
+                </span>
+                <p className="text-xs text-white/50 leading-relaxed">
+                  Every 24 hours, Slate executes a tenant cryptographic export, seals the archive using <strong>AES-256-GCM</strong> (with 100,000 PBKDF2 iterations), and transmits the payload as a downloadable file attachment to your private Discord webhook.
+                </p>
+              </div>
+            </label>
+
+            {/* Inputs: Webhook URL & Passphrase */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide flex items-center gap-2">
+                  <Send size={14} className="text-indigo-400" />
+                  Backup Discord Webhook URL
+                </label>
+                <input 
+                  name="backupWebhookUrl" 
+                  type="text" 
+                  placeholder={settings?.discordWebhookUrl || "https://discord.com/api/webhooks/..."} 
+                  defaultValue={settings?.backupWebhookUrl || ""} 
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20 font-mono text-xs" 
+                />
+                <p className="text-xs text-white/40 mt-1.5">
+                  Specific Discord channel webhook for backup files. If left blank, defaults to your general audit webhook.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Key size={14} className="text-amber-400" />
+                    Custom Encryption Passphrase
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowPassphrase(!showPassphrase)} 
+                    className="text-[11px] text-white/40 hover:text-white flex items-center gap-1 normal-case"
+                  >
+                    {showPassphrase ? <EyeOff size={12} /> : <Eye size={12} />}
+                    {showPassphrase ? "Hide" : "Reveal"}
+                  </button>
+                </label>
+                <input 
+                  name="backupEncryptionPassphrase" 
+                  type={showPassphrase ? "text" : "password"} 
+                  placeholder="e.g. Master-Bank-Recovery-Key-2026" 
+                  defaultValue={settings?.backupEncryptionPassphrase || ""} 
+                  className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-white/20 font-mono text-xs" 
+                />
+                <p className="text-xs text-white/40 mt-1.5">
+                  Used as the salt-derived PBKDF2 passphrase for AES-256-GCM. Keep this secret to decrypt offline archives.
+                </p>
+              </div>
+            </div>
+
+            {/* Status & Interactive Actions */}
+            <div className="bg-black/30 border border-white/5 rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-xs text-white/40 uppercase tracking-wider font-semibold">Last Backup Dispatched</div>
+                <div className="text-sm font-medium text-white flex items-center gap-2">
+                  <ShieldCheck size={16} className={settings?.lastDailyBackupAt ? "text-emerald-400" : "text-white/30"} />
+                  {settings?.lastDailyBackupAt ? new Date(settings.lastDailyBackupAt).toLocaleString() : "Never executed yet"}
+                </div>
+                <p className="text-xs text-white/50">
+                  Daily cron runs every 24h. Tenant-isolated format: <code className="text-emerald-300 font-mono text-[11px]">.slate.enc</code>
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                <button
+                  type="button"
+                  onClick={handleTriggerBackup}
+                  disabled={triggeringBackup}
+                  className="flex-1 md:flex-initial bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-900/20 cursor-pointer"
+                >
+                  {triggeringBackup ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  {triggeringBackup ? "Dispatching..." : "Send Backup to Webhook Now"}
+                </button>
+
+                <a
+                  href={`/api/banks/${bank?.id}/backup/download`}
+                  download
+                  className="flex-1 md:flex-initial bg-white/10 hover:bg-white/15 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 border border-white/10"
+                >
+                  <Download size={14} />
+                  Download .slate.enc
+                </a>
+              </div>
+            </div>
+
+            {/* Offline Decryption & Verification Tool */}
+            <div className="border border-white/5 bg-white/[0.01] rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-white/60 flex items-center gap-1.5">
+                  <Lock size={13} className="text-indigo-400" />
+                  Passphrase Decryption Verifier
+                </span>
+                <span className="text-[10px] text-white/40">OpenSSL / Node crypto compatible</span>
+              </div>
+              <p className="text-xs text-white/50 leading-relaxed">
+                Test that your encryption passphrase can decrypt your bank's cryptographic envelope cleanly.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="password"
+                  value={testPassphrase}
+                  onChange={(e) => setTestPassphrase(e.target.value)}
+                  placeholder="Enter passphrase to test decryption..."
+                  className="flex-1 bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleTestPassphrase}
+                  disabled={testingPassphrase || !testPassphrase}
+                  className="bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 text-xs px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer"
+                >
+                  {testingPassphrase ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                  Test Passphrase
+                </button>
+              </div>
+              {testResult && (
+                <div className={`p-3 rounded-lg text-xs border animate-in fade-in ${testResult.success ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-rose-500/10 border-rose-500/30 text-rose-300"}`}>
+                  {testResult.text}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Whitelabel CityCorp Integration */}
         <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-6">

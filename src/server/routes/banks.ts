@@ -1614,6 +1614,10 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         autoApproveLoans: req.body.autoApproveLoans,
         autoApproveCreditCards: req.body.autoApproveCreditCards,
         maxAutoApproveLoanAmount: req.body.maxAutoApproveLoanAmount,
+        autoProvisionInGame: req.body.autoProvisionInGame !== undefined ? !!req.body.autoProvisionInGame : undefined,
+        dailyBackupEnabled: req.body.dailyBackupEnabled !== undefined ? !!req.body.dailyBackupEnabled : undefined,
+        backupWebhookUrl: req.body.backupWebhookUrl !== undefined ? (req.body.backupWebhookUrl ? String(req.body.backupWebhookUrl).trim() : null) : undefined,
+        backupEncryptionPassphrase: req.body.backupEncryptionPassphrase !== undefined ? (req.body.backupEncryptionPassphrase ? String(req.body.backupEncryptionPassphrase).trim() : null) : undefined,
         vaultTiers: req.body.vaultTiers,
         loginBgUrl: req.body.loginBgUrl,
         enableGoogleDocsContracts: req.body.enableGoogleDocsContracts,
@@ -2573,6 +2577,9 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/provision-game", requir
 
       // Create account in game via CityCorp
       const createRes = await client.createAccount(account.accountName);
+      if (!createRes.success && !createRes.message?.includes("already exists")) {
+        return res.status(400).json({ error: `CityCorp Error: ${createRes.message || "Failed to create account in game"}` });
+      }
       
       // If customer has MC UUID or username, try linking
       if (account.ownerDiscordId) {
@@ -2584,6 +2591,18 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/provision-game", requir
             console.error("Non-fatal subuser add error during provision:", e);
           }
         }
+      }
+
+      // Sync bank fee settings to CityCorp account
+      try {
+        const { bankSettings } = await import("../../db/schema");
+        const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+        const wFee = settings?.withdrawFeePercent ? (Number(settings.withdrawFeePercent) > 100 ? Number(settings.withdrawFeePercent) / 100 : Number(settings.withdrawFeePercent)) : 0;
+        const dFee = settings?.depositFeePercent ? (Number(settings.depositFeePercent) > 100 ? Number(settings.depositFeePercent) / 100 : Number(settings.depositFeePercent)) : 0;
+        if (wFee > 0) client.setAccountFee(account.accountName, "WITHDRAW", wFee).catch(() => {});
+        if (dFee > 0) client.setAccountFee(account.accountName, "DEPOSIT", dFee).catch(() => {});
+      } catch (fErr) {
+        console.warn("[provision-game] Non-fatal fee set warning:", fErr);
       }
 
       // Update local database status
@@ -2601,6 +2620,78 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/provision-game", requir
     } catch (e: any) {
       console.error("Provisioning error:", e);
       return res.status(500).json({ error: e.message || "Failed to create account in game" });
+    }
+  });
+
+  // Trigger manual encrypted backup dispatch to webhook
+  banksRouter.post("/api/banks/:bankId/backup/trigger", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    try {
+      const bankId = req.params.bankId;
+      const { webhookUrl } = req.body || {};
+      const { dispatchBackupWebhook } = await import("../backup_service.js");
+
+      const actorDiscordId = (req as any).user?.discordId || (req as any).user?.id || "staff";
+      const result = await dispatchBackupWebhook(bankId, webhookUrl, actorDiscordId);
+
+      return res.json({
+        success: true,
+        message: `Encrypted backup successfully generated and posted to Discord webhook as "${result.fileName}"!`,
+        result
+      });
+    } catch (err: any) {
+      console.error("[BackupTrigger] Error:", err);
+      return res.status(500).json({ error: err.message || "Failed to dispatch backup to webhook." });
+    }
+  });
+
+  // Download encrypted backup directly as a file (.slate.enc)
+  banksRouter.get("/api/banks/:bankId/backup/download", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    try {
+      const bankId = req.params.bankId;
+      const { generateBankBackup, encryptBackup } = await import("../backup_service.js");
+      const { payload, bank, settings } = await generateBankBackup(bankId);
+
+      const envelope = encryptBackup(payload, settings?.backupEncryptionPassphrase, bank.id, bank.name);
+      const jsonBuffer = Buffer.from(JSON.stringify(envelope, null, 2), "utf8");
+
+      const nowStr = new Date().toISOString().slice(0, 10);
+      const slug = ((bank as any).slug || bank.name || bank.id || "bank").toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+      const filename = `${slug}_backup_${nowStr}.slate.enc`;
+
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Length", jsonBuffer.length);
+      return res.send(jsonBuffer);
+    } catch (err: any) {
+      console.error("[BackupDownload] Error:", err);
+      return res.status(500).json({ error: err.message || "Failed to download backup." });
+    }
+  });
+
+  // Verify and test decrypt of a backup passphrase
+  banksRouter.post("/api/banks/:bankId/backup/verify-decrypt", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    try {
+      const bankId = req.params.bankId;
+      const { passphrase, envelope } = req.body || {};
+      const { decryptBackup, generateBankBackup, encryptBackup } = await import("../backup_service.js");
+
+      let targetEnvelope = envelope;
+      if (!targetEnvelope) {
+        // Test against current bank data
+        const { payload, bank } = await generateBankBackup(bankId);
+        targetEnvelope = encryptBackup(payload, passphrase, bank.id, bank.name);
+      }
+
+      const decrypted = decryptBackup(targetEnvelope, passphrase);
+      return res.json({
+        success: true,
+        message: "Passphrase successfully verified. Archive can be decrypted cleanly.",
+        bankName: decrypted.bankName,
+        exportedAt: decrypted.exportedAt,
+        stats: decrypted.stats
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || "Failed to decrypt. Invalid passphrase or corrupted archive." });
     }
   });
 

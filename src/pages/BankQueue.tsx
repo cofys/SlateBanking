@@ -48,16 +48,17 @@ export function BankQueue() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
           ["Pending loans", c.pendingLoans],
+          ["Pending In-Game", c.unprovisioned],
           ["Collections", c.delinquentLoans],
           ["Settlements", c.settlements],
           ["Frozen", c.frozen],
         ].map(([l, v]) => (
-          <div key={String(l)} className="rounded-2xl border border-white/10 p-4 bg-[#0d0d14]">
-            <p className="text-[11px] uppercase tracking-wider text-white/40">{l}</p>
-            <p className="text-2xl font-black">{v || 0}</p>
+          <div key={String(l)} className={`rounded-2xl border p-4 bg-[#0d0d14] ${l === "Pending In-Game" && Number(v) > 0 ? "border-amber-500/30 bg-amber-500/5" : "border-white/10"}`}>
+            <p className={`text-[11px] uppercase tracking-wider ${l === "Pending In-Game" && Number(v) > 0 ? "text-amber-300" : "text-white/40"}`}>{l}</p>
+            <p className={`text-2xl font-black ${l === "Pending In-Game" && Number(v) > 0 ? "text-amber-400" : ""}`}>{v || 0}</p>
           </div>
         ))}
       </div>

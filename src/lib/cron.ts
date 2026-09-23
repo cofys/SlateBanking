@@ -367,5 +367,14 @@ setInterval(async () => {
   }
 }, 1000 * 60); // Check every minute
 
+  // Automated Daily Encrypted Bank Backups (checks every 15 minutes)
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const { runScheduledDailyBackups } = await import("../server/backup_service.js");
+      await runScheduledDailyBackups();
+    } catch (err) {
+      console.error("[Cron] Daily backup runner error:", err);
+    }
+  });
 
 }

@@ -15,6 +15,7 @@ export function BankAccounts() {
   const [syncProgress, setSyncProgress] = useState<{ total: number; processed: number; current?: string; syncedCount: number; flaggedCount: number } | null>(null);
   const [syncResultMsg, setSyncResultMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterTab, setFilterTab] = useState<"all" | "pending_ingame" | "active_ingame">("all");
 
   // Balance adjustment modal state
   const [adjustingAcc, setAdjustingAcc] = useState<any | null>(null);
@@ -368,6 +369,45 @@ export function BankAccounts() {
         </div>
       )}
 
+      {/* Filter Tabs */}
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+        <button
+          onClick={() => setFilterTab("all")}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            filterTab === "all"
+              ? "bg-white/15 text-white border border-white/20 shadow-sm"
+              : "text-white/50 hover:text-white hover:bg-white/5 border border-transparent"
+          }`}
+        >
+          All Accounts ({accounts.length})
+        </button>
+        <button
+          onClick={() => setFilterTab("pending_ingame")}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+            filterTab === "pending_ingame"
+              ? "bg-amber-500/25 text-amber-200 border border-amber-500/40 shadow-sm"
+              : accounts.filter(a => a.existsInGame === false).length > 0
+                ? "bg-amber-500/10 text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/20 border border-amber-500/20"
+                : "text-white/50 hover:text-white hover:bg-white/5 border border-transparent"
+          }`}
+        >
+          <span>⚠️ Pending In-Game</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-amber-500/30 text-[10px]">
+            {accounts.filter(a => a.existsInGame === false).length}
+          </span>
+        </button>
+        <button
+          onClick={() => setFilterTab("active_ingame")}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            filterTab === "active_ingame"
+              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
+              : "text-white/50 hover:text-white hover:bg-white/5 border border-transparent"
+          }`}
+        >
+          Active In-Game ({accounts.filter(a => a.existsInGame !== false).length})
+        </button>
+      </div>
+
       <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-xl overflow-hidden overflow-x-auto shadow-2xl">
         {loading ? (
            <div className="p-8 text-center text-white/50">Loading accounts...</div>
@@ -387,6 +427,8 @@ export function BankAccounts() {
             <tbody className="divide-y divide-white/5 bg-[#09090d]">
               {accounts.filter(acc => {
                 if (!acc) return false;
+                if (filterTab === "pending_ingame" && acc.existsInGame !== false) return false;
+                if (filterTab === "active_ingame" && acc.existsInGame === false) return false;
                 const accName = String(acc.accountName || "");
                 const ownerId = String(acc.ownerDiscordId || "");
                 const mcUser = String(acc.ownerMcUsername || "");

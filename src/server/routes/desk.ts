@@ -14,7 +14,7 @@ deskRouter.get("/api/banks/:bankId/queue", requireBankStaff, async (req: express
     const { loans, creditApplications, bankAccounts, clearinghouseSettlements, banks, platformAlerts, bankSettings, bankCustomers } = await import("../../db/schema.js");
     const bankId = req.params.bankId;
 
-    const [pendingLoans, delinquentLoans, creditApps, frozen, settlements, alerts, settings, bank] = await Promise.all([
+    const [pendingLoans, delinquentLoans, creditApps, frozen, settlements, alerts, unprovisioned, settings, bank] = await Promise.all([
       db.select().from(loans).where(and(eq(loans.bankId, bankId), eq(loans.status, "pending"))),
       db.select().from(loans).where(and(eq(loans.bankId, bankId), inArray(loans.status, ["delinquent", "defaulted"]))),
       db.select().from(creditApplications).where(and(eq(creditApplications.bankId, bankId), eq(creditApplications.status, "pending"))),
@@ -24,6 +24,7 @@ deskRouter.get("/api/banks/:bankId/queue", requireBankStaff, async (req: express
         inArray(clearinghouseSettlements.status, ["pending", "released"])
       )),
       db.select().from(platformAlerts).where(and(eq(platformAlerts.bankId, bankId), eq(platformAlerts.isOpen, true))).orderBy(desc(platformAlerts.createdAt)).limit(20),
+      db.select().from(bankAccounts).where(and(eq(bankAccounts.bankId, bankId), eq(bankAccounts.existsInGame, false), eq(bankAccounts.isActive, true))),
       db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get(),
       db.select().from(banks).where(eq(banks.id, bankId)).get(),
     ]);
@@ -78,6 +79,22 @@ deskRouter.get("/api/banks/:bankId/queue", requireBankStaff, async (req: express
         href: `/bank/${bankId}/accounts/${a.id}`,
         action: { method: "POST", path: `/api/banks/${bankId}/accounts/${a.id}/freeze`, body: { freeze: false }, label: "Unfreeze" },
         meta: a,
+      });
+    }
+    for (const u of unprovisioned) {
+      items.push({
+        id: `unprov-${u.id}`,
+        kind: "account_pending_provision",
+        severity: "warning",
+        title: `Pending In-Game Provision: ${u.accountName}`,
+        subtitle: `${(u.accountType || "personal").toUpperCase()} · Owner: ${u.ownerDiscordId} · CityCorp in-game creation required`,
+        href: `/bank/${bankId}/accounts/${u.id}`,
+        action: {
+          method: "POST",
+          path: `/api/banks/${bankId}/accounts/${u.id}/provision-game`,
+          label: "Review & Provision"
+        },
+        meta: u,
       });
     }
     for (const s of settlements) {
@@ -135,6 +152,7 @@ deskRouter.get("/api/banks/:bankId/queue", requireBankStaff, async (req: express
         creditApps: creditApps.length,
         frozen: frozen.length,
         settlements: settlements.length,
+        unprovisioned: unprovisioned.length,
         alerts: alerts.length,
         total: items.length,
       },

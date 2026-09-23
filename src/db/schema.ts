@@ -153,10 +153,11 @@ export const bankSettings = sqliteTable("bank_settings", {
   guiMessageId: text("gui_message_id"),
   staffChannelId: text("staff_channel_id"),
   staffMessageId: text("staff_message_id"),
-  // Auto-approval options
+  // Auto-approval and provisioning options
   autoApproveLoans: integer("auto_approve_loans", { mode: "boolean" }).default(false),
   autoApproveCreditCards: integer("auto_approve_credit_cards", { mode: "boolean" }).default(false),
   maxAutoApproveLoanAmount: integer("max_auto_approve_loan_amount").default(1000000), // 10,000.00
+  autoProvisionInGame: integer("auto_provision_in_game", { mode: "boolean" }).default(false), // true = auto create CityCorp in-game account on register; false = require bank staff review first
   vaultTiers: text("vault_tiers", { mode: "json" }).$type<{ lockDays: number; interestRate: number; penaltyPercent: number }[]>(),
   loginBgUrl: text("login_bg_url"),
   loanPoolAccount: text("loan_pool_account"), // Name of specific sub-account for loans
@@ -211,6 +212,12 @@ export const bankSettings = sqliteTable("bank_settings", {
   interestCalculationMethod: text("interest_calculation_method").default("current_balance"),
   requirePersonalForBusiness: integer("require_personal_for_business", { mode: "boolean" }).default(true),
   lastInterestAccrualAt: integer("last_interest_accrual_at", { mode: "timestamp" }),
+  // Automated Encrypted Daily Backup settings
+  dailyBackupEnabled: integer("daily_backup_enabled", { mode: "boolean" }).default(false),
+  backupWebhookUrl: text("backup_webhook_url"),
+  backupEncryptionPassphrase: text("backup_encryption_passphrase"),
+  lastDailyBackupAt: integer("last_daily_backup_at", { mode: "timestamp" }),
+
   // Google Docs Contract Integration Settings
   enableGoogleDocsContracts: integer("enable_google_docs_contracts", { mode: "boolean" }).default(false),
   googleDocsLoanTemplateUrl: text("google_docs_loan_template_url"),
