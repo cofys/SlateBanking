@@ -43,6 +43,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [accountTiers, setAccountTiers] = useState<any[]>([]);
   const [selectedTierId, setSelectedTierId] = useState("");
   const [selectedTx, setSelectedTx] = useState<any | null>(null);
+  const [selectedLoan, setSelectedLoan] = useState<any | null>(null);
   const [accountNameChoice, setAccountNameChoice] = useState("");
   const [namingPref, setNamingPref] = useState<"custom" | "discord">("custom");
   const [merchants, setMerchants] = useState<any[]>([]);
@@ -213,6 +214,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const netWorth = accounts.reduce((s: number, a: any) => s + (a.balance || 0), 0);
   const loans = userData?.loans || [];
   const activeLoans = loans.filter((l: any) => ["active", "delinquent", "defaulted", "pending", "awaiting_signature"].includes(l.status));
+  const closedLoans = loans.filter((l: any) => ["paid_off", "rejected", "closed"].includes(l.status));
   const invoices = (userData?.pendingInvoices || []).filter((i: any) => i.status !== "paid");
   const subscriptions = userData?.subscriptions || [];
   const cards = userData?.cards || [];
@@ -913,6 +915,73 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               )}
             </section>
 
+            {activeLoans.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Active Loans</h2>
+                  <button onClick={() => setView("borrow")} className="text-xs font-bold text-white/50 hover:text-white transition-colors">See all</button>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {activeLoans.slice(0, 4).map((l: any) => {
+                    const principal = l.principalAmount || l.amount || 0;
+                    const remaining = l.remainingAmount ?? l.remainingBalance ?? 0;
+                    const paid = Math.max(0, principal - remaining);
+                    const pct = principal > 0 ? Math.min(100, Math.max(0, Math.round((paid / principal) * 100))) : 0;
+                    const isDelinquent = l.status === "delinquent" || l.isDelinquent;
+                    return (
+                      <div
+                        key={l.id}
+                        onClick={() => setSelectedLoan(l)}
+                        className="rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 p-5 cursor-pointer transition-all group space-y-3"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                              isDelinquent ? "bg-amber-500/20 text-amber-300" : "bg-white/5 text-white/70 group-hover:text-white"
+                            }`}>
+                              <Landmark size={15} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold truncate text-white group-hover:text-white">
+                                {l.purpose ? l.purpose : `Loan #${l.id.slice(0, 8)}`}
+                              </p>
+                              <p className="text-[10px] font-mono text-white/40">#{l.id.slice(0, 8)} · {(l.interestRate / 100).toFixed(2)}% APR</p>
+                            </div>
+                          </div>
+                          <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full flex-shrink-0 ${
+                            isDelinquent ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" :
+                            l.status === "active" ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20" :
+                            "bg-white/10 text-white/60"
+                          }`}>
+                            {l.status}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-2xl font-black tabular-nums">{formatMoney(remaining)}</p>
+                          <p className="text-xs text-white/40 mt-0.5">of {formatMoney(principal)}</p>
+                        </div>
+                        <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${pct}%`,
+                              background: isDelinquent ? "#f59e0b" : pct === 100 ? "#10b981" : (brand || "#2563eb")
+                            }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between pt-0.5 text-[11px] text-white/40">
+                          <span>{l.nextPaymentDate ? `Due ${format(new Date(l.nextPaymentDate), "MMM d, yyyy")}` : "Click for details"}</span>
+                          <span className="text-white/60 group-hover:text-white flex items-center gap-0.5 transition-colors">
+                            Details <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             <section>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Recent Activity</h2>
@@ -1209,27 +1278,173 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         )}
 
         {view === "borrow" && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-black">Loans</h2>
+              <div>
+                <h2 className="text-2xl font-black">Loans & Financing</h2>
+                <p className="text-xs text-white/40 mt-0.5">Click any loan to view full terms, payment schedule, or submit payments.</p>
+              </div>
               {settings.enableLoans !== false && (
-                <button onClick={() => setView("apply")} className="text-xs font-bold px-3 py-2 rounded-xl" style={btnBrand}>Apply</button>
+                <button onClick={() => setView("apply")} className="text-xs font-bold px-3.5 py-2 rounded-xl" style={btnBrand}>Apply for Loan</button>
               )}
             </div>
-            {activeLoans.length === 0 && <p className="text-white/40 text-sm">No loans. Apply any time from the Apply tab.</p>}
-            {activeLoans.map((l: any) => (
-              <div key={l.id} className="rounded-2xl border border-white/10 p-5 space-y-3">
-                <div className="flex justify-between">
-                  <p className="font-bold">#{l.id.slice(0, 8)}</p>
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-white/50">{l.status}</span>
+
+            {activeLoans.length === 0 && closedLoans.length === 0 && (
+              <div className="rounded-2xl border border-white/10 p-8 text-center space-y-3 bg-white/[0.02]">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 mx-auto flex items-center justify-center text-white/40">
+                  <Landmark size={24} />
                 </div>
-                <p className="text-2xl font-black tabular-nums">{formatMoney(l.remainingAmount ?? l.remainingBalance)}</p>
-                <p className="text-xs text-white/40">of {formatMoney(l.principalAmount || l.amount)} · {(l.interestRate / 100).toFixed(2)}% APR</p>
-                {["active", "delinquent", "defaulted"].includes(l.status) && (
-                  <button onClick={() => setRepayingLoan(l)} className="text-sm font-bold" style={{ color: brand }}>Pay installment</button>
+                <div>
+                  <p className="font-bold text-white">No active or historical loans</p>
+                  <p className="text-xs text-white/40 mt-1">Apply any time to finance personal goals or commercial investments.</p>
+                </div>
+                {settings.enableLoans !== false && (
+                  <button onClick={() => setView("apply")} className="text-xs font-bold px-4 py-2 rounded-xl mt-2" style={btnBrand}>
+                    Explore Financing
+                  </button>
                 )}
               </div>
-            ))}
+            )}
+
+            {activeLoans.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold tracking-wide uppercase text-white/50">Active Loans ({activeLoans.length})</h3>
+                  <span className="text-[11px] text-white/30">Click loan for full breakdown</span>
+                </div>
+                <div className="space-y-3">
+                  {activeLoans.map((l: any) => {
+                    const principal = l.principalAmount || l.amount || 0;
+                    const remaining = l.remainingAmount ?? l.remainingBalance ?? 0;
+                    const paid = Math.max(0, principal - remaining);
+                    const pct = principal > 0 ? Math.min(100, Math.max(0, Math.round((paid / principal) * 100))) : 0;
+                    const isDelinquent = l.status === "delinquent" || l.isDelinquent;
+
+                    return (
+                      <div
+                        key={l.id}
+                        onClick={() => setSelectedLoan(l)}
+                        className="rounded-2xl border border-white/10 hover:border-white/20 bg-white/[0.02] hover:bg-white/[0.05] p-5 space-y-3.5 cursor-pointer transition-all group shadow-sm"
+                      >
+                        <div className="flex justify-between items-start gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                              isDelinquent ? "bg-amber-500/20 text-amber-300" : "bg-white/5 text-white/70 group-hover:text-white"
+                            }`}>
+                              <Landmark size={18} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-base text-white group-hover:text-white truncate">
+                                {l.purpose ? l.purpose : `Loan #${l.id.slice(0, 8)}`}
+                              </p>
+                              <div className="flex items-center gap-2 mt-0.5 text-xs text-white/40">
+                                <span className="font-mono">#{l.id.slice(0, 8)}</span>
+                                <span>·</span>
+                                <span>{(l.interestRate / 100).toFixed(2)}% APR</span>
+                                {l.termMonths && (
+                                  <>
+                                    <span>·</span>
+                                    <span>{l.termMonths} Mo</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={`text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full ${
+                              isDelinquent ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" :
+                              l.status === "active" ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20" :
+                              l.status === "defaulted" ? "bg-rose-500/20 text-rose-300 border border-rose-500/30" :
+                              "bg-white/10 text-white/60"
+                            }`}>
+                              {l.status?.replace(/_/g, " ")}
+                            </span>
+                            <ChevronRight size={16} className="text-white/30 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
+                          <div>
+                            <p className="text-2xl font-black tabular-nums text-white">{formatMoney(remaining)}</p>
+                            <p className="text-xs text-white/40 mt-0.5">
+                              remaining of {formatMoney(principal)} original principal
+                            </p>
+                          </div>
+                          <div className="text-left sm:text-right">
+                            <span className="text-xs font-mono text-white/60">{pct}% repaid</span>
+                          </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: `${pct}%`,
+                              background: isDelinquent ? "#f59e0b" : pct === 100 ? "#10b981" : (brand || "#2563eb")
+                            }}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 text-xs">
+                          <span className="text-white/40">
+                            {l.nextPaymentDate ? `Next due: ${format(new Date(l.nextPaymentDate), "MMM d, yyyy")}` : "Click to view full terms"}
+                          </span>
+                          {["active", "delinquent", "defaulted"].includes(l.status) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRepayingLoan(l);
+                              }}
+                              className="font-bold px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs transition border border-white/10"
+                              style={{ color: brand }}
+                            >
+                              Pay installment
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {closedLoans.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <h3 className="text-xs font-bold tracking-wide uppercase text-white/40">Loan History ({closedLoans.length})</h3>
+                <div className="space-y-2">
+                  {closedLoans.map((l: any) => (
+                    <div
+                      key={l.id}
+                      onClick={() => setSelectedLoan(l)}
+                      className="rounded-2xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.04] p-4 flex items-center justify-between cursor-pointer transition group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/40 group-hover:text-white">
+                          <Landmark size={15} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-white/80 group-hover:text-white">
+                            {l.purpose ? l.purpose : `Loan #${l.id.slice(0, 8)}`}
+                          </p>
+                          <p className="text-[11px] text-white/40 font-mono">
+                            {formatMoney(l.principalAmount || l.amount)} · {l.createdAt ? format(new Date(l.createdAt), "MMM d, yyyy") : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {l.status?.replace(/_/g, " ")}
+                        </span>
+                        <ChevronRight size={14} className="text-white/30 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2294,6 +2509,235 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 <button
                   type="button"
                   onClick={() => setSelectedTx(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-bold transition"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Loan Details Modal */}
+      <AnimatePresence>
+        {selectedLoan && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ y: 40, opacity: 0, scale: 0.96 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 30, opacity: 0, scale: 0.96 }}
+              className="bg-[#121218] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2.5 rounded-2xl ${
+                    selectedLoan.status === "delinquent" || selectedLoan.isDelinquent ? "bg-amber-500/15 text-amber-300" :
+                    selectedLoan.status === "active" || selectedLoan.status === "paid_off" ? "bg-emerald-500/15 text-emerald-300" :
+                    selectedLoan.status === "defaulted" ? "bg-rose-500/15 text-rose-300" :
+                    "bg-blue-500/15 text-blue-300"
+                  }`}>
+                    <Landmark size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-lg text-white">Loan Details</h3>
+                    <p className="text-xs text-white/40">
+                      {selectedLoan.createdAt ? format(new Date(selectedLoan.createdAt), "MMMM d, yyyy") : "Loan Record"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedLoan(null)}
+                  className="p-1.5 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Amount & Progress Showcase */}
+              {(() => {
+                const principal = selectedLoan.principalAmount || selectedLoan.amount || 0;
+                const remaining = selectedLoan.remainingAmount ?? selectedLoan.remainingBalance ?? 0;
+                const paid = Math.max(0, principal - remaining);
+                const pct = principal > 0 ? Math.min(100, Math.max(0, Math.round((paid / principal) * 100))) : 0;
+                const isDelinquent = selectedLoan.status === "delinquent" || selectedLoan.isDelinquent;
+
+                return (
+                  <div className="text-center py-4 px-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-3">
+                    <div>
+                      <span className="text-[11px] font-bold text-white/40 uppercase tracking-widest">
+                        Remaining Balance
+                      </span>
+                      <div className="text-3xl font-black font-mono text-white mt-1">
+                        {formatMoney(remaining)}
+                      </div>
+                      <p className="text-xs text-white/40 mt-0.5">
+                        of {formatMoney(principal)} original principal
+                      </p>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="space-y-1.5 text-left">
+                      <div className="flex justify-between text-[11px] text-white/50">
+                        <span>Repayment Progress</span>
+                        <span className="font-mono font-bold text-white/80">{pct}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${pct}%`,
+                            background: isDelinquent ? "#f59e0b" : pct === 100 ? "#10b981" : (brand || "#2563eb")
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] font-mono text-white/40">
+                        <span>Paid {formatMoney(paid)}</span>
+                        <span>Due {formatMoney(remaining)}</span>
+                      </div>
+                    </div>
+
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium" style={{
+                      backgroundColor: isDelinquent ? "rgba(245, 158, 11, 0.15)" : selectedLoan.status === "active" ? "rgba(16, 185, 129, 0.15)" : selectedLoan.status === "paid_off" ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.08)",
+                      color: isDelinquent ? "#fcd34d" : selectedLoan.status === "active" || selectedLoan.status === "paid_off" ? "#6ee7b7" : "rgba(255, 255, 255, 0.7)"
+                    }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{
+                        backgroundColor: isDelinquent ? "#f59e0b" : selectedLoan.status === "active" || selectedLoan.status === "paid_off" ? "#10b981" : "#a1a1aa"
+                      }}></span>
+                      <span className="capitalize">{selectedLoan.status?.replace(/_/g, " ") || "Active"}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Purpose Highlight */}
+              {(selectedLoan.purpose || selectedLoan.offSystemReference) && (
+                <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 uppercase tracking-wider">
+                    <FileText size={13} />
+                    <span>Loan Purpose / Reference</span>
+                  </div>
+                  <p className="text-sm font-medium text-white/90">
+                    {selectedLoan.purpose || selectedLoan.offSystemReference}
+                  </p>
+                </div>
+              )}
+
+              {/* Past Due / Delinquency Notice */}
+              {(selectedLoan.status === "delinquent" || selectedLoan.isDelinquent || (selectedLoan.lateFeeAmount && selectedLoan.lateFeeAmount > 0)) && (
+                <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2.5">
+                  <AlertTriangle size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                  <div className="text-xs space-y-0.5">
+                    <p className="font-bold text-amber-200">Payment Past Due</p>
+                    <p className="text-amber-200/70">
+                      {selectedLoan.lateFeeAmount > 0
+                        ? `Late fees accrued: ${formatMoney(selectedLoan.lateFeeAmount)} across ${selectedLoan.missedPaymentsCount || 1} missed cycle(s).`
+                        : "Your installment is past due. Please make a payment to bring your account current."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Detailed Loan Key Details */}
+              <div className="space-y-2.5 text-xs">
+                <div className="flex items-center justify-between py-1 border-b border-white/5">
+                  <span className="text-white/40">Interest Rate</span>
+                  <span className="font-semibold text-white/90 font-mono">
+                    {(selectedLoan.interestRate / 100).toFixed(2)}% APR
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-white/5">
+                  <span className="text-white/40">Next Payment Due</span>
+                  <span className="font-medium text-white/90">
+                    {selectedLoan.nextPaymentDate
+                      ? format(new Date(selectedLoan.nextPaymentDate), "MMMM d, yyyy")
+                      : "Schedule closed"}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-white/5">
+                  <span className="text-white/40">Term Length</span>
+                  <span className="font-medium text-white/90">
+                    {selectedLoan.termMonths ? `${selectedLoan.termMonths} Months` : "Standard Term"}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-white/5">
+                  <span className="text-white/40">Servicing Account</span>
+                  <div className="text-right">
+                    <span className="font-semibold text-white/90 block">
+                      {accounts.find((a: any) => a.id === selectedLoan.accountId)?.accountName || selectedLoan.accountName || "Primary Account"}
+                    </span>
+                    {selectedLoan.accountId && (
+                      <span className="font-mono text-[10px] text-white/30">{selectedLoan.accountId.slice(0, 16)}…</span>
+                    )}
+                  </div>
+                </div>
+
+                {selectedLoan.collateralDescription && (
+                  <div className="flex items-center justify-between py-1 border-b border-white/5">
+                    <span className="text-white/40">Collateral</span>
+                    <div className="text-right">
+                      <span className="font-semibold text-white/90 block">{selectedLoan.collateralDescription}</span>
+                      {selectedLoan.collateralValue > 0 && (
+                        <span className="text-[10px] text-white/40 font-mono">Estimated: {formatMoney(selectedLoan.collateralValue)} ({selectedLoan.collateralStatus || "pledged"})</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {selectedLoan.contractUrl && (
+                  <div className="flex items-center justify-between py-1 border-b border-white/5">
+                    <span className="text-white/40">Agreement Document</span>
+                    <a
+                      href={selectedLoan.contractUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                    >
+                      <Link2 size={12} />
+                      <span>View Agreement</span>
+                    </a>
+                  </div>
+                )}
+
+                {selectedLoan.id && (
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-white/40">Loan Reference ID</span>
+                    <button
+                      type="button"
+                      onClick={() => copy(selectedLoan.id, `loan-${selectedLoan.id}`)}
+                      className="font-mono text-[11px] text-white/50 hover:text-white flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded-lg border border-white/5 transition"
+                    >
+                      {copied === `loan-${selectedLoan.id}` ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                      <span>{selectedLoan.id.slice(0, 14)}…</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex gap-2 pt-2">
+                {["active", "delinquent", "defaulted"].includes(selectedLoan.status) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const lToRepay = selectedLoan;
+                      setSelectedLoan(null);
+                      setRepayingLoan(lToRepay);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                    style={btnBrand}
+                  >
+                    <span>Pay Installment</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedLoan(null)}
                   className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-bold transition"
                 >
                   Close

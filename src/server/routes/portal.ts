@@ -426,11 +426,15 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           ...c,
           cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
         })),
-        loans: userLoans.map((l: any) => ({
-          ...l,
-          amount: l.principalAmount,
-          remainingBalance: l.remainingAmount,
-        })),
+        loans: userLoans.map((l: any) => {
+          const matchedAcc = userAccounts.find(a => a.id === l.accountId);
+          return {
+            ...l,
+            amount: l.principalAmount,
+            remainingBalance: l.remainingAmount,
+            accountName: matchedAcc ? matchedAcc.accountName : l.accountId,
+          };
+        }),
         subscriptions: userSubscriptions,
         customer: customer ? {
           kycStatus: customer.kycStatus,

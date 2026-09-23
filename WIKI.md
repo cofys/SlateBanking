@@ -46,6 +46,14 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
   - **Credit Applications**: Citizens can apply for specialized lines of credit via the customer portal with custom collateral declarations. Bank staff review, evaluate collateral, and approve/reject applications. 
   - **Auto-Approval**: In `Bank Settings`, banks may toggle `autoApproveLoans` and `autoApproveCreditCards` along with a threshold `maxAutoApproveLoanAmount`. When toggled, requests falling under the safe limit are instantly generated (funds deposited or cards provisioned) without staff intervention.
   - **Google Docs Contract Integration**: Configurable Google Docs legal agreement templates for loans, credit applications, and escrow agreements. When enabled, the system auto-generates or attaches dynamic Google Docs contract links populated with variable tags (`{BANK_NAME}`, `{CLIENT_DISCORD}`, `{AMOUNT}`, `{INTEREST_RATE}`, `{CONTRACT_ID}`, `{DATE}`) and provides direct document links in the staff portal and citizen gateway (`contractUrl`).
+  - **Interactive Customer Portal Loan File & Details Modal**: Similar to transaction activity records, loans rendered in the customer portal (both on the Overview dashboard and dedicated Loans & Financing tab) are fully interactive and clickable. Clicking any loan card opens a comprehensive **Loan Details Modal** displaying:
+    - **Origination & Verification Badges**: Formatted origination date, loan reference ID, and live status badge (`active`, `delinquent`, `defaulted`, `pending`, `awaiting_signature`, `paid_off`).
+    - **Repayment Progress Visualization**: Dynamic graphical progress bar depicting exact percentage repaid, total principal paid down, and current outstanding liability.
+    - **Past Due & Delinquency Alerts**: Contextual warning callouts highlighting accrued late fees, missed payment cycles, and remediation notices for delinquent accounts.
+    - **Financial Specifications Grid**: Real-time APR interest rates, next scheduled payment due date, term duration (months), linked servicing account name and ID, and pledged collateral declarations (descriptions, valuations, and lien statuses).
+    - **Contract Document Access**: Direct links to attached Google Docs legal agreements (`contractUrl`).
+    - **Direct Actions**: One-click installment repayment button seamlessly transitioning into the payment modal with the active loan pre-selected, along with copyable reference ID feedback.
+  - **Historical & Closed Loans Ledger**: Completed or closed loans (`paid_off`, `rejected`, `closed`) are organized into a dedicated historical section in the customer portal, allowing borrowers to inspect their archived terms and payoff records at any time.
 - **Cards**: Generated debit and credit card objects (Card Number, CVV, Expiry, Locked state) tied directly to a bank account. Lock states toggle true/false.
 
 ### 3. Business & B2B Suite
