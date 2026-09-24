@@ -426,7 +426,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         .from(loans)
         .where(and(eq(loans.bankId, bankId), or(inArray(loans.discordId, candidateIds), inArray(loans.accountId, accountIds))));
 
-      const { bankSettings, banks: banksTable, customerNotifications } = await import("../../db/schema");
+      const { banks: banksTable, customerNotifications } = await import("../../db/schema");
       const { getBankCorpName, getDepositCommand } = await import("../../lib/min_balance_service.js");
       const bankRec = await db.select().from(banksTable).where(eq(banksTable.id, bankId)).get();
       const settingsRec = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
@@ -458,17 +458,22 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         };
       });
 
-      // Fetch customer notifications
-      const userNotifications = await db.select()
-        .from(customerNotifications)
-        .where(
-          and(
-            eq(customerNotifications.bankId, bankId),
-            inArray(customerNotifications.discordId, candidateIds)
+      // Fetch customer notifications safely
+      let userNotifications: any[] = [];
+      try {
+        userNotifications = await db.select()
+          .from(customerNotifications)
+          .where(
+            and(
+              eq(customerNotifications.bankId, bankId),
+              inArray(customerNotifications.discordId, candidateIds)
+            )
           )
-        )
-        .orderBy(desc(customerNotifications.createdAt))
-        .limit(30);
+          .orderBy(desc(customerNotifications.createdAt))
+          .limit(30);
+      } catch (notifErr) {
+        console.warn("[portal lookup] Notice querying notifications failed:", notifErr);
+      }
 
       const unreadNotificationCount = userNotifications.filter(n => !n.isRead).length;
 
