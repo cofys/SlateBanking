@@ -4049,31 +4049,35 @@ banksRouter.post("/api/banks/:bankId/treasury/recalculate", requireBankStaff, as
 banksRouter.get("/api/banks/:bankId/escrows", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { escrows, bankAccounts } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { eq, or, desc, sql } = await import("drizzle-orm");
     const { alias } = await import("drizzle-orm/sqlite-core");
     
     const buyers = alias(bankAccounts, "buyer");
     const sellers = alias(bankAccounts, "seller");
 
     try {
+      const bId = req.params.bankId;
       const dbEscrows = await db.select({
         id: escrows.id,
         amount: escrows.amount,
         status: escrows.status,
         description: escrows.description,
         contractUrl: escrows.contractUrl,
+        contractText: escrows.contractText,
+        clientSignedAt: escrows.clientSignedAt,
         createdAt: escrows.createdAt,
-        buyerAccountName: buyers.accountName,
-        sellerAccountName: sellers.accountName,
+        buyerAccountName: sql`COALESCE(${buyers.accountName}, ${escrows.buyerAccountId})`,
+        sellerAccountName: sql`COALESCE(${sellers.accountName}, ${escrows.sellerAccountId})`,
         buyerDiscordId: buyers.ownerDiscordId,
         sellerDiscordId: sellers.ownerDiscordId,
-        buyerAccountId: buyers.id,
-        sellerAccountId: sellers.id
+        buyerAccountId: escrows.buyerAccountId,
+        sellerAccountId: escrows.sellerAccountId
       })
       .from(escrows)
-      .innerJoin(buyers, eq(escrows.buyerAccountId, buyers.id))
-      .innerJoin(sellers, eq(escrows.sellerAccountId, sellers.id))
-      .where(eq(escrows.bankId, req.params.bankId));
+      .leftJoin(buyers, eq(escrows.buyerAccountId, buyers.id))
+      .leftJoin(sellers, eq(escrows.sellerAccountId, sellers.id))
+      .where(or(eq(escrows.bankId, bId), sql`lower(${escrows.bankId}) = lower(${bId})`))
+      .orderBy(desc(escrows.createdAt));
 
       res.json(dbEscrows);
     } catch (e: any) {
@@ -4139,9 +4143,14 @@ banksRouter.post("/api/banks/:bankId/escrows", requireBankStaff, async (req: exp
 banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { escrows, bankAccounts } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, or, sql } = await import("drizzle-orm");
     try {
-      const escrow = await db.select().from(escrows).where(and(eq(escrows.id, req.params.escrowId), eq(escrows.bankId, req.params.bankId))).get();
+      const escrow = await db.select().from(escrows).where(
+        and(
+          eq(escrows.id, req.params.escrowId),
+          or(eq(escrows.bankId, req.params.bankId), sql`lower(${escrows.bankId}) = lower(${req.params.bankId})`)
+        )
+      ).get();
       if (!escrow) return res.status(404).json({ error: "Escrow not found" });
       if (escrow.status !== "pending") return res.status(400).json({ error: "Escrow not pending" });
 
@@ -4149,7 +4158,7 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, 
       if (!buyer) return res.status(404).json({ error: "Buyer account not found" });
       if (buyer.balance < escrow.amount) return res.status(400).json({ error: "Insufficient funds" });
 
-      const { holdInSystemAccount } = await import("../../lib/citycorp_money");
+      const { holdInSystemAccount } = await import("../../lib/citycorp_money.js");
       await holdInSystemAccount({
         fromAccount: buyer,
         amountCents: escrow.amount,
@@ -4158,7 +4167,7 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, 
         description: `Escrow Funded: ${escrow.description || escrow.id}`,
         type: "escrow",
       });
-      await db.update(escrows).set({ status: "funded" }).where(eq(escrows.id, escrow.id));
+      await db.update(escrows).set({ status: "funded", clientSignedAt: new Date() }).where(eq(escrows.id, escrow.id));
 
       res.json({ success: true, status: "funded" });
     } catch (e: any) {
@@ -4170,16 +4179,21 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/fund", requireBankStaff, 
 banksRouter.post("/api/banks/:bankId/escrows/:escrowId/release", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { escrows, bankAccounts } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, or, sql } = await import("drizzle-orm");
     try {
-      const escrow = await db.select().from(escrows).where(and(eq(escrows.id, req.params.escrowId), eq(escrows.bankId, req.params.bankId))).get();
+      const escrow = await db.select().from(escrows).where(
+        and(
+          eq(escrows.id, req.params.escrowId),
+          or(eq(escrows.bankId, req.params.bankId), sql`lower(${escrows.bankId}) = lower(${req.params.bankId})`)
+        )
+      ).get();
       if (!escrow) return res.status(404).json({ error: "Escrow not found" });
       if (escrow.status !== "funded") return res.status(400).json({ error: "Escrow not funded" });
 
       const seller = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.sellerAccountId)).get();
       if (!seller) return res.status(404).json({ error: "Seller account not found" });
 
-      const { releaseFromSystemAccount } = await import("../../lib/citycorp_money");
+      const { releaseFromSystemAccount } = await import("../../lib/citycorp_money.js");
       await releaseFromSystemAccount({
         toAccount: seller,
         amountCents: escrow.amount,
@@ -4200,16 +4214,21 @@ banksRouter.post("/api/banks/:bankId/escrows/:escrowId/release", requireBankStaf
 banksRouter.post("/api/banks/:bankId/escrows/:escrowId/refund", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { escrows, bankAccounts } = await import("../../db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, or, sql } = await import("drizzle-orm");
     try {
-      const escrow = await db.select().from(escrows).where(and(eq(escrows.id, req.params.escrowId), eq(escrows.bankId, req.params.bankId))).get();
+      const escrow = await db.select().from(escrows).where(
+        and(
+          eq(escrows.id, req.params.escrowId),
+          or(eq(escrows.bankId, req.params.bankId), sql`lower(${escrows.bankId}) = lower(${req.params.bankId})`)
+        )
+      ).get();
       if (!escrow) return res.status(404).json({ error: "Escrow not found" });
       if (escrow.status !== "funded") return res.status(400).json({ error: "Escrow not funded" });
 
       const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
       if (!buyer) return res.status(404).json({ error: "Buyer account not found" });
 
-      const { releaseFromSystemAccount } = await import("../../lib/citycorp_money");
+      const { releaseFromSystemAccount } = await import("../../lib/citycorp_money.js");
       await releaseFromSystemAccount({
         toAccount: buyer,
         amountCents: escrow.amount,

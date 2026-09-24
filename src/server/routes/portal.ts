@@ -257,7 +257,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
 
       let customer = await db.select().from(bankCustomers).where(
         and(
-          eq(bankCustomers.bankId, bankId),
+          or(eq(bankCustomers.bankId, bankId), sql`lower(${bankCustomers.bankId}) = lower(${bankId})`),
           or(
             inArray(bankCustomers.discordId, candidateIds),
             inArray(sql`lower(${bankCustomers.discordId})`, loweredCandidateIds),
@@ -298,7 +298,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
       .where(
         and(
-          eq(bankAccounts.bankId, bankId),
+          or(eq(bankAccounts.bankId, bankId), sql`lower(${bankAccounts.bankId}) = lower(${bankId})`),
           or(
             inArray(bankAccounts.ownerDiscordId, candidateIds),
             inArray(sql`lower(${bankAccounts.ownerDiscordId})`, loweredCandidateIds)
@@ -337,7 +337,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
           .where(
             and(
-              eq(bankAccounts.bankId, bankId),
+              or(eq(bankAccounts.bankId, bankId), sql`lower(${bankAccounts.bankId}) = lower(${bankId})`),
               inArray(bankAccounts.id, memberAccountIds),
               or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
             )
@@ -359,7 +359,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           .from(transactions)
           .where(
             and(
-              eq(transactions.bankId, bankId),
+              or(eq(transactions.bankId, bankId), sql`lower(${transactions.bankId}) = lower(${bankId})`),
               or(
                 inArray(transactions.fromAccountId, accountIds),
                 inArray(transactions.toAccountId, accountIds)
@@ -403,7 +403,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
            and(
               inArray(invoices.customerAccountId, accountIds),
               eq(invoices.status, "pending"),
-              eq(invoices.bankId, bankId)
+              or(eq(invoices.bankId, bankId), sql`lower(${invoices.bankId}) = lower(${bankId})`)
            )
         )
         .orderBy(desc(invoices.createdAt));
@@ -429,7 +429,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         .from(cards)
         .leftJoin(banks, eq(cards.bankId, banks.id))
         .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
-        .where(and(inArray(cards.accountId, accountIds), eq(cards.bankId, bankId)));
+        .where(and(inArray(cards.accountId, accountIds), or(eq(cards.bankId, bankId), sql`lower(${cards.bankId}) = lower(${bankId})`)));
 
         userCards = rawCards.map((c: any) => ({
           ...c,
@@ -442,7 +442,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       if (accountIds.length > 0) {
         const rawUserSubscriptions = await db.select().from(subscriptions).where(
           and(
-            eq(subscriptions.bankId, bankId),
+            or(eq(subscriptions.bankId, bankId), sql`lower(${subscriptions.bankId}) = lower(${bankId})`),
             or(
               inArray(subscriptions.customerAccountId, accountIds),
               inArray(subscriptions.billerAccountId, accountIds)
@@ -475,7 +475,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
 
       const userLoans = await db.select()
         .from(loans)
-        .where(and(eq(loans.bankId, bankId), or(...loanConditions)))
+        .where(and(or(eq(loans.bankId, bankId), sql`lower(${loans.bankId}) = lower(${bankId})`), or(...loanConditions)))
         .orderBy(desc(loans.nextPaymentDate));
 
       const { banks: banksTable } = await import("../../db/schema");
@@ -517,7 +517,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           .from(customerNotifications)
           .where(
             and(
-              eq(customerNotifications.bankId, bankId),
+              or(eq(customerNotifications.bankId, bankId), sql`lower(${customerNotifications.bankId}) = lower(${bankId})`),
               or(
                 inArray(customerNotifications.discordId, candidateIds),
                 inArray(sql`lower(${customerNotifications.discordId})`, loweredCandidateIds)
@@ -2230,9 +2230,11 @@ portalRouter.post("/api/portal/:bankId/split-bill", requireAuth, async (req: exp
 // PORTAL ESCROW ENDPOINTS FOR CUSTOMERS
 // ==========================================
 
+const activeEscrowCreations = new Map<string, { time: number; escrowId: string }>();
+
 portalRouter.get("/api/portal/:bankId/escrows", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
-  const { escrows, bankAccounts, banks } = await import("../../db/schema");
+  const { escrows, bankAccounts, accountMembers } = await import("../../db/schema");
   const { eq, or, and, inArray, desc, sql, isNull } = await import("drizzle-orm");
   const { alias } = await import("drizzle-orm/sqlite-core");
 
@@ -2242,21 +2244,54 @@ portalRouter.get("/api/portal/:bankId/escrows", requireAuth, async (req: express
     if (candidateIds.length === 0) return res.json({ escrows: [] });
     const loweredCandidateIds = candidateIds.map(c => c.toLowerCase());
 
+    const { isStaff } = await isUserStaffOrGlobalAdmin(req, bankId);
+
+    // 1. Resolve user accounts: owned + member/co-signer accounts
+    const memberships = await db.select().from(accountMembers).where(
+      or(
+        inArray(accountMembers.discordId, candidateIds),
+        inArray(sql`lower(${accountMembers.discordId})`, loweredCandidateIds)
+      )
+    ).all();
+    const memberAccountIds = memberships.map(m => m.accountId);
+
+    const accountConditions: any[] = [
+      inArray(bankAccounts.ownerDiscordId, candidateIds),
+      inArray(sql`lower(${bankAccounts.ownerDiscordId})`, loweredCandidateIds),
+    ];
+    if (memberAccountIds.length > 0) {
+      accountConditions.push(inArray(bankAccounts.id, memberAccountIds));
+    }
+
     const userAccounts = await db.select({ id: bankAccounts.id }).from(bankAccounts).where(
       and(
-        eq(bankAccounts.bankId, bankId),
-        or(
-          inArray(bankAccounts.ownerDiscordId, candidateIds),
-          inArray(sql`lower(${bankAccounts.ownerDiscordId})`, loweredCandidateIds)
-        ),
+        or(eq(bankAccounts.bankId, bankId), sql`lower(${bankAccounts.bankId}) = lower(${bankId})`),
+        or(...accountConditions),
         or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
       )
     );
     const userAccountIds = userAccounts.map(a => a.id);
-    if (userAccountIds.length === 0) return res.json({ escrows: [] });
 
     const buyerAcc = alias(bankAccounts, "buyer_account");
     const sellerAcc = alias(bankAccounts, "seller_account");
+
+    const whereConditions: any[] = [
+      or(eq(escrows.bankId, bankId), sql`lower(${escrows.bankId}) = lower(${bankId})`)
+    ];
+
+    if (!isStaff) {
+      const matchCriteria: any[] = [
+        inArray(buyerAcc.ownerDiscordId, candidateIds),
+        inArray(sql`lower(${buyerAcc.ownerDiscordId})`, loweredCandidateIds),
+        inArray(sellerAcc.ownerDiscordId, candidateIds),
+        inArray(sql`lower(${sellerAcc.ownerDiscordId})`, loweredCandidateIds),
+      ];
+      if (userAccountIds.length > 0) {
+        matchCriteria.push(inArray(escrows.buyerAccountId, userAccountIds));
+        matchCriteria.push(inArray(escrows.sellerAccountId, userAccountIds));
+      }
+      whereConditions.push(or(...matchCriteria));
+    }
 
     const list = await db.select({
       id: escrows.id,
@@ -2269,24 +2304,16 @@ portalRouter.get("/api/portal/:bankId/escrows", requireAuth, async (req: express
       clientSignedAt: escrows.clientSignedAt,
       createdAt: escrows.createdAt,
       buyerAccountId: escrows.buyerAccountId,
-      buyerAccountName: buyerAcc.accountName,
+      buyerAccountName: sql`COALESCE(${buyerAcc.accountName}, ${escrows.buyerAccountId})`,
       buyerDiscordId: buyerAcc.ownerDiscordId,
       sellerAccountId: escrows.sellerAccountId,
-      sellerAccountName: sellerAcc.accountName,
+      sellerAccountName: sql`COALESCE(${sellerAcc.accountName}, ${escrows.sellerAccountId})`,
       sellerDiscordId: sellerAcc.ownerDiscordId,
     })
     .from(escrows)
-    .innerJoin(buyerAcc, eq(escrows.buyerAccountId, buyerAcc.id))
-    .innerJoin(sellerAcc, eq(escrows.sellerAccountId, sellerAcc.id))
-    .where(
-      and(
-        eq(escrows.bankId, bankId),
-        or(
-          inArray(escrows.buyerAccountId, userAccountIds),
-          inArray(escrows.sellerAccountId, userAccountIds)
-        )
-      )
-    )
+    .leftJoin(buyerAcc, eq(escrows.buyerAccountId, buyerAcc.id))
+    .leftJoin(sellerAcc, eq(escrows.sellerAccountId, sellerAcc.id))
+    .where(and(...whereConditions))
     .orderBy(desc(escrows.createdAt))
     .all();
 
@@ -2300,27 +2327,45 @@ portalRouter.get("/api/portal/:bankId/escrows", requireAuth, async (req: express
 portalRouter.post("/api/portal/:bankId/escrows", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { escrows, bankAccounts, banks } = await import("../../db/schema");
-  const { eq, and, or, inArray } = await import("drizzle-orm");
+  const { eq, and, or, inArray, isNull } = await import("drizzle-orm");
   const { v4: uuidv4 } = await import("uuid");
 
   try {
     const { bankId } = req.params;
     const { buyerAccountId, sellerIdentifier, amount, description, contractText, autoFund } = req.body;
 
+    const cleanSeller = String(sellerIdentifier || "").trim();
+    if (!cleanSeller) {
+      return res.status(400).json({ error: "Seller counterparty account or handle is required." });
+    }
+
+    const amountCents = Math.round(parseFloat(amount) * 100);
+    if (isNaN(amountCents) || amountCents <= 0) {
+      return res.status(400).json({ error: "Invalid escrow amount. Must be positive." });
+    }
+
+    // Idempotency check: prevent duplicate charges within 10 seconds for the same parameters
+    const idempotencyKey = `${bankId}_${buyerAccountId}_${cleanSeller.toLowerCase()}_${amountCents}`;
+    const now = Date.now();
+    const existingActive = activeEscrowCreations.get(idempotencyKey);
+    if (existingActive && (now - existingActive.time < 10000)) {
+      return res.status(409).json({
+        error: "An escrow agreement with identical parameters is already processing or was just created. Please wait a moment."
+      });
+    }
+
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
     if (candidateIds.length === 0) return res.status(401).json({ error: "Unauthorized" });
 
     const buyer = await db.select().from(bankAccounts).where(
-      and(eq(bankAccounts.id, buyerAccountId), eq(bankAccounts.bankId, bankId))
+      and(
+        eq(bankAccounts.id, buyerAccountId),
+        or(eq(bankAccounts.bankId, bankId), eq(bankAccounts.bankId, bankId.toLowerCase()))
+      )
     ).get();
 
     if (!buyer || !(await isUserAccountOwnerOrMember(buyer, candidateIds))) {
       return res.status(403).json({ error: "You can only initiate escrow from an account you own or operate." });
-    }
-
-    const cleanSeller = String(sellerIdentifier || "").trim();
-    if (!cleanSeller) {
-      return res.status(400).json({ error: "Seller counterparty account or handle is required." });
     }
 
     const { resolveEscrowCounterpartyAccount } = await import("../../lib/account_lookup.js");
@@ -2334,33 +2379,22 @@ portalRouter.post("/api/portal/:bankId/escrows", requireAuth, async (req: expres
       return res.status(400).json({ error: "Buyer and Seller cannot be the exact same account." });
     }
 
-    const amountCents = Math.round(parseFloat(amount) * 100);
-    if (isNaN(amountCents) || amountCents <= 0) {
-      return res.status(400).json({ error: "Invalid escrow amount. Must be positive." });
-    }
-
-    const escrowId = `esc_${Date.now()}_${uuidv4().slice(0, 8)}`;
     const shouldAutoFund = Boolean(autoFund);
-
     if (shouldAutoFund && buyer.balance < amountCents) {
       return res.status(400).json({ error: `Insufficient funds to auto-fund escrow. Account balance is $${(buyer.balance / 100).toFixed(2)}.` });
     }
 
-    let initialStatus = "pending";
+    const escrowId = `esc_${now}_${uuidv4().slice(0, 8)}`;
+    activeEscrowCreations.set(idempotencyKey, { time: now, escrowId });
 
-    if (shouldAutoFund) {
-      const { holdInSystemAccount } = await import("../../lib/citycorp_money");
-      await holdInSystemAccount({
-        fromAccount: buyer,
-        amountCents,
-        systemAccountName: "ESCROW",
-        systemCategory: "escrow",
-        description: `Customer Escrow Hold: ${description || escrowId}`,
-        type: "escrow",
-      });
-      initialStatus = "funded";
+    // Clean up old entries from idempotency cache
+    for (const [k, v] of activeEscrowCreations.entries()) {
+      if (now - v.time > 60000) activeEscrowCreations.delete(k);
     }
 
+    let initialStatus = "pending";
+
+    // Step 1: Pre-insert escrow agreement in pending state
     await db.insert(escrows).values({
       id: escrowId,
       bankId,
@@ -2368,11 +2402,49 @@ portalRouter.post("/api/portal/:bankId/escrows", requireAuth, async (req: expres
       sellerAccountId: seller.id,
       amount: amountCents,
       description: description || "Peer-to-Peer Escrow Hold",
-      status: initialStatus,
+      status: "pending",
       contractText: contractText || null,
-      clientSignedAt: shouldAutoFund ? new Date() : null,
+      clientSignedAt: null,
       createdAt: new Date(),
     });
+
+    // Step 2: Auto-fund custody if requested
+    if (shouldAutoFund) {
+      let holdSucceeded = false;
+      try {
+        const { holdInSystemAccount } = await import("../../lib/citycorp_money.js");
+        await holdInSystemAccount({
+          fromAccount: buyer,
+          amountCents,
+          systemAccountName: "ESCROW",
+          systemCategory: "escrow",
+          description: `Customer Escrow Hold: ${description || escrowId}`,
+          type: "escrow",
+        });
+        holdSucceeded = true;
+
+        await db.update(escrows).set({
+          status: "funded",
+          clientSignedAt: new Date(),
+        }).where(eq(escrows.id, escrowId));
+        initialStatus = "funded";
+      } catch (fundErr: any) {
+        console.error("Auto-fund escrow failed:", fundErr);
+        if (!holdSucceeded) {
+          // Money was NOT moved. Safe to clean up pending draft so no dangling record exists
+          await db.delete(escrows).where(eq(escrows.id, escrowId));
+          activeEscrowCreations.delete(idempotencyKey);
+          return res.status(400).json({ error: fundErr.message || "Failed to auto-fund escrow custody hold" });
+        } else {
+          // Money was moved into custody! Escrow MUST NOT be deleted.
+          await db.update(escrows).set({
+            status: "funded",
+            clientSignedAt: new Date(),
+          }).where(eq(escrows.id, escrowId));
+          initialStatus = "funded";
+        }
+      }
+    }
 
     res.json({
       success: true,
@@ -2389,14 +2461,17 @@ portalRouter.post("/api/portal/:bankId/escrows", requireAuth, async (req: expres
 portalRouter.post("/api/portal/:bankId/escrows/:escrowId/fund", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { escrows, bankAccounts } = await import("../../db/schema");
-  const { eq, and } = await import("drizzle-orm");
+  const { eq, and, or, sql } = await import("drizzle-orm");
 
   try {
     const { bankId, escrowId } = req.params;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
     const escrow = await db.select().from(escrows).where(
-      and(eq(escrows.id, escrowId), eq(escrows.bankId, bankId))
+      and(
+        eq(escrows.id, escrowId),
+        or(eq(escrows.bankId, bankId), sql`lower(${escrows.bankId}) = lower(${bankId})`)
+      )
     ).get();
 
     if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
@@ -2411,7 +2486,7 @@ portalRouter.post("/api/portal/:bankId/escrows/:escrowId/fund", requireAuth, asy
       return res.status(400).json({ error: `Insufficient balance ($${(buyer.balance / 100).toFixed(2)}) to fund $${(escrow.amount / 100).toFixed(2)}.` });
     }
 
-    const { holdInSystemAccount } = await import("../../lib/citycorp_money");
+    const { holdInSystemAccount } = await import("../../lib/citycorp_money.js");
     await holdInSystemAccount({
       fromAccount: buyer,
       amountCents: escrow.amount,
@@ -2436,14 +2511,17 @@ portalRouter.post("/api/portal/:bankId/escrows/:escrowId/fund", requireAuth, asy
 portalRouter.post("/api/portal/:bankId/escrows/:escrowId/release", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { escrows, bankAccounts } = await import("../../db/schema");
-  const { eq, and } = await import("drizzle-orm");
+  const { eq, and, or, sql } = await import("drizzle-orm");
 
   try {
     const { bankId, escrowId } = req.params;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
     const escrow = await db.select().from(escrows).where(
-      and(eq(escrows.id, escrowId), eq(escrows.bankId, bankId))
+      and(
+        eq(escrows.id, escrowId),
+        or(eq(escrows.bankId, bankId), sql`lower(${escrows.bankId}) = lower(${bankId})`)
+      )
     ).get();
 
     if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
@@ -2457,7 +2535,7 @@ portalRouter.post("/api/portal/:bankId/escrows/:escrowId/release", requireAuth, 
     const seller = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.sellerAccountId)).get();
     if (!seller) return res.status(404).json({ error: "Seller destination account not found" });
 
-    const { releaseFromSystemAccount } = await import("../../lib/citycorp_money");
+    const { releaseFromSystemAccount } = await import("../../lib/citycorp_money.js");
     await releaseFromSystemAccount({
       toAccount: seller,
       amountCents: escrow.amount,
@@ -2479,14 +2557,17 @@ portalRouter.post("/api/portal/:bankId/escrows/:escrowId/release", requireAuth, 
 portalRouter.post("/api/portal/:bankId/escrows/:escrowId/refund", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { escrows, bankAccounts } = await import("../../db/schema");
-  const { eq, and } = await import("drizzle-orm");
+  const { eq, and, or, sql } = await import("drizzle-orm");
 
   try {
     const { bankId, escrowId } = req.params;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
     const escrow = await db.select().from(escrows).where(
-      and(eq(escrows.id, escrowId), eq(escrows.bankId, bankId))
+      and(
+        eq(escrows.id, escrowId),
+        or(eq(escrows.bankId, bankId), sql`lower(${escrows.bankId}) = lower(${bankId})`)
+      )
     ).get();
 
     if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
@@ -2500,7 +2581,7 @@ portalRouter.post("/api/portal/:bankId/escrows/:escrowId/refund", requireAuth, a
     const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
     if (!buyer) return res.status(404).json({ error: "Buyer destination account not found" });
 
-    const { releaseFromSystemAccount } = await import("../../lib/citycorp_money");
+    const { releaseFromSystemAccount } = await import("../../lib/citycorp_money.js");
     await releaseFromSystemAccount({
       toAccount: buyer,
       amountCents: escrow.amount,
@@ -2522,14 +2603,17 @@ portalRouter.post("/api/portal/:bankId/escrows/:escrowId/refund", requireAuth, a
 portalRouter.post("/api/portal/:bankId/escrows/:escrowId/cancel", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { escrows, bankAccounts } = await import("../../db/schema");
-  const { eq, and, or } = await import("drizzle-orm");
+  const { eq, and, or, sql } = await import("drizzle-orm");
 
   try {
     const { bankId, escrowId } = req.params;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
 
     const escrow = await db.select().from(escrows).where(
-      and(eq(escrows.id, escrowId), eq(escrows.bankId, bankId))
+      and(
+        eq(escrows.id, escrowId),
+        or(eq(escrows.bankId, bankId), sql`lower(${escrows.bankId}) = lower(${bankId})`)
+      )
     ).get();
 
     if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });

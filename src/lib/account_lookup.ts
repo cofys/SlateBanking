@@ -1,6 +1,6 @@
 import { db } from "../db/index.js";
 import { bankAccounts, banks, transactions } from "../db/schema.js";
-import { eq, and, or, inArray, sql } from "drizzle-orm";
+import { eq, and, or, inArray, sql, isNull } from "drizzle-orm";
 
 export type PayeeMatch = {
   id: string;
@@ -128,7 +128,10 @@ export async function resolveEscrowCounterpartyAccount(
 
   // Fetch all candidate accounts at this bank
   const allAccounts = await db.select().from(bankAccounts).where(
-    and(eq(bankAccounts.bankId, opts.bankId), eq(bankAccounts.isSystem, false))
+    and(
+      eq(bankAccounts.bankId, opts.bankId),
+      or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
+    )
   ).all();
 
   const activeCandidates = allAccounts.filter(a => a.isActive !== false && !a.isFrozen && a.id !== exclude);

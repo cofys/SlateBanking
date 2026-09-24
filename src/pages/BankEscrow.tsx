@@ -48,9 +48,10 @@ export function BankEscrow() {
         fetch(`/api/banks/${bankId}/escrows`),
         fetch(`/api/banks/${bankId}/accounts`)
       ]);
-      const e = await escrowsRes.json();
-      const a = await accsRes.json();
+      const e = await escrowsRes.json().catch(() => []);
+      const a = await accsRes.json().catch(() => []);
       if (Array.isArray(e)) setEscrows(e);
+      else if (e && Array.isArray((e as any).escrows)) setEscrows((e as any).escrows);
       if (Array.isArray(a)) setAccounts(a);
       setLoading(false);
     } catch (e) {

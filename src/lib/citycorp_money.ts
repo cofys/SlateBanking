@@ -346,30 +346,44 @@ export async function executeSameBankBookTransfer(opts: {
   }
 
   const client = clientForBank(sourceBank);
-  if (!client) {
-    throw new MoneyRailError("This bank is not connected to CityCorp. Book transfers are unavailable.");
+  if (client) {
+    const res = await client.transferToAccount(
+      opts.sourceAccount.accountName,
+      dollars(quote.submittedCents),
+      sourceBank.corpId!,
+      opts.destAccount.accountName
+    );
+    if (!isCityCorpOk(res)) {
+      throw new MoneyRailError(`CityCorp transfer failed: ${res?.message || res?.error || "unknown error"}`);
+    }
+    try {
+      await refreshAccountCache({
+        bankId: sourceBank.id,
+        accountName: opts.sourceAccount.accountName,
+        accountId: opts.sourceAccount.id,
+        client,
+      });
+      await refreshAccountCache({
+        bankId: sourceBank.id,
+        accountName: opts.destAccount.accountName,
+        accountId: opts.destAccount.id,
+        client,
+      });
+    } catch (cacheErr) {
+      console.warn("[executeSameBankBookTransfer] Cache refresh warning:", cacheErr);
+    }
+  } else {
+    // Local / internal ledger update
+    await db.update(bankAccounts).set({
+      balance: sql`${bankAccounts.balance} - ${quote.submittedCents}`,
+      lastSyncedAt: new Date(),
+    }).where(eq(bankAccounts.id, opts.sourceAccount.id));
+
+    await db.update(bankAccounts).set({
+      balance: sql`${bankAccounts.balance} + ${quote.receivedCents}`,
+      lastSyncedAt: new Date(),
+    }).where(eq(bankAccounts.id, opts.destAccount.id));
   }
-  const res = await client.transferToAccount(
-    opts.sourceAccount.accountName,
-    dollars(quote.submittedCents),
-    sourceBank.corpId!,
-    opts.destAccount.accountName
-  );
-  if (!isCityCorpOk(res)) {
-    throw new MoneyRailError(`CityCorp transfer failed: ${res?.message || res?.error || "unknown error"}`);
-  }
-  await refreshAccountCache({
-    bankId: sourceBank.id,
-    accountName: opts.sourceAccount.accountName,
-    accountId: opts.sourceAccount.id,
-    client,
-  });
-  await refreshAccountCache({
-    bankId: sourceBank.id,
-    accountName: opts.destAccount.accountName,
-    accountId: opts.destAccount.id,
-    client,
-  });
 
   const txId = await recordMove({
     bankId: sourceBank.id,

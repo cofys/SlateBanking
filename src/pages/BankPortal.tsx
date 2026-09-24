@@ -56,6 +56,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [selectedEscrow, setSelectedEscrow] = useState<any | null>(null);
   const [applyTab, setApplyTab] = useState<"account" | "loan" | "card" | "bond" | "escrow">("account");
   const [escrowActionInProgress, setEscrowActionInProgress] = useState<string | null>(null);
+  const [escrowSubmitting, setEscrowSubmitting] = useState(false);
   const [bondSimAmount, setBondSimAmount] = useState<string>("1000");
   const [logoBroken, setLogoBroken] = useState(false);
   const [destMatches, setDestMatches] = useState<any[]>([]);
@@ -291,6 +292,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       .then(d => {
         if (Array.isArray(d.escrows)) {
           setEscrows(d.escrows);
+        } else if (Array.isArray(d)) {
+          setEscrows(d);
         }
       })
       .catch(() => {});
@@ -574,7 +577,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
   const createEscrow = async (e: React.FormEvent) => {
     e.preventDefault();
-    const fd = new FormData(e.target as HTMLFormElement);
+    if (escrowSubmitting || actionPending) return;
+    const form = e.target as HTMLFormElement;
+    const fd = new FormData(form);
+    setEscrowSubmitting(true);
     setActionPending(true);
     try {
       const res = await fetch(`/api/portal/${bankId}/escrows`, {
@@ -590,17 +596,21 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         }),
       });
       const d = await res.json();
-      if (!res.ok) flash(d.error || "Failed to create escrow agreement");
-      else {
+      if (!res.ok) {
+        flash(d.error || "Failed to create escrow agreement");
+      } else {
         flash(d.message || "Escrow agreement created!");
+        form.reset();
         setView("escrow");
         loadPortalEscrows();
         handleSearch();
       }
     } catch {
       flash("Error creating escrow agreement");
+    } finally {
+      setEscrowSubmitting(false);
+      setActionPending(false);
     }
-    setActionPending(false);
   };
 
   const fundEscrow = async (escrowId: string) => {
@@ -2159,10 +2169,17 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             {/* Escrow Stat Cards */}
             {(() => {
               const myAccountIds = accounts.map((a: any) => a.id);
+              const userHandle = (user?.discordId || user?.username || "").toLowerCase();
               const fundedEscrows = escrows.filter(e => e.status === "funded");
               const totalLocked = fundedEscrows.reduce((s, e) => s + (e.amount || 0), 0);
-              const asBuyerFunded = fundedEscrows.filter(e => myAccountIds.includes(e.buyerAccountId));
-              const asSellerFunded = fundedEscrows.filter(e => myAccountIds.includes(e.sellerAccountId));
+              const asBuyerFunded = fundedEscrows.filter(e => 
+                myAccountIds.some((id: string) => id?.toLowerCase() === e.buyerAccountId?.toLowerCase()) ||
+                (userHandle && e.buyerDiscordId?.toLowerCase() === userHandle)
+              );
+              const asSellerFunded = fundedEscrows.filter(e => 
+                myAccountIds.some((id: string) => id?.toLowerCase() === e.sellerAccountId?.toLowerCase()) ||
+                (userHandle && e.sellerDiscordId?.toLowerCase() === userHandle)
+              );
               const completedCount = escrows.filter(e => e.status === "released").length;
 
               return (
@@ -2244,8 +2261,17 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               return (
                 <div className="space-y-3">
                   {filteredList.map((escrow: any) => {
-                    const isBuyer = myAccountIds.includes(escrow.buyerAccountId);
-                    const isSeller = myAccountIds.includes(escrow.sellerAccountId);
+                    const userHandle = (user?.discordId || user?.username || "").toLowerCase();
+                    const linkedHandle = (user?.linkedDiscordId || "").toLowerCase();
+                    const buyerHandle = (escrow.buyerDiscordId || "").toLowerCase();
+                    const sellerHandle = (escrow.sellerDiscordId || "").toLowerCase();
+                    const isBuyer = myAccountIds.some((id: string) => id?.toLowerCase() === escrow.buyerAccountId?.toLowerCase()) ||
+                      (userHandle && buyerHandle === userHandle) ||
+                      (linkedHandle && buyerHandle === linkedHandle);
+                    const isSeller = myAccountIds.some((id: string) => id?.toLowerCase() === escrow.sellerAccountId?.toLowerCase()) ||
+                      (userHandle && sellerHandle === userHandle) ||
+                      (linkedHandle && sellerHandle === linkedHandle);
+                    const isStaffViewer = (userData?.isStaff || user?.isGlobalAdmin) && !isBuyer && !isSeller;
                     const isPendingAction = escrowActionInProgress?.startsWith(escrow.id);
 
                     return (
@@ -2271,9 +2297,13 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                             </span>
 
                             <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wide border ${
-                              isBuyer ? "bg-indigo-500/15 border-indigo-500/30 text-indigo-300" : "bg-purple-500/15 border-purple-500/30 text-purple-300"
+                              isBuyer 
+                                ? "bg-indigo-500/15 border-indigo-500/30 text-indigo-300" 
+                                : isSeller 
+                                ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
+                                : "bg-cyan-500/15 border-cyan-500/30 text-cyan-300"
                             }`}>
-                              {isBuyer ? "👤 You: Buyer (Depositor)" : "🏷️ You: Seller (Recipient)"}
+                              {isBuyer ? "👤 You: Buyer (Depositor)" : isSeller ? "🏷️ You: Seller (Recipient)" : "🏛️ Bank Staff Oversight"}
                             </span>
 
                             <span className="text-[11px] font-mono text-white/35">
@@ -2386,6 +2416,17 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 <ShieldAlert size={12} />
                                 <span>Mediation</span>
                               </button>
+                            )}
+
+                            {isStaffViewer && (
+                              <Link
+                                to={`/bank/${bankId}/escrow`}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/25 flex items-center gap-1.5 transition-colors"
+                                title="Manage institutional escrow custody in the Bank Desk"
+                              >
+                                <ShieldCheck size={13} />
+                                <span>Bank Desk</span>
+                              </Link>
                             )}
                           </div>
                         </div>
@@ -3094,11 +3135,11 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </label>
 
                 <button
-                  disabled={actionPending}
+                  disabled={actionPending || escrowSubmitting}
                   className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50"
                   style={btnBrand}
                 >
-                  {actionPending ? "Initiating Escrow Agreement…" : "Create & Lock Escrow Agreement"}
+                  {escrowSubmitting ? "Locking Funds in Custody…" : actionPending ? "Initiating Escrow Agreement…" : "Create & Lock Escrow Agreement"}
                 </button>
               </form>
             )}

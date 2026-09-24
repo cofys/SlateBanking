@@ -35,8 +35,17 @@ export function isAllowedWebhookUrl(url: string | null | undefined): boolean {
   }
 }
 
+export function extractAuthToken(req: express.Request): string | null {
+  if (req.cookies?.auth_token) return req.cookies.auth_token;
+  const header = req.headers?.authorization;
+  if (header && typeof header === 'string' && header.startsWith('Bearer ')) {
+    return header.slice(7).trim();
+  }
+  return null;
+}
+
 export const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const token = req.cookies.auth_token;
+  const token = extractAuthToken(req);
   if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
@@ -50,7 +59,7 @@ export const requireAuth = async (req: express.Request, res: express.Response, n
 };
 
 export const requireGlobalAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const token = req.cookies.auth_token;
+  const token = extractAuthToken(req);
   if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
@@ -67,7 +76,7 @@ export const requireGlobalAdmin = async (req: express.Request, res: express.Resp
 };
 
 export const requireBankStaff = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const token = req.cookies.auth_token;
+  const token = extractAuthToken(req);
   if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });

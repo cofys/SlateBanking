@@ -1707,6 +1707,27 @@ When a user accesses `/portal/:bankId`, the backend runs candidate identifier re
   - **Payment Cards & Invoices**: Populates contactless virtual cards and pending receivables without short-circuiting on empty account sets.
   - **Customer Notifications & Alerts**: Loads unread alerts, deficit warnings, and system notices.
 
+---
+
+## 🛡️ Institutional Escrow Custody & Multi-Party Resolution Engine
+
+### 1. Atomic Creation & Custody Funding Lifecycle
+The platform guarantees that peer-to-peer and institutional escrow agreements never orphan user funds or create discrepancies between CityCorp in-game money and the double-entry database ledger:
+- **Two-Stage Atomic Execution**:
+  1. **Pre-insert Stage**: The escrow contract is drafted and inserted in `pending` state with unique identifier `esc_<timestamp>_<uuid>`.
+  2. **Custody Lock Stage (`autoFund`)**: When the funder selects immediate auto-funding, the backend dispatches funds directly to the neutral `"ESCROW"` GL system account via `holdInSystemAccount`. If the debit succeeds, the escrow status is atomically updated to `funded` with client signature timestamp `clientSignedAt`.
+  3. **Failure Isolation & Automatic Rollback**: If `holdInSystemAccount` encounters insufficient funds or network issues, the pre-inserted pending escrow is purged immediately, preventing dangling agreements without backing custody assets.
+- **Idempotency & Duplicate Submit Guard**:
+  - Both client-side button locking (`escrowSubmitting`) and server-side in-flight caching prevent duplicate submits within a 10-second window, ensuring customers are never double- or triple-debited when clicking agreement creation buttons.
+
+### 2. Resilient Counterparty & Left-Join Ledger Pipeline
+- **Left-Join Escrow Retrieval (`/api/portal/:bankId/escrows` & `/api/banks/:bankId/escrows`)**:
+  - Escrow agreements use non-destructive `leftJoin` on buyer and seller accounts (`buyerAcc` and `sellerAcc`).
+  - If a counterparty belongs to an external bank, an in-game corporation, or a deleted account, the escrow is never dropped or concealed from the ledger. Names cleanly fall back to `COALESCE(accountName, accountId)`.
+- **Comprehensive Ownership & Participant Resolution**:
+  - Customers see all escrows where their account is funder or beneficiary, including operator/signer permissions via `accountMembers` and direct candidate Discord/Minecraft handles.
+  - Bank staff and global admins have unrestricted oversight over all institutional custody agreements in their operational desk (`/bank/:bankId/escrow`).
+
 
 
 
