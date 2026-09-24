@@ -1647,5 +1647,67 @@ Slate includes an enterprise banking support and dispute management system seaml
 * **Corporate Team Management**: Add and manage Minecraft username operators and managers on business accounts with live skin head avatar previews.
 * **Bill Payments & Point-of-Sale**: Pay invoices, manage direct debit subscriptions, and execute contactless Onyx merchant checkouts.
 
+---
+
+## 🔔 Minimum Maintenance Balance & Customer Notification Engine
+
+### 1. Architecture Overview
+Banks on Slate can enforce **Minimum Maintenance Balances** per account tier (e.g. Personal Checking, High-Yield Savings, Corporate Operating). When an account's ledger balance dips below the designated threshold, the platform coordinates across three channels:
+1. **In-Portal Notification Center**: The customer portal displays a dedicated notification inbox with alert badges, deficit tallies, and in-game resolution commands.
+2. **Minecraft CityCorp Deposit Command Integration**: Generates the exact Minecraft in-game command (`/c account deposit <bank_corp> <account_name> <amount_dollars>`) to immediately cure the deficit.
+3. **Discord DM Alert Dispatch**: If the bank's Discord bot is connected and enabled, automated direct messages alert the account holder with rich embeds and deposit instructions.
+
+### 2. Service Logic (`src/lib/min_balance_service.ts`)
+- `getBankCorpName(bank, settings)`: Normalizes bank corporation names for compatibility with Minecraft CityCorp commands.
+- `getDepositCommand(bankCorpName, accountName, depositDollars)`: Builds the canonical `/c account deposit` slash command.
+- `checkAndNotifyAccountMinBalance(accountId, options)`: Inspects tier minimums, detects deficits, de-duplicates 24-hour notifications, registers a `customer_notifications` record, and fires Discord DM alerts.
+- `runBankMinBalanceSweep()`: Periodic cron sweep executing every 15 minutes to guarantee compliance across all open accounts.
+
+### 3. Database Schema (`customer_notifications`)
+- `id` (text, primary key)
+- `bank_id` (text, foreign key)
+- `discord_id` (text, customer Discord ID)
+- `type` (text, e.g. `min_balance_deficit`, `transfer_received`, `loan_due`)
+- `title` (text)
+- `message` (text)
+- `data` (text, JSON payload containing deficit amount and deposit command)
+- `is_read` (boolean, default false)
+- `created_at` (timestamp)
+
+---
+
+## 🎫 Customer Support Tickets & Formal Disputes
+
+### 1. Ticket Submission & Validation Flow
+Customers can initiate tickets for general inquiries or attach specific transaction and escrow IDs to file formal disputes.
+- **Two-way Data Binding**: The ticket modal supports controlled React state and `FormData` resolution to guarantee subjects, descriptions, categories, and priorities are never dropped.
+- **Transaction & Escrow Disputes**: Customers can initiate disputes directly from transaction receipts or escrow agreement cards. The context automatically pre-fills the subject with the item ID and dollar amount, setting category to `dispute` or `escrow_dispute`.
+- **Staff Resolution Actions**: Staff can review disputes via `/bank/:bankId/tickets`, inspect linked transactions and escrow custody, exchange threaded messages, and execute atomic settlements:
+  - `reverse_transaction`: Reverses disputed transfers between sender and recipient accounts, creating an audit-logged dispute reversal transaction.
+  - `refund_escrow`: Reimburses locked escrow funds back to the buyer's account and updates escrow status to `refunded`.
+  - `release_escrow`: Releases disputed escrow funds to the seller's account and marks status as `released`.
+
+---
+
+## 🔍 Customer Portal Multi-Identifier Resolution Engine (`/api/portal/:bankId/lookup`)
+
+### 1. Unified Identity & Candidate Resolution
+When a user accesses `/portal/:bankId`, the backend runs candidate identifier resolution across all connected authentication vectors:
+- **Discord Snowflake & Linked Handles**: User Discord IDs, linked accounts, and session metadata.
+- **Minecraft Username & UUID**: Case-insensitive Mojang and CityCorp usernames (`mc_<uuid>`, dashed/undashed UUIDs, clean usernames).
+- **Customer Profiles (`bankCustomers`)**: Cross-bank links, KYC records, and RP names.
+- **Account Membership & Operator Records (`accountMembers`)**: Co-owned and corporate operator accounts.
+
+### 2. Full-Spectrum Data Hydration (Zero-Drop Pipeline)
+- **Case-Insensitive Account & System Filter Matching**: Uses SQLite `lower()` comparisons and excludes internal system accounts (`isSystem == null || false`).
+- **Resilient Multi-Entity Ingestion**:
+  - **Bank Accounts**: Hydrates owned and member accounts with tier metadata, minimum balance deficit calculations, and in-game deposit commands.
+  - **Financing & Loans**: Seamlessly retrieves all active, delinquent, pending, and archived loans matching user Discord ID, Minecraft identity, or servicing account IDs.
+  - **Transaction History**: Queries double-entry transactions across all resolved account IDs with counterparty name resolution and memo metadata.
+  - **Payment Cards & Invoices**: Populates contactless virtual cards and pending receivables without short-circuiting on empty account sets.
+  - **Customer Notifications & Alerts**: Loads unread alerts, deficit warnings, and system notices.
+
+
+
 
 

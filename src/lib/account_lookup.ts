@@ -151,10 +151,9 @@ export async function resolveEscrowCounterpartyAccount(
   });
   if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
 
-  // 4. Owner Discord ID or Minecraft Name
+  // 4. Owner Discord ID
   matched = activeCandidates.find(a =>
-    (a.ownerDiscordId && (a.ownerDiscordId.toLowerCase() === qLower || a.ownerDiscordId === q)) ||
-    (a.ownerMinecraftName && a.ownerMinecraftName.toLowerCase() === qLower)
+    a.ownerDiscordId && (a.ownerDiscordId.toLowerCase() === qLower || a.ownerDiscordId === q)
   );
   if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
 
@@ -182,19 +181,19 @@ export async function resolveEscrowCounterpartyAccount(
       or(
         eq(bankCustomers.discordId, q),
         sql`lower(${bankCustomers.discordId}) = ${qLower}`,
-        eq(bankCustomers.minecraftName, q),
-        sql`lower(${bankCustomers.minecraftName}) = ${qLower}`,
-        sql`lower(${bankCustomers.name}) = ${qLower}`
+        eq(bankCustomers.mcUsername, q),
+        sql`lower(${bankCustomers.mcUsername}) = ${qLower}`,
+        sql`lower(${bankCustomers.rpName}) = ${qLower}`
       )
     )
   ).all();
 
   if (customerMatches.length > 0) {
     const customerDiscordIds = customerMatches.map(c => c.discordId).filter(Boolean);
-    const customerMcNames = customerMatches.map(c => c.minecraftName?.toLowerCase()).filter(Boolean);
+    const linkedDiscordIds = customerMatches.map(c => c.linkedDiscordId).filter(Boolean) as string[];
+    const allMatchIds = [...customerDiscordIds, ...linkedDiscordIds];
     matched = activeCandidates.find(a =>
-      (a.ownerDiscordId && customerDiscordIds.includes(a.ownerDiscordId)) ||
-      (a.ownerMinecraftName && customerMcNames.includes(a.ownerMinecraftName.toLowerCase()))
+      a.ownerDiscordId && allMatchIds.includes(a.ownerDiscordId)
     );
     if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
   }

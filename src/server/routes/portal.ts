@@ -244,8 +244,8 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
 
 portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
-    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans, accountMembers, subscriptions } = await import("../../db/schema");
-    const { eq, and, or, desc, inArray, sql } = await import("drizzle-orm");
+    const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans, accountMembers, subscriptions, customerNotifications } = await import("../../db/schema");
+    const { eq, and, or, desc, inArray, sql, isNull } = await import("drizzle-orm");
 
     try {
       const bankId = req.params.bankId;
@@ -253,19 +253,33 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
 
       const primaryId = candidateIds[0];
+      const loweredCandidateIds = Array.from(new Set(candidateIds.map(c => c.toLowerCase()))).filter(Boolean);
 
       let customer = await db.select().from(bankCustomers).where(
         and(
           eq(bankCustomers.bankId, bankId),
           or(
             inArray(bankCustomers.discordId, candidateIds),
+            inArray(sql`lower(${bankCustomers.discordId})`, loweredCandidateIds),
             inArray(bankCustomers.linkedDiscordId, candidateIds),
-            inArray(bankCustomers.mcUuid, candidateIds)
+            inArray(sql`lower(${bankCustomers.linkedDiscordId})`, loweredCandidateIds),
+            inArray(bankCustomers.mcUuid, candidateIds),
+            inArray(sql`lower(${bankCustomers.mcUuid})`, loweredCandidateIds),
+            inArray(bankCustomers.mcUsername, candidateIds),
+            inArray(sql`lower(${bankCustomers.mcUsername})`, loweredCandidateIds),
+            inArray(bankCustomers.id, candidateIds)
           )
         )
       ).get();
 
-      const decodedUser = (req as any).user;
+      if (customer) {
+        [customer.id, customer.discordId, customer.linkedDiscordId, customer.mcUuid, customer.mcUsername, customer.rpName].filter(Boolean).forEach(val => {
+          if (!candidateIds.includes(val!)) candidateIds.push(val!);
+          const low = val!.toLowerCase();
+          if (!loweredCandidateIds.includes(low)) loweredCandidateIds.push(low);
+        });
+      }
+
       const isStaff = await isUserStaffOrAdmin(req, bankId);
 
       // 1. Owned accounts
@@ -282,22 +296,31 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       })
       .from(bankAccounts)
       .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
-      .where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.ownerDiscordId, candidateIds)));
+      .where(
+        and(
+          eq(bankAccounts.bankId, bankId),
+          or(
+            inArray(bankAccounts.ownerDiscordId, candidateIds),
+            inArray(sql`lower(${bankAccounts.ownerDiscordId})`, loweredCandidateIds)
+          ),
+          or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
+        )
+      );
 
       // 2. Member accounts
       let memberAccounts: any[] = [];
       try {
-        const loweredCandidateIds = candidateIds.map(c => c.toLowerCase());
         const memberships = await db.select().from(accountMembers).where(
           or(
             inArray(accountMembers.discordId, candidateIds),
             inArray(sql`lower(${accountMembers.discordId})`, loweredCandidateIds),
             inArray(accountMembers.mcUsername, candidateIds),
             inArray(sql`lower(${accountMembers.mcUsername})`, loweredCandidateIds),
-            inArray(accountMembers.mcUuid, candidateIds)
+            inArray(accountMembers.mcUuid, candidateIds),
+            inArray(sql`lower(${accountMembers.mcUuid})`, loweredCandidateIds)
           )
         );
-        const memberAccountIds = memberships.map(m => m.accountId);
+        const memberAccountIds = memberships.map(m => m.accountId).filter(Boolean);
         if (memberAccountIds.length > 0) {
           memberAccounts = await db.select({
             id: bankAccounts.id,
@@ -312,7 +335,13 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           })
           .from(bankAccounts)
           .leftJoin(banks, eq(bankAccounts.bankId, banks.id))
-          .where(and(eq(bankAccounts.bankId, bankId), inArray(bankAccounts.id, memberAccountIds)));
+          .where(
+            and(
+              eq(bankAccounts.bankId, bankId),
+              inArray(bankAccounts.id, memberAccountIds),
+              or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
+            )
+          );
         }
       } catch (e: any) {}
 
@@ -322,111 +351,134 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       memberAccounts.forEach(a => { if (!accountMap.has(a.id)) accountMap.set(a.id, a); });
 
       const userAccounts = Array.from(accountMap.values());
-
-      if (userAccounts.length === 0) {
-         return res.json({ 
-           isStaff,
-           accounts: [], 
-           recentTx: [], 
-           pendingInvoices: [], 
-           cards: [], 
-           loans: [], 
-           customer: customer ? {
-             kycStatus: customer.kycStatus,
-             mcUsername: customer.mcUsername,
-             mcUuid: customer.mcUuid,
-             linkedDiscordId: customer.linkedDiscordId,
-          rpName: customer.rpName,
-          address: customer.address,
-           } : null 
-         });
-      }
-
       const accountIds = userAccounts.map(a => a.id);
 
-      const recentTxs = await db.select()
-        .from(transactions)
-        .where(or(
-          inArray(transactions.fromAccountId, accountIds),
-          inArray(transactions.toAccountId, accountIds)
-        ))
-        .orderBy(desc(transactions.timestamp))
-        .limit(50);
+      let mappedTxs: any[] = [];
+      if (accountIds.length > 0) {
+        const recentTxs = await db.select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.bankId, bankId),
+              or(
+                inArray(transactions.fromAccountId, accountIds),
+                inArray(transactions.toAccountId, accountIds)
+              )
+            )
+          )
+          .orderBy(desc(transactions.timestamp))
+          .limit(100);
 
-      const referencedAccIds = Array.from(new Set(recentTxs.flatMap(t => [t.fromAccountId, t.toAccountId]).filter(Boolean))) as string[];
-      const accRows = referencedAccIds.length > 0 
-        ? await db.select({ id: bankAccounts.id, name: bankAccounts.accountName }).from(bankAccounts).where(inArray(bankAccounts.id, referencedAccIds))
-        : [];
-      const accNameMap = new Map(accRows.map(r => [r.id, r.name]));
+        const referencedAccIds = Array.from(new Set(recentTxs.flatMap(t => [t.fromAccountId, t.toAccountId]).filter(Boolean))) as string[];
+        const accRows = referencedAccIds.length > 0 
+          ? await db.select({ id: bankAccounts.id, name: bankAccounts.accountName }).from(bankAccounts).where(inArray(bankAccounts.id, referencedAccIds))
+          : [];
+        const accNameMap = new Map(accRows.map(r => [r.id, r.name]));
 
-      const mappedTxs = recentTxs.map(tx => ({
-        ...tx,
-        fromAccountName: tx.fromAccountId ? (accNameMap.get(tx.fromAccountId) || tx.fromAccountId) : "External Deposit",
-        toAccountName: tx.toAccountId ? (accNameMap.get(tx.toAccountId) || tx.toAccountId) : "External Withdrawal",
-        toDiscordId: accountIds.includes(tx.toAccountId!) ? primaryId : null
-      }));
+        mappedTxs = recentTxs.map(tx => ({
+          ...tx,
+          fromAccountName: tx.fromAccountId ? (accNameMap.get(tx.fromAccountId) || tx.fromAccountId) : "External Deposit",
+          toAccountName: tx.toAccountId ? (accNameMap.get(tx.toAccountId) || tx.toAccountId) : "External Withdrawal",
+          toDiscordId: accountIds.includes(tx.toAccountId!) ? primaryId : null
+        }));
+      }
 
       // Map pending invoices
-      const userInvoices = await db.select({
-         id: invoices.id,
-         amount: invoices.amount,
-         description: invoices.description,
-         dueDate: invoices.dueDate,
-         billerName: banks.name, 
-         customerAccountName: bankAccounts.accountName
-      })
-      .from(invoices)
-      .leftJoin(banks, eq(invoices.bankId, banks.id))
-      .leftJoin(bankAccounts, eq(invoices.customerAccountId, bankAccounts.id))
-      .where(
-         and(
-            inArray(invoices.customerAccountId, accountIds),
-            eq(invoices.status, "pending"),
-            eq(invoices.bankId, bankId)
-         )
-      )
-      .orderBy(desc(invoices.createdAt));
+      let userInvoices: any[] = [];
+      if (accountIds.length > 0) {
+        userInvoices = await db.select({
+           id: invoices.id,
+           amount: invoices.amount,
+           description: invoices.description,
+           dueDate: invoices.dueDate,
+           billerName: banks.name, 
+           customerAccountName: bankAccounts.accountName,
+           status: invoices.status,
+           createdAt: invoices.createdAt
+        })
+        .from(invoices)
+        .leftJoin(banks, eq(invoices.bankId, banks.id))
+        .leftJoin(bankAccounts, eq(invoices.customerAccountId, bankAccounts.id))
+        .where(
+           and(
+              inArray(invoices.customerAccountId, accountIds),
+              eq(invoices.status, "pending"),
+              eq(invoices.bankId, bankId)
+           )
+        )
+        .orderBy(desc(invoices.createdAt));
+      }
 
       // Get user cards
-      const userCards = await db.select({
-         id: cards.id,
-         bankId: cards.bankId,
-         bankName: banks.name,
-         accountId: cards.accountId,
-         accountName: bankAccounts.accountName,
-         cardNumber: cards.cardNumber,
-         expiryDate: cards.expiryDate,
-         isLocked: cards.isLocked,
-         type: cards.type,
-         creditLimit: cards.creditLimit,
-         creditUsed: cards.creditUsed,
-         productId: cards.productId,
-      })
-      .from(cards)
-      .leftJoin(banks, eq(cards.bankId, banks.id))
-      .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
-      .where(and(inArray(cards.accountId, accountIds), eq(cards.bankId, bankId)));
+      let userCards: any[] = [];
+      if (accountIds.length > 0) {
+        const rawCards = await db.select({
+           id: cards.id,
+           bankId: cards.bankId,
+           bankName: banks.name,
+           accountId: cards.accountId,
+           accountName: bankAccounts.accountName,
+           cardNumber: cards.cardNumber,
+           expiryDate: cards.expiryDate,
+           isLocked: cards.isLocked,
+           type: cards.type,
+           creditLimit: cards.creditLimit,
+           creditUsed: cards.creditUsed,
+           productId: cards.productId,
+        })
+        .from(cards)
+        .leftJoin(banks, eq(cards.bankId, banks.id))
+        .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
+        .where(and(inArray(cards.accountId, accountIds), eq(cards.bankId, bankId)));
+
+        userCards = rawCards.map((c: any) => ({
+          ...c,
+          cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
+        }));
+      }
+
+      // Get user subscriptions with account names
+      let userSubscriptions: any[] = [];
+      if (accountIds.length > 0) {
+        const rawUserSubscriptions = await db.select().from(subscriptions).where(
+          and(
+            eq(subscriptions.bankId, bankId),
+            or(
+              inArray(subscriptions.customerAccountId, accountIds),
+              inArray(subscriptions.billerAccountId, accountIds)
+            )
+          )
+        ).orderBy(desc(subscriptions.createdAt));
+
+        const allSubAccountIds = Array.from(new Set(rawUserSubscriptions.flatMap(s => [s.billerAccountId, s.customerAccountId])));
+        let subAccountsMap = new Map<string, string>();
+        if (allSubAccountIds.length > 0) {
+          const subAccRows = await db.select({ id: bankAccounts.id, name: bankAccounts.accountName }).from(bankAccounts).where(inArray(bankAccounts.id, allSubAccountIds));
+          subAccRows.forEach(r => subAccountsMap.set(r.id, r.name));
+        }
+        userSubscriptions = rawUserSubscriptions.map((s: any) => ({
+          ...s,
+          billerAccountName: subAccountsMap.get(s.billerAccountId) || "Biller",
+          customerAccountName: subAccountsMap.get(s.customerAccountId) || "Customer",
+          isOutgoing: accountIds.includes(s.customerAccountId),
+        }));
+      }
 
       // Get user loans
-      // Get user subscriptions with account names
-      const rawUserSubscriptions = await db.select().from(subscriptions).where(and(eq(subscriptions.bankId, bankId), or(inArray(subscriptions.customerAccountId, accountIds), inArray(subscriptions.billerAccountId, accountIds)))).orderBy(desc(subscriptions.createdAt));
-      const allSubAccountIds = Array.from(new Set(rawUserSubscriptions.flatMap(s => [s.billerAccountId, s.customerAccountId])));
-      let subAccountsMap = new Map<string, string>();
-      if (allSubAccountIds.length > 0) {
-        const subAccRows = await db.select({ id: bankAccounts.id, name: bankAccounts.accountName }).from(bankAccounts).where(inArray(bankAccounts.id, allSubAccountIds));
-        subAccRows.forEach(r => subAccountsMap.set(r.id, r.name));
+      const loanConditions = [
+        inArray(loans.discordId, candidateIds),
+        inArray(sql`lower(${loans.discordId})`, loweredCandidateIds)
+      ];
+      if (accountIds.length > 0) {
+        loanConditions.push(inArray(loans.accountId, accountIds));
       }
-      const userSubscriptions = rawUserSubscriptions.map((s: any) => ({
-        ...s,
-        billerAccountName: subAccountsMap.get(s.billerAccountId) || "Biller",
-        customerAccountName: subAccountsMap.get(s.customerAccountId) || "Customer",
-        isOutgoing: accountIds.includes(s.customerAccountId),
-      }));
+
       const userLoans = await db.select()
         .from(loans)
-        .where(and(eq(loans.bankId, bankId), or(inArray(loans.discordId, candidateIds), inArray(loans.accountId, accountIds))));
+        .where(and(eq(loans.bankId, bankId), or(...loanConditions)))
+        .orderBy(desc(loans.nextPaymentDate));
 
-      const { banks: banksTable, customerNotifications } = await import("../../db/schema");
+      const { banks: banksTable } = await import("../../db/schema");
       const { getBankCorpName, getDepositCommand } = await import("../../lib/min_balance_service.js");
       const bankRec = await db.select().from(banksTable).where(eq(banksTable.id, bankId)).get();
       const settingsRec = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
@@ -466,7 +518,10 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
           .where(
             and(
               eq(customerNotifications.bankId, bankId),
-              inArray(customerNotifications.discordId, candidateIds)
+              or(
+                inArray(customerNotifications.discordId, candidateIds),
+                inArray(sql`lower(${customerNotifications.discordId})`, loweredCandidateIds)
+              )
             )
           )
           .orderBy(desc(customerNotifications.createdAt))
@@ -484,10 +539,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         pendingInvoices: userInvoices,
         notifications: userNotifications,
         unreadNotificationCount,
-        cards: userCards.map((c: any) => ({
-          ...c,
-          cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
-        })),
+        cards: userCards,
         loans: userLoans.map((l: any) => {
           const matchedAcc = userAccounts.find(a => a.id === l.accountId);
           return {
@@ -508,8 +560,8 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         } : null
       });
     } catch (e: any) {
-      console.error(e);
-      res.status(500).json({ error: "Internal error" });
+      console.error("[portal lookup error]:", e);
+      res.status(500).json({ error: e.message || "Internal error" });
     }
   });
 
@@ -2181,21 +2233,23 @@ portalRouter.post("/api/portal/:bankId/split-bill", requireAuth, async (req: exp
 portalRouter.get("/api/portal/:bankId/escrows", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { escrows, bankAccounts, banks } = await import("../../db/schema");
-  const { eq, or, and, inArray, desc } = await import("drizzle-orm");
+  const { eq, or, and, inArray, desc, sql, isNull } = await import("drizzle-orm");
   const { alias } = await import("drizzle-orm/sqlite-core");
 
   try {
     const { bankId } = req.params;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
     if (candidateIds.length === 0) return res.json({ escrows: [] });
+    const loweredCandidateIds = candidateIds.map(c => c.toLowerCase());
 
     const userAccounts = await db.select({ id: bankAccounts.id }).from(bankAccounts).where(
       and(
         eq(bankAccounts.bankId, bankId),
         or(
           inArray(bankAccounts.ownerDiscordId, candidateIds),
-          inArray(bankAccounts.ownerMinecraftName, candidateIds)
-        )
+          inArray(sql`lower(${bankAccounts.ownerDiscordId})`, loweredCandidateIds)
+        ),
+        or(eq(bankAccounts.isSystem, false), isNull(bankAccounts.isSystem))
       )
     );
     const userAccountIds = userAccounts.map(a => a.id);
@@ -2217,11 +2271,9 @@ portalRouter.get("/api/portal/:bankId/escrows", requireAuth, async (req: express
       buyerAccountId: escrows.buyerAccountId,
       buyerAccountName: buyerAcc.accountName,
       buyerDiscordId: buyerAcc.ownerDiscordId,
-      buyerMinecraftName: buyerAcc.ownerMinecraftName,
       sellerAccountId: escrows.sellerAccountId,
       sellerAccountName: sellerAcc.accountName,
       sellerDiscordId: sellerAcc.ownerDiscordId,
-      sellerMinecraftName: sellerAcc.ownerMinecraftName,
     })
     .from(escrows)
     .innerJoin(buyerAcc, eq(escrows.buyerAccountId, buyerAcc.id))
@@ -2511,18 +2563,22 @@ portalRouter.post("/api/portal/:bankId/escrows/:escrowId/cancel", requireAuth, a
 portalRouter.get("/api/portal/:bankId/tickets", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { supportTickets, ticketMessages } = await import("../../db/schema");
-  const { eq, and, desc, inArray } = await import("drizzle-orm");
+  const { eq, and, desc, inArray, or, sql } = await import("drizzle-orm");
 
   try {
     const { bankId } = req.params;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const loweredCandidateIds = candidateIds.map(c => c.toLowerCase());
 
     const tickets = await db.select()
       .from(supportTickets)
       .where(
         and(
           eq(supportTickets.bankId, bankId),
-          inArray(supportTickets.discordId, candidateIds)
+          or(
+            inArray(supportTickets.discordId, candidateIds),
+            inArray(sql`lower(${supportTickets.discordId})`, loweredCandidateIds)
+          )
         )
       )
       .orderBy(desc(supportTickets.updatedAt), desc(supportTickets.createdAt));
@@ -2714,18 +2770,22 @@ portalRouter.post("/api/portal/:bankId/tickets/:ticketId/close", requireAuth, as
 portalRouter.get("/api/portal/:bankId/notifications", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { customerNotifications } = await import("../../db/schema");
-  const { eq, and, inArray, desc } = await import("drizzle-orm");
+  const { eq, and, inArray, desc, or, sql } = await import("drizzle-orm");
 
   try {
     const { bankId } = req.params;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const loweredCandidateIds = candidateIds.map(c => c.toLowerCase());
 
     const notifs = await db.select()
       .from(customerNotifications)
       .where(
         and(
           eq(customerNotifications.bankId, bankId),
-          inArray(customerNotifications.discordId, candidateIds)
+          or(
+            inArray(customerNotifications.discordId, candidateIds),
+            inArray(sql`lower(${customerNotifications.discordId})`, loweredCandidateIds)
+          )
         )
       )
       .orderBy(desc(customerNotifications.createdAt))

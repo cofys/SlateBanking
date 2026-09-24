@@ -83,17 +83,23 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
   if (currentSearchKeys.length === 0) return [];
 
   try {
-    const customerConditions: any[] = [];
-    for (const k of currentSearchKeys) {
-      customerConditions.push(eq(bankCustomers.discordId, k));
-      customerConditions.push(eq(bankCustomers.linkedDiscordId, k));
-      customerConditions.push(eq(bankCustomers.mcUuid, k));
-      customerConditions.push(eq(bankCustomers.mcUsername, k));
-      customerConditions.push(eq(bankCustomers.rpName, k));
-      customerConditions.push(eq(bankCustomers.id, k));
-    }
+    const loweredSearchKeys = currentSearchKeys.map(k => k.toLowerCase());
     // Search bankCustomers globally so cross-bank identities and links are always preserved
-    const matchedCustomers = await db.select().from(bankCustomers).where(or(...customerConditions));
+    const matchedCustomers = await db.select().from(bankCustomers).where(
+      or(
+        inArray(bankCustomers.discordId, currentSearchKeys),
+        inArray(sql`lower(${bankCustomers.discordId})`, loweredSearchKeys),
+        inArray(bankCustomers.linkedDiscordId, currentSearchKeys),
+        inArray(sql`lower(${bankCustomers.linkedDiscordId})`, loweredSearchKeys),
+        inArray(bankCustomers.mcUuid, currentSearchKeys),
+        inArray(sql`lower(${bankCustomers.mcUuid})`, loweredSearchKeys),
+        inArray(bankCustomers.mcUsername, currentSearchKeys),
+        inArray(sql`lower(${bankCustomers.mcUsername})`, loweredSearchKeys),
+        inArray(bankCustomers.rpName, currentSearchKeys),
+        inArray(sql`lower(${bankCustomers.rpName})`, loweredSearchKeys),
+        inArray(bankCustomers.id, currentSearchKeys)
+      )
+    );
     for (const c of matchedCustomers) {
       if (c.id) candidates.add(c.id);
       if (c.discordId) normalizeIdentifier(c.discordId).forEach((id) => candidates.add(id));
@@ -101,10 +107,12 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
       if (c.mcUuid) normalizeIdentifier(c.mcUuid).forEach((id) => candidates.add(id));
       if (c.mcUsername) {
         candidates.add(c.mcUsername);
+        candidates.add(c.mcUsername.toLowerCase());
         normalizeIdentifier(c.mcUsername).forEach((id) => candidates.add(id));
       }
       if (c.rpName) {
         candidates.add(c.rpName);
+        candidates.add(c.rpName.toLowerCase());
         normalizeIdentifier(c.rpName).forEach((id) => candidates.add(id));
       }
     }
@@ -113,17 +121,23 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
   }
 
   try {
-    const userConditions: any[] = [];
-    for (const k of currentSearchKeys) {
-      userConditions.push(eq(users.discordId, k));
-      userConditions.push(eq(users.mcUuid, k));
-      userConditions.push(eq(users.linkedDiscordId, k));
-      userConditions.push(eq(users.mcUsername, k));
-      userConditions.push(eq(users.rpName, k));
-      userConditions.push(eq(users.id, k));
-    }
-    if (userConditions.length > 0) {
-      const matchedUsers = await db.select().from(users).where(or(...userConditions));
+    const loweredSearchKeys = currentSearchKeys.map(k => k.toLowerCase());
+    const matchedUsers = await db.select().from(users).where(
+      or(
+        inArray(users.discordId, currentSearchKeys),
+        inArray(sql`lower(${users.discordId})`, loweredSearchKeys),
+        inArray(users.mcUuid, currentSearchKeys),
+        inArray(sql`lower(${users.mcUuid})`, loweredSearchKeys),
+        inArray(users.linkedDiscordId, currentSearchKeys),
+        inArray(sql`lower(${users.linkedDiscordId})`, loweredSearchKeys),
+        inArray(users.mcUsername, currentSearchKeys),
+        inArray(sql`lower(${users.mcUsername})`, loweredSearchKeys),
+        inArray(users.rpName, currentSearchKeys),
+        inArray(sql`lower(${users.rpName})`, loweredSearchKeys),
+        inArray(users.id, currentSearchKeys)
+      )
+    );
+    if (matchedUsers.length > 0) {
       for (const u of matchedUsers) {
         if (u.id) candidates.add(u.id);
         if (u.discordId) normalizeIdentifier(u.discordId).forEach((id) => candidates.add(id));
@@ -131,10 +145,12 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
         if ((u as any).linkedDiscordId) normalizeIdentifier((u as any).linkedDiscordId).forEach((id) => candidates.add(id));
         if (u.mcUsername) {
           candidates.add(u.mcUsername);
+          candidates.add(u.mcUsername.toLowerCase());
           normalizeIdentifier(u.mcUsername).forEach((id) => candidates.add(id));
         }
         if (u.rpName) {
           candidates.add(u.rpName);
+          candidates.add(u.rpName.toLowerCase());
           normalizeIdentifier(u.rpName).forEach((id) => candidates.add(id));
         }
       }
@@ -146,14 +162,20 @@ export async function getUserCandidateIdentifiers(req: express.Request, bankId?:
   // Also query bankAccounts directly to capture any account where ownerDiscordId was saved with case variations
   try {
     const searchKeysList = Array.from(candidates);
-    const accConditions = searchKeysList.slice(0, 50).map(k => eq(bankAccounts.ownerDiscordId, k));
-    if (accConditions.length > 0) {
+    const loweredKeysList = searchKeysList.map(k => k.toLowerCase());
+    if (searchKeysList.length > 0) {
       const accRows = await db.select({ ownerDiscordId: bankAccounts.ownerDiscordId })
         .from(bankAccounts)
-        .where(or(...accConditions));
+        .where(
+          or(
+            inArray(bankAccounts.ownerDiscordId, searchKeysList),
+            inArray(sql`lower(${bankAccounts.ownerDiscordId})`, loweredKeysList)
+          )
+        );
       for (const a of accRows) {
         if (a.ownerDiscordId) {
           candidates.add(a.ownerDiscordId);
+          candidates.add(a.ownerDiscordId.toLowerCase());
         }
       }
     }

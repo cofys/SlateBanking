@@ -864,3 +864,19 @@ export const idempotencyKeys = sqliteTable("idempotency_keys", {
   expiresAtIdx: index("idx_idempotency_expires_at").on(table.expiresAt),
 }));
 
+export const customerNotifications = sqliteTable("customer_notifications", {
+  id: text("id").primaryKey(),
+  bankId: text("bank_id").references(() => banks.id).notNull(),
+  discordId: text("discord_id").notNull(),
+  type: text("type").notNull(), // "min_balance_deficit", "transfer_received", "loan_due", "general"
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  data: text("data"), // JSON metadata string (e.g. depositCommand, accountId, deficitCents)
+  isRead: integer("is_read", { mode: "boolean" }).default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+  bankIdIdx: index("idx_cust_notifs_bank_id").on(table.bankId),
+  discordIdIdx: index("idx_cust_notifs_discord_id").on(table.discordId),
+  createdAtIdx: index("idx_cust_notifs_created_at").on(table.createdAt),
+}));
+

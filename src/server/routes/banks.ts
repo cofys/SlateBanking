@@ -1,6 +1,6 @@
 import { db } from '../../db/index.js';
 import { bankSettings, banks, bankAccounts, transactions, escrows, bankStaff, supportTickets, auditLogs, loans, creditApplications, vaultDeposits, cards, payrollJobs, subscriptions, clearinghouseBalances, cityCorpLogs, invoices, bankCustomers, loanProducts, creditProducts, saasInvoices, discordWebhooks, onyxMerchants, accountMembers, savingsGoals, paymentLinks, recurringTransfers, clearinghouseSettlements, interBankTransfers } from '../../db/schema.js';
-import { eq, or } from 'drizzle-orm';
+import { eq, or, desc, sql } from 'drizzle-orm';
 import express from 'express';
 import { requireAuth, requireGlobalAdmin, requireBankStaff, requireRole, sendWebhook, authenticateApiRequest, JWT_SECRET, getRedirectUri } from "../middleware.js";
 import { botManager } from "../../lib/bot_manager.js";
@@ -1851,15 +1851,15 @@ banksRouter.get("/api/banks/:bankId/products", requireBankStaff, async (req: exp
       // Calculate stats for Loan Products
       const enrichedLoans = loansList.map(p => {
         const matchingLoans = allLoans.filter(l => l.productId === p.id);
-        const activeLoans = matchingLoans.filter(l => l.status === "active" || (!l.status && (l.remainingBalance || 0) > 0));
-        const paidLoans = matchingLoans.filter(l => l.status === "paid" || l.remainingBalance === 0);
+        const activeLoans = matchingLoans.filter(l => l.status === "active" || (!l.status && (l.remainingAmount || 0) > 0));
+        const paidLoans = matchingLoans.filter(l => l.status === "paid" || l.remainingAmount === 0);
         const defaultedLoans = matchingLoans.filter(l => l.status === "defaulted" || (l.missedPaymentsCount || 0) >= 3);
         
         const totalOriginatedCount = matchingLoans.length;
         const activeLoansCount = activeLoans.length;
-        const totalVolumeCents = matchingLoans.reduce((sum, l) => sum + (l.amount || 0), 0);
-        const activeOutstandingBalanceCents = activeLoans.reduce((sum, l) => sum + (l.remainingBalance || 0), 0);
-        const totalInterestAccruedCents = matchingLoans.reduce((sum, l) => sum + (l.totalInterestAccrued || 0), 0);
+        const totalVolumeCents = matchingLoans.reduce((sum, l) => sum + (l.principalAmount || 0), 0);
+        const activeOutstandingBalanceCents = activeLoans.reduce((sum, l) => sum + (l.remainingAmount || 0), 0);
+        const totalInterestAccruedCents = matchingLoans.reduce((sum, l) => sum + ((l as any).totalInterestAccrued || 0), 0);
         const distinctBorrowers = new Set(activeLoans.map(l => l.discordId)).size;
         const avgLoanAmountCents = totalOriginatedCount > 0 ? Math.round(totalVolumeCents / totalOriginatedCount) : (p.maxAmount || 0);
 
@@ -1965,12 +1965,12 @@ banksRouter.get("/api/banks/:bankId/products/:productId/details", requireBankSta
         const matchingLoans = await db.select({
           id: loans.id,
           accountId: loans.accountId,
-          amount: loans.amount,
-          remainingBalance: loans.remainingBalance,
+          amount: loans.principalAmount,
+          remainingBalance: loans.remainingAmount,
           interestRate: loans.interestRate,
-          termDays: loans.termDays,
+          termDays: sql<number>`${loans.termMonths} * 30`,
           status: loans.status,
-          nextDueDate: loans.nextDueDate,
+          nextDueDate: loans.nextPaymentDate,
           missedPaymentsCount: loans.missedPaymentsCount,
           createdAt: loans.createdAt,
           accountName: bankAccounts.accountName,
@@ -6014,7 +6014,7 @@ banksRouter.patch("/api/banks/:bankId/tickets/:ticketId", requireBankStaff, asyn
 // Returns full linked transaction, escrow, customer profile details
 banksRouter.get("/api/banks/:bankId/tickets/:ticketId/context", requireBankStaff, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
-  const { supportTickets, transactions, escrowAgreements, bankAccounts, bankCustomers } = await import("../../db/schema");
+  const { supportTickets, transactions, escrows, bankAccounts, bankCustomers } = await import("../../db/schema");
   const { eq, and } = await import("drizzle-orm");
 
   try {
@@ -6046,8 +6046,8 @@ banksRouter.get("/api/banks/:bankId/tickets/:ticketId/context", requireBankStaff
     }
 
     if (ticket.escrowId) {
-      const esc = await db.select().from(escrowAgreements).where(
-        and(eq(escrowAgreements.id, ticket.escrowId), eq(escrowAgreements.bankId, bankId))
+      const esc = await db.select().from(escrows).where(
+        and(eq(escrows.id, ticket.escrowId), eq(escrows.bankId, bankId))
       ).get();
       if (esc) {
         const buyerAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, esc.buyerAccountId)).get();
@@ -6089,7 +6089,7 @@ banksRouter.get("/api/banks/:bankId/tickets/:ticketId/context", requireBankStaff
 // Staff automated mediation & dispute reversal action
 banksRouter.post("/api/banks/:bankId/tickets/:ticketId/resolve-dispute", requireBankStaff, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
-  const { supportTickets, ticketMessages, transactions, escrowAgreements, bankAccounts, auditLogs } = await import("../../db/schema");
+  const { supportTickets, ticketMessages, transactions, escrows, bankAccounts, auditLogs } = await import("../../db/schema");
   const { eq, and } = await import("drizzle-orm");
   const { v4: uuidv4 } = await import("uuid");
 
@@ -6138,19 +6138,17 @@ banksRouter.post("/api/banks/:bankId/tickets/:ticketId/resolve-dispute", require
               fromAccountId: toAcc.id,
               toAccountId: fromAcc.id,
               amount: refundAmount,
-              fee: 0,
               type: "transfer",
-              status: "completed",
               description: `[Dispute Refund] Settlement for #${origTx.id.slice(0, 8)}: ${resolutionNotes || "Staff approved dispute reversal"}`,
-              createdAt: now,
+              timestamp: now,
             });
           });
           actionLog = `Reversed transaction #${origTx.id} ($${(refundAmount / 100).toFixed(2)}) from ${toAcc.accountName} to ${fromAcc.accountName}`;
         }
       }
     } else if (action === "refund_escrow" && ticket.escrowId) {
-      const escrow = await db.select().from(escrowAgreements).where(
-        and(eq(escrowAgreements.id, ticket.escrowId), eq(escrowAgreements.bankId, bankId))
+      const escrow = await db.select().from(escrows).where(
+        and(eq(escrows.id, ticket.escrowId), eq(escrows.bankId, bankId))
       ).get();
 
       if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
@@ -6162,28 +6160,26 @@ banksRouter.post("/api/banks/:bankId/tickets/:ticketId/resolve-dispute", require
               balance: buyerAcc.balance + escrow.amount,
             }).where(eq(bankAccounts.id, buyerAcc.id));
 
-            await tx.update(escrowAgreements).set({
+            await tx.update(escrows).set({
               status: "refunded",
-            }).where(eq(escrowAgreements.id, escrow.id));
+            }).where(eq(escrows.id, escrow.id));
 
             await tx.insert(transactions).values({
               id: `tx_esc_ref_${Date.now()}_${uuidv4().slice(0, 6)}`,
               bankId,
               toAccountId: buyerAcc.id,
               amount: escrow.amount,
-              fee: 0,
               type: "deposit",
-              status: "completed",
               description: `[Escrow Mediation Refund] Restored custody for deal: ${escrow.description}`,
-              createdAt: now,
+              timestamp: now,
             });
           });
           actionLog = `Refunded escrow #${escrow.id} ($${(escrow.amount / 100).toFixed(2)}) back to buyer ${buyerAcc.accountName}`;
         }
       }
     } else if (action === "release_escrow" && ticket.escrowId) {
-      const escrow = await db.select().from(escrowAgreements).where(
-        and(eq(escrowAgreements.id, ticket.escrowId), eq(escrowAgreements.bankId, bankId))
+      const escrow = await db.select().from(escrows).where(
+        and(eq(escrows.id, ticket.escrowId), eq(escrows.bankId, bankId))
       ).get();
 
       if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
@@ -6195,20 +6191,18 @@ banksRouter.post("/api/banks/:bankId/tickets/:ticketId/resolve-dispute", require
               balance: sellerAcc.balance + escrow.amount,
             }).where(eq(bankAccounts.id, sellerAcc.id));
 
-            await tx.update(escrowAgreements).set({
+            await tx.update(escrows).set({
               status: "released",
-            }).where(eq(escrowAgreements.id, escrow.id));
+            }).where(eq(escrows.id, escrow.id));
 
             await tx.insert(transactions).values({
               id: `tx_esc_rel_${Date.now()}_${uuidv4().slice(0, 6)}`,
               bankId,
               toAccountId: sellerAcc.id,
               amount: escrow.amount,
-              fee: 0,
               type: "deposit",
-              status: "completed",
               description: `[Escrow Mediation Settlement] Payout for deal: ${escrow.description}`,
-              createdAt: now,
+              timestamp: now,
             });
           });
           actionLog = `Released escrow #${escrow.id} ($${(escrow.amount / 100).toFixed(2)}) to seller ${sellerAcc.accountName}`;

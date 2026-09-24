@@ -156,6 +156,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("customer_notifications", "account_id", "TEXT");
   checkAndAddColumn("customer_notifications", "deposit_command", "TEXT");
   checkAndAddColumn("customer_notifications", "type", "TEXT DEFAULT 'info'");
+  checkAndAddColumn("customer_notifications", "data", "TEXT");
   checkAndAddColumn("customer_notifications", "is_read", "INTEGER DEFAULT 0");
   createIndexIfNotExists("idx_customer_notifs_bank_id", "customer_notifications", "bank_id");
   createIndexIfNotExists("idx_customer_notifs_discord_id", "customer_notifications", "discord_id");

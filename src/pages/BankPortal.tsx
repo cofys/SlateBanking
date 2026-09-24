@@ -146,6 +146,21 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [replyMessage, setReplyMessage] = useState("");
   const [replySubmitting, setReplySubmitting] = useState(false);
 
+  const disputeContext = useMemo(() => {
+    if (disputeTx) return { type: "transaction" as const, item: disputeTx };
+    if (disputeEscrow) return { type: "escrow" as const, item: disputeEscrow };
+    return null;
+  }, [disputeTx, disputeEscrow]);
+
+  const openNewTicketModal = () => {
+    setTicketSubject("");
+    setTicketMessage("");
+    setTicketCategory("general");
+    setTicketPriority("medium");
+    setTicketAccountId(accounts[0]?.id || "");
+    setNewTicketModalOpen(true);
+  };
+
   const brand = hexOr(bank?.brandingColor || bank?.settings?.brandingColor);
   const brandFg = accentForeground(brand);
   const settings = bank?.settings || {};
@@ -989,26 +1004,37 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     setDisputeModalOpen(true);
   };
 
-  const submitSupportTicket = async (e: React.FormEvent) => {
+  const submitSupportTicket = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!ticketSubject.trim()) {
+    const form = new FormData(e.currentTarget);
+    const formSubject = (form.get("subject") as string) || ticketSubject;
+    const formMessage = (form.get("message") as string) || ticketMessage;
+    const formCategory = (form.get("category") as string) || ticketCategory || "general";
+    const formPriority = (form.get("priority") as string) || ticketPriority || "medium";
+    const formTxId = (form.get("transactionId") as string) || disputeTx?.id;
+    const formEscrowId = (form.get("escrowId") as string) || disputeEscrow?.id;
+
+    const trimmedSubject = (formSubject || "").trim();
+    if (!trimmedSubject) {
       flash("Please provide a ticket subject.");
       return;
     }
+    const trimmedMessage = (formMessage || "").trim();
+
     setTicketSubmitting(true);
     try {
       const res = await fetch(`/api/portal/${bankId}/tickets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subject: ticketSubject,
-          description: ticketMessage,
-          initialMessage: ticketMessage,
-          category: ticketCategory,
-          priority: ticketPriority,
+          subject: trimmedSubject,
+          description: trimmedMessage,
+          initialMessage: trimmedMessage,
+          category: formCategory,
+          priority: formPriority,
           accountId: ticketAccountId || (accounts[0]?.id || undefined),
-          transactionId: disputeTx?.id || undefined,
-          escrowId: disputeEscrow?.id || undefined,
+          transactionId: formTxId || undefined,
+          escrowId: formEscrowId || undefined,
         }),
       });
       const d = await res.json();
@@ -1020,6 +1046,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         setDisputeModalOpen(false);
         setTicketSubject("");
         setTicketMessage("");
+        setTicketCategory("general");
+        setTicketPriority("medium");
         setDisputeTx(null);
         setDisputeEscrow(null);
         loadPortalTickets();
@@ -2308,7 +2336,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 onClick={() => fundEscrow(escrow.id)}
                                 className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow transition-colors flex items-center gap-1.5 disabled:opacity-50"
                               >
-                                {isPendingAction === `${escrow.id}_fund` ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
+                                {escrowActionInProgress === `${escrow.id}_fund` ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
                                 Fund & Lock Custody
                               </button>
                             )}
@@ -2319,7 +2347,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 onClick={() => releaseEscrow(escrow.id)}
                                 className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-md transition-colors flex items-center gap-1.5 disabled:opacity-50"
                               >
-                                {isPendingAction === `${escrow.id}_release` ? <Loader2 size={13} className="animate-spin" /> : <Unlock size={13} />}
+                                {escrowActionInProgress === `${escrow.id}_release` ? <Loader2 size={13} className="animate-spin" /> : <Unlock size={13} />}
                                 Release Funds to Seller
                               </button>
                             )}
@@ -2331,7 +2359,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 onClick={() => refundEscrow(escrow.id)}
                                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50"
                               >
-                                {isPendingAction === `${escrow.id}_refund` ? <Loader2 size={13} className="animate-spin" /> : <ArrowDownLeft size={13} />}
+                                {escrowActionInProgress === `${escrow.id}_refund` ? <Loader2 size={13} className="animate-spin" /> : <ArrowDownLeft size={13} />}
                                 Refund to Buyer
                               </button>
                             )}
@@ -2343,7 +2371,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 onClick={() => cancelEscrow(escrow.id)}
                                 className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/50 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors flex items-center gap-1 disabled:opacity-50"
                               >
-                                {isPendingAction === `${escrow.id}_cancel` ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                {escrowActionInProgress === `${escrow.id}_cancel` ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                                 Cancel Draft
                               </button>
                             )}
@@ -3090,7 +3118,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </p>
               </div>
               <button
-                onClick={() => setNewTicketModalOpen(true)}
+                onClick={openNewTicketModal}
                 className="px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 self-start sm:self-auto shadow-lg transition-transform active:scale-95"
                 style={btnBrand}
               >
@@ -3139,7 +3167,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   Have questions regarding your accounts, cards, or need help with a transaction dispute? Open a support ticket to reach the bank's administrative staff.
                 </p>
                 <button
-                  onClick={() => setNewTicketModalOpen(true)}
+                  onClick={openNewTicketModal}
                   className="px-5 py-2.5 rounded-xl text-xs font-bold shadow transition-transform active:scale-95"
                   style={btnBrand}
                 >
@@ -4134,6 +4162,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   <input
                     name="subject"
                     required
+                    value={ticketSubject}
+                    onChange={(e) => setTicketSubject(e.target.value)}
                     placeholder="e.g. Question about card withdrawal fees"
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 text-white"
                   />
@@ -4144,6 +4174,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Category</label>
                     <select
                       name="category"
+                      value={ticketCategory}
+                      onChange={(e) => setTicketCategory(e.target.value)}
                       className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
                     >
                       <option value="general">General Help</option>
@@ -4158,6 +4190,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Priority</label>
                     <select
                       name="priority"
+                      value={ticketPriority}
+                      onChange={(e) => setTicketPriority(e.target.value)}
                       className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
                     >
                       <option value="normal">Normal</option>
@@ -4174,6 +4208,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     name="message"
                     required
                     rows={4}
+                    value={ticketMessage}
+                    onChange={(e) => setTicketMessage(e.target.value)}
                     placeholder="Please explain the issue or question in detail. Staff will reply promptly…"
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 resize-none font-sans text-white"
                   />
@@ -4226,7 +4262,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setDisputeModalOpen(false); setDisputeContext(null); }}
+                  onClick={() => { setDisputeModalOpen(false); setDisputeTx(null); setDisputeEscrow(null); }}
                   className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white"
                 >
                   <X size={16} />
@@ -4262,7 +4298,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   <input
                     name="subject"
                     required
-                    defaultValue={disputeContext.type === "escrow" ? `Escrow Dispute: ${disputeContext.item?.description || disputeContext.item?.id?.slice(0, 8)}` : `Dispute: Unauthorized/Erroneous Charge ${formatMoney(disputeContext.item?.amount)}`}
+                    value={ticketSubject}
+                    onChange={(e) => setTicketSubject(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 text-white"
                   />
                 </div>
@@ -4271,7 +4308,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Priority</label>
                   <select
                     name="priority"
-                    defaultValue="high"
+                    value={ticketPriority}
+                    onChange={(e) => setTicketPriority(e.target.value)}
                     className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
                   >
                     <option value="urgent">Urgent (Immediate bank review requested)</option>
@@ -4286,6 +4324,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     name="message"
                     required
                     rows={4}
+                    value={ticketMessage}
+                    onChange={(e) => setTicketMessage(e.target.value)}
                     placeholder="Provide detailed facts regarding what occurred (e.g. non-delivery of items, double-charge, unfulfilled contract conditions, Discord trade proofs)…"
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 resize-none font-sans text-white"
                   />
@@ -4301,7 +4341,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setDisputeModalOpen(false); setDisputeContext(null); }}
+                    onClick={() => { setDisputeModalOpen(false); setDisputeTx(null); setDisputeEscrow(null); }}
                     className="px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-semibold transition"
                   >
                     Cancel
