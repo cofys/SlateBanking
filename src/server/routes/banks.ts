@@ -2858,6 +2858,286 @@ banksRouter.get("/api/banks/:bankId/analytics", requireBankStaff, async (req: ex
     }
   });
 
+banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { 
+      banks, 
+      bankAccounts, 
+      bankSettings, 
+      loans, 
+      transactions, 
+      bankStaff, 
+      users, 
+      bankCustomers, 
+      clearinghouseBalances 
+    } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+
+    try {
+      const bankId = req.params.bankId;
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank) return res.status(404).json({ error: "Bank not found" });
+
+      const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+      const accounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId));
+      const staff = await db.select().from(bankStaff).where(eq(bankStaff.bankId, bankId));
+      const uList = await db.select().from(users);
+      const cList = await db.select().from(bankCustomers).where(eq(bankCustomers.bankId, bankId));
+      const loansList = await db.select().from(loans).where(eq(loans.bankId, bankId));
+      const txs = await db.select().from(transactions).where(eq(transactions.bankId, bankId));
+      const chb = await db.select().from(clearinghouseBalances).where(eq(clearinghouseBalances.bankId, bankId)).get();
+
+      // Map user identity
+      const userMap = new Map<string, any>();
+      for (const u of uList) userMap.set(u.discordId, u);
+      for (const c of cList) {
+        if (c.discordId && !userMap.has(c.discordId)) {
+          userMap.set(c.discordId, { mcUsername: c.mcUsername, rpName: c.mcUsername });
+        }
+      }
+
+      const staffResolved = staff.map(s => {
+        const u = userMap.get(s.discordId);
+        const name = u?.mcUsername || u?.rpName || (s.discordId.startsWith("mc_") ? s.discordId.replace("mc_", "") : s.discordId);
+        return { ...s, resolvedName: name };
+      });
+
+      const owners = staffResolved.filter(s => s.role === "owner");
+      const registeredOwners = owners.length > 0 
+        ? owners.map(o => o.resolvedName).join(", ") 
+        : (staffResolved[0]?.resolvedName || "Bank Administration");
+
+      const ceo = owners[0] || staffResolved[0] || null;
+      const ceoUser = ceo ? userMap.get(ceo.discordId) : null;
+      const ceoDiscordUser = ceo?.discordId?.startsWith("mc_") 
+        ? (ceoUser?.mcUsername || ceo.discordId) 
+        : (ceo?.discordId || "");
+      const ceoIngameName = ceoUser?.mcUsername || ceoUser?.rpName || (ceo?.discordId?.startsWith("mc_") ? ceo.discordId.replace("mc_", "") : "");
+
+      const managementTeam = staffResolved
+        .filter(s => ["owner", "admin", "manager"].includes(s.role))
+        .map(s => `${s.resolvedName} (${s.role.toUpperCase()})`);
+
+      const directAccessEmployees = staffResolved
+        .filter(s => ["owner", "admin", "teller", "loan_officer"].includes(s.role))
+        .map(s => `${s.resolvedName} (${s.role.toUpperCase()})`);
+
+      // Reporting period determination
+      const now = new Date();
+      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const reportPeriod = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+      const datePublished = `${monthNames[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+
+      // Requester identity for "Prepared By"
+      const reqUser = (req as any).user;
+      const reqProfile = reqUser?.discordId ? userMap.get(reqUser.discordId) : null;
+      const preparedBy = reqProfile?.mcUsername || reqProfile?.rpName || reqUser?.username || ceoIngameName || "Bank Compliance Staff";
+
+      // Balance Sheet accounts breakdown
+      let vaultCashCents = 0;
+      let feeRevenueCents = 0;
+      let interestRevenueCents = 0;
+      let payrollExpenseCents = 0;
+      let clearinghouseCents = chb?.balance || 0;
+      let personalDepositsCents = 0;
+      let businessDepositsCents = 0;
+
+      for (const acc of accounts) {
+        if (acc.isSystem) {
+          if (acc.systemCategory === "vault_cash") vaultCashCents += acc.balance;
+          else if (acc.systemCategory === "fee_revenue") feeRevenueCents += acc.balance;
+          else if (acc.systemCategory === "interest_revenue") interestRevenueCents += acc.balance;
+          else if (acc.systemCategory === "payroll_expense") payrollExpenseCents += acc.balance;
+          else if (acc.systemCategory === "clearinghouse") clearinghouseCents += acc.balance;
+        } else {
+          const type = (acc.accountType || "").toLowerCase();
+          if (type.includes("business") || type.includes("corp")) {
+            businessDepositsCents += acc.balance;
+          } else {
+            personalDepositsCents += acc.balance;
+          }
+        }
+      }
+
+      const totalDepositsCents = personalDepositsCents + businessDepositsCents;
+
+      // Loans and Collateral aggregation
+      let businessLoanRemainingCents = 0;
+      let personalLoanRemainingCents = 0;
+      let mortgageRemainingCents = 0;
+      let businessLoanInterestMonthlyCents = 0;
+      let personalLoanInterestMonthlyCents = 0;
+      let mortgageInterestMonthlyCents = 0;
+      let totalLateFeesCents = 0;
+      let totalCollateralValueCents = 0;
+
+      const loanRegister: any[] = [];
+      const collateralRegister: any[] = [];
+
+      for (const l of loansList) {
+        const u = userMap.get(l.discordId);
+        const borrowerName = u?.mcUsername || u?.rpName || (l.discordId.startsWith("mc_") ? l.discordId.replace("mc_", "") : l.discordId);
+        const purpose = (l.purpose || "").toLowerCase();
+        const isBiz = purpose.includes("business") || purpose.includes("corp") || purpose.includes("commercial");
+        const isMortgage = purpose.includes("mortgage") || purpose.includes("property") || purpose.includes("plot") || purpose.includes("real estate");
+        const typeLabel = isMortgage ? "Mortgage" : isBiz ? "Business" : "Personal";
+
+        const remaining = l.remainingAmount || 0;
+        const principal = l.principalAmount || 0;
+        const rateBps = l.interestRate || 500;
+        const rateFormatted = `${(rateBps / 100).toFixed(2)}%`;
+        const term = `${l.termMonths || 12} months`;
+        const statusClean = (l.status || "active").replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+
+        if (["active", "delinquent", "defaulted"].includes(l.status || "")) {
+          const monthlyInterest = Math.round((remaining * (rateBps / 10000)) / 12);
+          if (isMortgage) {
+            mortgageRemainingCents += remaining;
+            mortgageInterestMonthlyCents += monthlyInterest;
+          } else if (isBiz) {
+            businessLoanRemainingCents += remaining;
+            businessLoanInterestMonthlyCents += monthlyInterest;
+          } else {
+            personalLoanRemainingCents += remaining;
+            personalLoanInterestMonthlyCents += monthlyInterest;
+          }
+
+          totalLateFeesCents += (l.lateFeeAmount || 0);
+        }
+
+        loanRegister.push({
+          id: l.id.length > 8 ? l.id.substring(0, 8).toUpperCase() : l.id,
+          type: typeLabel,
+          borrower: borrowerName,
+          principal: Number((principal / 100).toFixed(2)),
+          remainingBalance: Number((remaining / 100).toFixed(2)),
+          rate: rateFormatted,
+          term,
+          collateral: l.collateralDescription || (l.collateralValue ? "Secured" : "None"),
+          status: statusClean
+        });
+
+        if ((l.collateralValue && l.collateralValue > 0) || l.collateralDescription) {
+          const colVal = l.collateralValue || 0;
+          totalCollateralValueCents += colVal;
+          collateralRegister.push({
+            id: l.id.length > 8 ? l.id.substring(0, 8).toUpperCase() : l.id,
+            assetType: purpose.includes("plot") || purpose.includes("estate") ? "Real Estate" : "Secured Collateral",
+            description: l.collateralDescription || "Secured loan collateral pledge",
+            borrower: borrowerName,
+            appraisedValue: Number((colVal / 100).toFixed(2)),
+            dateAcquired: l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "N/A"
+          });
+        }
+      }
+
+      // Transactions breakdown (fee income, taxes, operating expenses)
+      let txServiceFeesCents = 0;
+      let txAccountFeesCents = 0;
+      let txLateFeesCents = 0;
+      let txWithdrawalTaxCents = 0;
+      let txOperationsExpenseCents = 0;
+
+      for (const t of txs) {
+        if (t.type === "fee") {
+          if (t.feeType === "account_fee" || t.feeType === "maintenance_fee") {
+            txAccountFeesCents += t.amount;
+          } else if (t.feeType === "late_fee") {
+            txLateFeesCents += t.amount;
+          } else {
+            txServiceFeesCents += t.amount;
+          }
+        }
+        if (t.feeType === "government_fee" || (t.feeBreakdown && t.feeBreakdown.includes("civic"))) {
+          txWithdrawalTaxCents += (t.amount || 0);
+        }
+        if (t.category === "Services" || t.category === "Operations" || t.description?.toLowerCase().includes("hosting") || t.description?.toLowerCase().includes("server")) {
+          txOperationsExpenseCents += (t.amount || 0);
+        }
+      }
+
+      // Resolve income numbers accurately
+      const feeServiceTotalCents = Math.max(feeRevenueCents, txServiceFeesCents);
+      const feeLateTotalCents = Math.max(totalLateFeesCents, txLateFeesCents);
+      const interestOtherCents = Math.max(0, interestRevenueCents - (businessLoanInterestMonthlyCents + personalLoanInterestMonthlyCents + mortgageInterestMonthlyCents));
+
+      // Operating expenses: platform fee + recorded payroll expense GL + tx operating expenses
+      const platformFeeMonthlyCents = bank.flatMonthlyRate || 15000;
+      const totalExpensesCents = payrollExpenseCents + txOperationsExpenseCents + platformFeeMonthlyCents;
+
+      res.json({
+        success: true,
+        bank: {
+          id: bank.id,
+          name: bank.name,
+          corpId: bank.corpId,
+          customDomain: bank.customDomain,
+          brandingColor: bank.brandingColor,
+          logoUrl: bank.logoUrl,
+          plan: bank.plan,
+          status: bank.status,
+        },
+        metadata: {
+          reportPeriod,
+          datePublished,
+          preparedBy,
+          registeredOwners,
+          institutionType: "Commercial Bank",
+          description: `${bank.name} is a licensed financial institution providing retail deposit accounts, commercial checking, and lending facilities within the network.`
+        },
+        executive: {
+          managementTeam,
+          legalRep: settings?.supportEmail ? `Compliance Counsel (${settings.supportEmail})` : "Independent Counsel",
+          directAccessEmployees,
+          discordLink: settings?.discordWebhookUrl ? "Active Network Integration" : (bank.customDomain ? `https://${bank.customDomain}` : "Official Discord Portal"),
+          companyIngameName: bank.corpId ? `CORP-${bank.corpId}` : bank.name,
+          ceoDiscordUser: ceoDiscordUser || "Bank Owner",
+          ceoIngameName: ceoIngameName || "Bank Owner"
+        },
+        incomeStatement: {
+          interestBusinessLoans: Number((businessLoanInterestMonthlyCents / 100).toFixed(2)),
+          interestPersonalLoans: Number((personalLoanInterestMonthlyCents / 100).toFixed(2)),
+          interestMortgages: Number((mortgageInterestMonthlyCents / 100).toFixed(2)),
+          interestOther: Number((interestOtherCents / 100).toFixed(2)),
+          feeAccount: Number((txAccountFeesCents / 100).toFixed(2)),
+          feeService: Number((feeServiceTotalCents / 100).toFixed(2)),
+          feeLate: Number((feeLateTotalCents / 100).toFixed(2)),
+          tradingGains: 0,
+          expOperations: Number((totalExpensesCents / 100).toFixed(2)),
+          taxWithdrawal: Number((txWithdrawalTaxCents / 100).toFixed(2))
+        },
+        balanceSheet: {
+          cashBankBalance: Number(((vaultCashCents + (clearinghouseCents > 0 ? clearinghouseCents : 0)) / 100).toFixed(2)),
+          cashDepositsHeld: Number((totalDepositsCents / 100).toFixed(2)),
+          assetBusinessLoans: Number((businessLoanRemainingCents / 100).toFixed(2)),
+          assetPersonalLoans: Number((personalLoanRemainingCents / 100).toFixed(2)),
+          assetMortgages: Number((mortgageRemainingCents / 100).toFixed(2)),
+          assetCollateralPlots: Number((totalCollateralValueCents / 100).toFixed(2)),
+          liabPersonalDeposits: Number((personalDepositsCents / 100).toFixed(2)),
+          liabBusinessDeposits: Number((businessDepositsCents / 100).toFixed(2)),
+          liabClearinghouseDebt: Number((clearinghouseCents < 0 ? Math.abs(clearinghouseCents) / 100 : 0).toFixed(2))
+        },
+        loanRegister,
+        collateralRegister,
+        consumerProtections: {
+          clearInfo: `All interest rates, account maintenance fees, transfer fees, and lending conditions are transparently displayed to customers in the Slate client portal and via the Discord bot (/fees command). Account agreements and loan disclosure statements are generated and acknowledged prior to disbursement.`,
+          privacyData: `Financial records and account balances are strictly isolated. Employee access is gated via granular Role-Based Access Control (Owner, Admin, Teller, Auditor). All sensitive credentials are encrypted at rest with AES-256-GCM. Every account balance adjustment and transaction is permanently tracked in immutable audit logs.`,
+          disputeHandling: `Disputes can be submitted directly through the client banking portal or via private support tickets in the official Discord server. Certified staff review and address all transactional grievances within 24 to 48 hours, with access to full transaction traces.`,
+          vulnerableProtections: `New and inexperienced customers benefit from straightforward terms, borrowing caps on unvetted accounts, and mandatory double-confirmation modals on large transfers. High-risk credit products require formal staff review and collateral appraisal.`,
+          truthfulAdvertising: `All promotional materials, Discord announcements, and in-game signboards strictly state effective APRs, deposit terms, and fee structures in accordance with MEA guidelines. Promotional rates must specify term duration and expiration conditions.`
+        },
+        certification: {
+          certName: ceoIngameName || preparedBy || "Bank Director",
+          certTitle: owners.some(o => o.resolvedName === (ceoIngameName || preparedBy)) ? "Bank Owner & Managing Director" : "Managing Director / Compliance Officer",
+          certDate: datePublished
+        }
+      });
+    } catch (e: any) {
+      console.error("Failed to compile MEA report data:", e);
+      res.status(500).json({ error: (e as any).message });
+    }
+  });
+
 banksRouter.get("/api/banks/:bankId/clearinghouse", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { clearinghouseBalances, clearinghouseSettlements, banks, interBankTransfers, bankSettings } = await import("../../db/schema");

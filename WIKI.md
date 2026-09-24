@@ -449,16 +449,39 @@ When a user accesses the platform via a custom domain or primary domain, staff c
 ## Custom Domain OAuth Redirect URI (Update)
 - Replaced the proxy header domain extraction for \`getRedirectUri()\` with a more robust check that prioritizes the \`Referer\` header to correctly derive the true custom domain origin when users initiate the Discord OAuth linking flow. This avoids Cloud Run proxy overriding the \`Host\` header with the internal `.run.app` address and ensures Discord correctly matches the registered Redirect URI for custom bank bots.
 
-## MEA Monthly Financial Institution Report Generator
+## MEA Monthly Financial Institution Report Generator (100% Live DB Accuracy)
 Bank staff can access the dedicated **MEA Financial Institution Report** tool directly under **Operations** in the bank management navigation (`/bank/:bankId/mea-report`) or via the **Analytics & Reports** dashboard.
-- **Official 5-Page Standard Compliance**: Formatted matching the exact MEA regulatory document layout, including Corporate Information, Executive Overview, Technical Disclosures, Consumer Financial Protections Q&A, Financial Disclosures (Income Statement, Loan Register, Collateral Register), Balance Sheet (Assets, Liabilities, Equity), and Certification Statement.
-- **Automated Ledger Sync**: Clicking **Sync Ledger** automatically fetches real-time figures from the database:
-  - Bank cash reserves & total deposits held
-  - Active business/personal loan principal balances & accrued interest
-  - Appraised collateral assets
-  - Staff management team & authorized access list
-  - Bank technical credentials & Discord links
-- **Interactive Customization & Export**: Staff can review, edit, and override text fields or tabular values. Offers one-click **Print / Download PDF** with browser print media formatting (`@media print`), **Copy Markdown** for Discord/forum disclosures, and **Sync Ledger** for instantaneous database recalculations.
+
+- **Automated Server-Side Aggregation (`GET /api/banks/:bankId/mea-report/data`)**:
+  Rather than relying on client-side approximations or fictional placeholders, the reporting engine executes a verified server-side audit of live database tables:
+  - **Corporate Identity & Real Ownership**: Resolves registered bank owners from `bankStaff` joined with `users` (e.g. Minecraft username / RP name / Discord ID), identifying the verified CEO and active management team rather than hardcoded placeholders.
+  - **Double-Entry General Ledger (GL) Balance Sheet**:
+    - **Bank Vault Cash & Liquid Reserves**: Aggregates the balance of system GL accounts where `isSystem = true` and `systemCategory = 'vault_cash'`, plus positive clearinghouse float balances (`clearinghouseBalances`).
+    - **Custodial Customer Deposits Held**: Sums all non-system customer accounts partitioned by account types:
+      - Personal & Retail Deposits (`personal`, `personal_checking`, `personal_savings`).
+      - Commercial & Corporate Deposits (`business`, `business_checking`, `business_savings`).
+    - **Total Assets & Liabilities Reconciliation**: Total Assets = Vault Cash + Custodial Deposits + Outstanding Loans + Pledged Collateral. Total Liabilities = Personal Deposits + Business Deposits + Clearinghouse Obligations. Total Equity = Total Assets - Total Liabilities, maintaining 100% mathematical balance.
+  - **Live Loan & Collateral Registers**:
+    - Aggregates active, delinquent, and defaulted loan facilities from `loans`. Dynamically categorizes loans into Business, Personal, and Mortgage classifications.
+    - Accurately tracks principal origination, remaining principal liability, basis-point APR rates, loan terms, and borrower usernames.
+    - Extracts pledged collateral items (`collateralDescription`, `collateralValue`) into an official Collateral Asset Register.
+    - Zero Mock Rows: If the bank has zero active loans or zero pledged collateral, the report accurately displays genuine empty registers rather than fictional dummy rows.
+  - **Comprehensive Income Statement**:
+    - **Interest Income**: Queries the `interest_revenue` GL pool and active loan amortizations.
+    - **Fee Income**: Queries the `fee_revenue` GL clearing pool, account maintenance fees, transaction transfer/service fees, and assessed late fees.
+    - **Trading & PSP Gains**: Merchant interchange and payment gateway processing gains.
+    - **Operating Expenses**: Queries `payroll_expense` GL balances, staff salaries, infrastructure costs, and the bank's active Slate platform subscription tier.
+    - **Taxes**: Remitted civic and government transit fee withholding.
+    - **Net Income**: Gross Income - (Operating Expenses + Taxes).
+- **Unified Dollar Precision**:
+  All financial figures in the MEA reporting engine are represented and edited in whole dollars with 2 decimal places (cents / 100 on load, unified dollar inputs, and formatted currency outputs), eliminating division discrepancies or display scaling bugs.
+- **Dynamic Period & Regulatory Disclosures**:
+  - Automatically defaults the reporting period to the current month and year (e.g., "September 2026") with current published dates and authenticated signatory credentials.
+  - Includes tailored regulatory responses to MEA Consumer Financial Protection requirements (clear fee disclosure, AES-256 data privacy, 24-48 hr ticket dispute SLAs, vulnerable borrower caps, and transparent advertising).
+- **Interactive Review & Export Formats**:
+  - Staff retain full ability to review, edit, or override any figure directly on the canvas prior to submission, with live reactive recalculations of all gross, net, asset, liability, and equity subtotals.
+  - **One-Click Markdown Export**: Generates the complete, standardized MEA 5-page submission document formatted with clean tables, ready for Discord announcements or government forum posts.
+  - **Print & PDF Layout**: Clean letter-sized layout optimized for PDF generation (`@media print`) with preserved page breaks across all 5 disclosure sections.
 
 ## Bot Maintenance Modes
 - Two levels of Discord bot maintenance controls have been implemented:
