@@ -370,7 +370,34 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("account_members", "mc_username", "TEXT");
   checkAndAddColumn("account_members", "mc_uuid", "TEXT");
 
+  // Extended Product Fields
+  checkAndAddColumn("loan_products", "description", "TEXT");
+  checkAndAddColumn("loan_products", "category", "TEXT DEFAULT 'personal'");
+  checkAndAddColumn("loan_products", "min_amount", "INTEGER DEFAULT 10000");
+  checkAndAddColumn("loan_products", "origination_fee_percent", "INTEGER DEFAULT 0");
+  checkAndAddColumn("loan_products", "late_fee_percent", "INTEGER DEFAULT 500");
+  checkAndAddColumn("loan_products", "grace_period_days", "INTEGER DEFAULT 3");
+  checkAndAddColumn("loan_products", "repayment_frequency", "TEXT DEFAULT 'monthly'");
+  checkAndAddColumn("loan_products", "collateral_required", "INTEGER DEFAULT 0");
+  checkAndAddColumn("loan_products", "min_credit_score", "INTEGER DEFAULT 0");
+  checkAndAddColumn("loan_products", "auto_approve_max_amount", "INTEGER DEFAULT 0");
+
+  checkAndAddColumn("credit_products", "description", "TEXT");
+  checkAndAddColumn("credit_products", "card_design", "TEXT DEFAULT 'obsidian_vip'");
+  checkAndAddColumn("credit_products", "min_payment_percent", "INTEGER DEFAULT 500");
+  checkAndAddColumn("credit_products", "late_payment_fee_cents", "INTEGER DEFAULT 2500");
+  checkAndAddColumn("credit_products", "grace_period_days", "INTEGER DEFAULT 21");
+  checkAndAddColumn("credit_products", "min_credit_score", "INTEGER DEFAULT 0");
+  checkAndAddColumn("credit_products", "foreign_tx_fee_percent", "INTEGER DEFAULT 0");
+  checkAndAddColumn("credit_products", "welcome_bonus_cents", "INTEGER DEFAULT 0");
+  checkAndAddColumn("credit_products", "perks_json", "TEXT DEFAULT '[]'");
+
+  createTableIfNotExists("vault_products", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, interest_rate INTEGER NOT NULL, lockup_days INTEGER NOT NULL, min_deposit INTEGER NOT NULL, max_deposit INTEGER, early_withdrawal_penalty_percent INTEGER DEFAULT 200, compound_frequency TEXT DEFAULT 'monthly', tier_id TEXT, is_active INTEGER DEFAULT 1, created_at INTEGER NOT NULL");
+
   // Ensure high-performance indexes exist
+  createIndexIfNotExists("idx_loan_products_bank_id", "loan_products", "bank_id");
+  createIndexIfNotExists("idx_credit_products_bank_id", "credit_products", "bank_id");
+  createIndexIfNotExists("idx_vault_products_bank_id", "vault_products", "bank_id");
   createIndexIfNotExists("idx_bank_accounts_bank_id", "bank_accounts", "bank_id");
   createIndexIfNotExists("idx_bank_accounts_owner_discord_id", "bank_accounts", "owner_discord_id");
   createIndexIfNotExists("idx_transactions_bank_id", "transactions", "bank_id");

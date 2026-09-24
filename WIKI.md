@@ -1056,9 +1056,43 @@ Customers can view their active recurring payments (subscriptions) natively with
 - **Bank Portal**: Localized bank dashboards also feature a "Subscriptions" tab, filtering recurring payments only for the specific bank being viewed, allowing localized tracking and cancellation.
 - **API Flow**: A new cancellation endpoint (`/api/citizen/subscriptions/:id/cancel`) allows customers to safely terminate a subscription by setting `isActive: false` (as long as they own either the biller or the customer account).
 
-### Financial Products Engine & Auto-Approval
-- **Product Management (`BankProducts.tsx`)**: Bank Managers and Admins can create, edit, and delete predefined Financial Products (Loans and Credit Cards) for their bank. When editing a product, the system automatically checks for the presence of `termDays` to differentiate between loans and credit cards. Products can be toggled active or disabled, preserving existing loans while stopping new applications.
-- **Tier-Based Auto-Approval (`BankTiers.tsx` & `citizen.ts`)**: To provide granular risk management, Loan and Credit Card auto-approval thresholds (e.g., `autoApproveLoans`, `autoApproveCreditCards`, `maxAutoApproveLoanAmount`) have been migrated from global Bank Settings to **Account Tiers**. If Account Tiers are enabled for a bank, auto-approvals will only execute if the customer's specific tier authorizes the amount. If Account Tiers are disabled, the system gracefully falls back to the legacy global auto-approval settings.
+### Financial Products & Underwriting Engine (`BankProducts.tsx`)
+Slate Banking features an enterprise-grade **Financial Products & Underwriting Suite** providing deep catalog customization, risk parameterization, visual card customization, and real-time portfolio analytics across three distinct financial product classes:
+
+1. **Loan Products (`loan_products` schema)**:
+   - **Categorization**: Personal, Commercial/Business, Mortgage & Real Estate, Micro-Advance/Payday, and Auto/Equipment.
+   - **Pricing & Tenor**: Stated APR%, minimum principal limit, maximum disbursal limit, and default term duration (days/months).
+   - **Repayment Schedules**: Monthly, Bi-weekly, Weekly, or Daily installment cycles.
+   - **Fees & Penalties**: Configurable origination fee percent (deducted at disbursement), late fee percent, and grace period window (days).
+   - **Underwriting & Risk Gates**: Collateral requirement flags, minimum credit score threshold, and auto-approval loan ceiling (`autoApproveMaxAmount`).
+   - **Live Portfolio Telemetry**: Real-time aggregation of active loans count, total portfolio principal originated, active outstanding unpaid balance, total interest accrued, repayment completion rate (%), distinct active borrowers, and delinquency/default monitoring.
+
+2. **Credit & Debit Card Products (`credit_products` schema)**:
+   - **Classifications & Tiers**: Revolving Credit Cards or Direct Debit Cards with optional account tier bindings (`tierId`).
+   - **Pricing & Rewards**: Base APR%, maximum credit limit, and rewards/cashback percentage (`rewardsPercent`).
+   - **Visual Card Customization**: High-fidelity visual card theme selector with live interactive card preview:
+     - `obsidian_vip` (Black & Platinum luxury)
+     - `gold_prestige` (Brushed Amber & Gold)
+     - `emerald_corp` (Deep Emerald Commercial)
+     - `sapphire_rewards` (Cobalt Sapphire Blue)
+     - `velvet_crimson` (Deep Velvet Rose)
+     - `cyber_neon` (Cyberpunk Cyan & Violet)
+     - `classic_dark` (Slate Monolith)
+   - **Fee Schedules**: Annual maintenance fee (`annualFeeCents`), minimum monthly payment percent (`minPaymentPercent`), late payment fee (`latePaymentFeeCents`), grace period days, cash advance fee percent, and foreign FX transaction fee percent.
+   - **Perks & Welcome Bonuses**: Interactive dynamic perks/benefits list builder stored as structured JSON (`perksJson`), plus configurable one-time welcome spend bonuses (`welcomeBonusCents`).
+   - **Live Portfolio Telemetry**: Issued active cards count, total credit limit extended across cardholders, total credit drawn/utilized, overall utilization ratio (%), pending/approved/rejected credit applications counter, and annualized fee revenue potential.
+
+3. **High-Yield Vault & CD Products (`vault_products` schema)**:
+   - **Term Deposits**: Fixed lockup duration (e.g. 30, 90, 180, 365 days) offering competitive Annual Percentage Yield (APY%).
+   - **Deposit Caps & Compounding**: Minimum deposit floor, optional maximum deposit ceiling, and compounding frequency (`monthly`, `daily`, or `maturity`).
+   - **Liquidity Penalties**: Configurable early withdrawal break penalty percent (`earlyWithdrawalPenaltyPercent`) assessed if customer releases capital prior to maturity.
+   - **Live Telemetry**: Active lockup accounts count, total locked liquidity, and matured deposits tracker.
+
+4. **Interactive Management & Staff Tools**:
+   - **Executive Portfolio Strip**: Aggregate overview of active catalog size, total loan portfolio, total credit extended/utilized, and locked vault deposits.
+   - **Product Details & Customer Accounts Drawer**: Deep inspection of any product displaying its live ledger bindings, list of active accounts/cardholders/borrowers with copyable IDs, and recent credit application history.
+   - **One-Click Product Duplication**: Rapidly clone existing products (`POST /api/banks/:bankId/products/:productId/duplicate`) to create tiered product ladders (e.g., Gold vs Platinum, 30-Day vs 90-Day).
+   - **Financial Product Calculator & Simulator**: Built-in interactive quoting simulator allowing bank staff to adjust loan/credit amounts on sliders to instantly calculate customer installment schedules, origination fee deductions, total finance charges, and institutional net profit margin.
 
 ### Global Security Suite (Added Sep 2026)
 Slate Banking now features an integrated **Global Security Suite**, exclusively available to Platform/Global Administrators. 
@@ -1406,6 +1440,66 @@ To ensure mathematical parity between Slate's quote engine and in-game CityCorp 
     - Encryption keys are derived using **PBKDF2** with **100,000 iterations** of SHA-512 and a cryptographically secure 32-byte random salt (`crypto.randomBytes(32)`).
     - A fresh, unique 12-byte initialization vector (`crypto.randomBytes(12)`) is generated for every backup dispatch.
     - Banks can configure a custom `backupEncryptionPassphrase` in settings or let Slate generate an institution-bound recovery secret.
+
+### 14. Modular Bank Settings Architecture & Categorized Management Suite (`BankSettings.tsx`)
+Slate Banking features a categorized, search-indexed **Bank Settings Management Suite** providing bank operators with an organized control plane divided into 9 dedicated setting categories:
+
+1. **Brand & Identity (`brand`)**:
+   - Palette color scheme swatches with real-time live preview.
+   - Custom brand hex override with dynamic high-contrast foreground color computation.
+   - Bank slogan/tagline, brand logo HTTPS URL, and immersive login backdrop artwork.
+   - Custom domain CNAME mapping instructions.
+   - OpenGraph and Twitter social card metadata (Meta Title, Social Banner OG image, and Meta Description).
+
+2. **Fees & Tariffs (`fees`)**:
+   - Deposit, withdrawal, and internal peer-to-peer transfer percentage tariffs.
+   - Civic/Government transaction tax rate itemized on quotes.
+   - Savings APY yield for depositors.
+   - Inbound interbank wire threshold cap.
+   - Single-click custom fee override overwrite checkbox.
+
+3. **Account Rules & Limits (`accounts`)**:
+   - Account identifier prefix definitions for Personal (`ACC-`) and Corporate (`CORP-`) accounts.
+   - Naming policy configuration (Custom Citizen Name vs Automatic Discord Username vs Company Entity Name).
+   - Citizen account holding limits (Max Personal, Max Business, and Max Total Combined per client).
+
+4. **Feature Modules (`modules`)**:
+   - Modular feature toggles grid for Loans, Bonds, Cards, Corporate Payroll, Subscriptions, Escrow Custody, Treasury Analytics, and Custom Account Tiers.
+   - Dynamic Bond Ladder configuration manager with basis points yield and early exit penalty settings.
+   - Loan & Credit Card auto-approval ceilings (when custom account tiers are disabled).
+
+5. **Lending Policy (`lending`)**:
+   - Origination defaults: APR%, default tenor (months), global principal ceiling, and minimum installment floor.
+   - Operational switches: Citizen self-applications, auto-debit installments, interest accrual, borrower signatures, late fee compounding, default interest, and cure default upon payment.
+   - Delinquency schedules: Late fee flat floor, late fee percentage, grace period days, retry cadence, and misses until default.
+
+6. **Treasury & Settlement (`treasury`)**:
+   - Internal institutional subaccounts: Loan Pool account, Fee Collection account, and Interest Pool account.
+   - Onyx Interbank Settlement Float: Settlement subaccount name, default fee payer mode (`from_payment` vs `sender_covers`), payout floor, and low-balance Discord warning threshold.
+
+7. **Discord Terminal & Bots (`discord`)**:
+   - Welcome message copy, embed footer, and bot presence status activity.
+   - Terminal visual theme switcher: `Executive`, `Cyber Telemetry`, or `Minimalist`.
+   - Public Customer Lobby and Staff Teller Desk channel GUI spawners.
+   - Verified Customer and Active Client role ID bindings.
+
+8. **CityCorp & Integrations (`integrations`)**:
+   - In-Game Account Auto-Provisioning switch (Instant vs Staff Review Queue).
+   - CityCorp App ID, Unified App Token, Custom Auth URL, and Default Corp Account.
+   - Click-to-copy CityCorp OAuth Redirect URI and Discord Bot Linking Redirect URI.
+   - Google Docs Contract Automation (Loan, Credit, Escrow agreement templates and Drive folders).
+
+9. **Security & Backups (`security`)**:
+   - Bot Maintenance Mode, KYC Verification Enforcement, and Personal Account Prerequisite for Business Accounts.
+   - Automated Daily AES-256-GCM Encrypted Webhook Backups.
+   - Offline Passphrase Decryption Verifier tool with instant validation.
+
+10. **Operator Experience & Ergonomics**:
+    - **Search & Filter Index**: Instant search filter input matching setting titles, descriptions, and keywords across all 9 categories.
+    - **Keyboard Shortcuts**: Native `Cmd+S` / `Ctrl+S` hotkey support for saving from anywhere in the settings suite.
+    - **Sticky Action Bar**: Real-time indication of current category, reset button, and sticky save button.
+    - **Data Snapshot Export**: One-click complete JSON tenant snapshot download.
+
     - Output format: `.slate.enc` envelope containing `salt`, `iv`, `authTag`, `bankId`, `version`, `timestamp`, and `cipherHex`.
   - **Discord Webhook File Attachment Delivery**:
     - Dispatched via Discord multipart `FormData` webhook to `backupWebhookUrl` (or falling back to `discordWebhookUrl`).

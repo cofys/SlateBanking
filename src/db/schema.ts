@@ -554,29 +554,69 @@ export const loanProducts = sqliteTable("loan_products", {
   id: text("id").primaryKey(),
   bankId: text("bank_id").references(() => banks.id).notNull(),
   name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").default("personal"), // personal, business, mortgage, micro, auto, commercial
   interestRate: integer("interest_rate").notNull(), 
-  maxAmount: integer("max_amount").notNull(),
+  minAmount: integer("min_amount").default(10000), // in cents ($100)
+  maxAmount: integer("max_amount").notNull(), // in cents
   termDays: integer("term_days").notNull(),
+  originationFeePercent: integer("origination_fee_percent").default(0), // percent * 100
+  lateFeePercent: integer("late_fee_percent").default(500), // percent * 100 (5.00%)
+  gracePeriodDays: integer("grace_period_days").default(3),
+  repaymentFrequency: text("repayment_frequency").default("monthly"), // daily, weekly, biweekly, monthly
+  collateralRequired: integer("collateral_required", { mode: "boolean" }).default(false),
+  minCreditScore: integer("min_credit_score").default(0),
+  autoApproveMaxAmount: integer("auto_approve_max_amount").default(0), // in cents
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_loan_products_bank_id").on(table.bankId),
+}));
 
 export const creditProducts = sqliteTable("credit_products", {
   id: text("id").primaryKey(),
   bankId: text("bank_id").references(() => banks.id).notNull(),
   name: text("name").notNull(),
+  description: text("description"),
   interestRate: integer("interest_rate").notNull(), 
   maxLimit: integer("max_limit").notNull(),
   rewardsPercent: integer("rewards_percent").default(0),
   isActive: integer("is_active", { mode: "boolean" }).default(true),
-  // Optional attachment to an account tier. Null = available to any account.
   tierId: text("tier_id"),
   cashAdvanceEnabled: integer("cash_advance_enabled", { mode: "boolean" }).default(true),
   cashAdvanceFeePercent: integer("cash_advance_fee_percent").default(300), // 3.00% as percent * 100
   annualFeeCents: integer("annual_fee_cents").default(0),
   cardKind: text("card_kind").default("credit"), // credit | debit
+  cardDesign: text("card_design").default("obsidian_vip"), // obsidian_vip, sapphire_rewards, emerald_corp, gold_prestige, velvet_crimson, cyber_neon, classic_dark
+  minPaymentPercent: integer("min_payment_percent").default(500), // 5.00%
+  latePaymentFeeCents: integer("late_payment_fee_cents").default(2500), // $25.00
+  gracePeriodDays: integer("grace_period_days").default(21),
+  minCreditScore: integer("min_credit_score").default(0),
+  foreignTxFeePercent: integer("foreign_tx_fee_percent").default(0),
+  welcomeBonusCents: integer("welcome_bonus_cents").default(0),
+  perksJson: text("perks_json").default("[]"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => ({
+  bankIdIdx: index("idx_credit_products_bank_id").on(table.bankId),
+}));
+
+export const vaultProducts = sqliteTable("vault_products", {
+  id: text("id").primaryKey(),
+  bankId: text("bank_id").references(() => banks.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  interestRate: integer("interest_rate").notNull(), // APY % * 100 (e.g. 450 = 4.50%)
+  lockupDays: integer("lockup_days").notNull(),
+  minDeposit: integer("min_deposit").notNull(), // in cents
+  maxDeposit: integer("max_deposit"), // in cents, optional
+  earlyWithdrawalPenaltyPercent: integer("early_withdrawal_penalty_percent").default(200), // 2.00%
+  compoundFrequency: text("compound_frequency").default("monthly"), // daily, monthly, maturity
+  tierId: text("tier_id"),
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+  bankIdIdx: index("idx_vault_products_bank_id").on(table.bankId),
+}));
 
 export const globalAdmins = sqliteTable("global_admins", {
   id: text("id").primaryKey(),

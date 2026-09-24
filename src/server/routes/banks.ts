@@ -1832,68 +1832,296 @@ banksRouter.post("/api/banks/:bankId/accrue-interest", requireBankStaff, async (
 });
 
 banksRouter.get("/api/banks/:bankId/products", requireBankStaff, async (req: express.Request, res: express.Response) => {
-    const { db } = await import("../../db/index");
-    const { loanProducts, creditProducts } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { db } = await import("../../db/index.js");
+    const { loanProducts, creditProducts, vaultProducts, loans, cards, creditApplications, vaultDeposits } = await import("../../db/schema.js");
+    const { eq, and } = await import("drizzle-orm");
     
     try {
       const bankId = req.params.bankId;
-      const loansList = await db.select().from(loanProducts).where(eq(loanProducts.bankId, bankId));
-      const creditsList = await db.select().from(creditProducts).where(eq(creditProducts.bankId, bankId));
+      const [loansList, creditsList, vaultsList, allLoans, allCards, allApps, allVaultDeposits] = await Promise.all([
+        db.select().from(loanProducts).where(eq(loanProducts.bankId, bankId)),
+        db.select().from(creditProducts).where(eq(creditProducts.bankId, bankId)),
+        db.select().from(vaultProducts).where(eq(vaultProducts.bankId, bankId)),
+        db.select().from(loans).where(eq(loans.bankId, bankId)),
+        db.select().from(cards).where(eq(cards.bankId, bankId)),
+        db.select().from(creditApplications).where(eq(creditApplications.bankId, bankId)),
+        db.select().from(vaultDeposits).where(eq(vaultDeposits.bankId, bankId)),
+      ]);
+
+      // Calculate stats for Loan Products
+      const enrichedLoans = loansList.map(p => {
+        const matchingLoans = allLoans.filter(l => l.productId === p.id);
+        const activeLoans = matchingLoans.filter(l => l.status === "active" || (!l.status && (l.remainingBalance || 0) > 0));
+        const paidLoans = matchingLoans.filter(l => l.status === "paid" || l.remainingBalance === 0);
+        const defaultedLoans = matchingLoans.filter(l => l.status === "defaulted" || (l.missedPaymentsCount || 0) >= 3);
+        
+        const totalOriginatedCount = matchingLoans.length;
+        const activeLoansCount = activeLoans.length;
+        const totalVolumeCents = matchingLoans.reduce((sum, l) => sum + (l.amount || 0), 0);
+        const activeOutstandingBalanceCents = activeLoans.reduce((sum, l) => sum + (l.remainingBalance || 0), 0);
+        const totalInterestAccruedCents = matchingLoans.reduce((sum, l) => sum + (l.totalInterestAccrued || 0), 0);
+        const distinctBorrowers = new Set(activeLoans.map(l => l.discordId)).size;
+        const avgLoanAmountCents = totalOriginatedCount > 0 ? Math.round(totalVolumeCents / totalOriginatedCount) : (p.maxAmount || 0);
+
+        return {
+          ...p,
+          stats: {
+            activeLoansCount,
+            totalOriginatedCount,
+            paidLoansCount: paidLoans.length,
+            defaultedLoansCount: defaultedLoans.length,
+            totalVolumeCents,
+            activeOutstandingBalanceCents,
+            totalInterestAccruedCents,
+            distinctBorrowers,
+            avgLoanAmountCents,
+            repaymentRatePercent: totalOriginatedCount > 0 ? Math.round((paidLoans.length / totalOriginatedCount) * 100) : 100,
+          }
+        };
+      });
+
+      // Calculate stats for Credit Products
+      const enrichedCredits = creditsList.map(p => {
+        const matchingCards = allCards.filter(c => c.productId === p.id);
+        const activeCards = matchingCards.filter(c => !c.isLocked);
+        const matchingApps = allApps.filter(a => a.productId === p.id);
+        const pendingApps = matchingApps.filter(a => a.status === "pending");
+        const approvedApps = matchingApps.filter(a => a.status === "approved");
+        const rejectedApps = matchingApps.filter(a => a.status === "rejected");
+
+        const totalLimitCents = activeCards.reduce((sum, c) => sum + (c.creditLimit || 0), 0);
+        const totalUsedCents = activeCards.reduce((sum, c) => sum + (c.creditUsed || 0), 0);
+        const utilizationPercent = totalLimitCents > 0 ? Math.round((totalUsedCents / totalLimitCents) * 100) : 0;
+        const annualFeePotentialCents = activeCards.length * (p.annualFeeCents || 0);
+
+        return {
+          ...p,
+          stats: {
+            activeCardsCount: activeCards.length,
+            totalCardsCount: matchingCards.length,
+            totalLimitCents,
+            totalUsedCents,
+            utilizationPercent,
+            pendingApplicationsCount: pendingApps.length,
+            approvedApplicationsCount: approvedApps.length,
+            rejectedApplicationsCount: rejectedApps.length,
+            annualFeePotentialCents,
+          }
+        };
+      });
+
+      // Calculate stats for Vault Products
+      const enrichedVaults = vaultsList.map(p => {
+        const matchingDeposits = allVaultDeposits;
+        const activeDeposits = matchingDeposits.filter(v => v.status === "locked");
+        const totalLockedCents = activeDeposits.reduce((sum, v) => sum + (v.amount || 0), 0);
+
+        return {
+          ...p,
+          stats: {
+            activeDepositsCount: activeDeposits.length,
+            totalLockedCents,
+            maturedDepositsCount: matchingDeposits.filter(v => v.status === "released").length,
+          }
+        };
+      });
+
+      // Compute Bank-wide Products Portfolio Summary
+      const summaryStats = {
+        totalActiveProducts: loansList.filter(p => p.isActive).length + creditsList.filter(p => p.isActive).length + vaultsList.filter(p => p.isActive).length,
+        totalProductsCount: loansList.length + creditsList.length + vaultsList.length,
+        totalLoanPortfolioCents: enrichedLoans.reduce((sum, l) => sum + l.stats.activeOutstandingBalanceCents, 0),
+        totalCreditLimitExtendedCents: enrichedCredits.reduce((sum, c) => sum + c.stats.totalLimitCents, 0),
+        totalCreditDrawnCents: enrichedCredits.reduce((sum, c) => sum + c.stats.totalUsedCents, 0),
+        totalVaultDepositsCents: enrichedVaults.reduce((sum, v) => sum + v.stats.totalLockedCents, 0),
+        totalActiveCardholdersCount: enrichedCredits.reduce((sum, c) => sum + c.stats.activeCardsCount, 0),
+        totalActiveBorrowersCount: enrichedLoans.reduce((sum, l) => sum + l.stats.distinctBorrowers, 0),
+      };
       
-      res.json({ loans: loansList, credits: creditsList });
+      res.json({ loans: enrichedLoans, credits: enrichedCredits, vaults: enrichedVaults, summaryStats });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Failed to fetch products" });
     }
   });
 
+banksRouter.get("/api/banks/:bankId/products/:productId/details", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index.js");
+    const { loanProducts, creditProducts, vaultProducts, loans, cards, creditApplications, bankAccounts } = await import("../../db/schema.js");
+    const { eq, and, desc } = await import("drizzle-orm");
+
+    try {
+      const { bankId, productId } = req.params;
+      const type = String(req.query.type || "loan");
+
+      let product: any = null;
+      let recentAccounts: any[] = [];
+      let recentApplications: any[] = [];
+
+      if (type === "loan") {
+        product = await db.select().from(loanProducts).where(and(eq(loanProducts.id, productId), eq(loanProducts.bankId, bankId))).get();
+        if (!product) return res.status(404).json({ error: "Loan product not found" });
+
+        const matchingLoans = await db.select({
+          id: loans.id,
+          accountId: loans.accountId,
+          amount: loans.amount,
+          remainingBalance: loans.remainingBalance,
+          interestRate: loans.interestRate,
+          termDays: loans.termDays,
+          status: loans.status,
+          nextDueDate: loans.nextDueDate,
+          missedPaymentsCount: loans.missedPaymentsCount,
+          createdAt: loans.createdAt,
+          accountName: bankAccounts.accountName,
+          accountType: bankAccounts.accountType,
+          ownerDiscordId: bankAccounts.ownerDiscordId,
+        })
+        .from(loans)
+        .leftJoin(bankAccounts, eq(loans.accountId, bankAccounts.id))
+        .where(and(eq(loans.bankId, bankId), eq(loans.productId, productId)))
+        .orderBy(desc(loans.createdAt))
+        .limit(25);
+
+        recentAccounts = matchingLoans;
+      } else if (type === "credit") {
+        product = await db.select().from(creditProducts).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId))).get();
+        if (!product) return res.status(404).json({ error: "Credit product not found" });
+
+        const matchingCards = await db.select({
+          id: cards.id,
+          accountId: cards.accountId,
+          cardNumber: cards.cardNumber,
+          creditLimit: cards.creditLimit,
+          creditUsed: cards.creditUsed,
+          apr: cards.apr,
+          isLocked: cards.isLocked,
+          type: cards.type,
+          createdAt: cards.createdAt,
+          accountName: bankAccounts.accountName,
+          accountType: bankAccounts.accountType,
+          ownerDiscordId: bankAccounts.ownerDiscordId,
+        })
+        .from(cards)
+        .leftJoin(bankAccounts, eq(cards.accountId, bankAccounts.id))
+        .where(and(eq(cards.bankId, bankId), eq(cards.productId, productId)))
+        .orderBy(desc(cards.createdAt))
+        .limit(25);
+
+        const matchingApps = await db.select()
+          .from(creditApplications)
+          .where(and(eq(creditApplications.bankId, bankId), eq(creditApplications.productId, productId)))
+          .orderBy(desc(creditApplications.createdAt))
+          .limit(20);
+
+        recentAccounts = matchingCards;
+        recentApplications = matchingApps;
+      } else if (type === "vault") {
+        product = await db.select().from(vaultProducts).where(and(eq(vaultProducts.id, productId), eq(vaultProducts.bankId, bankId))).get();
+        if (!product) return res.status(404).json({ error: "Vault product not found" });
+      }
+
+      res.json({ product, recentAccounts, recentApplications });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to fetch product details" });
+    }
+});
+
 banksRouter.post("/api/banks/:bankId/products", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const staffRole = (req as any).staffRole;
     if (staffRole !== "admin" && staffRole !== "manager") {
        return res.status(403).json({ error: "Only Managers and Admins can create products." });
     }
-    const { db } = await import("../../db/index");
-    const { loanProducts, creditProducts } = await import("../../db/schema");
+    const { db } = await import("../../db/index.js");
+    const { loanProducts, creditProducts, vaultProducts } = await import("../../db/schema.js");
     const { v4: uuidv4 } = await import("uuid");
     
     try {
       const bankId = req.params.bankId;
-      const { type, name, interestRate, maxLimit, termDays, rewardsPercent, tierId, cashAdvanceEnabled, cashAdvanceFeePercent, annualFee, cardKind } = req.body;
+      const {
+        type, name, description, interestRate, maxLimit, minAmount, termDays,
+        category, originationFeePercent, lateFeePercent, gracePeriodDays, repaymentFrequency, collateralRequired, minCreditScore, autoApproveMaxAmount,
+        rewardsPercent, tierId, cashAdvanceEnabled, cashAdvanceFeePercent, annualFee, cardKind, cardDesign, minPaymentPercent, latePaymentFeeCents, foreignTxFeePercent, welcomeBonusCents, perksJson,
+        lockupDays, minDeposit, maxDeposit, earlyWithdrawalPenaltyPercent, compoundFrequency
+      } = req.body;
       
-      if (!name || isNaN(interestRate) || isNaN(maxLimit)) {
-        return res.status(400).json({ error: "Invalid product data" });
+      if (!name || isNaN(interestRate)) {
+        return res.status(400).json({ error: "Product name and valid interest rate are required." });
       }
 
       if (type === 'loan') {
-        if (!termDays) return res.status(400).json({ error: "Term days required for loans" });
+        if (!termDays || isNaN(termDays)) return res.status(400).json({ error: "Term duration (days) required for loans." });
+        const id = uuidv4();
         await db.insert(loanProducts).values({
-          id: uuidv4(),
+          id,
           bankId,
-          name,
+          name: String(name).trim(),
+          description: description ? String(description).trim() : null,
+          category: category || "personal",
           interestRate: Number(interestRate),
-          maxAmount: Number(maxLimit) * 100, // convert to cents
+          minAmount: minAmount !== undefined ? Math.round(Number(minAmount) * 100) : 10000,
+          maxAmount: Math.round(Number(maxLimit) * 100), // convert dollars to cents
           termDays: Number(termDays),
+          originationFeePercent: originationFeePercent !== undefined ? Math.round(Number(originationFeePercent) * 100) : 0,
+          lateFeePercent: lateFeePercent !== undefined ? Math.round(Number(lateFeePercent) * 100) : 500,
+          gracePeriodDays: gracePeriodDays !== undefined ? Number(gracePeriodDays) : 3,
+          repaymentFrequency: repaymentFrequency || "monthly",
+          collateralRequired: !!collateralRequired,
+          minCreditScore: Number(minCreditScore) || 0,
+          autoApproveMaxAmount: autoApproveMaxAmount !== undefined ? Math.round(Number(autoApproveMaxAmount) * 100) : 0,
+          isActive: true,
           createdAt: new Date()
         });
-      } else {
-        await db.insert(creditProducts).values({
-          id: uuidv4(),
+        return res.json({ success: true, id });
+      } else if (type === 'vault') {
+        if (!lockupDays || isNaN(lockupDays)) return res.status(400).json({ error: "Lockup duration (days) required for vault products." });
+        const id = uuidv4();
+        await db.insert(vaultProducts).values({
+          id,
           bankId,
-          name,
+          name: String(name).trim(),
+          description: description ? String(description).trim() : null,
+          interestRate: Math.round(Number(interestRate) * 100), // store % as integer * 100
+          lockupDays: Number(lockupDays),
+          minDeposit: minDeposit !== undefined ? Math.round(Number(minDeposit) * 100) : 10000,
+          maxDeposit: maxDeposit ? Math.round(Number(maxDeposit) * 100) : null,
+          earlyWithdrawalPenaltyPercent: earlyWithdrawalPenaltyPercent !== undefined ? Math.round(Number(earlyWithdrawalPenaltyPercent) * 100) : 200,
+          compoundFrequency: compoundFrequency || "monthly",
+          tierId: tierId || null,
+          isActive: true,
+          createdAt: new Date()
+        });
+        return res.json({ success: true, id });
+      } else {
+        // Credit Card Product
+        const id = uuidv4();
+        await db.insert(creditProducts).values({
+          id,
+          bankId,
+          name: String(name).trim(),
+          description: description ? String(description).trim() : null,
           interestRate: Number(interestRate),
-          maxLimit: Number(maxLimit) * 100,
+          maxLimit: Math.round(Number(maxLimit) * 100),
           rewardsPercent: Number(rewardsPercent) || 0,
           tierId: tierId || null,
           cashAdvanceEnabled: cashAdvanceEnabled !== false,
           cashAdvanceFeePercent: Math.round((parseFloat(cashAdvanceFeePercent) || 3) * 100),
           annualFeeCents: Math.round((parseFloat(annualFee) || 0) * 100),
           cardKind: cardKind === "debit" ? "debit" : "credit",
+          cardDesign: cardDesign || "obsidian_vip",
+          minPaymentPercent: minPaymentPercent !== undefined ? Math.round(Number(minPaymentPercent) * 100) : 500,
+          latePaymentFeeCents: latePaymentFeeCents !== undefined ? Math.round(Number(latePaymentFeeCents) * 100) : 2500,
+          gracePeriodDays: gracePeriodDays !== undefined ? Number(gracePeriodDays) : 21,
+          minCreditScore: Number(minCreditScore) || 0,
+          foreignTxFeePercent: foreignTxFeePercent !== undefined ? Math.round(Number(foreignTxFeePercent) * 100) : 0,
+          welcomeBonusCents: welcomeBonusCents !== undefined ? Math.round(Number(welcomeBonusCents) * 100) : 0,
+          perksJson: typeof perksJson === "string" ? perksJson : JSON.stringify(perksJson || []),
+          isActive: true,
           createdAt: new Date()
         } as any);
+        return res.json({ success: true, id });
       }
-      
-      res.json({ success: true });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Failed to create product" });
@@ -1901,8 +2129,8 @@ banksRouter.post("/api/banks/:bankId/products", requireBankStaff, async (req: ex
   });
 
 banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, async (req: express.Request, res: express.Response) => {
-    const { db } = await import("../../db/index");
-    const { loanProducts, creditProducts } = await import("../../db/schema");
+    const { db } = await import("../../db/index.js");
+    const { loanProducts, creditProducts, vaultProducts } = await import("../../db/schema.js");
     const { eq, and } = await import("drizzle-orm");
     
     try {
@@ -1912,33 +2140,70 @@ banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, asyn
       }
       
       const { bankId, productId } = req.params;
-      const { type, name, interestRate, maxLimit, termDays, rewardsPercent, isActive, tierId, cashAdvanceEnabled, cashAdvanceFeePercent, annualFee, cardKind } = req.body;
+      const {
+        type, name, description, interestRate, maxLimit, minAmount, termDays, isActive,
+        category, originationFeePercent, lateFeePercent, gracePeriodDays, repaymentFrequency, collateralRequired, minCreditScore, autoApproveMaxAmount,
+        rewardsPercent, tierId, cashAdvanceEnabled, cashAdvanceFeePercent, annualFee, cardKind, cardDesign, minPaymentPercent, latePaymentFeeCents, foreignTxFeePercent, welcomeBonusCents, perksJson,
+        lockupDays, minDeposit, maxDeposit, earlyWithdrawalPenaltyPercent, compoundFrequency
+      } = req.body;
       
-      if (!name || isNaN(interestRate) || isNaN(maxLimit)) {
+      if (!name || isNaN(interestRate)) {
         return res.status(400).json({ error: "Invalid product data" });
       }
 
       if (type === 'loan') {
         if (!termDays) return res.status(400).json({ error: "Term days required for loans" });
         await db.update(loanProducts).set({
-          name,
+          name: String(name).trim(),
+          description: description !== undefined ? (description ? String(description).trim() : null) : undefined,
+          category: category || undefined,
           interestRate: Number(interestRate),
-          maxAmount: Number(maxLimit) * 100,
+          minAmount: minAmount !== undefined ? Math.round(Number(minAmount) * 100) : undefined,
+          maxAmount: maxLimit !== undefined ? Math.round(Number(maxLimit) * 100) : undefined,
           termDays: Number(termDays),
-          isActive: isActive !== undefined ? isActive : true
+          originationFeePercent: originationFeePercent !== undefined ? Math.round(Number(originationFeePercent) * 100) : undefined,
+          lateFeePercent: lateFeePercent !== undefined ? Math.round(Number(lateFeePercent) * 100) : undefined,
+          gracePeriodDays: gracePeriodDays !== undefined ? Number(gracePeriodDays) : undefined,
+          repaymentFrequency: repaymentFrequency || undefined,
+          collateralRequired: collateralRequired !== undefined ? !!collateralRequired : undefined,
+          minCreditScore: minCreditScore !== undefined ? Number(minCreditScore) : undefined,
+          autoApproveMaxAmount: autoApproveMaxAmount !== undefined ? Math.round(Number(autoApproveMaxAmount) * 100) : undefined,
+          isActive: isActive !== undefined ? !!isActive : true
         }).where(and(eq(loanProducts.id, productId), eq(loanProducts.bankId, bankId)));
+      } else if (type === 'vault') {
+        await db.update(vaultProducts).set({
+          name: String(name).trim(),
+          description: description !== undefined ? (description ? String(description).trim() : null) : undefined,
+          interestRate: interestRate !== undefined ? Math.round(Number(interestRate) * 100) : undefined,
+          lockupDays: lockupDays !== undefined ? Number(lockupDays) : undefined,
+          minDeposit: minDeposit !== undefined ? Math.round(Number(minDeposit) * 100) : undefined,
+          maxDeposit: maxDeposit !== undefined ? (maxDeposit ? Math.round(Number(maxDeposit) * 100) : null) : undefined,
+          earlyWithdrawalPenaltyPercent: earlyWithdrawalPenaltyPercent !== undefined ? Math.round(Number(earlyWithdrawalPenaltyPercent) * 100) : undefined,
+          compoundFrequency: compoundFrequency || undefined,
+          tierId: tierId !== undefined ? (tierId || null) : undefined,
+          isActive: isActive !== undefined ? !!isActive : true
+        }).where(and(eq(vaultProducts.id, productId), eq(vaultProducts.bankId, bankId)));
       } else {
         await db.update(creditProducts).set({
-          name,
+          name: String(name).trim(),
+          description: description !== undefined ? (description ? String(description).trim() : null) : undefined,
           interestRate: Number(interestRate),
-          maxLimit: Number(maxLimit) * 100,
-          rewardsPercent: Number(rewardsPercent) || 0,
-          isActive: isActive !== undefined ? isActive : true,
-          tierId: tierId || null,
-          cashAdvanceEnabled: cashAdvanceEnabled !== false,
-          cashAdvanceFeePercent: Math.round((parseFloat(cashAdvanceFeePercent) || 3) * 100),
-          annualFeeCents: Math.round((parseFloat(annualFee) || 0) * 100),
+          maxLimit: maxLimit !== undefined ? Math.round(Number(maxLimit) * 100) : undefined,
+          rewardsPercent: rewardsPercent !== undefined ? Number(rewardsPercent) : undefined,
+          isActive: isActive !== undefined ? !!isActive : true,
+          tierId: tierId !== undefined ? (tierId || null) : undefined,
+          cashAdvanceEnabled: cashAdvanceEnabled !== undefined ? cashAdvanceEnabled !== false : undefined,
+          cashAdvanceFeePercent: cashAdvanceFeePercent !== undefined ? Math.round((parseFloat(cashAdvanceFeePercent) || 3) * 100) : undefined,
+          annualFeeCents: annualFee !== undefined ? Math.round((parseFloat(annualFee) || 0) * 100) : undefined,
           cardKind: cardKind === "debit" ? "debit" : "credit",
+          cardDesign: cardDesign || undefined,
+          minPaymentPercent: minPaymentPercent !== undefined ? Math.round(Number(minPaymentPercent) * 100) : undefined,
+          latePaymentFeeCents: latePaymentFeeCents !== undefined ? Math.round(Number(latePaymentFeeCents) * 100) : undefined,
+          gracePeriodDays: gracePeriodDays !== undefined ? Number(gracePeriodDays) : undefined,
+          minCreditScore: minCreditScore !== undefined ? Number(minCreditScore) : undefined,
+          foreignTxFeePercent: foreignTxFeePercent !== undefined ? Math.round(Number(foreignTxFeePercent) * 100) : undefined,
+          welcomeBonusCents: welcomeBonusCents !== undefined ? Math.round(Number(welcomeBonusCents) * 100) : undefined,
+          perksJson: perksJson !== undefined ? (typeof perksJson === "string" ? perksJson : JSON.stringify(perksJson || [])) : undefined,
         } as any).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId)));
       }
       
@@ -1949,9 +2214,61 @@ banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, asyn
     }
 });
 
+banksRouter.post("/api/banks/:bankId/products/:productId/duplicate", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const staffRole = (req as any).staffRole;
+    if (staffRole !== "admin" && staffRole !== "manager") {
+       return res.status(403).json({ error: "Only Managers and Admins can duplicate products." });
+    }
+    const { db } = await import("../../db/index.js");
+    const { loanProducts, creditProducts, vaultProducts } = await import("../../db/schema.js");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const { bankId, productId } = req.params;
+      const type = String(req.query.type || "loan");
+
+      const newId = uuidv4();
+
+      if (type === "loan") {
+        const existing = await db.select().from(loanProducts).where(and(eq(loanProducts.id, productId), eq(loanProducts.bankId, bankId))).get();
+        if (!existing) return res.status(404).json({ error: "Product not found" });
+        await db.insert(loanProducts).values({
+          ...existing,
+          id: newId,
+          name: `${existing.name} (Copy)`,
+          createdAt: new Date(),
+        });
+      } else if (type === "vault") {
+        const existing = await db.select().from(vaultProducts).where(and(eq(vaultProducts.id, productId), eq(vaultProducts.bankId, bankId))).get();
+        if (!existing) return res.status(404).json({ error: "Product not found" });
+        await db.insert(vaultProducts).values({
+          ...existing,
+          id: newId,
+          name: `${existing.name} (Copy)`,
+          createdAt: new Date(),
+        });
+      } else {
+        const existing = await db.select().from(creditProducts).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId))).get();
+        if (!existing) return res.status(404).json({ error: "Product not found" });
+        await db.insert(creditProducts).values({
+          ...existing,
+          id: newId,
+          name: `${existing.name} (Copy)`,
+          createdAt: new Date(),
+        });
+      }
+
+      res.json({ success: true, newId });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to duplicate product" });
+    }
+});
+
 banksRouter.delete("/api/banks/:bankId/products/:productId", requireBankStaff, async (req: express.Request, res: express.Response) => {
-    const { db } = await import("../../db/index");
-    const { loanProducts, creditProducts } = await import("../../db/schema");
+    const { db } = await import("../../db/index.js");
+    const { loanProducts, creditProducts, vaultProducts } = await import("../../db/schema.js");
     const { eq, and } = await import("drizzle-orm");
     
     try {
@@ -1961,10 +2278,12 @@ banksRouter.delete("/api/banks/:bankId/products/:productId", requireBankStaff, a
       }
       
       const { bankId, productId } = req.params;
-      const { type } = req.query; // pass ?type=loan or ?type=credit
+      const { type } = req.query; // pass ?type=loan or ?type=credit or ?type=vault
       
       if (type === 'loan') {
         await db.delete(loanProducts).where(and(eq(loanProducts.id, productId), eq(loanProducts.bankId, bankId)));
+      } else if (type === 'vault') {
+        await db.delete(vaultProducts).where(and(eq(vaultProducts.id, productId), eq(vaultProducts.bankId, bankId)));
       } else {
         await db.delete(creditProducts).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId)));
       }
