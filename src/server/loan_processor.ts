@@ -339,11 +339,25 @@ export async function submitLoanApplication(opts: {
   if (!Number.isFinite(termMonths) || termMonths < 1) termMonths = policy.defaultTermMonths;
   let productId: string | null = opts.productId || null;
 
+  if (opts.allowAutoApprove && !productId) {
+    const activeProducts = await db.select().from(loanProducts).where(
+      and(eq(loanProducts.bankId, opts.bankId), eq(loanProducts.isActive, true))
+    );
+    if (activeProducts.length > 0) {
+      throw new Error("Please select an active loan product from the catalog.");
+    } else {
+      throw new Error("This bank is not currently offering any loan products.");
+    }
+  }
+
   if (productId) {
     const product = await db.select().from(loanProducts).where(
       and(eq(loanProducts.id, productId), eq(loanProducts.bankId, opts.bankId))
     ).get();
-    if (!product || !product.isActive) throw new Error("Loan product is not available");
+    if (!product || !product.isActive) throw new Error("Loan product is not available or inactive");
+    if (product.minAmount && principalAmount < product.minAmount) {
+      throw new Error(`Amount is below this product's minimum of $${(product.minAmount / 100).toFixed(2)}`);
+    }
     if (principalAmount > product.maxAmount) {
       throw new Error(`Amount exceeds this product's maximum of $${(product.maxAmount / 100).toFixed(2)}`);
     }

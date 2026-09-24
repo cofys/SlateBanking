@@ -83,8 +83,9 @@ export function registerInterestRoutes(app: express.Express) {
     } = req.body;
 
     try {
-      const staffRole = (req as any).staffRole;
-      if (staffRole !== "admin" && staffRole !== "manager") {
+      const staffRole = String((req as any).staffRole || "").toLowerCase().trim();
+      const isGlobal = Boolean((req as any).user?.isGlobalAdmin);
+      if (!isGlobal && !["owner", "admin", "manager"].includes(staffRole)) {
          return res.status(403).json({ error: "Only Managers and Admins can configure interest settings." });
       }
 
@@ -135,8 +136,9 @@ export function registerInterestRoutes(app: express.Express) {
     const { bankId } = req.params;
 
     try {
-      const staffRole = (req as any).staffRole;
-      if (staffRole !== "admin" && staffRole !== "manager") {
+      const staffRole = String((req as any).staffRole || "").toLowerCase().trim();
+      const isGlobal = Boolean((req as any).user?.isGlobalAdmin);
+      if (!isGlobal && !["owner", "admin", "manager"].includes(staffRole)) {
          return res.status(403).json({ error: "Only Managers and Admins can trigger interest runs." });
       }
 

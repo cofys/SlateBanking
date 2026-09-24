@@ -72,10 +72,16 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
   - **Liquidity Safeguards**: Visual warnings and pre-execution validation ensuring the employer funding account maintains sufficient liquid balance to cover total scheduled payroll liabilities.
   - **Batch Payout Execution**: "Run All Active" batch execution engine allowing branch managers to disburse salaries across all enrolled employees simultaneously, reporting successful transactions and identifying insolvent employer accounts.
   - **KPI Tracking**: Total monthly payroll burden aggregation, active payee enrollment tracking, and per-position compensation metrics.
-- **Institutional Escrow Custody**:
-  - **Trustless Bilateral Holding**: Neutral third-party custody engine securing funds for high-value asset acquisitions, real estate transactions, and bilateral roleplay trades.
+- **Institutional Escrow Custody & Customer Escrow Hub**:
+  - **Trustless Bilateral Holding**: Neutral third-party custody engine securing funds for high-value asset acquisitions, real estate transactions, vehicle/gear sales, and bilateral roleplay trades.
   - **Custody Lifecycle**: Clear multi-stage state progression (`pending` -> `funded` -> `released` to seller or `refunded` to buyer).
-  - **Custody Actions**: Direct staff triggers to draw and lock buyer deposits (`/fund`), execute final seller settlement (`/release`), or abort transaction and return capital to buyer (`/refund`).
+  - **Customer Escrow Portal (`/portal/:bankId` & Citizen Gateway)**:
+    - **Custody Overview & Metrics**: Real-time summary tracking Total in Vault Custody, Outgoing Buyer Funds (awaiting release), Incoming Seller Receivables (locked pending fulfillment), and Settled Releases.
+    - **Drafting & Auto-Funding**: Buyers can initiate escrow agreements directly from the Apply page with flexible seller identification (Account Name/ID, Discord tag, or Minecraft username) and optional instant auto-funding from their account balance.
+    - **Self-Service Buyer Release**: Once goods/services are confirmed delivered, buyers release vault funds with a single click, transferring the balance directly into the seller's account.
+    - **Voluntary Seller Refunds**: Sellers can voluntarily refund locked escrow funds to the buyer if terms cannot be fulfilled.
+    - **Filtering & Audit Trails**: Filter escrows by `all`, `funded`, `pending`, `released`, or `refunded` with full contract memo inspection, reference ID copying, and settlement timestamps.
+  - **Staff Custody Actions**: Direct staff management to draw and lock deposits (`/fund`), execute final seller settlement (`/release`), or abort transaction and return capital to buyer (`/refund`).
   - **Legal Agreement Attachment**: Integration with Google Docs contract generator or custom contract URLs, providing direct external document links for auditing and dispute mediation.
 
 
@@ -1531,5 +1537,39 @@ Slate Banking features a categorized, search-indexed **Bank Settings Management 
 - **Security & Authorization**:
   - Validates that an account owner cannot duplicate themselves into the operators list.
   - Account queries and access gates in `userResolver.ts` and `portal.ts` verify candidate identifiers against `mcUsername`, `mcUuid`, and `discordId` (case-insensitively).
+
+---
+
+## 📋 Comprehensive Feature List by Platform Role
+
+### 🌐 1. Slate Global Admins (SaaS Superusers)
+* **Multi-Tenant Bank Provisioning & Orchestration**: Create, configure, suspend, or delete tenant financial institutions with custom domain routing and branding.
+* **Global Clearinghouse & Interbank Settlement**: Monitor network-wide transaction volume, cross-bank transfers, and central liquidity reserves.
+* **CityCorp Integration Control**: Real-time synchronization and oversight of external Minecraft CityCorp bank balances, subuser accounts, and central currency reserves.
+* **System-Wide Security & RBAC**: Manage platform-level administrators, inspect immutable audit logs across all banks, and enforce cryptographic rate-limiting.
+* **Global Maintenance Mode**: Toggle network-wide or per-bank maintenance gates while maintaining full admin bypass for live deployments and maintenance.
+* **Payment Service Provider (Onyx) Oversight**: Register merchants, inspect checkout sessions, generate POS terminal keys, and audit developer webhook integrations.
+
+### 👔 2. Bank Staff (Executives, Branch Managers, Loan Officers, Tellers, Auditors)
+* **Dynamic Product & Catalog Management**: Configure custom account tiers (checking, savings, corporate), tiered interest APYs, credit lines, loan limits/APRs, and debit/credit card products with instant catalog synchronization.
+* **Underwriting & Loan Lifecycle**: Review incoming financing applications, inspect pledged collateral, manually or automatically approve/reject credit, assess delinquency penalties, and manage loan payoffs.
+* **Institutional Escrow Custody**: Supervise neutral third-party escrow holds, draw and lock customer funds, execute final settlement releases, and process voluntary refunds or contract cancellations.
+* **Automated Batch Payroll & Direct Debit**: Schedule and execute bulk recurring salary disbursements across enterprise client teams with pre-flight liquidity verification.
+* **Accounts Receivable & Invoicing**: Track billing pipelines, generate printable institutional PDF invoices with bank letterheads, and perform manual reconciliation.
+* **Customer Relationship Management (CRM)**: Manage support tickets, inspect KYC customer profiles, freeze/unfreeze accounts, and assign granular staff roles (admin, manager, loan_officer, compliance, teller).
+* **Automated Encrypted Backups**: Daily 24-hour AES-256-GCM encrypted database snapshots with Discord webhook delivery, manual one-shot triggers, and browser decryption verifiers.
+
+### 👥 3. Customers & Citizens
+* **Unified Banking Dashboard**: Real-time balance inspection, high-fidelity double-entry activity ledgers, and interactive transaction receipt inspector with memo lookups and split-bill tools.
+* **Frictionless Money Transfers**: Instant peer-to-peer and cross-bank transfers with live handle autocomplete, QR code generation, and transfer receipts.
+* **Interactive Apply & Financial Catalog Hub**:
+  * **Deposit Accounts**: Open personal checking, high-yield savings, or business entity accounts with customized naming prefixes and Discord sync.
+  * **Financing & Credit**: Apply for underwritten loans with live APR calculators, term selectors, and active loan repayment progress tracking.
+  * **Payment Cards**: Request contactless debit and premium credit cards linked to bank accounts with instant freeze/unfreeze controls.
+  * **Time Vault Bonds**: Lock savings into fixed-term high-yield bonds with guaranteed maturity payouts.
+  * **Trustless Escrow Agreements**: Draft peer-to-peer escrow holds with auto-funding, seller fulfillment tracking, and self-service buyer release controls.
+* **Corporate Team Management**: Add and manage Minecraft username operators and managers on business accounts with live skin head avatar previews.
+* **Bill Payments & Point-of-Sale**: Pay invoices, manage direct debit subscriptions, and execute contactless Onyx merchant checkouts.
+
 
 

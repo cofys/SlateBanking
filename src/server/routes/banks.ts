@@ -2029,8 +2029,9 @@ banksRouter.get("/api/banks/:bankId/products/:productId/details", requireBankSta
 });
 
 banksRouter.post("/api/banks/:bankId/products", requireBankStaff, async (req: express.Request, res: express.Response) => {
-    const staffRole = (req as any).staffRole;
-    if (staffRole !== "admin" && staffRole !== "manager") {
+    const staffRole = String((req as any).staffRole || "").toLowerCase().trim();
+    const isGlobal = Boolean((req as any).user?.isGlobalAdmin);
+    if (!isGlobal && !["owner", "admin", "manager"].includes(staffRole)) {
        return res.status(403).json({ error: "Only Managers and Admins can create products." });
     }
     const { db } = await import("../../db/index.js");
@@ -2134,8 +2135,9 @@ banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, asyn
     const { eq, and } = await import("drizzle-orm");
     
     try {
-      const staffRole = (req as any).staffRole;
-      if (staffRole !== "admin" && staffRole !== "manager") {
+      const staffRole = String((req as any).staffRole || "").toLowerCase().trim();
+      const isGlobal = Boolean((req as any).user?.isGlobalAdmin);
+      if (!isGlobal && !["owner", "admin", "manager"].includes(staffRole)) {
          return res.status(403).json({ error: "Only Managers and Admins can edit products." });
       }
       
@@ -2215,8 +2217,9 @@ banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, asyn
 });
 
 banksRouter.post("/api/banks/:bankId/products/:productId/duplicate", requireBankStaff, async (req: express.Request, res: express.Response) => {
-    const staffRole = (req as any).staffRole;
-    if (staffRole !== "admin" && staffRole !== "manager") {
+    const staffRole = String((req as any).staffRole || "").toLowerCase().trim();
+    const isGlobal = Boolean((req as any).user?.isGlobalAdmin);
+    if (!isGlobal && !["owner", "admin", "manager"].includes(staffRole)) {
        return res.status(403).json({ error: "Only Managers and Admins can duplicate products." });
     }
     const { db } = await import("../../db/index.js");
@@ -2272,8 +2275,9 @@ banksRouter.delete("/api/banks/:bankId/products/:productId", requireBankStaff, a
     const { eq, and } = await import("drizzle-orm");
     
     try {
-      const staffRole = (req as any).staffRole;
-      if (staffRole !== "admin" && staffRole !== "manager") {
+      const staffRole = String((req as any).staffRole || "").toLowerCase().trim();
+      const isGlobal = Boolean((req as any).user?.isGlobalAdmin);
+      if (!isGlobal && !["owner", "admin", "manager"].includes(staffRole)) {
          return res.status(403).json({ error: "Only Managers and Admins can delete products." });
       }
       

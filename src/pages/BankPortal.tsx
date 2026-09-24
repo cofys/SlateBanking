@@ -13,7 +13,7 @@ import {
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
 
-type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply";
+type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply" | "escrow";
 
 function greet() {
   const h = new Date().getHours();
@@ -38,7 +38,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [toast, setToast] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [loanProducts, setLoanProducts] = useState<any[]>([]);
+  const [selectedLoanProductId, setSelectedLoanProductId] = useState<string>("");
   const [cardProducts, setCardProducts] = useState<any[]>([]);
+  const [selectedCardProductId, setSelectedCardProductId] = useState<string>("");
   const [bondProducts, setBondProducts] = useState<any[]>([]);
   const [accountTiers, setAccountTiers] = useState<any[]>([]);
   const [selectedTierId, setSelectedTierId] = useState("");
@@ -48,6 +50,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [namingPref, setNamingPref] = useState<"custom" | "discord">("custom");
   const [merchants, setMerchants] = useState<any[]>([]);
   const [repayingLoan, setRepayingLoan] = useState<any | null>(null);
+  const [escrows, setEscrows] = useState<any[]>([]);
+  const [escrowFilter, setEscrowFilter] = useState<"all" | "funded" | "pending" | "released" | "refunded">("all");
+  const [selectedEscrow, setSelectedEscrow] = useState<any | null>(null);
+  const [applyTab, setApplyTab] = useState<"account" | "loan" | "card" | "bond" | "escrow">("account");
+  const [escrowActionInProgress, setEscrowActionInProgress] = useState<string | null>(null);
+  const [bondSimAmount, setBondSimAmount] = useState<string>("1000");
   const [logoBroken, setLogoBroken] = useState(false);
   const [destMatches, setDestMatches] = useState<any[]>([]);
   const [destHint, setDestHint] = useState("");
@@ -191,13 +199,34 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     return () => clearTimeout(t);
   }, [sendFrom, sendTo, sendAmt, feeMode, bankId]);
 
+  const loadPortalEscrows = () => {
+    if (!bankId) return;
+    fetch(`/api/portal/${bankId}/escrows`)
+      .then(r => r.json())
+      .then(d => {
+        if (Array.isArray(d.escrows)) {
+          setEscrows(d.escrows);
+        }
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
-    if ((view === "borrow" || view === "apply") && bankId) {
+    if (bankId) {
+      loadPortalEscrows();
       fetch(`/api/portal/${bankId}/catalog`)
         .then((r) => r.json())
         .then((d) => {
-          setLoanProducts(Array.isArray(d.loans) ? d.loans : []);
-          setCardProducts(Array.isArray(d.cards) ? d.cards : []);
+          const loansList = Array.isArray(d.loans) ? d.loans : [];
+          setLoanProducts(loansList);
+          if (loansList.length > 0) {
+            setSelectedLoanProductId(prev => prev && loansList.some((p: any) => p.id === prev) ? prev : loansList[0].id);
+          }
+          const cardsList = Array.isArray(d.cards) ? d.cards : [];
+          setCardProducts(cardsList);
+          if (cardsList.length > 0) {
+            setSelectedCardProductId(prev => prev && cardsList.some((p: any) => p.id === prev) ? prev : cardsList[0].id);
+          }
           setBondProducts(Array.isArray(d.bonds) ? d.bonds : []);
           if (Array.isArray(d.accountTiers)) {
             setAccountTiers(d.accountTiers.filter((t: any) => !t.isPrivate));
@@ -297,6 +326,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     const fd = new FormData(form);
+    const prodId = String(fd.get("productId") || "").trim();
+    if (!prodId) {
+      flash("Please select an active loan product from the catalog.");
+      return;
+    }
+    const chosenProduct = loanProducts.find((p: any) => p.id === prodId);
+    const calculatedTermMonths = chosenProduct?.termDays ? Math.max(1, Math.round(chosenProduct.termDays / 30)) : Number(fd.get("termMonths") || 1);
+
     setActionPending(true);
     try {
       const res = await fetch(`/api/portal/${bankId}/request-loan`, {
@@ -305,9 +342,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         body: JSON.stringify({
           accountId: fd.get("accountId"),
           amount: fd.get("amount"),
-          termMonths: fd.get("termMonths"),
+          termMonths: calculatedTermMonths,
           purpose: fd.get("purpose"),
-          productId: fd.get("productId") || undefined,
+          productId: prodId,
         }),
       });
       const d = await res.json();
@@ -395,6 +432,108 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       flash("Card request failed");
     }
     setActionPending(false);
+  };
+
+  const createEscrow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fd = new FormData(e.target as HTMLFormElement);
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/escrows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buyerAccountId: fd.get("buyerAccountId"),
+          sellerIdentifier: fd.get("sellerIdentifier"),
+          amount: fd.get("amount"),
+          description: fd.get("description"),
+          contractText: fd.get("contractText"),
+          autoFund: fd.get("autoFund") === "on" || fd.get("autoFund") === "true",
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to create escrow agreement");
+      else {
+        flash(d.message || "Escrow agreement created!");
+        setView("escrow");
+        loadPortalEscrows();
+        handleSearch();
+      }
+    } catch {
+      flash("Error creating escrow agreement");
+    }
+    setActionPending(false);
+  };
+
+  const fundEscrow = async (escrowId: string) => {
+    setEscrowActionInProgress(`${escrowId}_fund`);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/escrows/${escrowId}/fund`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to fund escrow");
+      else {
+        flash(d.message || "Funds locked in escrow custody!");
+        loadPortalEscrows();
+        handleSearch();
+      }
+    } catch {
+      flash("Network error funding escrow");
+    }
+    setEscrowActionInProgress(null);
+  };
+
+  const releaseEscrow = async (escrowId: string) => {
+    if (!window.confirm("Authorize release of locked escrow funds to the seller? This action cannot be reversed.")) return;
+    setEscrowActionInProgress(`${escrowId}_release`);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/escrows/${escrowId}/release`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to release escrow");
+      else {
+        flash(d.message || "Escrow funds successfully released to seller!");
+        loadPortalEscrows();
+        handleSearch();
+      }
+    } catch {
+      flash("Network error releasing escrow");
+    }
+    setEscrowActionInProgress(null);
+  };
+
+  const refundEscrow = async (escrowId: string) => {
+    if (!window.confirm("Voluntarily refund locked escrow funds back to the buyer?")) return;
+    setEscrowActionInProgress(`${escrowId}_refund`);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/escrows/${escrowId}/refund`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to refund escrow");
+      else {
+        flash(d.message || "Escrow funds refunded back to buyer.");
+        loadPortalEscrows();
+        handleSearch();
+      }
+    } catch {
+      flash("Network error refunding escrow");
+    }
+    setEscrowActionInProgress(null);
+  };
+
+  const cancelEscrow = async (escrowId: string) => {
+    if (!window.confirm("Cancel this pending escrow agreement?")) return;
+    setEscrowActionInProgress(`${escrowId}_cancel`);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/escrows/${escrowId}/cancel`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) flash(d.error || "Failed to cancel escrow");
+      else {
+        flash("Pending escrow agreement cancelled.");
+        loadPortalEscrows();
+        handleSearch();
+      }
+    } catch {
+      flash("Network error cancelling escrow");
+    }
+    setEscrowActionInProgress(null);
   };
 
   const buyBond = async (e: React.FormEvent) => {
@@ -741,6 +880,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const nav = [
     { id: "home" as View, label: "Home", icon: Wallet },
     { id: "send" as View, label: "Send", icon: Send },
+    ...(settings.enableEscrow !== false ? [{ id: "escrow" as View, label: "Escrow", icon: ShieldCheck }] : []),
     { id: "activity" as View, label: "Activity", icon: Clock },
     { id: "apply" as View, label: "Apply", icon: Sparkles },
   ];
@@ -811,11 +951,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               <p className="text-[11px] uppercase tracking-[0.18em] mt-5" style={{ color: "var(--fg-subtle)" }}>Available</p>
               <p className="text-4xl sm:text-5xl font-semibold tracking-tight mt-1 tabular-nums num" style={{ letterSpacing: "-0.03em" }}>{formatMoney(netWorth)}</p>
               <p className="text-xs mt-2" style={{ color: "var(--fg-subtle)" }}>{accounts.length} account{accounts.length === 1 ? "" : "s"}</p>
-              <div className="grid grid-cols-4 gap-2 mt-7">
+              <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 mt-7">
                 {[
                   { id: "send" as View, label: "Send", icon: Send },
                   { id: "bills" as View, label: "Pay", icon: Receipt },
                   { id: "borrow" as View, label: "Loans", icon: Landmark },
+                  ...(settings?.enableEscrow !== false ? [{ id: "escrow" as View, label: "Escrow", icon: ShieldCheck }] : []),
                   { id: "apply" as View, label: "Apply", icon: Plus },
                 ].map((a) => (
                   <button key={a.id} onClick={() => { if (a.id === "send") setTransferSuccess(null); setView(a.id); }} className="flex flex-col items-center gap-2 py-3 rounded-2xl border text-xs font-semibold" style={{ background: "color-mix(in oklab, var(--fg) 5%, transparent)", borderColor: "var(--border)" }}>
@@ -1292,7 +1433,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 <h2 className="text-2xl font-black">Loans & Financing</h2>
                 <p className="text-xs text-white/40 mt-0.5">Click any loan to view full terms, payment schedule, or submit payments.</p>
               </div>
-              {settings.enableLoans !== false && (
+              {settings.enableLoans !== false && loanProducts.length > 0 && (
                 <button onClick={() => setView("apply")} className="text-xs font-bold px-3.5 py-2 rounded-xl" style={btnBrand}>Apply for Loan</button>
               )}
             </div>
@@ -1304,9 +1445,13 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </div>
                 <div>
                   <p className="font-bold text-white">No active or historical loans</p>
-                  <p className="text-xs text-white/40 mt-1">Apply any time to finance personal goals or commercial investments.</p>
+                  <p className="text-xs text-white/40 mt-1">
+                    {loanProducts.length > 0
+                      ? "Explore verified loan products offered by this bank to finance your investments."
+                      : "This bank currently has no active loan products published in its catalog."}
+                  </p>
                 </div>
-                {settings.enableLoans !== false && (
+                {settings.enableLoans !== false && loanProducts.length > 0 && (
                   <button onClick={() => setView("apply")} className="text-xs font-bold px-4 py-2 rounded-xl mt-2" style={btnBrand}>
                     Explore Financing
                   </button>
@@ -1633,112 +1778,409 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
           </div>
         )}
 
-        {view === "apply" && (
-          <div className="space-y-8">
-            <h2 className="text-2xl font-black">Apply</h2>
-            <p className="text-sm text-white/45 -mt-6">Everything this bank offers. Nothing is hidden — apply when you need it.</p>
+        {view === "escrow" && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/10">
+              <div>
+                <h2 className="text-2xl font-black flex items-center gap-2.5">
+                  <ShieldCheck className="text-emerald-400" size={26} /> Trustless Escrow
+                </h2>
+                <p className="text-sm text-white/50 mt-1">
+                  Lock funds securely in neutral bank vault custody until goods, services, or contracts are fulfilled.
+                </p>
+              </div>
+              <button
+                onClick={() => { setApplyTab("escrow"); setView("apply"); }}
+                className="px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 self-start sm:self-auto shadow-lg transition-transform active:scale-95"
+                style={btnBrand}
+              >
+                <Plus size={15} /> New Escrow Agreement
+              </button>
+            </div>
 
+            {/* Escrow Stat Cards */}
             {(() => {
-              const activeSelectedTier = availableTiers.find((t: any) => t.id === (selectedTierId || availableTiers.find((x: any) => x.isDefault)?.id || availableTiers[0]?.id));
-              const heldCount = activeSelectedTier ? accounts.filter((a: any) => a.tierId === activeSelectedTier.id).length : 0;
-              const tierLimitReached = activeSelectedTier && typeof activeSelectedTier.maxAccountsPerUser === "number" && activeSelectedTier.maxAccountsPerUser > 0 && heldCount >= activeSelectedTier.maxAccountsPerUser;
-
-              const mutuallyExclusiveConflict = activeSelectedTier ? accounts.find((a: any) => {
-                if (!a.tierId) return false;
-                if (Array.isArray(activeSelectedTier.mutuallyExclusiveTierIds) && activeSelectedTier.mutuallyExclusiveTierIds.includes(a.tierId)) return true;
-                const otherTier = availableTiers.find((ot: any) => ot.id === a.tierId);
-                if (otherTier && Array.isArray(otherTier.mutuallyExclusiveTierIds) && otherTier.mutuallyExclusiveTierIds.includes(activeSelectedTier.id)) return true;
-                return false;
-              }) : null;
-
-              const groupConflict = activeSelectedTier && activeSelectedTier.exclusiveGroup ? accounts.find((a: any) => {
-                if (!a.tierId || a.tierId === activeSelectedTier.id) return false;
-                const otherTier = availableTiers.find((ot: any) => ot.id === a.tierId);
-                return otherTier && otherTier.exclusiveGroup && otherTier.exclusiveGroup === activeSelectedTier.exclusiveGroup;
-              }) : null;
-
-              const isBiz = activeSelectedTier ? activeSelectedTier.type === "business" : false;
-              const personalCount = accounts.filter((a: any) => !a.accountType?.includes("business")).length;
-              const bizCount = accounts.filter((a: any) => a.accountType?.includes("business")).length;
-
-              const personalCapReached = !isBiz && typeof settings.maxPersonalAccountsPerUser === "number" && settings.maxPersonalAccountsPerUser > 0 && personalCount >= settings.maxPersonalAccountsPerUser;
-              const bizCapReached = isBiz && typeof settings.maxBusinessAccountsPerUser === "number" && settings.maxBusinessAccountsPerUser > 0 && bizCount >= settings.maxBusinessAccountsPerUser;
-              const totalCapReached = typeof settings.maxTotalAccountsPerUser === "number" && settings.maxTotalAccountsPerUser > 0 && accounts.length >= settings.maxTotalAccountsPerUser;
-
-              const cannotRegisterReason = tierLimitReached
-                ? `Holding Limit Reached: You already hold ${heldCount} of ${activeSelectedTier?.maxAccountsPerUser} allowed account(s) under '${activeSelectedTier?.name}'.`
-                : mutuallyExclusiveConflict
-                ? `Policy Restriction: You already hold account '${mutuallyExclusiveConflict.accountName}'. '${activeSelectedTier?.name}' is mutually exclusive with this tier (only one or the other may be held).`
-                : groupConflict
-                ? `Suite Conflict: You already hold account '${groupConflict.accountName}' in the '${activeSelectedTier?.exclusiveGroup}' category suite. Only one tier in this suite is permitted.`
-                : personalCapReached
-                ? `Bank Limit Reached: Maximum of ${settings.maxPersonalAccountsPerUser} personal account(s) allowed per citizen.`
-                : bizCapReached
-                ? `Bank Limit Reached: Maximum of ${settings.maxBusinessAccountsPerUser} business account(s) allowed per entity.`
-                : totalCapReached
-                ? `Bank Limit Reached: Maximum of ${settings.maxTotalAccountsPerUser} total accounts allowed per client.`
-                : null;
+              const myAccountIds = accounts.map((a: any) => a.id);
+              const fundedEscrows = escrows.filter(e => e.status === "funded");
+              const totalLocked = fundedEscrows.reduce((s, e) => s + (e.amount || 0), 0);
+              const asBuyerFunded = fundedEscrows.filter(e => myAccountIds.includes(e.buyerAccountId));
+              const asSellerFunded = fundedEscrows.filter(e => myAccountIds.includes(e.sellerAccountId));
+              const completedCount = escrows.filter(e => e.status === "released").length;
 
               return (
-                <form onSubmit={openAccount} className="rounded-2xl border border-white/10 p-5 space-y-4 bg-white/[0.02]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold flex items-center gap-2"><Wallet size={16} /> Open an account</h3>
-                    <span className="text-[10px] text-white/40 uppercase font-mono tracking-wider">Instant Onboarding</span>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <p className="text-[11px] text-white/40 uppercase font-semibold">Total in Vault Custody</p>
+                    <p className="text-xl sm:text-2xl font-black font-mono text-emerald-400 mt-1">{formatMoney(totalLocked)}</p>
+                    <p className="text-[11px] text-white/30 mt-1">{fundedEscrows.length} active agreement{fundedEscrows.length === 1 ? "" : "s"}</p>
                   </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <p className="text-[11px] text-white/40 uppercase font-semibold">Outgoing (As Buyer)</p>
+                    <p className="text-xl sm:text-2xl font-black font-mono text-indigo-300 mt-1">
+                      {formatMoney(asBuyerFunded.reduce((s, e) => s + (e.amount || 0), 0))}
+                    </p>
+                    <p className="text-[11px] text-white/30 mt-1">{asBuyerFunded.length} awaiting your release</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <p className="text-[11px] text-white/40 uppercase font-semibold">Incoming (As Seller)</p>
+                    <p className="text-xl sm:text-2xl font-black font-mono text-amber-300 mt-1">
+                      {formatMoney(asSellerFunded.reduce((s, e) => s + (e.amount || 0), 0))}
+                    </p>
+                    <p className="text-[11px] text-white/30 mt-1">{asSellerFunded.length} locked for fulfillment</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <p className="text-[11px] text-white/40 uppercase font-semibold">Completed Releases</p>
+                    <p className="text-xl sm:text-2xl font-black font-mono text-white mt-1">{completedCount}</p>
+                    <p className="text-[11px] text-white/30 mt-1">Settled successfully</p>
+                  </div>
+                </div>
+              );
+            })()}
 
-                  {availableTiers.length > 0 ? (
-                    <div className="space-y-3">
-                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Account Product Tier</label>
-                      <select 
-                        name="tierId" 
-                        value={selectedTierId || (availableTiers.find((t: any) => t.isDefault)?.id || availableTiers[0]?.id || "")}
-                        onChange={(e) => setSelectedTierId(e.target.value)}
-                        required
-                        className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+            {/* Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              {(["all", "funded", "pending", "released", "refunded"] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setEscrowFilter(tab)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold capitalize whitespace-nowrap transition-colors border ${
+                    escrowFilter === tab
+                      ? "bg-white/15 border-white/30 text-white"
+                      : "bg-white/5 border-white/5 text-white/50 hover:text-white"
+                  }`}
+                >
+                  {tab === "all" ? "All Escrows" : tab === "funded" ? "🔒 Locked in Custody" : tab === "pending" ? "⏳ Pending Deposit" : tab === "released" ? "✅ Released" : "↩️ Refunded"}
+                  <span className="ml-1.5 opacity-60 text-[10px] font-mono">
+                    ({tab === "all" ? escrows.length : escrows.filter(e => e.status === tab).length})
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Escrow List */}
+            {(() => {
+              const myAccountIds = accounts.map((a: any) => a.id);
+              const filteredList = escrows.filter(e => escrowFilter === "all" ? true : e.status === escrowFilter);
+
+              if (filteredList.length === 0) {
+                return (
+                  <div className="rounded-3xl border border-white/10 p-10 bg-white/[0.02] text-center space-y-3">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
+                      <ShieldCheck size={28} />
+                    </div>
+                    <h3 className="font-bold text-white text-lg">No {escrowFilter !== "all" ? escrowFilter : ""} escrow agreements found</h3>
+                    <p className="text-xs text-white/45 max-w-md mx-auto">
+                      Use bank escrow to safeguard high-value trades, property sales, or freelance commissions. Funds stay protected in neutral custody until you release them.
+                    </p>
+                    <button
+                      onClick={() => { setApplyTab("escrow"); setView("apply"); }}
+                      className="px-5 py-2.5 rounded-xl text-xs font-bold mt-2 shadow"
+                      style={btnBrand}
+                    >
+                      Draft an Escrow Agreement
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {filteredList.map((escrow: any) => {
+                    const isBuyer = myAccountIds.includes(escrow.buyerAccountId);
+                    const isSeller = myAccountIds.includes(escrow.sellerAccountId);
+                    const isPendingAction = escrowActionInProgress?.startsWith(escrow.id);
+
+                    return (
+                      <div
+                        key={escrow.id}
+                        className="rounded-2xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.035] transition-all p-5 space-y-4"
                       >
-                        {availableTiers.map((t: any) => {
-                          const tHeld = accounts.filter((a: any) => a.tierId === t.id).length;
-                          const isCapReached = typeof t.maxAccountsPerUser === "number" && t.maxAccountsPerUser > 0 && tHeld >= t.maxAccountsPerUser;
-                          return (
-                            <option key={t.id} value={t.id} className="bg-[#18181c] text-[#f4f4f5]">
-                              {t.name} ({t.type === "business" ? "Business" : "Personal"})
-                              {t.apyPercent ? ` · ${(Number(t.apyPercent) / 100).toFixed(2)}% APY` : ""}
-                              {t.monthlyFee ? ` · $${(Number(t.monthlyFee) / 100).toFixed(2)}/mo` : ""}
-                              {t.isDefault ? " · Default" : ""}
-                              {isCapReached ? ` [Limit Reached: ${tHeld}/${t.maxAccountsPerUser}]` : (tHeld > 0 ? ` (Holding: ${tHeld})` : "")}
-                            </option>
-                          );
-                        })}
-                      </select>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                              escrow.status === "funded"
+                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                : escrow.status === "pending"
+                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                : escrow.status === "released"
+                                ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                                : "bg-white/10 text-white/60 border border-white/10"
+                            }`}>
+                              {escrow.status === "funded" && <Lock size={12} />}
+                              {escrow.status === "pending" && <Clock size={12} />}
+                              {escrow.status === "released" && <Check size={12} />}
+                              {escrow.status === "funded" ? "Locked in Custody" : escrow.status === "pending" ? "Pending Deposit" : escrow.status === "released" ? "Released & Settled" : "Refunded"}
+                            </span>
 
-                      <div className="space-y-2">
-                        {activeSelectedTier && (
-                          <div className="text-xs bg-white/[0.03] border border-white/10 rounded-xl p-3 space-y-1.5">
-                            {activeSelectedTier.description && (
-                              <p className="text-white/80">{activeSelectedTier.description}</p>
+                            <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wide border ${
+                              isBuyer ? "bg-indigo-500/15 border-indigo-500/30 text-indigo-300" : "bg-purple-500/15 border-purple-500/30 text-purple-300"
+                            }`}>
+                              {isBuyer ? "👤 You: Buyer (Depositor)" : "🏷️ You: Seller (Recipient)"}
+                            </span>
+
+                            <span className="text-[11px] font-mono text-white/35">
+                              #{escrow.id.slice(0, 12)}
+                            </span>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-xl sm:text-2xl font-black font-mono text-white">
+                              {formatMoney(escrow.amount)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Description & Contract terms */}
+                        <div className="rounded-xl bg-white/5 border border-white/5 p-3.5 space-y-2 text-xs">
+                          <p className="font-semibold text-white/90">{escrow.description || "Escrow Agreement"}</p>
+                          {escrow.contractText && (
+                            <p className="text-white/60 font-mono text-[11px] whitespace-pre-wrap border-t border-white/5 pt-2">
+                              {escrow.contractText}
+                            </p>
+                          )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1 text-white/50 border-t border-white/5">
+                            <div>
+                              <span className="text-white/35 block">Buyer Account:</span>
+                              <strong className="text-white/80">{escrow.buyerAccountName || escrow.buyerAccountId}</strong>
+                              {escrow.buyerDiscordId && <span className="text-white/40 block">Discord: @{escrow.buyerDiscordId}</span>}
+                            </div>
+                            <div>
+                              <span className="text-white/35 block">Seller Account:</span>
+                              <strong className="text-white/80">{escrow.sellerAccountName || escrow.sellerAccountId}</strong>
+                              {escrow.sellerDiscordId && <span className="text-white/40 block">Discord: @{escrow.sellerDiscordId}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/5">
+                          <div className="text-[11px] text-white/40">
+                            Created {escrow.createdAt ? format(new Date(escrow.createdAt), "MMM d, yyyy h:mm a") : "Recently"}
+                            {escrow.clientSignedAt && <span className="text-emerald-400/80 ml-2">· Funded on {format(new Date(escrow.clientSignedAt), "MMM d, h:mm a")}</span>}
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Copy Escrow ID */}
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(escrow.id);
+                                flash("Escrow ID copied to clipboard!");
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 flex items-center gap-1.5 transition-colors"
+                            >
+                              <Copy size={12} /> Copy ID
+                            </button>
+
+                            {/* Buyer actions */}
+                            {isBuyer && escrow.status === "pending" && (
+                              <button
+                                disabled={Boolean(isPendingAction)}
+                                onClick={() => fundEscrow(escrow.id)}
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                              >
+                                {isPendingAction === `${escrow.id}_fund` ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
+                                Fund & Lock Custody
+                              </button>
                             )}
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/45">
-                              <span>Category: <strong className="text-white/80 capitalize">{activeSelectedTier.type}</strong></span>
-                              {activeSelectedTier.minBalance > 0 && <span>Min. Deposit: <strong className="text-white/80">{formatMoney(activeSelectedTier.minBalance)}</strong></span>}
-                              {activeSelectedTier.monthlyFee > 0 ? (
-                                <span>Monthly Fee: <strong className="text-white/80">{formatMoney(activeSelectedTier.monthlyFee)}/mo</strong></span>
-                              ) : (
-                                <span className="text-emerald-400 font-medium">No Monthly Maintenance Fee</span>
-                              )}
-                              {activeSelectedTier.apyPercent > 0 && <span>Annual Yield: <strong className="text-emerald-400">{(Number(activeSelectedTier.apyPercent) / 100).toFixed(2)}% APY</strong></span>}
-                              {activeSelectedTier.creditLimit > 0 && <span>Includes Credit Line: <strong className="text-indigo-300">{formatMoney(activeSelectedTier.creditLimit)}</strong></span>}
-                              {typeof activeSelectedTier.maxAccountsPerUser === "number" && activeSelectedTier.maxAccountsPerUser > 0 && (
-                                <span className="text-amber-300">Holding Limit: <strong>{heldCount} / {activeSelectedTier.maxAccountsPerUser}</strong> accounts held</span>
-                              )}
-                              {activeSelectedTier.exclusiveGroup && (
-                                <span className="text-purple-300 font-mono">Suite: {activeSelectedTier.exclusiveGroup}</span>
-                              )}
+
+                            {isBuyer && escrow.status === "funded" && (
+                              <button
+                                disabled={Boolean(isPendingAction)}
+                                onClick={() => releaseEscrow(escrow.id)}
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-md transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                              >
+                                {isPendingAction === `${escrow.id}_release` ? <Loader2 size={13} className="animate-spin" /> : <Unlock size={13} />}
+                                Release Funds to Seller
+                              </button>
+                            )}
+
+                            {/* Seller voluntary refund */}
+                            {isSeller && escrow.status === "funded" && (
+                              <button
+                                disabled={Boolean(isPendingAction)}
+                                onClick={() => refundEscrow(escrow.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                              >
+                                {isPendingAction === `${escrow.id}_refund` ? <Loader2 size={13} className="animate-spin" /> : <ArrowDownLeft size={13} />}
+                                Refund to Buyer
+                              </button>
+                            )}
+
+                            {/* Cancel pending */}
+                            {escrow.status === "pending" && (isBuyer || isSeller) && (
+                              <button
+                                disabled={Boolean(isPendingAction)}
+                                onClick={() => cancelEscrow(escrow.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/50 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors flex items-center gap-1 disabled:opacity-50"
+                              >
+                                {isPendingAction === `${escrow.id}_cancel` ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                Cancel Draft
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {view === "apply" && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-black">Financial Catalog & Applications</h2>
+              <p className="text-sm text-white/50 mt-1">Open deposit accounts, apply for financing, request cards, and draft escrow holds.</p>
+            </div>
+
+            {/* Categorized Tabs */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 border-b border-white/10 pb-3">
+              {[
+                { id: "account", label: "Deposit Account", icon: Wallet },
+                { id: "loan", label: "Loans & Credit", icon: Landmark },
+                { id: "card", label: "Payment Cards", icon: CreditCard },
+                { id: "bond", label: "Time Vaults", icon: PiggyBank },
+                { id: "escrow", label: "Escrow Hold", icon: ShieldCheck },
+              ].map(tab => {
+                const Icon = tab.icon;
+                const active = applyTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setApplyTab(tab.id as any)}
+                    className={`flex items-center gap-2 justify-center py-2.5 px-3 rounded-xl text-xs font-bold transition-all border ${
+                      active
+                        ? "bg-white/15 border-white/30 text-white shadow-md"
+                        : "bg-white/5 border-white/5 text-white/50 hover:text-white hover:bg-white/[0.08]"
+                    }`}
+                  >
+                    <Icon size={15} color={active ? brand : undefined} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* TAB: DEPOSIT ACCOUNT */}
+            {applyTab === "account" && (
+              (() => {
+                const activeSelectedTier = availableTiers.find((t: any) => t.id === (selectedTierId || availableTiers.find((x: any) => x.isDefault)?.id || availableTiers[0]?.id));
+                const heldCount = activeSelectedTier ? accounts.filter((a: any) => a.tierId === activeSelectedTier.id).length : 0;
+                const tierLimitReached = activeSelectedTier && typeof activeSelectedTier.maxAccountsPerUser === "number" && activeSelectedTier.maxAccountsPerUser > 0 && heldCount >= activeSelectedTier.maxAccountsPerUser;
+
+                const mutuallyExclusiveConflict = activeSelectedTier ? accounts.find((a: any) => {
+                  if (!a.tierId) return false;
+                  if (Array.isArray(activeSelectedTier.mutuallyExclusiveTierIds) && activeSelectedTier.mutuallyExclusiveTierIds.includes(a.tierId)) return true;
+                  const otherTier = availableTiers.find((ot: any) => ot.id === a.tierId);
+                  if (otherTier && Array.isArray(otherTier.mutuallyExclusiveTierIds) && otherTier.mutuallyExclusiveTierIds.includes(activeSelectedTier.id)) return true;
+                  return false;
+                }) : null;
+
+                const groupConflict = activeSelectedTier && activeSelectedTier.exclusiveGroup ? accounts.find((a: any) => {
+                  if (!a.tierId || a.tierId === activeSelectedTier.id) return false;
+                  const otherTier = availableTiers.find((ot: any) => ot.id === a.tierId);
+                  return otherTier && otherTier.exclusiveGroup && otherTier.exclusiveGroup === activeSelectedTier.exclusiveGroup;
+                }) : null;
+
+                const isBiz = activeSelectedTier ? activeSelectedTier.type === "business" : false;
+                const personalCount = accounts.filter((a: any) => !a.accountType?.includes("business")).length;
+                const bizCount = accounts.filter((a: any) => a.accountType?.includes("business")).length;
+
+                const personalCapReached = !isBiz && typeof settings.maxPersonalAccountsPerUser === "number" && settings.maxPersonalAccountsPerUser > 0 && personalCount >= settings.maxPersonalAccountsPerUser;
+                const bizCapReached = isBiz && typeof settings.maxBusinessAccountsPerUser === "number" && settings.maxBusinessAccountsPerUser > 0 && bizCount >= settings.maxBusinessAccountsPerUser;
+                const totalCapReached = typeof settings.maxTotalAccountsPerUser === "number" && settings.maxTotalAccountsPerUser > 0 && accounts.length >= settings.maxTotalAccountsPerUser;
+
+                const cannotRegisterReason = tierLimitReached
+                  ? `Holding Limit Reached: You already hold ${heldCount} of ${activeSelectedTier?.maxAccountsPerUser} allowed account(s) under '${activeSelectedTier?.name}'.`
+                  : mutuallyExclusiveConflict
+                  ? `Policy Restriction: You already hold account '${mutuallyExclusiveConflict.accountName}'. '${activeSelectedTier?.name}' is mutually exclusive with this tier (only one or the other may be held).`
+                  : groupConflict
+                  ? `Suite Conflict: You already hold account '${groupConflict.accountName}' in the '${activeSelectedTier?.exclusiveGroup}' category suite. Only one tier in this suite is permitted.`
+                  : personalCapReached
+                  ? `Bank Limit Reached: Maximum of ${settings.maxPersonalAccountsPerUser} personal account(s) allowed per citizen.`
+                  : bizCapReached
+                  ? `Bank Limit Reached: Maximum of ${settings.maxBusinessAccountsPerUser} business account(s) allowed per entity.`
+                  : totalCapReached
+                  ? `Bank Limit Reached: Maximum of ${settings.maxTotalAccountsPerUser} total accounts allowed per client.`
+                  : null;
+
+                const effectivePrefix = activeSelectedTier?.customPrefix || (isBiz ? (settings.businessAccountPrefix || "CORP-") : (settings.personalAccountPrefix || "ACC-"));
+                const effectiveNamingMode = activeSelectedTier?.namingMode || (isBiz ? (settings.businessAccountNamingMode || "business_name") : (settings.personalAccountNamingMode || "custom"));
+                const discordName = user?.username || (user as any)?.global_name || "client";
+
+                return (
+                  <form onSubmit={openAccount} className="rounded-3xl border border-white/10 p-6 space-y-5 bg-white/[0.02]">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                      <div>
+                        <h3 className="font-bold text-base flex items-center gap-2"><Wallet size={18} /> Open New Bank Account</h3>
+                        <p className="text-xs text-white/45 mt-0.5">Select a tailored account tier for personal daily finances or commercial business ops.</p>
+                      </div>
+                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full uppercase font-mono font-bold">
+                        Instant Approval
+                      </span>
+                    </div>
+
+                    {availableTiers.length > 0 ? (
+                      <div className="space-y-3">
+                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Select Account Product Tier</label>
+                        <select 
+                          name="tierId" 
+                          value={selectedTierId || (availableTiers.find((t: any) => t.isDefault)?.id || availableTiers[0]?.id || "")}
+                          onChange={(e) => setSelectedTierId(e.target.value)}
+                          required
+                          className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                        >
+                          {availableTiers.map((t: any) => {
+                            const tHeld = accounts.filter((a: any) => a.tierId === t.id).length;
+                            const isCapReached = typeof t.maxAccountsPerUser === "number" && t.maxAccountsPerUser > 0 && tHeld >= t.maxAccountsPerUser;
+                            return (
+                              <option key={t.id} value={t.id} className="bg-[#18181c] text-[#f4f4f5]">
+                                {t.name} ({t.type === "business" ? "Business" : "Personal"})
+                                {t.apyPercent ? ` · ${(Number(t.apyPercent) / 100).toFixed(2)}% APY` : ""}
+                                {t.monthlyFee ? ` · $${(Number(t.monthlyFee) / 100).toFixed(2)}/mo` : ""}
+                                {t.isDefault ? " · Default" : ""}
+                                {isCapReached ? ` [Limit Reached: ${tHeld}/${t.maxAccountsPerUser}]` : (tHeld > 0 ? ` (Holding: ${tHeld})` : "")}
+                              </option>
+                            );
+                          })}
+                        </select>
+
+                        {activeSelectedTier && (
+                          <div className="text-xs bg-white/[0.03] border border-white/10 rounded-2xl p-4 space-y-2">
+                            {activeSelectedTier.description && (
+                              <p className="text-white/85 font-medium">{activeSelectedTier.description}</p>
+                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-white/5 text-[11px]">
+                              <div>
+                                <span className="text-white/40 block">Account Type</span>
+                                <span className="font-bold text-white capitalize">{activeSelectedTier.type}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/40 block">Annual Yield</span>
+                                <span className="font-bold text-emerald-400">
+                                  {activeSelectedTier.apyPercent > 0 ? `${(Number(activeSelectedTier.apyPercent) / 100).toFixed(2)}% APY` : "0.00%"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-white/40 block">Maintenance Fee</span>
+                                <span className="font-bold text-white">
+                                  {activeSelectedTier.monthlyFee > 0 ? `${formatMoney(activeSelectedTier.monthlyFee)}/mo` : "Free"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-white/40 block">Overdraft / Line</span>
+                                <span className="font-bold text-indigo-300">
+                                  {activeSelectedTier.creditLimit > 0 ? formatMoney(activeSelectedTier.creditLimit) : "None"}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         )}
 
                         {cannotRegisterReason && (
-                          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs">
+                          <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs">
                             <AlertTriangle size={16} className="shrink-0 mt-0.5 text-rose-400" />
                             <div>
                               <strong className="block font-semibold">Tier Registration Unavailable</strong>
@@ -1747,177 +2189,472 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           </div>
                         )}
                       </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide mb-1.5">Account Type</label>
-                      <select name="accountType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                        <option value="personal_checking" className="bg-[#18181c] text-[#f4f4f5]">Personal checking</option>
-                        <option value="personal_savings" className="bg-[#18181c] text-[#f4f4f5]">Savings</option>
-                        <option value="business_checking" className="bg-[#18181c] text-[#f4f4f5]">Business</option>
-                      </select>
-                    </div>
-                  )}
+                    ) : (
+                      <div>
+                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide mb-1.5">Account Type</label>
+                        <select name="accountType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                          <option value="personal_checking" className="bg-[#18181c] text-[#f4f4f5]">Personal Checking</option>
+                          <option value="personal_savings" className="bg-[#18181c] text-[#f4f4f5]">High-Yield Savings</option>
+                          <option value="business_checking" className="bg-[#18181c] text-[#f4f4f5]">Commercial Business Entity</option>
+                        </select>
+                      </div>
+                    )}
 
-                  {/* Dynamic Naming & Prefix Controls */}
-                  {(() => {
-                    const effectivePrefix = activeSelectedTier?.customPrefix || (isBiz ? (settings.businessAccountPrefix || "CORP-") : (settings.personalAccountPrefix || "ACC-"));
-                    const effectiveNamingMode = activeSelectedTier?.namingMode || (isBiz ? (settings.businessAccountNamingMode || "business_name") : (settings.personalAccountNamingMode || "custom"));
-                    const discordName = user?.username || (user as any)?.global_name || "client";
+                    {/* Dynamic Naming */}
+                    <div className="space-y-3 pt-1">
+                      {!isBiz && effectiveNamingMode === "choice_or_username" && (
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setNamingPref("custom")}
+                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-medium border transition-colors ${namingPref === "custom" ? "bg-white/10 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
+                          >
+                            Custom Tag
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNamingPref("discord")}
+                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-medium border transition-colors ${namingPref === "discord" ? "bg-white/10 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
+                          >
+                            Discord Handle (@{discordName})
+                          </button>
+                        </div>
+                      )}
 
-                    return (
-                      <div className="space-y-3 pt-1">
-                        {!isBiz && effectiveNamingMode === "choice_or_username" && (
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setNamingPref("custom")}
-                              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-colors ${namingPref === "custom" ? "bg-white/10 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
-                            >
-                              Custom Name
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setNamingPref("discord")}
-                              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-colors ${namingPref === "discord" ? "bg-white/10 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
-                            >
-                              Discord Handle (@{discordName})
-                            </button>
+                      <div>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <label className="text-xs font-semibold text-white/50 uppercase tracking-wide">
+                            {isBiz ? "Business / Entity Name" : "Account Designation"}
+                          </label>
+                          <span className="text-[11px] font-mono text-white/40">
+                            ID: <strong className="text-white/80">{effectivePrefix}{(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? discordName : (accountNameChoice || (isBiz ? "AcmeCorp" : "main"))}</strong>
+                          </span>
+                        </div>
+
+                        {(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? (
+                          <div className="flex items-center bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm text-white/80 font-mono">
+                            <span className="text-indigo-400 font-semibold">{effectivePrefix}</span>
+                            <span>{discordName}</span>
+                            <span className="ml-auto text-[11px] text-white/30 uppercase font-sans">Synced with Discord</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center bg-white/5 border border-white/10 rounded-xl overflow-hidden focus-within:border-white/30">
+                            <span className="px-3.5 py-3 bg-white/5 text-white/50 font-mono text-sm border-r border-white/10 select-none">
+                              {effectivePrefix}
+                            </span>
+                            <input 
+                              name="accountName" 
+                              required 
+                              value={accountNameChoice}
+                              onChange={(e) => setAccountNameChoice(e.target.value)}
+                              placeholder={isBiz ? "e.g. Acme Industries Ltd." : "e.g. daily-spending"} 
+                              className="flex-1 bg-transparent px-3.5 py-3 text-sm text-white focus:outline-none placeholder:text-white/20" 
+                            />
                           </div>
                         )}
+                      </div>
+                    </div>
 
-                        <div>
-                          <div className="flex justify-between items-center mb-1.5">
-                            <label className="text-xs font-semibold text-white/50 uppercase tracking-wide">
-                              {isBiz ? "Business / Entity Name" : "Account Name / Tag"}
+                    <button
+                      disabled={actionPending || Boolean(cannotRegisterReason)}
+                      className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={btnBrand}
+                    >
+                      {actionPending ? "Opening Account…" : cannotRegisterReason ? "Account Limit Restricted" : "Open Account Now"}
+                    </button>
+                  </form>
+                );
+              })()
+            )}
+
+            {/* TAB: LOANS & CREDIT */}
+            {applyTab === "loan" && (
+              settings.enableLoans === false ? (
+                <div className="rounded-3xl border border-white/10 p-8 bg-white/[0.02] text-center">
+                  <p className="text-white/50 text-sm">Loan applications are currently disabled for this institution.</p>
+                </div>
+              ) : loanProducts.length === 0 ? (
+                <div className="rounded-3xl border border-white/10 p-8 bg-white/[0.02] text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 mx-auto flex items-center justify-center text-white/40">
+                    <Landmark size={24} />
+                  </div>
+                  <h3 className="font-bold text-white text-base">No Published Loan Products</h3>
+                  <p className="text-xs text-white/40 max-w-md mx-auto">
+                    This bank has not published active loan products in its catalog yet. Applications will open once products are activated by staff.
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={applyLoan} className="rounded-3xl border border-white/10 p-6 space-y-5 bg-white/[0.02]">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <div>
+                      <h3 className="font-bold text-base flex items-center gap-2"><Landmark size={18} /> Apply for Financing</h3>
+                      <p className="text-xs text-white/45 mt-0.5">Underwritten financing with competitive APR and customizable repayment terms.</p>
+                    </div>
+                    <span className="text-[10px] text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-full uppercase font-mono font-bold">
+                      Catalog Verified
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Deposit Disbursement Account</label>
+                      <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                        {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · ({formatMoney(a.balance)})</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Select Loan Product</label>
+                      <select
+                        name="productId"
+                        required
+                        value={selectedLoanProductId || loanProducts[0]?.id || ""}
+                        onChange={(e) => setSelectedLoanProductId(e.target.value)}
+                        className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                      >
+                        {loanProducts.map((p: any) => (
+                          <option key={p.id} value={p.id} className="bg-[#18181c] text-[#f4f4f5]">
+                            {p.name} — {(Number(p.interestRate) / (Number(p.interestRate) > 100 ? 100 : 1)).toFixed(2)}% APR · max {formatMoney(p.maxAmount)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const curProd = loanProducts.find((p: any) => p.id === (selectedLoanProductId || loanProducts[0]?.id)) || loanProducts[0];
+                    if (!curProd) return null;
+                    const minDol = curProd.minAmount ? curProd.minAmount / 100 : 10;
+                    const maxDol = curProd.maxAmount ? curProd.maxAmount / 100 : 10000;
+                    const apr = (Number(curProd.interestRate) / (Number(curProd.interestRate) > 100 ? 100 : 1)).toFixed(2);
+                    const termMonths = curProd.termDays ? Math.max(1, Math.round(curProd.termDays / 30)) : 1;
+
+                    return (
+                      <>
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3 text-xs">
+                          <div className="flex items-center justify-between font-bold text-white text-sm">
+                            <span>{curProd.name}</span>
+                            <span className="text-emerald-400 font-mono">{apr}% Fixed APR</span>
+                          </div>
+                          {curProd.description && <p className="text-white/65">{curProd.description}</p>}
+                          <div className="grid grid-cols-3 gap-3 pt-2 border-t border-white/5 text-[11px]">
+                            <div>
+                              <span className="text-white/40 block">Term Duration</span>
+                              <span className="font-bold text-white">{curProd.termDays || 30} days ({termMonths} mo)</span>
+                            </div>
+                            <div>
+                              <span className="text-white/40 block">Borrow Limit</span>
+                              <span className="font-bold text-white">{formatMoney(curProd.minAmount || 1000)} – {formatMoney(curProd.maxAmount)}</span>
+                            </div>
+                            <div>
+                              <span className="text-white/40 block">Category</span>
+                              <span className="font-bold text-white capitalize">{curProd.category || "personal"}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <input type="hidden" name="termMonths" value={termMonths} />
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">
+                              Requested Amount (${minDol.toLocaleString()} – ${maxDol.toLocaleString()})
                             </label>
-                            <span className="text-[10px] font-mono text-white/40">
-                              Result: <strong className="text-white/80">{effectivePrefix}{(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? discordName : (accountNameChoice || (isBiz ? "AcmeCorp" : "main"))}</strong>
-                            </span>
+                            <input
+                              name="amount"
+                              type="number"
+                              step="0.01"
+                              min={minDol}
+                              max={maxDol}
+                              required
+                              defaultValue={minDol}
+                              placeholder={`Amount between $${minDol} and $${maxDol}`}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm font-mono focus:outline-none focus:border-white/30"
+                            />
                           </div>
 
-                          {(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? (
-                            <div className="flex items-center bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white/80 font-mono">
-                              <span className="text-indigo-400 font-semibold">{effectivePrefix}</span>
-                              <span>{discordName}</span>
-                              <span className="ml-auto text-[11px] text-white/30 uppercase font-sans">Synced with Discord</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center bg-white/5 border border-white/10 rounded-xl overflow-hidden focus-within:border-white/30">
-                              <span className="px-3 py-2.5 bg-white/5 text-white/50 font-mono text-sm border-r border-white/10 select-none">
-                                {effectivePrefix}
-                              </span>
-                              <input 
-                                name="accountName" 
-                                required 
-                                value={accountNameChoice}
-                                onChange={(e) => setAccountNameChoice(e.target.value)}
-                                placeholder={isBiz ? "e.g. Acme Corporation" : "e.g. daily-spending"} 
-                                className="flex-1 bg-transparent px-3 py-2.5 text-sm text-white focus:outline-none placeholder:text-white/20" 
-                              />
-                            </div>
-                          )}
+                          <div>
+                            <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Purpose of Financing</label>
+                            <input
+                              name="purpose"
+                              placeholder="e.g. Business expansion, asset acquisition"
+                              required
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:border-white/30"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  <button
+                    disabled={actionPending}
+                    className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50"
+                    style={btnBrand}
+                  >
+                    {actionPending ? "Submitting Application…" : "Submit Loan Application"}
+                  </button>
+                </form>
+              )
+            )}
+
+            {/* TAB: CARDS */}
+            {applyTab === "card" && (
+              settings.enableCards === false ? (
+                <div className="rounded-3xl border border-white/10 p-8 bg-white/[0.02] text-center">
+                  <p className="text-white/50 text-sm">Payment cards are currently disabled for this institution.</p>
+                </div>
+              ) : (
+                <form onSubmit={requestCard} className="rounded-3xl border border-white/10 p-6 space-y-5 bg-white/[0.02]">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <div>
+                      <h3 className="font-bold text-base flex items-center gap-2"><CreditCard size={18} /> Request Payment Card</h3>
+                      <p className="text-xs text-white/45 mt-0.5">Linked directly to your checking account with Onyx contactless payments & cash advances.</p>
+                    </div>
+                  </div>
+
+                  {/* Card Visual Graphic */}
+                  {(() => {
+                    const selCardProd = cardProducts.find((p: any) => p.id === selectedCardProductId) || cardProducts[0];
+                    const isCredit = selCardProd ? selCardProd.cardKind === "credit" : false;
+                    const cardLimit = selCardProd?.maxLimit ? formatMoney(selCardProd.maxLimit) : "$2,500.00";
+
+                    return (
+                      <div className="max-w-sm mx-auto rounded-2xl p-5 border relative overflow-hidden shadow-2xl bg-gradient-to-br from-neutral-900 via-neutral-800 to-black border-white/20 text-white">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-xs font-bold tracking-widest text-white/70 uppercase">{bank.name}</p>
+                            <p className="text-[10px] text-white/40 uppercase font-mono">{isCredit ? "Onyx Premium Credit" : "Debit Contactless"}</p>
+                          </div>
+                          <div className="w-8 h-6 rounded-md bg-amber-400/80 border border-amber-300 flex items-center justify-center">
+                            <div className="w-5 h-4 border-y border-amber-900/40 grid grid-cols-2 gap-0.5" />
+                          </div>
+                        </div>
+
+                        <div className="my-6">
+                          <p className="text-sm font-mono tracking-widest text-white/80">•••• •••• •••• 4492</p>
+                        </div>
+
+                        <div className="flex justify-between items-end text-[11px]">
+                          <div>
+                            <span className="text-[9px] text-white/40 block uppercase">Cardholder</span>
+                            <span className="font-bold font-mono text-white/90">@{user?.username || "CLIENT"}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[9px] text-white/40 block uppercase">Limit</span>
+                            <span className="font-bold text-emerald-400 font-mono">{cardLimit}</span>
+                          </div>
                         </div>
                       </div>
                     );
                   })()}
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Link to Account</label>
+                      <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                        {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · {formatMoney(a.balance)}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Card Product Tier</label>
+                      {cardProducts.length > 0 ? (
+                        <select
+                          name="productId"
+                          required
+                          value={selectedCardProductId || cardProducts[0]?.id || ""}
+                          onChange={(e) => setSelectedCardProductId(e.target.value)}
+                          className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                        >
+                          {cardProducts.map((p: any) => (
+                            <option key={p.id} value={p.id} className="bg-[#18181c] text-[#f4f4f5]">
+                              {p.name} · {p.cardKind === "debit" ? "Debit" : "Credit"} · Limit {formatMoney(p.maxLimit)} · {Number(p.interestRate).toFixed(2)}% APR
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <select name="cardType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                          <option value="debit" className="bg-[#18181c] text-[#f4f4f5]">Standard Debit Card</option>
+                        </select>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-white/40">
+                    Payment cards include instant freeze/unfreeze controls and support direct cash advances within configured credit limits.
+                  </p>
+
                   <button
-                    disabled={actionPending || Boolean(cannotRegisterReason)}
-                    className="w-full py-3 rounded-xl font-bold text-sm text-white shadow-lg transition-opacity hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={actionPending}
+                    className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50"
                     style={btnBrand}
                   >
-                    {actionPending ? "Opening Account…" : cannotRegisterReason ? "Account Limit Reached / Restricted" : "Open Account"}
+                    {actionPending ? "Processing Card Request…" : "Issue Payment Card"}
                   </button>
                 </form>
-              );
-            })()}
-
-            {settings.enableLoans !== false && (
-              <form onSubmit={applyLoan} className="rounded-2xl border border-white/10 p-5 space-y-3">
-                <h3 className="font-bold flex items-center gap-2"><Landmark size={16} /> Apply for a loan</h3>
-                <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                  {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName}</option>)}
-                </select>
-                {loanProducts.length > 0 && (
-                  <select name="productId" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                    <option value="" className="bg-[#18181c] text-[#f4f4f5]">Standard terms</option>
-                    {loanProducts.map((p: any) => (
-                      <option key={p.id} value={p.id} className="bg-[#18181c] text-[#f4f4f5]">{p.name} — {(Number(p.interestRate) / (Number(p.interestRate) > 100 ? 100 : 1)).toFixed(2)}% · max {formatMoney(p.maxAmount)}</option>
-                    ))}
-                  </select>
-                )}
-                <input name="amount" type="number" step="0.01" min="10" required placeholder="Amount" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono" />
-                <select name="termMonths" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                  <option value="6" className="bg-[#18181c] text-[#f4f4f5]">6 months</option>
-                  <option value="12" className="bg-[#18181c] text-[#f4f4f5]">12 months</option>
-                  <option value="24" className="bg-[#18181c] text-[#f4f4f5]">24 months</option>
-                </select>
-                <input name="purpose" placeholder="Purpose" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm" />
-                <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Submit application</button>
-              </form>
+              )
             )}
 
-            {settings.enableCards !== false && (
-              <form onSubmit={requestCard} className="rounded-2xl border border-white/10 p-5 space-y-3">
-                <h3 className="font-bold flex items-center gap-2"><CreditCard size={16} /> Request a card</h3>
-                <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                  {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName}</option>)}
-                </select>
-                {cardProducts.length > 0 ? (
-                  <select name="productId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                    {cardProducts.map((p: any) => (
-                      <option key={p.id} value={p.id} className="bg-[#18181c] text-[#f4f4f5]">
-                        {p.name} · {p.cardKind === "debit" ? "debit" : "credit"} · limit {formatMoney(p.maxLimit)} · {Number(p.interestRate).toFixed(2)}% APR
-                        {p.tierId ? " · optional tier" : ""}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <select name="cardType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                    <option value="debit" className="bg-[#18181c] text-[#f4f4f5]">Debit</option>
-                  </select>
-                )}
-                <p className="text-[11px] text-white/35">Credit cards have a set limit for Onyx and cash advances. Tiers are optional — not required to apply.</p>
-                <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Request card</button>
-              </form>
+            {/* TAB: BONDS / TIME VAULTS */}
+            {applyTab === "bond" && (
+              settings.enableVaults === false || !Array.isArray(bondProducts) || bondProducts.length === 0 ? (
+                <div className="rounded-3xl border border-white/10 p-8 bg-white/[0.02] text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 mx-auto flex items-center justify-center text-white/40">
+                    <PiggyBank size={24} />
+                  </div>
+                  <h3 className="font-bold text-white text-base">No Active Time Vaults</h3>
+                  <p className="text-xs text-white/40 max-w-md mx-auto">
+                    Time deposit bonds are not configured for this bank currently.
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={buyBond} className="rounded-3xl border border-white/10 p-6 space-y-5 bg-white/[0.02]">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <div>
+                      <h3 className="font-bold text-base flex items-center gap-2"><PiggyBank size={18} /> High-Yield Time Vault</h3>
+                      <p className="text-xs text-white/45 mt-0.5">Time-locked deposits earning fixed yield upon maturity.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Source Funding Account</label>
+                      <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                        {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · {formatMoney(a.balance)}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Lock Duration & APY</label>
+                      <select name="lockDays" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                        {bondProducts.map((t: any) => (
+                          <option key={t.lockDays} value={t.lockDays} className="bg-[#18181c] text-[#f4f4f5]">
+                            {t.lockDays} days · {(Number(t.interestRate) / 100).toFixed(2)}% APY ({t.penaltyPercent ?? 20}% early penalty)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Deposit Amount to Lock</label>
+                    <input
+                      name="amount"
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      required
+                      value={bondSimAmount}
+                      onChange={(e) => setBondSimAmount(e.target.value)}
+                      placeholder="Amount to lock"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm font-mono focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+
+                  <button
+                    disabled={actionPending}
+                    className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50"
+                    style={btnBrand}
+                  >
+                    {actionPending ? "Locking Funds in Vault…" : "Purchase Time Vault Bond"}
+                  </button>
+                </form>
+              )
             )}
 
-            {settings.enableVaults !== false && Array.isArray(bondProducts) && bondProducts.length > 0 && (
-              <form onSubmit={buyBond} className="rounded-2xl border border-white/10 p-5 space-y-3">
-                <h3 className="font-bold flex items-center gap-2"><PiggyBank size={16} /> Buy a bond</h3>
-                <p className="text-xs text-white/40">Time-locked deposits. You earn the advertised yield if you hold to maturity.</p>
-                <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                  {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · {formatMoney(a.balance)}</option>)}
-                </select>
-                <select name="lockDays" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                  {bondProducts.map((t: any) => (
-                    <option key={t.lockDays} value={t.lockDays} className="bg-[#18181c] text-[#f4f4f5]">{t.lockDays} days · {(Number(t.interestRate) / 100).toFixed(2)}% · {t.penaltyPercent ?? 20}% early penalty</option>
-                  ))}
-                </select>
-                <input name="amount" type="number" step="0.01" min="1" required placeholder="Amount to lock" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono" />
-                <button disabled={actionPending} className="text-sm font-bold" style={{ color: brand }}>Buy bond</button>
+            {/* TAB: ESCROW AGREEMENT */}
+            {applyTab === "escrow" && (
+              <form onSubmit={createEscrow} className="rounded-3xl border border-white/10 p-6 space-y-5 bg-white/[0.02]">
+                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                  <div>
+                    <h3 className="font-bold text-base flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-400" /> Initiate Escrow Agreement</h3>
+                    <p className="text-xs text-white/45 mt-0.5">Safeguard a purchase or deal. Funds will be held securely by the bank until you release them.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Your Buyer Account (Funder)</label>
+                    <select name="buyerAccountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
+                      {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · Available: {formatMoney(a.balance)}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Seller Counterparty (Recipient)</label>
+                    <input
+                      name="sellerIdentifier"
+                      required
+                      placeholder="Account ID, account name, or Discord/MC handle"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Escrow Hold Amount ($)</label>
+                    <input
+                      name="amount"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder="e.g. 500.00"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm font-mono focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Deal Subject / Title</label>
+                    <input
+                      name="description"
+                      required
+                      placeholder="e.g. Purchase of Diamond Fleet #44"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Agreement Terms & Delivery Conditions (Optional)</label>
+                  <textarea
+                    name="contractText"
+                    rows={3}
+                    placeholder="Specify delivery milestones, Minecraft coords, Discord trade conditions, or inspection terms…"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 resize-none font-sans"
+                  />
+                </div>
+
+                <label className="flex items-center gap-3 p-3.5 rounded-xl bg-white/5 border border-white/10 cursor-pointer">
+                  <input type="checkbox" name="autoFund" defaultChecked className="w-4 h-4 rounded text-emerald-500" />
+                  <div className="text-xs">
+                    <strong className="block text-white/90">Auto-Fund Immediately</strong>
+                    <span className="text-white/40">Lock funds into escrow custody right away upon creation.</span>
+                  </div>
+                </label>
+
+                <button
+                  disabled={actionPending}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50"
+                  style={btnBrand}
+                >
+                  {actionPending ? "Initiating Escrow Agreement…" : "Create & Lock Escrow Agreement"}
+                </button>
               </form>
             )}
-
-            <div className="grid sm:grid-cols-2 gap-3">
-              <button onClick={() => setView("cards")} className="rounded-2xl border border-white/10 p-5 text-left">
-                <CreditCard size={18} className="text-white/50 mb-2" />
-                <p className="font-bold">Manage cards</p>
-                <p className="text-xs text-white/40 mt-1">Lock, unlock, or take a cash advance.</p>
-              </button>
-            </div>
           </div>
         )}
       </main>
 
       <nav className="fixed bottom-0 inset-x-0 z-30" style={{ borderTop: "1px solid var(--border)", background: "color-mix(in oklab, var(--bg) 88%, transparent)", backdropFilter: "blur(16px)", paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <div className="max-w-5xl mx-auto grid grid-cols-4">
+        <div className="max-w-5xl mx-auto flex items-center justify-around">
           {nav.map((n) => {
             const Icon = n.icon;
-            const on = view === n.id || (n.id === "home" && ["bills", "borrow", "cards"].includes(view) === false && view !== "send" && view !== "activity" && view !== "apply");
+            const on = view === n.id || (n.id === "home" && ["bills", "borrow", "cards"].includes(view) === false && view !== "send" && view !== "activity" && view !== "apply" && view !== "escrow");
             return (
-              <button key={n.id} onClick={() => { if (n.id === "send" && view !== "send") setTransferSuccess(null); setView(n.id); }} className="py-3 min-h-[52px] text-[11px] font-semibold flex flex-col items-center gap-1" style={{ color: on ? "var(--fg)" : "var(--fg-subtle)" }}>
+              <button key={n.id} onClick={() => { if (n.id === "send" && view !== "send") setTransferSuccess(null); setView(n.id); }} className="flex-1 py-3 min-h-[52px] text-[11px] font-semibold flex flex-col items-center gap-1" style={{ color: on ? "var(--fg)" : "var(--fg-subtle)" }}>
                 <Icon size={18} color={on ? brand : undefined} />
                 {n.label}
               </button>

@@ -1416,8 +1416,26 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
       return res.status(404).json({ error: "Destination deposit account not found or unauthorized" });
     }
 
+    const { loanProducts } = await import("../../db/schema");
+    if (!productId) {
+      return res.status(400).json({ error: "Please select an active loan product to apply." });
+    }
+    const product = await db.select().from(loanProducts).where(
+      and(eq(loanProducts.id, productId), eq(loanProducts.bankId, bankId), eq(loanProducts.isActive, true))
+    ).get();
+    if (!product) {
+      return res.status(400).json({ error: "The selected loan product is not available or has been deactivated by bank staff." });
+    }
+
     const loanAmountCents = Math.round(parseFloat(amount) * 100);
     if (!loanAmountCents || loanAmountCents <= 0) return res.status(400).json({ error: "Invalid loan amount" });
+
+    if (product.minAmount && loanAmountCents < product.minAmount) {
+      return res.status(400).json({ error: `Amount cannot be less than this product's minimum of $${(product.minAmount / 100).toFixed(2)}` });
+    }
+    if (loanAmountCents > product.maxAmount) {
+      return res.status(400).json({ error: `Amount exceeds this product's maximum of $${(product.maxAmount / 100).toFixed(2)}` });
+    }
 
     const { submitLoanApplication } = await import("../loan_processor");
     const result = await submitLoanApplication({
@@ -2084,3 +2102,339 @@ portalRouter.post("/api/portal/:bankId/split-bill", requireAuth, async (req: exp
     res.status(500).json({ error: e.message || "Failed to create split bill requests" });
   }
 });
+
+// ==========================================
+// PORTAL ESCROW ENDPOINTS FOR CUSTOMERS
+// ==========================================
+
+portalRouter.get("/api/portal/:bankId/escrows", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { escrows, bankAccounts, banks } = await import("../../db/schema");
+  const { eq, or, and, inArray, desc } = await import("drizzle-orm");
+  const { alias } = await import("drizzle-orm/sqlite-core");
+
+  try {
+    const { bankId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    if (candidateIds.length === 0) return res.json({ escrows: [] });
+
+    const userAccounts = await db.select({ id: bankAccounts.id }).from(bankAccounts).where(
+      and(
+        eq(bankAccounts.bankId, bankId),
+        or(
+          inArray(bankAccounts.ownerDiscordId, candidateIds),
+          inArray(bankAccounts.ownerMinecraftName, candidateIds)
+        )
+      )
+    );
+    const userAccountIds = userAccounts.map(a => a.id);
+    if (userAccountIds.length === 0) return res.json({ escrows: [] });
+
+    const buyerAcc = alias(bankAccounts, "buyer_account");
+    const sellerAcc = alias(bankAccounts, "seller_account");
+
+    const list = await db.select({
+      id: escrows.id,
+      bankId: escrows.bankId,
+      amount: escrows.amount,
+      status: escrows.status,
+      description: escrows.description,
+      contractUrl: escrows.contractUrl,
+      contractText: escrows.contractText,
+      clientSignedAt: escrows.clientSignedAt,
+      createdAt: escrows.createdAt,
+      buyerAccountId: escrows.buyerAccountId,
+      buyerAccountName: buyerAcc.accountName,
+      buyerDiscordId: buyerAcc.ownerDiscordId,
+      buyerMinecraftName: buyerAcc.ownerMinecraftName,
+      sellerAccountId: escrows.sellerAccountId,
+      sellerAccountName: sellerAcc.accountName,
+      sellerDiscordId: sellerAcc.ownerDiscordId,
+      sellerMinecraftName: sellerAcc.ownerMinecraftName,
+    })
+    .from(escrows)
+    .innerJoin(buyerAcc, eq(escrows.buyerAccountId, buyerAcc.id))
+    .innerJoin(sellerAcc, eq(escrows.sellerAccountId, sellerAcc.id))
+    .where(
+      and(
+        eq(escrows.bankId, bankId),
+        or(
+          inArray(escrows.buyerAccountId, userAccountIds),
+          inArray(escrows.sellerAccountId, userAccountIds)
+        )
+      )
+    )
+    .orderBy(desc(escrows.createdAt))
+    .all();
+
+    res.json({ escrows: list });
+  } catch (e: any) {
+    console.error("Error fetching portal escrows:", e);
+    res.status(500).json({ error: e.message || "Failed to load escrow agreements" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/escrows", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { escrows, bankAccounts, banks } = await import("../../db/schema");
+  const { eq, and, or, inArray } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { bankId } = req.params;
+    const { buyerAccountId, sellerIdentifier, amount, description, contractText, autoFund } = req.body;
+
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    if (candidateIds.length === 0) return res.status(401).json({ error: "Unauthorized" });
+
+    const buyer = await db.select().from(bankAccounts).where(
+      and(eq(bankAccounts.id, buyerAccountId), eq(bankAccounts.bankId, bankId))
+    ).get();
+
+    if (!buyer || !(await isUserAccountOwnerOrMember(buyer, candidateIds))) {
+      return res.status(403).json({ error: "You can only initiate escrow from an account you own or operate." });
+    }
+
+    const cleanSeller = String(sellerIdentifier || "").trim();
+    if (!cleanSeller) {
+      return res.status(400).json({ error: "Seller counterparty account or handle is required." });
+    }
+
+    const allBankAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId)).all();
+    const seller = allBankAccounts.find(a => 
+      a.id === cleanSeller ||
+      a.accountName.toLowerCase() === cleanSeller.toLowerCase() ||
+      (a.ownerDiscordId && a.ownerDiscordId.toLowerCase() === cleanSeller.toLowerCase()) ||
+      (a.ownerMinecraftName && a.ownerMinecraftName.toLowerCase() === cleanSeller.toLowerCase())
+    );
+
+    if (!seller) {
+      return res.status(404).json({ error: `Could not locate seller counterparty "${cleanSeller}" at this bank.` });
+    }
+
+    if (seller.id === buyer.id) {
+      return res.status(400).json({ error: "Buyer and Seller cannot be the exact same account." });
+    }
+
+    const amountCents = Math.round(parseFloat(amount) * 100);
+    if (isNaN(amountCents) || amountCents <= 0) {
+      return res.status(400).json({ error: "Invalid escrow amount. Must be positive." });
+    }
+
+    const escrowId = `esc_${Date.now()}_${uuidv4().slice(0, 8)}`;
+    const shouldAutoFund = Boolean(autoFund);
+
+    if (shouldAutoFund && buyer.balance < amountCents) {
+      return res.status(400).json({ error: `Insufficient funds to auto-fund escrow. Account balance is $${(buyer.balance / 100).toFixed(2)}.` });
+    }
+
+    let initialStatus = "pending";
+
+    if (shouldAutoFund) {
+      const { holdInSystemAccount } = await import("../../lib/citycorp_money");
+      await holdInSystemAccount({
+        fromAccount: buyer,
+        amountCents,
+        systemAccountName: "ESCROW",
+        systemCategory: "escrow",
+        description: `Customer Escrow Hold: ${description || escrowId}`,
+        type: "escrow",
+      });
+      initialStatus = "funded";
+    }
+
+    await db.insert(escrows).values({
+      id: escrowId,
+      bankId,
+      buyerAccountId: buyer.id,
+      sellerAccountId: seller.id,
+      amount: amountCents,
+      description: description || "Peer-to-Peer Escrow Hold",
+      status: initialStatus,
+      contractText: contractText || null,
+      clientSignedAt: shouldAutoFund ? new Date() : null,
+      createdAt: new Date(),
+    });
+
+    res.json({
+      success: true,
+      escrowId,
+      status: initialStatus,
+      message: shouldAutoFund ? "Escrow created and funds securely locked in bank custody!" : "Escrow agreement drafted. Buyer must fund to lock custody."
+    });
+  } catch (e: any) {
+    console.error("Error creating portal escrow:", e);
+    res.status(500).json({ error: e.message || "Failed to create escrow agreement" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/escrows/:escrowId/fund", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { escrows, bankAccounts } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, escrowId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    const escrow = await db.select().from(escrows).where(
+      and(eq(escrows.id, escrowId), eq(escrows.bankId, bankId))
+    ).get();
+
+    if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
+    if (escrow.status !== "pending") return res.status(400).json({ error: `Escrow is already ${escrow.status}` });
+
+    const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
+    if (!buyer || !(await isUserAccountOwnerOrMember(buyer, candidateIds))) {
+      return res.status(403).json({ error: "Only the buyer can fund this escrow agreement." });
+    }
+
+    if (buyer.balance < escrow.amount) {
+      return res.status(400).json({ error: `Insufficient balance ($${(buyer.balance / 100).toFixed(2)}) to fund $${(escrow.amount / 100).toFixed(2)}.` });
+    }
+
+    const { holdInSystemAccount } = await import("../../lib/citycorp_money");
+    await holdInSystemAccount({
+      fromAccount: buyer,
+      amountCents: escrow.amount,
+      systemAccountName: "ESCROW",
+      systemCategory: "escrow",
+      description: `Escrow Funded: ${escrow.description || escrow.id}`,
+      type: "escrow",
+    });
+
+    await db.update(escrows).set({
+      status: "funded",
+      clientSignedAt: new Date(),
+    }).where(eq(escrows.id, escrow.id));
+
+    res.json({ success: true, status: "funded", message: "Funds locked into secure bank escrow custody." });
+  } catch (e: any) {
+    console.error("Error funding escrow:", e);
+    res.status(500).json({ error: e.message || "Failed to fund escrow agreement" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/escrows/:escrowId/release", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { escrows, bankAccounts } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, escrowId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    const escrow = await db.select().from(escrows).where(
+      and(eq(escrows.id, escrowId), eq(escrows.bankId, bankId))
+    ).get();
+
+    if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
+    if (escrow.status !== "funded") return res.status(400).json({ error: `Escrow is not in funded custody (status: ${escrow.status})` });
+
+    const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
+    if (!buyer || !(await isUserAccountOwnerOrMember(buyer, candidateIds))) {
+      return res.status(403).json({ error: "Only the buyer who locked the funds can authorize immediate release." });
+    }
+
+    const seller = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.sellerAccountId)).get();
+    if (!seller) return res.status(404).json({ error: "Seller destination account not found" });
+
+    const { releaseFromSystemAccount } = await import("../../lib/citycorp_money");
+    await releaseFromSystemAccount({
+      toAccount: seller,
+      amountCents: escrow.amount,
+      systemAccountName: "ESCROW",
+      systemCategory: "escrow",
+      description: `Escrow Released: ${escrow.description || escrow.id}`,
+      type: "escrow",
+    });
+
+    await db.update(escrows).set({ status: "released" }).where(eq(escrows.id, escrow.id));
+
+    res.json({ success: true, status: "released", message: "Escrow funds successfully released to seller!" });
+  } catch (e: any) {
+    console.error("Error releasing escrow:", e);
+    res.status(500).json({ error: e.message || "Failed to release escrow" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/escrows/:escrowId/refund", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { escrows, bankAccounts } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, escrowId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    const escrow = await db.select().from(escrows).where(
+      and(eq(escrows.id, escrowId), eq(escrows.bankId, bankId))
+    ).get();
+
+    if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
+    if (escrow.status !== "funded") return res.status(400).json({ error: `Escrow is not funded (status: ${escrow.status})` });
+
+    const seller = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.sellerAccountId)).get();
+    if (!seller || !(await isUserAccountOwnerOrMember(seller, candidateIds))) {
+      return res.status(403).json({ error: "Only the seller can voluntarily surrender and refund locked escrow funds." });
+    }
+
+    const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
+    if (!buyer) return res.status(404).json({ error: "Buyer destination account not found" });
+
+    const { releaseFromSystemAccount } = await import("../../lib/citycorp_money");
+    await releaseFromSystemAccount({
+      toAccount: buyer,
+      amountCents: escrow.amount,
+      systemAccountName: "ESCROW",
+      systemCategory: "escrow",
+      description: `Escrow Voluntarily Refunded: ${escrow.description || escrow.id}`,
+      type: "escrow",
+    });
+
+    await db.update(escrows).set({ status: "refunded" }).where(eq(escrows.id, escrow.id));
+
+    res.json({ success: true, status: "refunded", message: "Escrow funds refunded back to buyer." });
+  } catch (e: any) {
+    console.error("Error refunding escrow:", e);
+    res.status(500).json({ error: e.message || "Failed to refund escrow" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/escrows/:escrowId/cancel", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { escrows, bankAccounts } = await import("../../db/schema");
+  const { eq, and, or } = await import("drizzle-orm");
+
+  try {
+    const { bankId, escrowId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    const escrow = await db.select().from(escrows).where(
+      and(eq(escrows.id, escrowId), eq(escrows.bankId, bankId))
+    ).get();
+
+    if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
+    if (escrow.status !== "pending") {
+      return res.status(400).json({ error: "Only pending (unfunded) escrow agreements can be cancelled directly. Funded escrows must be released or refunded." });
+    }
+
+    const buyer = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
+    const seller = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.sellerAccountId)).get();
+
+    const isBuyerOwner = buyer && (await isUserAccountOwnerOrMember(buyer, candidateIds));
+    const isSellerOwner = seller && (await isUserAccountOwnerOrMember(seller, candidateIds));
+
+    if (!isBuyerOwner && !isSellerOwner) {
+      return res.status(403).json({ error: "You are not a participant in this escrow agreement." });
+    }
+
+    await db.delete(escrows).where(eq(escrows.id, escrow.id));
+
+    res.json({ success: true, message: "Pending escrow agreement was cancelled and deleted." });
+  } catch (e: any) {
+    console.error("Error cancelling escrow:", e);
+    res.status(500).json({ error: e.message || "Failed to cancel escrow" });
+  }
+});
+
