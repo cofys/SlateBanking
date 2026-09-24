@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, Outlet, useLocation } from "react-router-dom";
-import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, Shield, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText, Percent, Layers, Inbox, UserRound, ShieldAlert, ArrowLeft } from "lucide-react";
+import { Activity, LayoutDashboard, Settings, LogOut, ArrowRightLeft, Users, UserSquare, BarChart3, Shield, ShieldCheck, Wrench, Code2, Users2, Landmark, Lock, CreditCard, Briefcase, Repeat, Building2, Menu, X, LogIn, FileText, Percent, Layers, Inbox, UserRound, ShieldAlert, ArrowLeft, LifeBuoy } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { AuthScreen, BrandMark, GhostButton, PrimaryButton, ScreenLoader } from "../ui/chrome";
@@ -115,6 +115,7 @@ export function BankAdminLayout() {
       links: [
         { name: "Dashboard", path: `/bank/${bankId}`, icon: LayoutDashboard },
         { name: "Needs attention", path: `/bank/${bankId}/queue`, icon: Inbox },
+        { name: "Support Desk", path: `/bank/${bankId}/tickets`, icon: LifeBuoy },
         { name: "Teller", path: `/bank/${bankId}/teller`, icon: UserRound },
         { name: "Collections", path: `/bank/${bankId}/collections`, icon: ShieldAlert },
         { name: "Analytics", path: `/bank/${bankId}/analytics`, icon: BarChart3 },
@@ -166,6 +167,8 @@ export function BankAdminLayout() {
 
   const pageName = linkGroups.flatMap((g) => g.links).find((l) => l.path === location.pathname)?.name || "Dashboard";
 
+  const activeLogo = (settings?.logoUrl || bank?.logoUrl || "").trim();
+
   return (
     <div
       className="flex h-screen font-sans"
@@ -195,8 +198,8 @@ export function BankAdminLayout() {
       >
         <div className="px-4 h-16 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            {settings?.logoUrl ? (
-              <img src={settings.logoUrl} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+            {activeLogo ? (
+              <img src={activeLogo} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-lg object-contain border p-0.5 shrink-0" style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }} />
             ) : (
               <div className="w-8 h-8 rounded-lg flex items-center justify-center font-semibold shrink-0" style={{ background: accent, color: accentFg }}>
                 {bank.name.charAt(0)}
@@ -253,11 +256,26 @@ export function BankAdminLayout() {
       </aside>
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="h-14 md:h-16 flex items-center px-4 md:px-8 shrink-0" style={{ borderBottom: "1px solid var(--border)", background: "color-mix(in oklab, var(--bg) 88%, transparent)", backdropFilter: "blur(12px)" }}>
-          <button className="md:hidden mr-3 p-2" onClick={() => setMobileMenuOpen(true)} style={{ color: "var(--fg-muted)" }}>
-            <Menu size={18} />
-          </button>
-          <h2 className="text-sm font-medium truncate">{pageName}</h2>
+        <header className="h-14 md:h-16 flex items-center justify-between px-4 md:px-8 shrink-0" style={{ borderBottom: "1px solid var(--border)", background: "color-mix(in oklab, var(--bg) 88%, transparent)", backdropFilter: "blur(12px)" }}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button className="md:hidden p-1.5 -ml-1 text-slate-400 hover:text-white shrink-0" onClick={() => setMobileMenuOpen(true)}>
+              <Menu size={20} />
+            </button>
+            <div className="md:hidden flex items-center gap-2 min-w-0">
+              {activeLogo ? (
+                <img src={activeLogo} alt="" referrerPolicy="no-referrer" className="w-7 h-7 rounded-lg object-contain border p-0.5 shrink-0" style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }} />
+              ) : (
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center font-semibold text-xs shrink-0" style={{ background: accent, color: accentFg }}>
+                  {bank.name.charAt(0)}
+                </div>
+              )}
+              <span className="font-semibold text-xs truncate max-w-[130px]">{bank.name}</span>
+            </div>
+            <h2 className="hidden md:block text-sm font-medium truncate">{pageName}</h2>
+          </div>
+          <div className="md:hidden">
+            <h2 className="text-xs font-semibold text-white/70 truncate">{pageName}</h2>
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 page-enter" key={location.pathname}>
           <ErrorBoundary>

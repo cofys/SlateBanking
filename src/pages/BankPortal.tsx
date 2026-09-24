@@ -8,12 +8,13 @@ import {
   ArrowDownLeft, ArrowUpRight, Building2, Check, ChevronRight, Copy, CreditCard,
   FileText, Landmark, Loader2, Lock, LogIn, LogOut, Plus, Send, ShieldCheck,
   Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock, Link2, CheckCircle2,
-  Users, Repeat, Play, Pause, Trash2, Calendar, UserPlus
+  Users, Repeat, Play, Pause, Trash2, Calendar, UserPlus, LifeBuoy, HelpCircle, MessageSquare,
+  ShieldAlert, ExternalLink, Bell, BellRing, Info, Terminal, ArrowRight, ChevronDown, CheckCircle
 } from "lucide-react";
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
 
-type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply" | "escrow";
+type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply" | "escrow" | "support";
 
 function greet() {
   const h = new Date().getHours();
@@ -58,8 +59,30 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [bondSimAmount, setBondSimAmount] = useState<string>("1000");
   const [logoBroken, setLogoBroken] = useState(false);
   const [destMatches, setDestMatches] = useState<any[]>([]);
+
+  useEffect(() => {
+    setLogoBroken(false);
+  }, [bankId, bank?.logoUrl, bank?.settings?.logoUrl]);
   const [destHint, setDestHint] = useState("");
   const [advanceCard, setAdvanceCard] = useState<any | null>(null);
+
+  // Customer Notifications & Deposit Guidance State
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [newAccountModalData, setNewAccountModalData] = useState<{
+    accountName: string;
+    accountId?: string;
+    tierName?: string;
+    minBalance?: number;
+    command: string;
+    message?: string;
+  } | null>(null);
+  const [depositGuideModal, setDepositGuideModal] = useState<{
+    accountName: string;
+    minBalance: number;
+    currentBalance: number;
+    deficit: number;
+    command: string;
+  } | null>(null);
 
   const [sendFrom, setSendFrom] = useState("");
   const [sendTo, setSendTo] = useState("");
@@ -107,6 +130,22 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [splitParticipants, setSplitParticipants] = useState<string[]>([""]);
   const [splitSubmitting, setSplitSubmitting] = useState(false);
 
+  // Customer Support & Dispute Tickets State
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
+  const [newTicketModalOpen, setNewTicketModalOpen] = useState(false);
+  const [disputeModalOpen, setDisputeModalOpen] = useState(false);
+  const [disputeTx, setDisputeTx] = useState<any | null>(null);
+  const [disputeEscrow, setDisputeEscrow] = useState<any | null>(null);
+  const [ticketSubject, setTicketSubject] = useState("");
+  const [ticketMessage, setTicketMessage] = useState("");
+  const [ticketCategory, setTicketCategory] = useState("general");
+  const [ticketPriority, setTicketPriority] = useState("medium");
+  const [ticketAccountId, setTicketAccountId] = useState("");
+  const [ticketSubmitting, setTicketSubmitting] = useState(false);
+  const [replyMessage, setReplyMessage] = useState("");
+  const [replySubmitting, setReplySubmitting] = useState(false);
+
   const brand = hexOr(bank?.brandingColor || bank?.settings?.brandingColor);
   const brandFg = accentForeground(brand);
   const settings = bank?.settings || {};
@@ -120,6 +159,37 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       await navigator.clipboard.writeText(text);
       setCopied(id);
       setTimeout(() => setCopied(null), 1500);
+    } catch {}
+  };
+
+  const markNotificationAsRead = async (notifId: string) => {
+    try {
+      await fetch(`/api/portal/${bankId}/notifications/${notifId}/read`, { method: "POST" });
+      setUserData((prev: any) => {
+        if (!prev) return prev;
+        const notifs = (prev.notifications || []).map((n: any) => n.id === notifId ? { ...n, isRead: true } : n);
+        return {
+          ...prev,
+          notifications: notifs,
+          unreadNotificationCount: notifs.filter((n: any) => !n.isRead).length
+        };
+      });
+    } catch {}
+  };
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await fetch(`/api/portal/${bankId}/notifications/read-all`, { method: "POST" });
+      setUserData((prev: any) => {
+        if (!prev) return prev;
+        const notifs = (prev.notifications || []).map((n: any) => ({ ...n, isRead: true }));
+        return {
+          ...prev,
+          notifications: notifs,
+          unreadNotificationCount: 0
+        };
+      });
+      flash("All notifications marked as read");
     } catch {}
   };
 
@@ -211,9 +281,26 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       .catch(() => {});
   };
 
+  const loadPortalTickets = () => {
+    if (!bankId) return;
+    fetch(`/api/portal/${bankId}/tickets`)
+      .then(r => r.json())
+      .then(d => {
+        if (Array.isArray(d)) {
+          setTickets(d);
+          if (selectedTicket) {
+            const updated = d.find(t => t.id === selectedTicket.id);
+            if (updated) setSelectedTicket(updated);
+          }
+        }
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     if (bankId) {
       loadPortalEscrows();
+      loadPortalTickets();
       fetch(`/api/portal/${bankId}/catalog`)
         .then((r) => r.json())
         .then((d) => {
@@ -235,6 +322,29 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         .catch(() => {});
     }
   }, [view, bankId]);
+
+  // Active polling when in support view or viewing ticket thread
+  useEffect(() => {
+    if (!bankId || (view !== "support" && !selectedTicket)) return;
+    const t = setInterval(loadPortalTickets, 8000);
+    return () => clearInterval(t);
+  }, [bankId, view, selectedTicket?.id]);
+
+  const closeTicket = async (ticketId: string) => {
+    if (!window.confirm("Close and mark this support ticket resolved?")) return;
+    try {
+      const res = await fetch(`/api/portal/${bankId}/tickets/${ticketId}/close`, { method: "POST" });
+      if (res.ok) {
+        flash("Support ticket closed.");
+        loadPortalTickets();
+        if (selectedTicket?.id === ticketId) {
+          setSelectedTicket((prev: any) => prev ? { ...prev, status: "closed" } : null);
+        }
+      }
+    } catch {
+      flash("Error closing ticket");
+    }
+  };
 
   const accounts = userData?.accounts || [];
   const availableTiers = (
@@ -396,14 +506,27 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         }),
       });
       const d = await res.json();
-      if (!res.ok) flash(d.error || "Could not open account");
-      else {
-        flash("Account opened.");
+      if (!res.ok) {
+        flash(d.error || "Could not open account");
+      } else {
+        flash("🎉 Account opened successfully!");
         form.reset();
         setAccountNameChoice("");
         setSelectedTierId("");
-        setView("home");
         handleSearch();
+
+        const bankCorp = d.depositInstructions?.bankCorpName || bank?.name?.replace(/\s+/g, '') || "Bank";
+        const depCmd = d.depositInstructions?.command || `/c account deposit ${bankCorp} ${accName} 100`;
+        const minBal = d.depositInstructions?.minBalanceCents ?? d.account?.minBalance ?? (chosenTier?.minBalance || 0);
+
+        setNewAccountModalData({
+          accountName: accName,
+          accountId: d.account?.id,
+          tierName: d.account?.tierName || chosenTier?.name || "Standard Tier",
+          minBalance: minBal,
+          command: depCmd,
+          message: d.message || "Account registered and ready to fund!",
+        });
       }
     } catch {
       flash("Could not open account");
@@ -844,13 +967,110 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     setSplitSubmitting(false);
   };
 
+  const startDisputeFromTx = (tx: any) => {
+    setDisputeTx(tx);
+    setDisputeEscrow(null);
+    setTicketSubject(`Dispute: Transaction #${tx.id.slice(0, 8)} (${formatMoney(tx.amount)})`);
+    setTicketCategory("dispute");
+    setTicketPriority("high");
+    setTicketAccountId(tx.fromAccountId || (accounts[0]?.id || ""));
+    setTicketMessage(`I would like to dispute transaction #${tx.id} for ${formatMoney(tx.amount)} dated ${tx.createdAt ? format(new Date(tx.createdAt), "MMM d, yyyy h:mm a") : "recently"}.\nReason: `);
+    setDisputeModalOpen(true);
+  };
+
+  const startDisputeFromEscrow = (esc: any) => {
+    setDisputeEscrow(esc);
+    setDisputeTx(null);
+    setTicketSubject(`Escrow Dispute: #${esc.id.slice(0, 8)} - ${esc.description || "Agreement"}`);
+    setTicketCategory("dispute");
+    setTicketPriority("high");
+    setTicketAccountId(esc.buyerAccountId || (accounts[0]?.id || ""));
+    setTicketMessage(`I would like to request staff mediation/intervention for Escrow #${esc.id} (${formatMoney(esc.amount)}).\nContract terms or dispute details: `);
+    setDisputeModalOpen(true);
+  };
+
+  const submitSupportTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ticketSubject.trim()) {
+      flash("Please provide a ticket subject.");
+      return;
+    }
+    setTicketSubmitting(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/tickets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: ticketSubject,
+          description: ticketMessage,
+          initialMessage: ticketMessage,
+          category: ticketCategory,
+          priority: ticketPriority,
+          accountId: ticketAccountId || (accounts[0]?.id || undefined),
+          transactionId: disputeTx?.id || undefined,
+          escrowId: disputeEscrow?.id || undefined,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        flash(d.error || "Failed to submit ticket");
+      } else {
+        flash("Support ticket submitted! Bank staff have been notified.");
+        setNewTicketModalOpen(false);
+        setDisputeModalOpen(false);
+        setTicketSubject("");
+        setTicketMessage("");
+        setDisputeTx(null);
+        setDisputeEscrow(null);
+        loadPortalTickets();
+        setSelectedTicket(d);
+        setView("support");
+      }
+    } catch {
+      flash("Error submitting ticket");
+    }
+    setTicketSubmitting(false);
+  };
+
+  const submitTicketReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTicket || !replyMessage.trim()) return;
+    setReplySubmitting(true);
+    try {
+      const res = await fetch(`/api/portal/${bankId}/tickets/${selectedTicket.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: replyMessage.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        flash(d.error || "Failed to send reply");
+      } else {
+        setReplyMessage("");
+        loadPortalTickets();
+      }
+    } catch {
+      flash("Error sending reply");
+    }
+    setReplySubmitting(false);
+  };
+
+  const activeLogo = (settings.logoUrl || bank?.logoUrl || "").trim();
+
   if (!user) {
     return (
       <div className="min-h-screen relative overflow-hidden" style={shell}>
         <div className="relative z-10 max-w-md mx-auto px-5 py-16 space-y-10 page-enter">
           <div className="text-center space-y-5">
-            {((settings.logoUrl || bank.logoUrl) && !logoBroken) ? (
-              <img src={settings.logoUrl || bank.logoUrl} alt="" referrerPolicy="no-referrer" onError={() => setLogoBroken(true)} className="w-20 h-20 rounded-3xl mx-auto object-contain border p-2" style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }} />
+            {(activeLogo && !logoBroken) ? (
+              <img
+                src={activeLogo}
+                alt={bank.name}
+                referrerPolicy="no-referrer"
+                onError={() => setLogoBroken(true)}
+                className="w-20 h-20 rounded-3xl mx-auto object-contain border p-2 shrink-0 shadow-lg"
+                style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }}
+              />
             ) : (
               <BrandMark letter={bank.name} color={brand} size={72} />
             )}
@@ -888,19 +1108,64 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   return (
     <div className="min-h-screen" style={shell}>
       <header className="sticky top-0 z-30" style={{ borderBottom: "1px solid var(--border)", background: "color-mix(in oklab, var(--bg) 78%, transparent)", backdropFilter: "blur(16px)" }}>
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            {((settings.logoUrl || bank.logoUrl) && !logoBroken) ? (
-              <img src={settings.logoUrl || bank.logoUrl} className="w-9 h-9 rounded-xl object-contain border" style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }} alt="" referrerPolicy="no-referrer" onError={() => setLogoBroken(true)} />
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-2 sm:gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            {(activeLogo && !logoBroken) ? (
+              <img
+                src={activeLogo}
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-contain border p-0.5 shrink-0"
+                style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }}
+                alt={bank.name}
+                referrerPolicy="no-referrer"
+                onError={() => setLogoBroken(true)}
+              />
             ) : (
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center font-semibold" style={{ background: brand, color: brandFg }}>{bank.name.slice(0, 1)}</div>
+              <div
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-semibold text-sm shrink-0"
+                style={{ background: brand, color: brandFg }}
+              >
+                {bank.name.slice(0, 1)}
+              </div>
             )}
             <div className="min-w-0">
-              <p className="font-semibold truncate leading-tight">{bank.name}</p>
-              <p className="text-[11px] truncate" style={{ color: "var(--fg-subtle)" }}>{settings.tagline || "Online banking"}</p>
+              <p className="font-semibold truncate text-sm sm:text-base leading-tight">{bank.name}</p>
+              <p className="text-[10px] sm:text-[11px] truncate" style={{ color: "var(--fg-subtle)" }}>{settings.tagline || "Online banking"}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setNotificationsOpen(true)}
+              className={`relative flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-all ${
+                notificationsOpen
+                  ? "bg-white/15 border-white/30 text-white"
+                  : "border-white/10 hover:border-white/20 text-white/70 hover:text-white"
+              }`}
+              title="Notifications & Deposit Alerts"
+            >
+              <Bell size={14} className={(userData?.unreadNotificationCount || 0) > 0 ? "text-amber-400 animate-bounce" : ""} />
+              <span className="hidden sm:inline">Alerts</span>
+              {(userData?.unreadNotificationCount || 0) > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-black leading-none font-mono">
+                  {userData.unreadNotificationCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setView("support")}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-all ${
+                view === "support"
+                  ? "bg-white/15 border-white/30 text-white"
+                  : "border-white/10 hover:border-white/20 text-white/70 hover:text-white"
+              }`}
+              title="Customer Support & Disputes"
+            >
+              <LifeBuoy size={14} className={tickets.some((t: any) => t.status === "open") ? "text-amber-400" : ""} />
+              <span className="hidden sm:inline">Support</span>
+              {tickets.filter((t: any) => t.status === "open").length > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              )}
+            </button>
             {(userData?.isStaff || user.isGlobalAdmin) && (
               <Link to={`/bank/${bankId}`} className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border" style={{ borderColor: "var(--border)", color: "var(--fg-muted)" }}>
                 <ShieldCheck size={13} /> Desk
@@ -940,6 +1205,47 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
         {view === "home" && (
           <div className="space-y-6">
+            {/* Minimum Balance Alert Banner */}
+            {accounts.some((a: any) => a.isBelowMinBalance) && (
+              <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400">
+                      <AlertTriangle size={18} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-amber-200">Minimum Balance Maintenance Required</h4>
+                      <p className="text-xs text-amber-200/70">One or more accounts have fallen below their required tier balance.</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setNotificationsOpen(true)}
+                    className="text-xs font-bold text-amber-300 hover:text-white bg-amber-500/20 hover:bg-amber-500/30 px-3 py-1.5 rounded-lg border border-amber-500/30 transition"
+                  >
+                    View Notice
+                  </button>
+                </div>
+                <div className="p-3 bg-black/40 border border-white/5 rounded-xl text-xs space-y-1.5 font-mono text-white/90">
+                  <span className="text-[10px] text-white/40 block font-sans uppercase font-bold tracking-wider">In-Game Deposit Command:</span>
+                  <div className="flex items-center justify-between gap-2 overflow-x-auto">
+                    <code className="text-amber-300">
+                      {accounts.find((a: any) => a.isBelowMinBalance)?.depositCommand || `/c account deposit ${bank?.name?.replace(/\s+/g, '')} <account> <amount>`}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetCmd = accounts.find((a: any) => a.isBelowMinBalance)?.depositCommand || `/c account deposit ${bank?.name?.replace(/\s+/g, '')} ${accounts[0]?.accountName} 100`;
+                        copy(targetCmd, "banner_dep_cmd");
+                      }}
+                      className="shrink-0 flex items-center gap-1 font-sans text-[11px] font-bold text-black bg-amber-400 hover:bg-amber-300 px-2.5 py-1 rounded transition"
+                    >
+                      {copied === "banner_dep_cmd" ? <Check size={12} /> : <Copy size={12} />}
+                      <span>{copied === "banner_dep_cmd" ? "Copied" : "Copy"}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1042,6 +1348,30 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         {acc.isFrozen && <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-full">Frozen</span>}
                       </div>
                       <p className="text-2xl font-black tabular-nums mt-4">{formatMoney(acc.balance)}</p>
+
+                      {acc.isBelowMinBalance && (
+                        <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2">
+                          <div className="flex items-center justify-between gap-1 text-[11px]">
+                            <span className="font-bold text-amber-300 flex items-center gap-1">
+                              <AlertTriangle size={12} /> Below Min Balance ({formatMoney(acc.minBalance)})
+                            </span>
+                            <span className="text-amber-200/70 font-mono">
+                              Deficit: {formatMoney(acc.deficitCents || (acc.minBalance - acc.balance))}
+                            </span>
+                          </div>
+                          {acc.depositCommand && (
+                            <button
+                              type="button"
+                              onClick={() => copy(acc.depositCommand, `dep_${acc.id}`)}
+                              className="w-full flex items-center justify-center gap-1.5 font-mono text-[10px] font-bold text-black bg-amber-400 hover:bg-amber-300 py-1.5 px-2 rounded-lg transition"
+                            >
+                              {copied === `dep_${acc.id}` ? <Check size={11} /> : <Terminal size={11} />}
+                              <span>{copied === `dep_${acc.id}` ? "Copied Command to Clipboard!" : "Copy Deposit Command"}</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                       <div className="mt-3 flex items-center justify-between">
                         <button onClick={() => copy(acc.id, acc.id)} className="text-[11px] font-mono text-white/30 hover:text-white flex items-center gap-1">
                           {copied === acc.id ? <Check size={11} /> : <Copy size={11} />}
@@ -2017,6 +2347,18 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 Cancel Draft
                               </button>
                             )}
+
+                            {/* Dispute / Mediation Request */}
+                            {(escrow.status === "funded" || escrow.status === "pending") && (
+                              <button
+                                onClick={() => startDisputeFromEscrow(escrow)}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 flex items-center gap-1.5 transition-colors"
+                                title="Request bank staff mediation or open a dispute"
+                              >
+                                <ShieldAlert size={12} />
+                                <span>Mediation</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2109,81 +2451,128 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 const effectivePrefix = activeSelectedTier?.customPrefix || (isBiz ? (settings.businessAccountPrefix || "CORP-") : (settings.personalAccountPrefix || "ACC-"));
                 const effectiveNamingMode = activeSelectedTier?.namingMode || (isBiz ? (settings.businessAccountNamingMode || "business_name") : (settings.personalAccountNamingMode || "custom"));
                 const discordName = user?.username || (user as any)?.global_name || "client";
+                const targetAccountName = `${effectivePrefix}${(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? discordName : (accountNameChoice || (isBiz ? "AcmeCorp" : "main"))}`;
+                const bankCorpName = bank?.name?.replace(/\s+/g, '') || "Bank";
+                const suggestedDepositCents = activeSelectedTier?.minBalance && activeSelectedTier.minBalance > 0 ? activeSelectedTier.minBalance : 10000;
+                const liveCommandPreview = `/c account deposit ${bankCorpName} ${targetAccountName} ${(suggestedDepositCents / 100).toFixed(0)}`;
 
                 return (
-                  <form onSubmit={openAccount} className="rounded-3xl border border-white/10 p-6 space-y-5 bg-white/[0.02]">
-                    <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                  <form onSubmit={openAccount} className="rounded-3xl border border-white/10 p-6 sm:p-8 space-y-6 bg-white/[0.02]">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-5">
                       <div>
-                        <h3 className="font-bold text-base flex items-center gap-2"><Wallet size={18} /> Open New Bank Account</h3>
-                        <p className="text-xs text-white/45 mt-0.5">Select a tailored account tier for personal daily finances or commercial business ops.</p>
+                        <h3 className="font-bold text-lg text-white flex items-center gap-2.5">
+                          <Wallet size={20} className="text-indigo-400" />
+                          <span>Open New Deposit Account</span>
+                        </h3>
+                        <p className="text-xs text-white/50 mt-1">Select an account tier and configure your deposit destination.</p>
                       </div>
-                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full uppercase font-mono font-bold">
-                        Instant Approval
+                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full uppercase font-mono font-bold tracking-wider">
+                        Instant Setup
                       </span>
                     </div>
 
                     {availableTiers.length > 0 ? (
-                      <div className="space-y-3">
-                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide">Select Account Product Tier</label>
-                        <select 
-                          name="tierId" 
-                          value={selectedTierId || (availableTiers.find((t: any) => t.isDefault)?.id || availableTiers[0]?.id || "")}
-                          onChange={(e) => setSelectedTierId(e.target.value)}
-                          required
-                          className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
-                        >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-white/60 uppercase tracking-wider">Choose Account Tier</label>
+                          <span className="text-xs text-white/40">{availableTiers.length} available option{availableTiers.length === 1 ? "" : "s"}</span>
+                        </div>
+
+                        {/* Visual Tier Cards Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
                           {availableTiers.map((t: any) => {
+                            const isSelected = (selectedTierId || (availableTiers.find((x: any) => x.isDefault)?.id || availableTiers[0]?.id)) === t.id;
                             const tHeld = accounts.filter((a: any) => a.tierId === t.id).length;
                             const isCapReached = typeof t.maxAccountsPerUser === "number" && t.maxAccountsPerUser > 0 && tHeld >= t.maxAccountsPerUser;
+
                             return (
-                              <option key={t.id} value={t.id} className="bg-[#18181c] text-[#f4f4f5]">
-                                {t.name} ({t.type === "business" ? "Business" : "Personal"})
-                                {t.apyPercent ? ` · ${(Number(t.apyPercent) / 100).toFixed(2)}% APY` : ""}
-                                {t.monthlyFee ? ` · $${(Number(t.monthlyFee) / 100).toFixed(2)}/mo` : ""}
-                                {t.isDefault ? " · Default" : ""}
-                                {isCapReached ? ` [Limit Reached: ${tHeld}/${t.maxAccountsPerUser}]` : (tHeld > 0 ? ` (Holding: ${tHeld})` : "")}
-                              </option>
+                              <div
+                                key={t.id}
+                                onClick={() => setSelectedTierId(t.id)}
+                                className={`cursor-pointer rounded-2xl p-4.5 border transition-all relative flex flex-col justify-between space-y-3.5 ${
+                                  isSelected
+                                    ? "bg-gradient-to-b from-indigo-500/15 via-white/[0.04] to-white/[0.02] border-indigo-400/50 shadow-lg shadow-indigo-500/10"
+                                    : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
+                                }`}
+                              >
+                                <div>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                          t.type === "business" ? "bg-amber-500/15 text-amber-300 border border-amber-500/30" : "bg-blue-500/15 text-blue-300 border border-blue-500/30"
+                                        }`}>
+                                          {t.type === "business" ? "Business" : "Personal"}
+                                        </span>
+                                        {t.isDefault && (
+                                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">Default</span>
+                                        )}
+                                      </div>
+                                      <h4 className="font-bold text-white text-base mt-2">{t.name}</h4>
+                                    </div>
+                                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${
+                                      isSelected ? "bg-indigo-500 border-indigo-400 text-white" : "border-white/20 bg-white/5 text-transparent"
+                                    }`}>
+                                      <Check size={12} strokeWidth={3} />
+                                    </div>
+                                  </div>
+
+                                  {t.description && (
+                                    <p className="text-xs text-white/50 mt-1.5 line-clamp-2 leading-relaxed">{t.description}</p>
+                                  )}
+                                </div>
+
+                                <div className="space-y-2 pt-2 border-t border-white/5 text-xs">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-white/40 text-[11px]">Interest Yield</span>
+                                    <span className="font-bold text-emerald-400">
+                                      {t.apyPercent > 0 ? `${(Number(t.apyPercent) / 100).toFixed(2)}% APY` : "0.00%"}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-white/40 text-[11px]">Min Required Balance</span>
+                                    <span className={`font-mono font-bold ${t.minBalance > 0 ? "text-amber-300" : "text-white/70"}`}>
+                                      {t.minBalance > 0 ? formatMoney(t.minBalance) : "$0.00 (None)"}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-white/40 text-[11px]">Monthly Fee</span>
+                                    <span className="font-bold text-white/80">
+                                      {t.monthlyFee > 0 ? `${formatMoney(t.monthlyFee)}/mo` : "Free"}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {isCapReached && (
+                                  <div className="text-[10px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-lg text-center">
+                                    Holding Limit Reached ({tHeld}/{t.maxAccountsPerUser})
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
-                        </select>
+                        </div>
 
-                        {activeSelectedTier && (
-                          <div className="text-xs bg-white/[0.03] border border-white/10 rounded-2xl p-4 space-y-2">
-                            {activeSelectedTier.description && (
-                              <p className="text-white/85 font-medium">{activeSelectedTier.description}</p>
-                            )}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-white/5 text-[11px]">
-                              <div>
-                                <span className="text-white/40 block">Account Type</span>
-                                <span className="font-bold text-white capitalize">{activeSelectedTier.type}</span>
-                              </div>
-                              <div>
-                                <span className="text-white/40 block">Annual Yield</span>
-                                <span className="font-bold text-emerald-400">
-                                  {activeSelectedTier.apyPercent > 0 ? `${(Number(activeSelectedTier.apyPercent) / 100).toFixed(2)}% APY` : "0.00%"}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-white/40 block">Maintenance Fee</span>
-                                <span className="font-bold text-white">
-                                  {activeSelectedTier.monthlyFee > 0 ? `${formatMoney(activeSelectedTier.monthlyFee)}/mo` : "Free"}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-white/40 block">Overdraft / Line</span>
-                                <span className="font-bold text-indigo-300">
-                                  {activeSelectedTier.creditLimit > 0 ? formatMoney(activeSelectedTier.creditLimit) : "None"}
-                                </span>
-                              </div>
+                        {/* Minimum Balance Requirement Explanatory Alert */}
+                        {activeSelectedTier && activeSelectedTier.minBalance > 0 && (
+                          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-3 text-xs">
+                            <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <span className="font-bold text-amber-200">
+                                Minimum Maintenance Balance Required: {formatMoney(activeSelectedTier.minBalance)}
+                              </span>
+                              <p className="text-amber-200/80 leading-relaxed">
+                                Once created, please fund this account in-game using the deposit command to satisfy the tier minimum. You will receive an in-game and portal notification reminder until funded.
+                              </p>
                             </div>
                           </div>
                         )}
 
                         {cannotRegisterReason && (
-                          <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs">
-                            <AlertTriangle size={16} className="shrink-0 mt-0.5 text-rose-400" />
+                          <div className="flex items-start gap-2.5 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs">
+                            <AlertTriangle size={18} className="shrink-0 mt-0.5 text-rose-400" />
                             <div>
-                              <strong className="block font-semibold">Tier Registration Unavailable</strong>
+                              <strong className="block font-semibold">Tier Policy Restriction</strong>
                               <p className="text-rose-200/90 mt-0.5">{cannotRegisterReason}</p>
                             </div>
                           </div>
@@ -2200,21 +2589,24 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       </div>
                     )}
 
-                    {/* Dynamic Naming */}
-                    <div className="space-y-3 pt-1">
+                    {/* Hidden tier id input for standard form submission */}
+                    <input type="hidden" name="tierId" value={selectedTierId || (availableTiers.find((t: any) => t.isDefault)?.id || availableTiers[0]?.id || "")} />
+
+                    {/* Dynamic Naming & In-Game Command Preview */}
+                    <div className="space-y-4 pt-2 border-t border-white/5">
                       {!isBiz && effectiveNamingMode === "choice_or_username" && (
                         <div className="flex gap-2">
                           <button
                             type="button"
                             onClick={() => setNamingPref("custom")}
-                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-medium border transition-colors ${namingPref === "custom" ? "bg-white/10 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
+                            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${namingPref === "custom" ? "bg-white/15 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
                           >
-                            Custom Tag
+                            Custom Account Name
                           </button>
                           <button
                             type="button"
                             onClick={() => setNamingPref("discord")}
-                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-medium border transition-colors ${namingPref === "discord" ? "bg-white/10 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
+                            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${namingPref === "discord" ? "bg-white/15 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
                           >
                             Discord Handle (@{discordName})
                           </button>
@@ -2223,23 +2615,25 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
                       <div>
                         <div className="flex justify-between items-center mb-1.5">
-                          <label className="text-xs font-semibold text-white/50 uppercase tracking-wide">
-                            {isBiz ? "Business / Entity Name" : "Account Designation"}
+                          <label className="text-xs font-bold text-white/60 uppercase tracking-wider">
+                            {isBiz ? "Commercial Business / Entity Name" : "Account Identifier"}
                           </label>
                           <span className="text-[11px] font-mono text-white/40">
-                            ID: <strong className="text-white/80">{effectivePrefix}{(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? discordName : (accountNameChoice || (isBiz ? "AcmeCorp" : "main"))}</strong>
+                            Resulting In-Game ID: <strong className="text-indigo-300 font-bold">{targetAccountName}</strong>
                           </span>
                         </div>
 
                         {(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? (
-                          <div className="flex items-center bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm text-white/80 font-mono">
-                            <span className="text-indigo-400 font-semibold">{effectivePrefix}</span>
+                          <div className="flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white font-mono">
+                            <span className="text-indigo-400 font-bold">{effectivePrefix}</span>
                             <span>{discordName}</span>
-                            <span className="ml-auto text-[11px] text-white/30 uppercase font-sans">Synced with Discord</span>
+                            <span className="ml-auto text-[11px] text-emerald-400 uppercase font-sans font-bold flex items-center gap-1">
+                              <CheckCircle2 size={13} /> Synced Handle
+                            </span>
                           </div>
                         ) : (
-                          <div className="flex items-center bg-white/5 border border-white/10 rounded-xl overflow-hidden focus-within:border-white/30">
-                            <span className="px-3.5 py-3 bg-white/5 text-white/50 font-mono text-sm border-r border-white/10 select-none">
+                          <div className="flex items-center bg-white/5 border border-white/10 rounded-xl overflow-hidden focus-within:border-indigo-400/60 focus-within:ring-1 focus-within:ring-indigo-400/30 transition">
+                            <span className="px-4 py-3.5 bg-white/5 text-indigo-300 font-mono text-sm border-r border-white/10 select-none font-bold">
                               {effectivePrefix}
                             </span>
                             <input 
@@ -2247,20 +2641,53 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               required 
                               value={accountNameChoice}
                               onChange={(e) => setAccountNameChoice(e.target.value)}
-                              placeholder={isBiz ? "e.g. Acme Industries Ltd." : "e.g. daily-spending"} 
-                              className="flex-1 bg-transparent px-3.5 py-3 text-sm text-white focus:outline-none placeholder:text-white/20" 
+                              placeholder={isBiz ? "e.g. AcmeIndustries" : "e.g. savings"} 
+                              className="flex-1 bg-transparent px-4 py-3.5 text-sm text-white focus:outline-none placeholder:text-white/20 font-medium" 
                             />
                           </div>
                         )}
+                      </div>
+
+                      {/* Live In-Game Deposit Command Preview */}
+                      <div className="p-3.5 rounded-2xl bg-black/40 border border-white/10 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-white/50 font-sans">
+                          <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-white/60">
+                            <Terminal size={13} className="text-emerald-400" /> In-Game Deposit Command Preview
+                          </span>
+                          <span className="text-[10px] text-white/40">Run in Minecraft chat</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 overflow-x-auto font-mono text-xs">
+                          <span className="text-emerald-300 font-semibold truncate select-all">{liveCommandPreview}</span>
+                          <button
+                            type="button"
+                            onClick={() => copy(liveCommandPreview, "preview_cmd")}
+                            className="shrink-0 flex items-center gap-1 text-[10px] font-sans font-bold text-white/70 hover:text-white bg-white/10 hover:bg-white/20 px-2 py-1 rounded transition"
+                          >
+                            {copied === "preview_cmd" ? <Check size={11} /> : <Copy size={11} />}
+                            <span>{copied === "preview_cmd" ? "Copied" : "Copy"}</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
 
                     <button
                       disabled={actionPending || Boolean(cannotRegisterReason)}
-                      className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full py-4 rounded-2xl font-bold text-sm text-white shadow-xl transition-all hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       style={btnBrand}
                     >
-                      {actionPending ? "Opening Account…" : cannotRegisterReason ? "Account Limit Restricted" : "Open Account Now"}
+                      {actionPending ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          <span>Provisioning Account…</span>
+                        </>
+                      ) : cannotRegisterReason ? (
+                        <span>Registration Policy Restricted</span>
+                      ) : (
+                        <>
+                          <span>Open Account & View In-Game Setup</span>
+                          <ArrowRight size={16} />
+                        </>
+                      )}
                     </button>
                   </form>
                 );
@@ -2586,9 +3013,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <input
                       name="sellerIdentifier"
                       required
-                      placeholder="Account ID, account name, or Discord/MC handle"
+                      placeholder="e.g. ACC-steve, steve, @steve, or MC username"
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:border-white/30"
                     />
+                    <p className="text-[11px] text-white/40 mt-1">
+                      Accepts account names (with or without prefix), Account IDs, Discord tags, or Minecraft player names.
+                    </p>
                   </div>
                 </div>
 
@@ -2643,6 +3073,149 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   {actionPending ? "Initiating Escrow Agreement…" : "Create & Lock Escrow Agreement"}
                 </button>
               </form>
+            )}
+          </div>
+        )}
+
+        {/* VIEW: SUPPORT & DISPUTES */}
+        {view === "support" && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/10">
+              <div>
+                <h2 className="text-2xl font-black flex items-center gap-2.5">
+                  <LifeBuoy className="text-amber-400" size={26} /> Customer Support & Disputes
+                </h2>
+                <p className="text-sm text-white/50 mt-1">
+                  Submit inquiry tickets, request mediation on escrow orders, or report fraudulent and accidental transactions.
+                </p>
+              </div>
+              <button
+                onClick={() => setNewTicketModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 self-start sm:self-auto shadow-lg transition-transform active:scale-95"
+                style={btnBrand}
+              >
+                <Plus size={15} /> New Support Ticket
+              </button>
+            </div>
+
+            {/* Quick Stat Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                <p className="text-[11px] text-white/40 uppercase font-semibold">Total Tickets</p>
+                <p className="text-2xl font-black font-mono text-white mt-1">{tickets.length}</p>
+                <p className="text-[11px] text-white/30 mt-1">All time inquiries</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                <p className="text-[11px] text-white/40 uppercase font-semibold">Awaiting Staff</p>
+                <p className="text-2xl font-black font-mono text-amber-400 mt-1">
+                  {tickets.filter((t: any) => t.status === "open").length}
+                </p>
+                <p className="text-[11px] text-white/30 mt-1">Under review</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                <p className="text-[11px] text-white/40 uppercase font-semibold">In Progress</p>
+                <p className="text-2xl font-black font-mono text-indigo-400 mt-1">
+                  {tickets.filter((t: any) => t.status === "in_progress").length}
+                </p>
+                <p className="text-[11px] text-white/30 mt-1">Active investigations</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                <p className="text-[11px] text-white/40 uppercase font-semibold">Resolved</p>
+                <p className="text-2xl font-black font-mono text-emerald-400 mt-1">
+                  {tickets.filter((t: any) => t.status === "resolved" || t.status === "closed").length}
+                </p>
+                <p className="text-[11px] text-white/30 mt-1">Settled & closed</p>
+              </div>
+            </div>
+
+            {/* Ticket List */}
+            {tickets.length === 0 ? (
+              <div className="rounded-3xl border border-white/10 p-12 bg-white/[0.02] text-center space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 mx-auto flex items-center justify-center">
+                  <LifeBuoy size={28} />
+                </div>
+                <h3 className="font-bold text-white text-lg">No support tickets or disputes on record</h3>
+                <p className="text-xs text-white/45 max-w-md mx-auto">
+                  Have questions regarding your accounts, cards, or need help with a transaction dispute? Open a support ticket to reach the bank's administrative staff.
+                </p>
+                <button
+                  onClick={() => setNewTicketModalOpen(true)}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold shadow transition-transform active:scale-95"
+                  style={btnBrand}
+                >
+                  Open Support Ticket
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {tickets.map((t: any) => (
+                  <div
+                    key={t.id}
+                    onClick={() => setSelectedTicket(t)}
+                    className="rounded-2xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.04] p-5 cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+                          t.status === "open"
+                            ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+                            : t.status === "in_progress"
+                            ? "bg-blue-500/15 border-blue-500/30 text-blue-300"
+                            : t.status === "resolved"
+                            ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
+                            : "bg-white/10 border-white/10 text-white/50"
+                        }`}>
+                          {t.status.replace("_", " ")}
+                        </span>
+
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+                          t.priority === "urgent" || t.priority === "high"
+                            ? "bg-rose-500/15 border-rose-500/30 text-rose-300"
+                            : "bg-white/5 border-white/10 text-white/60"
+                        }`}>
+                          {t.priority}
+                        </span>
+
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white/5 text-white/60 border border-white/5 capitalize">
+                          {t.category.replace("_", " ")}
+                        </span>
+
+                        <span className="text-[11px] font-mono text-white/30">
+                          #{t.id.slice(0, 10)}
+                        </span>
+                      </div>
+
+                      <h4 className="font-bold text-sm text-white/95 truncate">{t.subject}</h4>
+
+                      <div className="flex items-center gap-3 text-xs text-white/40 flex-wrap">
+                        {t.transactionId && (
+                          <span className="flex items-center gap-1 text-rose-400/80 font-mono text-[11px]">
+                            <ShieldAlert size={12} /> Tx: {t.transactionId.slice(0, 8)}…
+                          </span>
+                        )}
+                        {t.escrowId && (
+                          <span className="flex items-center gap-1 text-emerald-400/80 font-mono text-[11px]">
+                            <ShieldCheck size={12} /> Escrow: {t.escrowId.slice(0, 8)}…
+                          </span>
+                        )}
+                        <span>Updated {t.updatedAt ? format(new Date(t.updatedAt), "MMM d, h:mm a") : "Recently"}</span>
+                        {t.messages && (
+                          <span className="text-white/30">· {t.messages.length} message{t.messages.length === 1 ? "" : "s"}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <button
+                        type="button"
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/15 text-white transition"
+                      >
+                        View Thread →
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -3257,7 +3830,19 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               </div>
 
               {/* Modal Actions */}
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2 pt-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const txToDispute = selectedTx;
+                    setSelectedTx(null);
+                    startDisputeFromTx(txToDispute);
+                  }}
+                  className="flex-1 min-w-[120px] py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <ShieldAlert size={14} />
+                  <span>Dispute / Help</span>
+                </button>
                 {!accounts.some((a: any) => a.id === selectedTx.toAccountId) && (
                   <button
                     type="button"
@@ -3266,7 +3851,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       setSelectedTx(null);
                       startSplitBill(txToSplit);
                     }}
-                    className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                    className="flex-1 min-w-[110px] py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition"
                   >
                     <Users size={14} />
                     <span>Split Bill</span>
@@ -3275,7 +3860,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 <button
                   type="button"
                   onClick={() => setSelectedTx(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-bold transition"
+                  className="py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-bold transition"
                 >
                   Close
                 </button>
@@ -3507,6 +4092,557 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-bold transition"
                 >
                   Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* New Support Ticket Modal */}
+      <AnimatePresence>
+        {newTicketModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="bg-[#121218] border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-4 shadow-2xl"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-2xl bg-amber-500/15 text-amber-300">
+                    <LifeBuoy size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-base">Open Support Ticket</h3>
+                    <p className="text-xs text-white/40">Reach our banking administrators & support desk</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNewTicketModalOpen(false)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={submitSupportTicket} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Subject / Inquiry Title</label>
+                  <input
+                    name="subject"
+                    required
+                    placeholder="e.g. Question about card withdrawal fees"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 text-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Category</label>
+                    <select
+                      name="category"
+                      className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                    >
+                      <option value="general">General Help</option>
+                      <option value="account">Account Access</option>
+                      <option value="card">Card / POS Issue</option>
+                      <option value="loan">Financing Inquiry</option>
+                      <option value="technical">Technical Bug</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Priority</label>
+                    <select
+                      name="priority"
+                      className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                    >
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Description & Details</label>
+                  <textarea
+                    name="message"
+                    required
+                    rows={4}
+                    placeholder="Please explain the issue or question in detail. Staff will reply promptly…"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 resize-none font-sans text-white"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={ticketSubmitting}
+                    className="flex-1 py-3 rounded-xl font-bold text-xs text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50"
+                    style={btnBrand}
+                  >
+                    {ticketSubmitting ? "Submitting Ticket…" : "Submit Support Ticket"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewTicketModalOpen(false)}
+                    className="px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-semibold transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Dispute Transaction / Escrow Modal */}
+      <AnimatePresence>
+        {disputeModalOpen && disputeContext && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="bg-[#121218] border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-4 shadow-2xl"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-2xl bg-rose-500/15 text-rose-300">
+                    <ShieldAlert size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-base">
+                      {disputeContext.type === "escrow" ? "Escrow Dispute & Mediation" : "Transaction Dispute Claim"}
+                    </h3>
+                    <p className="text-xs text-white/40">Initiate formal investigation with bank staff</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setDisputeModalOpen(false); setDisputeContext(null); }}
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Dispute Item Summary Card */}
+              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-4 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-white/50 font-medium">Disputed Item:</span>
+                  <span className="font-mono text-emerald-400 font-bold text-sm">
+                    {formatMoney(disputeContext.item?.amount || 0)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-white/40">Reference:</span>
+                  <span className="font-mono text-white/70">
+                    {disputeContext.type === "escrow" ? `Escrow #${disputeContext.item?.id?.slice(0, 12)}` : `Tx #${disputeContext.item?.id?.slice(0, 12)}`}
+                  </span>
+                </div>
+                {disputeContext.item?.description && (
+                  <p className="text-white/70 text-[11px] border-t border-white/5 pt-1.5">{disputeContext.item.description}</p>
+                )}
+              </div>
+
+              <form onSubmit={submitSupportTicket} className="space-y-4">
+                <input type="hidden" name="category" value={disputeContext.type === "escrow" ? "escrow_dispute" : "dispute"} />
+                {disputeContext.type === "transaction" && <input type="hidden" name="transactionId" value={disputeContext.item?.id} />}
+                {disputeContext.type === "escrow" && <input type="hidden" name="escrowId" value={disputeContext.item?.id} />}
+
+                <div>
+                  <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Dispute Reason / Claim Title</label>
+                  <input
+                    name="subject"
+                    required
+                    defaultValue={disputeContext.type === "escrow" ? `Escrow Dispute: ${disputeContext.item?.description || disputeContext.item?.id?.slice(0, 8)}` : `Dispute: Unauthorized/Erroneous Charge ${formatMoney(disputeContext.item?.amount)}`}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Priority</label>
+                  <select
+                    name="priority"
+                    defaultValue="high"
+                    className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                  >
+                    <option value="urgent">Urgent (Immediate bank review requested)</option>
+                    <option value="high">High</option>
+                    <option value="normal">Normal</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Statement of Facts & Evidence</label>
+                  <textarea
+                    name="message"
+                    required
+                    rows={4}
+                    placeholder="Provide detailed facts regarding what occurred (e.g. non-delivery of items, double-charge, unfulfilled contract conditions, Discord trade proofs)…"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-white/30 resize-none font-sans text-white"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={ticketSubmitting}
+                    className="flex-1 py-3 rounded-xl font-bold text-xs text-white bg-rose-600 hover:bg-rose-500 shadow-lg transition-all disabled:opacity-50"
+                  >
+                    {ticketSubmitting ? "Submitting Dispute Claim…" : "Open Formal Dispute"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setDisputeModalOpen(false); setDisputeContext(null); }}
+                    className="px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-semibold transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Selected Ticket Thread Modal */}
+      <AnimatePresence>
+        {selectedTicket && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="bg-[#121218] border border-white/10 rounded-3xl p-6 w-full max-w-xl space-y-4 shadow-2xl max-h-[90vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between shrink-0 border-b border-white/5 pb-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+                      selectedTicket.status === "open"
+                        ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+                        : selectedTicket.status === "in_progress"
+                        ? "bg-blue-500/15 border-blue-500/30 text-blue-300"
+                        : selectedTicket.status === "resolved"
+                        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
+                        : "bg-white/10 border-white/10 text-white/50"
+                    }`}>
+                      {selectedTicket.status.replace("_", " ")}
+                    </span>
+                    <span className="text-[11px] font-mono text-white/30">
+                      Ticket #{selectedTicket.id.slice(0, 10)}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-white text-base leading-snug">{selectedTicket.subject}</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedTicket.status !== "closed" && (
+                    <button
+                      type="button"
+                      onClick={() => closeTicket(selectedTicket.id)}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 transition"
+                    >
+                      Close Inquiry
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTicket(null)}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Linked transaction / escrow badge */}
+              {(selectedTicket.transactionId || selectedTicket.escrowId) && (
+                <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-xs text-white/70 flex items-center gap-2 shrink-0">
+                  {selectedTicket.transactionId && (
+                    <span className="font-mono text-[11px] text-rose-300 flex items-center gap-1">
+                      <ShieldAlert size={13} /> Linked Transaction: {selectedTicket.transactionId}
+                    </span>
+                  )}
+                  {selectedTicket.escrowId && (
+                    <span className="font-mono text-[11px] text-emerald-300 flex items-center gap-1">
+                      <ShieldCheck size={13} /> Linked Escrow: {selectedTicket.escrowId}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Message Feed */}
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-[160px] max-h-[320px]">
+                {Array.isArray(selectedTicket.messages) && selectedTicket.messages.length > 0 ? (
+                  selectedTicket.messages.map((m: any) => {
+                    const isStaff = m.senderRole === "bank_staff" || m.senderRole === "admin";
+                    return (
+                      <div
+                        key={m.id}
+                        className={`p-3.5 rounded-2xl space-y-1.5 text-xs ${
+                          isStaff
+                            ? "bg-amber-500/10 border border-amber-500/20 text-white ml-4"
+                            : "bg-white/5 border border-white/5 text-white/90 mr-4"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <strong className="text-white font-semibold">{m.senderName || "User"}</strong>
+                            {isStaff && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] uppercase font-bold">
+                                Staff
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-white/30 text-[10px]">
+                            {m.createdAt ? format(new Date(m.createdAt), "MMM d, h:mm a") : ""}
+                          </span>
+                        </div>
+                        <p className="whitespace-pre-wrap text-white/80 leading-relaxed font-sans">{m.message}</p>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-xs text-white/40 italic text-center py-4">No messages recorded in this inquiry yet.</p>
+                )}
+              </div>
+
+              {/* Reply Input Form */}
+              {selectedTicket.status !== "closed" ? (
+                <form onSubmit={submitTicketReply} className="shrink-0 space-y-2 pt-2 border-t border-white/5">
+                  <div className="flex gap-2">
+                    <input
+                      name="message"
+                      required
+                      placeholder="Type a response to the bank staff…"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-white/30 text-white"
+                    />
+                    <button
+                      disabled={replySubmitting}
+                      className="px-4 py-2.5 rounded-xl font-bold text-xs text-white shadow transition-all hover:opacity-95 disabled:opacity-50 shrink-0"
+                      style={btnBrand}
+                    >
+                      {replySubmitting ? "Sending…" : "Reply"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-center text-xs text-white/40 shrink-0">
+                  This support ticket has been closed. You may open a new ticket if further assistance is needed.
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Notifications Drawer / Flyout */}
+      <AnimatePresence>
+        {notificationsOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="bg-[#121218] border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-4 shadow-2xl max-h-[85vh] flex flex-col"
+            >
+              <div className="flex items-center justify-between shrink-0 border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                    <BellRing size={16} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-base">Account Notifications</h3>
+                    <p className="text-[11px] text-white/40">Deposit alerts, balance notices & status messages</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {(userData?.notifications || []).some((n: any) => !n.isRead) && (
+                    <button
+                      onClick={markAllNotificationsRead}
+                      className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition px-2 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setNotificationsOpen(false)}
+                    className="p-1.5 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                {(userData?.notifications || []).length === 0 ? (
+                  <div className="text-center py-10 space-y-2">
+                    <Bell size={28} className="mx-auto text-white/20" />
+                    <p className="text-xs text-white/40">You're all caught up! No notifications.</p>
+                  </div>
+                ) : (
+                  (userData?.notifications || []).map((notif: any) => {
+                    const isMinBalance = notif.type === "min_balance_deficit" || notif.title?.toLowerCase().includes("minimum balance");
+                    const parsedData = notif.data ? (typeof notif.data === "string" ? JSON.parse(notif.data) : notif.data) : null;
+                    const depCmd = parsedData?.depositCommand;
+
+                    return (
+                      <div
+                        key={notif.id}
+                        className={`rounded-2xl border p-4 transition space-y-2.5 ${
+                          !notif.isRead
+                            ? isMinBalance
+                              ? "bg-amber-500/[0.08] border-amber-500/30"
+                              : "bg-indigo-500/[0.08] border-indigo-500/30"
+                            : "bg-white/[0.02] border-white/5 opacity-70"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            {isMinBalance ? (
+                              <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+                            ) : (
+                              <Info size={15} className="text-indigo-400 shrink-0" />
+                            )}
+                            <h4 className="text-xs font-bold text-white">{notif.title}</h4>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] text-white/30 font-mono">
+                              {notif.createdAt ? format(new Date(notif.createdAt), "MMM d, h:mm a") : ""}
+                            </span>
+                            {!notif.isRead && (
+                              <button
+                                onClick={() => markNotificationAsRead(notif.id)}
+                                title="Mark as read"
+                                className="text-white/40 hover:text-white p-1"
+                              >
+                                <Check size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-white/80 whitespace-pre-wrap leading-relaxed">
+                          {notif.message}
+                        </p>
+
+                        {depCmd && (
+                          <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between gap-2 font-mono text-xs">
+                            <span className="text-amber-300 truncate select-all">{depCmd}</span>
+                            <button
+                              onClick={() => copy(depCmd, `notif_${notif.id}`)}
+                              className="shrink-0 flex items-center gap-1 text-[10px] font-sans font-bold text-black bg-amber-400 hover:bg-amber-300 px-2 py-1 rounded transition"
+                            >
+                              {copied === `notif_${notif.id}` ? <Check size={11} /> : <Copy size={11} />}
+                              <span>{copied === `notif_${notif.id}` ? "Copied" : "Copy"}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-white/5 text-center">
+                <button
+                  onClick={() => setNotificationsOpen(false)}
+                  className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs transition"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Celebratory New Account Deposit Guidance Modal */}
+      <AnimatePresence>
+        {newAccountModalData && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#121218] border border-white/15 rounded-3xl p-6 sm:p-8 w-full max-w-lg space-y-5 shadow-2xl text-center relative overflow-hidden"
+            >
+              {/* Decorative accent */}
+              <div
+                className="absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-32 blur-3xl opacity-30 rounded-full"
+                style={{ background: brand }}
+              />
+
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-indigo-500/20 border border-white/10 mx-auto flex items-center justify-center text-emerald-400">
+                <Sparkles size={28} />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full font-mono">
+                  Account Created Successfully
+                </span>
+                <h3 className="text-xl font-black text-white mt-2">Welcome to {bank?.name || "the Bank"}</h3>
+                <p className="text-xs text-white/60 max-w-sm mx-auto">
+                  Your new <strong className="text-white">{newAccountModalData.tierName}</strong> account (<strong className="text-indigo-300 font-mono">{newAccountModalData.accountName}</strong>) is ready.
+                </p>
+              </div>
+
+              {/* Deposit Instructions Card */}
+              <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 text-left space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/50 font-medium">Minimum Required Balance</span>
+                  <span className="font-bold text-amber-300 font-mono">
+                    {newAccountModalData.minBalance && newAccountModalData.minBalance > 0 ? formatMoney(newAccountModalData.minBalance) : "None"}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                    <Terminal size={13} className="text-emerald-400" />
+                    <span>How to Deposit In-Game:</span>
+                  </span>
+                  <p className="text-xs text-white/50">Run the command below directly inside Minecraft chat to deposit funds from your wallet:</p>
+                </div>
+
+                <div className="p-3 bg-black/60 border border-white/10 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between gap-2 overflow-x-auto font-mono text-xs text-amber-300 font-bold">
+                    <span className="truncate select-all">{newAccountModalData.command}</span>
+                    <button
+                      onClick={() => copy(newAccountModalData.command, "new_acc_dep_cmd")}
+                      className="shrink-0 flex items-center gap-1 font-sans text-[11px] font-bold text-black bg-amber-400 hover:bg-amber-300 px-3 py-1.5 rounded-lg transition shadow"
+                    >
+                      {copied === "new_acc_dep_cmd" ? <Check size={12} /> : <Copy size={12} />}
+                      <span>{copied === "new_acc_dep_cmd" ? "Copied!" : "Copy Command"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-white/40 space-y-1 pt-1 border-t border-white/5">
+                  <p>1. Open chat in-game (press <kbd className="bg-white/10 px-1 py-0.5 rounded text-[10px]">T</kbd>).</p>
+                  <p>2. Paste and run the command above with the amount you wish to deposit.</p>
+                  <p>3. Your live balance will instantly update in this portal and Discord bot!</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  onClick={() => {
+                    setNewAccountModalData(null);
+                    setView("home");
+                  }}
+                  className="w-full py-3.5 rounded-2xl font-bold text-sm text-white shadow-xl transition-all hover:opacity-95"
+                  style={btnBrand}
+                >
+                  Go to Dashboard
                 </button>
               </div>
             </motion.div>

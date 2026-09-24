@@ -1641,18 +1641,17 @@ citizenRouter.post("/api/citizen/escrows", requireAuth, async (req: express.Requ
         return res.status(403).json({ error: "Only the account owner can initiate an escrow from this account." });
       }
 
-      const allBankAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId)).all();
       const cleanSeller = String(sellerIdentifier || "").trim();
-      const seller = allBankAccounts.find(a => 
-        a.id === cleanSeller ||
-        a.accountName.toLowerCase() === cleanSeller.toLowerCase() ||
-        (a.ownerDiscordId && a.ownerDiscordId.toLowerCase() === cleanSeller.toLowerCase()) ||
-        (a.ownerMinecraftName && a.ownerMinecraftName.toLowerCase() === cleanSeller.toLowerCase())
-      );
-
-      if (!seller) {
-        return res.status(404).json({ error: `Seller counterparty "${cleanSeller}" not found at this bank.` });
+      if (!cleanSeller) {
+        return res.status(400).json({ error: "Seller counterparty account or handle is required." });
       }
+
+      const { resolveEscrowCounterpartyAccount } = await import("../../lib/account_lookup.js");
+      const sellerResult = await resolveEscrowCounterpartyAccount(cleanSeller, { bankId, excludeAccountId: buyer.id });
+      if (!sellerResult.account) {
+        return res.status(404).json({ error: sellerResult.error || `Seller counterparty "${cleanSeller}" not found at this bank.` });
+      }
+      const seller = sellerResult.account;
 
       if (seller.id === buyer.id) {
         return res.status(400).json({ error: "Buyer and Seller accounts cannot be the same." });

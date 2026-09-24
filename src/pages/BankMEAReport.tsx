@@ -473,9 +473,18 @@ ${collateralRowsMd}
         <div className="border border-slate-300 rounded-xl p-6 mb-8 text-center bg-slate-950 text-white flex flex-col items-center justify-center min-h-[140px] shadow-inner relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-indigo-900/40 via-purple-900/30 to-indigo-950/50" />
           <div className="relative z-10 flex flex-col items-center gap-2">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center font-black text-2xl text-white shadow-lg">
-              {bank?.name?.charAt(0) || "B"}
-            </div>
+            {(bank?.logoUrl || bank?.settings?.logoUrl) ? (
+              <img
+                src={bank.logoUrl || bank.settings.logoUrl}
+                alt={bank?.name}
+                referrerPolicy="no-referrer"
+                className="w-14 h-14 rounded-2xl object-contain bg-slate-900 border border-indigo-500/40 p-1 shadow-lg shrink-0"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center font-black text-2xl text-white shadow-lg shrink-0">
+                {bank?.name?.charAt(0) || "B"}
+              </div>
+            )}
             <h2 className="text-xl font-black text-white tracking-tight">{bank?.name}</h2>
             <p className="text-xs text-indigo-200 font-mono tracking-wider uppercase">Official Financial Institution</p>
           </div>

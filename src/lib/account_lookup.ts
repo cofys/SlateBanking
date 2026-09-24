@@ -100,3 +100,114 @@ export async function suggestPayees(opts: {
     bankName: name,
   }));
 }
+
+/**
+ * Ultra-flexible counterparty lookup for transfers and escrow agreements.
+ * Matches by:
+ * - Exact Account ID
+ * - Account Name (case-insensitive, with or without common prefixes like ACC-, CORP-, SAV-)
+ * - Owner Discord ID / Mention / Handle
+ * - Owner Minecraft Username / UUID
+ * - Authorized Account Members / Operators
+ * - Registered Bank Customer identities
+ */
+export async function resolveEscrowCounterpartyAccount(
+  rawQuery: string,
+  opts: {
+    bankId: string;
+    excludeAccountId?: string;
+  }
+): Promise<{ account?: typeof bankAccounts.$inferSelect & { bankName?: string | null }; error?: string }> {
+  let q = normalize(rawQuery);
+  if (!q) return { error: "Enter a recipient account name, ID, or user handle." };
+  if (q.startsWith("@")) q = q.slice(1).trim();
+  if (!opts.bankId) return { error: "Bank ID required." };
+
+  const exclude = opts.excludeAccountId;
+  const { bankCustomers, accountMembers } = await import("../db/schema.js");
+
+  // Fetch all candidate accounts at this bank
+  const allAccounts = await db.select().from(bankAccounts).where(
+    and(eq(bankAccounts.bankId, opts.bankId), eq(bankAccounts.isSystem, false))
+  ).all();
+
+  const activeCandidates = allAccounts.filter(a => a.isActive !== false && !a.isFrozen && a.id !== exclude);
+  const qLower = q.toLowerCase();
+
+  // 1. Direct Account ID match
+  let matched = activeCandidates.find(a => a.id.toLowerCase() === qLower);
+  if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
+
+  // 2. Exact Account Name match
+  matched = activeCandidates.find(a => a.accountName.toLowerCase() === qLower);
+  if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
+
+  // 3. Prefix-normalized Account Name match (e.g. "steve" matches "ACC-steve", or "CORP-steve" matches "steve")
+  matched = activeCandidates.find(a => {
+    const accLower = a.accountName.toLowerCase();
+    const strippedAcc = accLower.replace(/^(acc|corp|sav|chk|checking|savings)-/i, "");
+    const strippedQ = qLower.replace(/^(acc|corp|sav|chk|checking|savings)-/i, "");
+    return accLower === strippedQ || strippedAcc === qLower || strippedAcc === strippedQ;
+  });
+  if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
+
+  // 4. Owner Discord ID or Minecraft Name
+  matched = activeCandidates.find(a =>
+    (a.ownerDiscordId && (a.ownerDiscordId.toLowerCase() === qLower || a.ownerDiscordId === q)) ||
+    (a.ownerMinecraftName && a.ownerMinecraftName.toLowerCase() === qLower)
+  );
+  if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
+
+  // 5. Account Members (operators / signers)
+  const memberMatches = await db.select().from(accountMembers).where(
+    or(
+      eq(accountMembers.discordId, q),
+      sql`lower(${accountMembers.discordId}) = ${qLower}`,
+      eq(accountMembers.mcUsername, q),
+      sql`lower(${accountMembers.mcUsername}) = ${qLower}`,
+      eq(accountMembers.mcUuid, q)
+    )
+  ).all();
+
+  if (memberMatches.length > 0) {
+    const matchingAccIds = memberMatches.map(m => m.accountId);
+    matched = activeCandidates.find(a => matchingAccIds.includes(a.id));
+    if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
+  }
+
+  // 6. Registered Bank Customers table
+  const customerMatches = await db.select().from(bankCustomers).where(
+    and(
+      eq(bankCustomers.bankId, opts.bankId),
+      or(
+        eq(bankCustomers.discordId, q),
+        sql`lower(${bankCustomers.discordId}) = ${qLower}`,
+        eq(bankCustomers.minecraftName, q),
+        sql`lower(${bankCustomers.minecraftName}) = ${qLower}`,
+        sql`lower(${bankCustomers.name}) = ${qLower}`
+      )
+    )
+  ).all();
+
+  if (customerMatches.length > 0) {
+    const customerDiscordIds = customerMatches.map(c => c.discordId).filter(Boolean);
+    const customerMcNames = customerMatches.map(c => c.minecraftName?.toLowerCase()).filter(Boolean);
+    matched = activeCandidates.find(a =>
+      (a.ownerDiscordId && customerDiscordIds.includes(a.ownerDiscordId)) ||
+      (a.ownerMinecraftName && customerMcNames.includes(a.ownerMinecraftName.toLowerCase()))
+    );
+    if (matched) return { account: { ...matched, bankName: await bankName(matched.bankId) } };
+  }
+
+  // 7. Partial match (if unique)
+  const partials = activeCandidates.filter(a => a.accountName.toLowerCase().includes(qLower));
+  if (partials.length === 1) {
+    return { account: { ...partials[0], bankName: await bankName(partials[0].bankId) } };
+  }
+  if (partials.length > 1) {
+    return { error: `Multiple accounts match "${q}". Please enter the exact account name or ID.` };
+  }
+
+  return { error: `Could not find recipient account or user matching "${rawQuery}" at this bank.` };
+}
+

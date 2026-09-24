@@ -150,6 +150,7 @@ export function CitizenPortal() {
           )}
           {byBank.map((row, i) => {
             const color = hexOr(row.bank.brandingColor);
+            const logo = (row.bank.logoUrl || "").trim();
             return (
               <motion.div key={row.bank.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05, duration: 0.35 }}>
                 <Link
@@ -158,7 +159,24 @@ export function CitizenPortal() {
                   style={{ borderRadius: "var(--radius-lg)", borderColor: "var(--border)", background: "color-mix(in oklab, var(--fg) 3%, transparent)" }}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-11 h-11 rounded-xl flex items-center justify-center font-semibold" style={{ background: withAlpha(color, 0.2), color }}>
+                    {logo ? (
+                      <img
+                        src={logo}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="w-11 h-11 rounded-xl object-contain border p-1 shrink-0"
+                        style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = "none";
+                          const fallback = e.currentTarget.parentElement?.querySelector(".bank-fallback-letter") as HTMLElement;
+                          if (fallback) fallback.style.display = "flex";
+                        }}
+                      />
+                    ) : null}
+                    <div
+                      className={`w-11 h-11 rounded-xl items-center justify-center font-semibold shrink-0 bank-fallback-letter ${logo ? "hidden" : "flex"}`}
+                      style={{ background: withAlpha(color, 0.2), color }}
+                    >
                       {(row.bank.name || "?").slice(0, 1)}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -181,25 +199,45 @@ export function CitizenPortal() {
         {otherBanks.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--fg-subtle)" }}>Other banks</h2>
-            {otherBanks.map((b) => (
-              <Link
-                key={b.id}
-                to={`/portal/${b.id}`}
-                className="block p-4 border hover:border-[var(--border-strong)] transition-colors"
-                style={{ borderRadius: "var(--radius-lg)", borderColor: "var(--border)" }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "var(--bg-subtle)", color: "var(--fg-muted)" }}>
-                    <Building2 size={16} />
+            {otherBanks.map((b) => {
+              const bLogo = (b.logoUrl || "").trim();
+              return (
+                <Link
+                  key={b.id}
+                  to={`/portal/${b.id}`}
+                  className="block p-4 border hover:border-[var(--border-strong)] transition-colors"
+                  style={{ borderRadius: "var(--radius-lg)", borderColor: "var(--border)" }}
+                >
+                  <div className="flex items-center gap-3">
+                    {bLogo ? (
+                      <img
+                        src={bLogo}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="w-10 h-10 rounded-xl object-contain border p-1 shrink-0"
+                        style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = "none";
+                          const fallback = e.currentTarget.parentElement?.querySelector(".bank-fallback-icon") as HTMLElement;
+                          if (fallback) fallback.style.display = "flex";
+                        }}
+                      />
+                    ) : null}
+                    <div
+                      className={`w-10 h-10 rounded-xl items-center justify-center shrink-0 bank-fallback-icon ${bLogo ? "hidden" : "flex"}`}
+                      style={{ background: "var(--bg-subtle)", color: "var(--fg-muted)" }}
+                    >
+                      <Building2 size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{b.name}</p>
+                      <p className="text-xs truncate" style={{ color: "var(--fg-subtle)" }}>{b.tagline || "Open customer portal"}</p>
+                    </div>
+                    <ChevronRight size={16} style={{ color: "var(--fg-subtle)" }} />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{b.name}</p>
-                    <p className="text-xs truncate" style={{ color: "var(--fg-subtle)" }}>{b.tagline || "Open customer portal"}</p>
-                  </div>
-                  <ChevronRight size={16} style={{ color: "var(--fg-subtle)" }} />
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </section>
         )}
         {showBotPicker && (
@@ -229,6 +267,7 @@ export function CitizenPortal() {
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {(byBank.length > 0 ? byBank.map((b) => b.bank) : directory).map((b) => {
                   const color = hexOr(b.brandingColor);
+                  const bLogo = (b.logoUrl || "").trim();
                   return (
                     <button
                       key={b.id}
@@ -236,8 +275,22 @@ export function CitizenPortal() {
                       className="w-full p-3.5 rounded-xl border text-left flex items-center gap-3 transition-colors hover:border-[var(--border-strong)]"
                       style={{ borderColor: "var(--border)", background: "color-mix(in oklab, var(--fg) 2%, transparent)" }}
                     >
+                      {bLogo ? (
+                        <img
+                          src={bLogo}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          className="w-9 h-9 rounded-lg object-contain border p-0.5 shrink-0"
+                          style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = "none";
+                            const fallback = e.currentTarget.parentElement?.querySelector(".bank-modal-fallback") as HTMLElement;
+                            if (fallback) fallback.style.display = "flex";
+                          }}
+                        />
+                      ) : null}
                       <div 
-                        className="w-9 h-9 rounded-lg flex items-center justify-center font-semibold text-sm shrink-0"
+                        className={`w-9 h-9 rounded-lg items-center justify-center font-semibold text-sm shrink-0 bank-modal-fallback ${bLogo ? "hidden" : "flex"}`}
                         style={{ background: withAlpha(color, 0.2), color }}
                       >
                         {(b.name || "?").slice(0, 1)}

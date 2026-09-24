@@ -5876,3 +5876,382 @@ banksRouter.post("/api/banks/:bankId/accounts/:accountId/freeze", requireBankSta
       res.status(500).json({ error: e.message });
     }
 });
+
+// ==========================================
+// BANK STAFF SUPPORT DESK & DISPUTE RESOLUTION
+// ==========================================
+
+banksRouter.get("/api/banks/:bankId/tickets", requireBankStaff, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets, ticketMessages, bankCustomers } = await import("../../db/schema");
+  const { eq, desc, inArray } = await import("drizzle-orm");
+
+  try {
+    const { bankId } = req.params;
+    const tickets = await db.select()
+      .from(supportTickets)
+      .where(eq(supportTickets.bankId, bankId))
+      .orderBy(desc(supportTickets.updatedAt), desc(supportTickets.createdAt));
+
+    const ticketIds = tickets.map(t => t.id);
+    let messages: any[] = [];
+    if (ticketIds.length > 0) {
+      messages = await db.select()
+        .from(ticketMessages)
+        .where(inArray(ticketMessages.ticketId, ticketIds))
+        .orderBy(ticketMessages.createdAt);
+    }
+
+    const fullTickets = tickets.map(t => ({
+      ...t,
+      messages: messages.filter(m => m.ticketId === t.id),
+      messageCount: messages.filter(m => m.ticketId === t.id).length,
+    }));
+
+    res.json(fullTickets);
+  } catch (e: any) {
+    console.error("Error fetching staff tickets:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+banksRouter.post("/api/banks/:bankId/tickets/:ticketId/messages", requireBankStaff, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets, ticketMessages } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { bankId, ticketId } = req.params;
+    const { message, attachmentUrl } = req.body;
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Message content cannot be empty" });
+    }
+
+    const ticket = await db.select().from(supportTickets).where(
+      and(eq(supportTickets.id, ticketId), eq(supportTickets.bankId, bankId))
+    ).get();
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+    const staffUser = (req as any).user;
+    const senderName = staffUser?.username || "Bank Staff";
+    const senderDiscordId = staffUser?.discordId || "staff";
+    const now = new Date();
+
+    const newMsg = await db.insert(ticketMessages).values({
+      id: uuidv4(),
+      ticketId,
+      senderDiscordId,
+      senderName,
+      senderRole: "staff",
+      message: message.trim(),
+      attachmentUrl: attachmentUrl || null,
+      createdAt: now,
+    }).returning().get();
+
+    await db.update(supportTickets).set({
+      status: ticket.status === "open" ? "in_progress" : ticket.status,
+      assignedToDiscordId: ticket.assignedToDiscordId || senderDiscordId,
+      updatedAt: now,
+    }).where(eq(supportTickets.id, ticketId));
+
+    res.json(newMsg);
+  } catch (e: any) {
+    console.error("Error posting staff ticket message:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+banksRouter.patch("/api/banks/:bankId/tickets/:ticketId", requireBankStaff, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets, auditLogs } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { bankId, ticketId } = req.params;
+    const { status, priority, category, staffNotes, assignedToDiscordId } = req.body;
+
+    const ticket = await db.select().from(supportTickets).where(
+      and(eq(supportTickets.id, ticketId), eq(supportTickets.bankId, bankId))
+    ).get();
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+    const updates: any = { updatedAt: new Date() };
+    if (status !== undefined) {
+      updates.status = status;
+      if (status === "closed" || status === "resolved") {
+        updates.resolvedAt = new Date();
+      }
+    }
+    if (priority !== undefined) updates.priority = priority;
+    if (category !== undefined) updates.category = category;
+    if (staffNotes !== undefined) updates.staffNotes = staffNotes;
+    if (assignedToDiscordId !== undefined) updates.assignedToDiscordId = assignedToDiscordId;
+
+    await db.update(supportTickets).set(updates).where(eq(supportTickets.id, ticketId));
+
+    await db.insert(auditLogs).values({
+      id: uuidv4(),
+      bankId,
+      userDiscordId: (req as any).user?.discordId || "staff",
+      action: "ticket_updated",
+      details: `Updated ticket ${ticketId} (${updates.status || ticket.status})`,
+      timestamp: new Date(),
+    });
+
+    res.json({ success: true, ...updates });
+  } catch (e: any) {
+    console.error("Error updating ticket:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/banks/:bankId/tickets/:ticketId/context
+// Returns full linked transaction, escrow, customer profile details
+banksRouter.get("/api/banks/:bankId/tickets/:ticketId/context", requireBankStaff, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets, transactions, escrowAgreements, bankAccounts, bankCustomers } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+
+  try {
+    const { bankId, ticketId } = req.params;
+    const ticket = await db.select().from(supportTickets).where(
+      and(eq(supportTickets.id, ticketId), eq(supportTickets.bankId, bankId))
+    ).get();
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+    let linkedTx = null;
+    let linkedEscrow = null;
+    let linkedAccount = null;
+    let customerProfile = null;
+
+    if (ticket.transactionId) {
+      const tx = await db.select().from(transactions).where(
+        and(eq(transactions.id, ticket.transactionId), eq(transactions.bankId, bankId))
+      ).get();
+      if (tx) {
+        const fromAcc = tx.fromAccountId ? await db.select().from(bankAccounts).where(eq(bankAccounts.id, tx.fromAccountId)).get() : null;
+        const toAcc = tx.toAccountId ? await db.select().from(bankAccounts).where(eq(bankAccounts.id, tx.toAccountId)).get() : null;
+        linkedTx = {
+          ...tx,
+          fromAccountName: fromAcc?.accountName || tx.fromAccountId,
+          toAccountName: toAcc?.accountName || tx.toAccountId,
+        };
+      }
+    }
+
+    if (ticket.escrowId) {
+      const esc = await db.select().from(escrowAgreements).where(
+        and(eq(escrowAgreements.id, ticket.escrowId), eq(escrowAgreements.bankId, bankId))
+      ).get();
+      if (esc) {
+        const buyerAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, esc.buyerAccountId)).get();
+        const sellerAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, esc.sellerAccountId)).get();
+        linkedEscrow = {
+          ...esc,
+          buyerAccountName: buyerAcc?.accountName,
+          sellerAccountName: sellerAcc?.accountName,
+        };
+      }
+    }
+
+    if (ticket.accountId) {
+      linkedAccount = await db.select().from(bankAccounts).where(
+        and(eq(bankAccounts.id, ticket.accountId), eq(bankAccounts.bankId, bankId))
+      ).get();
+    }
+
+    if (ticket.discordId) {
+      customerProfile = await db.select().from(bankCustomers).where(
+        and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, ticket.discordId))
+      ).get();
+    }
+
+    res.json({
+      ticket,
+      linkedTx,
+      linkedEscrow,
+      linkedAccount,
+      customerProfile,
+    });
+  } catch (e: any) {
+    console.error("Error fetching ticket context:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/banks/:bankId/tickets/:ticketId/resolve-dispute
+// Staff automated mediation & dispute reversal action
+banksRouter.post("/api/banks/:bankId/tickets/:ticketId/resolve-dispute", requireBankStaff, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets, ticketMessages, transactions, escrowAgreements, bankAccounts, auditLogs } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { bankId, ticketId } = req.params;
+    const { action, resolutionNotes } = req.body; // action: 'reverse_transaction' | 'refund_escrow' | 'release_escrow' | 'dismiss'
+    const staffUser = (req as any).user;
+    const staffName = staffUser?.username || "Bank Staff";
+    const staffId = staffUser?.discordId || "staff";
+
+    const ticket = await db.select().from(supportTickets).where(
+      and(eq(supportTickets.id, ticketId), eq(supportTickets.bankId, bankId))
+    ).get();
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+    const now = new Date();
+    let actionLog = "";
+
+    if (action === "reverse_transaction" && ticket.transactionId) {
+      const origTx = await db.select().from(transactions).where(
+        and(eq(transactions.id, ticket.transactionId), eq(transactions.bankId, bankId))
+      ).get();
+
+      if (!origTx) return res.status(404).json({ error: "Original transaction not found" });
+
+      if (origTx.fromAccountId && origTx.toAccountId) {
+        const fromAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, origTx.fromAccountId)).get();
+        const toAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, origTx.toAccountId)).get();
+
+        if (fromAcc && toAcc) {
+          const refundAmount = origTx.amount;
+          // Atomically refund from recipient back to sender
+          await db.transaction(async (tx) => {
+            await tx.update(bankAccounts).set({
+              balance: toAcc.balance - refundAmount,
+            }).where(eq(bankAccounts.id, toAcc.id));
+
+            await tx.update(bankAccounts).set({
+              balance: fromAcc.balance + refundAmount,
+            }).where(eq(bankAccounts.id, fromAcc.id));
+
+            await tx.insert(transactions).values({
+              id: `tx_rev_${Date.now()}_${uuidv4().slice(0, 6)}`,
+              bankId,
+              fromAccountId: toAcc.id,
+              toAccountId: fromAcc.id,
+              amount: refundAmount,
+              fee: 0,
+              type: "transfer",
+              status: "completed",
+              description: `[Dispute Refund] Settlement for #${origTx.id.slice(0, 8)}: ${resolutionNotes || "Staff approved dispute reversal"}`,
+              createdAt: now,
+            });
+          });
+          actionLog = `Reversed transaction #${origTx.id} ($${(refundAmount / 100).toFixed(2)}) from ${toAcc.accountName} to ${fromAcc.accountName}`;
+        }
+      }
+    } else if (action === "refund_escrow" && ticket.escrowId) {
+      const escrow = await db.select().from(escrowAgreements).where(
+        and(eq(escrowAgreements.id, ticket.escrowId), eq(escrowAgreements.bankId, bankId))
+      ).get();
+
+      if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
+      if (escrow.status === "funded") {
+        const buyerAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.buyerAccountId)).get();
+        if (buyerAcc) {
+          await db.transaction(async (tx) => {
+            await tx.update(bankAccounts).set({
+              balance: buyerAcc.balance + escrow.amount,
+            }).where(eq(bankAccounts.id, buyerAcc.id));
+
+            await tx.update(escrowAgreements).set({
+              status: "refunded",
+            }).where(eq(escrowAgreements.id, escrow.id));
+
+            await tx.insert(transactions).values({
+              id: `tx_esc_ref_${Date.now()}_${uuidv4().slice(0, 6)}`,
+              bankId,
+              toAccountId: buyerAcc.id,
+              amount: escrow.amount,
+              fee: 0,
+              type: "deposit",
+              status: "completed",
+              description: `[Escrow Mediation Refund] Restored custody for deal: ${escrow.description}`,
+              createdAt: now,
+            });
+          });
+          actionLog = `Refunded escrow #${escrow.id} ($${(escrow.amount / 100).toFixed(2)}) back to buyer ${buyerAcc.accountName}`;
+        }
+      }
+    } else if (action === "release_escrow" && ticket.escrowId) {
+      const escrow = await db.select().from(escrowAgreements).where(
+        and(eq(escrowAgreements.id, ticket.escrowId), eq(escrowAgreements.bankId, bankId))
+      ).get();
+
+      if (!escrow) return res.status(404).json({ error: "Escrow agreement not found" });
+      if (escrow.status === "funded") {
+        const sellerAcc = await db.select().from(bankAccounts).where(eq(bankAccounts.id, escrow.sellerAccountId)).get();
+        if (sellerAcc) {
+          await db.transaction(async (tx) => {
+            await tx.update(bankAccounts).set({
+              balance: sellerAcc.balance + escrow.amount,
+            }).where(eq(bankAccounts.id, sellerAcc.id));
+
+            await tx.update(escrowAgreements).set({
+              status: "released",
+            }).where(eq(escrowAgreements.id, escrow.id));
+
+            await tx.insert(transactions).values({
+              id: `tx_esc_rel_${Date.now()}_${uuidv4().slice(0, 6)}`,
+              bankId,
+              toAccountId: sellerAcc.id,
+              amount: escrow.amount,
+              fee: 0,
+              type: "deposit",
+              status: "completed",
+              description: `[Escrow Mediation Settlement] Payout for deal: ${escrow.description}`,
+              createdAt: now,
+            });
+          });
+          actionLog = `Released escrow #${escrow.id} ($${(escrow.amount / 100).toFixed(2)}) to seller ${sellerAcc.accountName}`;
+        }
+      }
+    } else {
+      actionLog = `Dispute determination recorded: ${resolutionNotes || "Dismissed/Closed"}`;
+    }
+
+    // Update ticket status
+    const newStatus = action === "dismiss" ? "closed" : "resolved";
+    await db.update(supportTickets).set({
+      status: newStatus,
+      resolvedAt: now,
+      updatedAt: now,
+      staffNotes: [ticket.staffNotes, `[Mediation: ${action.toUpperCase()}] ${resolutionNotes || ""}`].filter(Boolean).join("\n"),
+    }).where(eq(supportTickets.id, ticketId));
+
+    // Post settlement message into ticket thread
+    const settlementMsg = `[OFFICIAL DISPUTE DETERMINATION by ${staffName}]\nAction: ${action.replace("_", " ").toUpperCase()}\nDetails: ${resolutionNotes || "The bank administrative team has concluded the investigation and applied the appropriate account adjustments."}`;
+    await db.insert(ticketMessages).values({
+      id: uuidv4(),
+      ticketId,
+      senderDiscordId: staffId,
+      senderName: staffName,
+      senderRole: "staff",
+      message: settlementMsg,
+      createdAt: now,
+    });
+
+    // Audit log
+    await db.insert(auditLogs).values({
+      id: uuidv4(),
+      bankId,
+      userDiscordId: staffId,
+      action: "dispute_resolved",
+      details: `Ticket ${ticketId} resolved with action '${action}'. ${actionLog}`,
+      timestamp: now,
+    });
+
+    res.json({ success: true, action, status: newStatus, actionLog });
+  } catch (e: any) {
+    console.error("Error resolving dispute:", e);
+    res.status(500).json({ error: e.message || "Failed to resolve dispute" });
+  }
+});

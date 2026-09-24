@@ -50,6 +50,7 @@ import { NetworkHealth } from "./pages/NetworkHealth";
 import { BankQueue } from "./pages/BankQueue";
 import { BankTeller } from "./pages/BankTeller";
 import { BankCollections } from "./pages/BankCollections";
+import { BankTickets } from "./pages/BankTickets";
 import { ScreenLoader } from "./components/ui/chrome";
 import { useState, useEffect } from "react";
 
@@ -57,6 +58,7 @@ const bankStaffRoutes = (
   <>
     <Route index element={<BankOverview />} />
     <Route path="queue" element={<BankQueue />} />
+    <Route path="tickets" element={<BankTickets />} />
     <Route path="teller" element={<BankTeller />} />
     <Route path="collections" element={<BankCollections />} />
     <Route path="analytics" element={<BankAnalytics />} />

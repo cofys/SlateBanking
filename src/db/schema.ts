@@ -297,10 +297,38 @@ export const supportTickets = sqliteTable("support_tickets", {
   id: text("id").primaryKey(),
   bankId: text("bank_id").references(() => banks.id).notNull(),
   discordId: text("discord_id").notNull(),
+  mcUsername: text("mc_username"),
   subject: text("subject").notNull(),
-  status: text("status").default("open"), 
+  description: text("description"),
+  category: text("category").default("general"), // general, transaction_dispute, card_issue, escrow_dispute, loan_inquiry, security_alert
+  priority: text("priority").default("medium"), // low, medium, high, urgent
+  status: text("status").default("open"), // open, in_progress, resolved, closed
+  accountId: text("account_id"),
+  transactionId: text("transaction_id"),
+  escrowId: text("escrow_id"),
+  assignedToDiscordId: text("assigned_to_discord_id"),
+  staffNotes: text("staff_notes"),
+  resolvedAt: integer("resolved_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+  bankIdIdx: index("idx_support_tickets_bank_id").on(table.bankId),
+  discordIdIdx: index("idx_support_tickets_discord_id").on(table.discordId),
+  statusIdx: index("idx_support_tickets_status").on(table.status),
+}));
+
+export const ticketMessages = sqliteTable("ticket_messages", {
+  id: text("id").primaryKey(),
+  ticketId: text("ticket_id").references(() => supportTickets.id).notNull(),
+  senderDiscordId: text("sender_discord_id").notNull(),
+  senderName: text("sender_name").notNull(),
+  senderRole: text("sender_role").default("customer"), // customer, staff, system
+  message: text("message").notNull(),
+  attachmentUrl: text("attachment_url"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+  ticketIdIdx: index("idx_ticket_messages_ticket_id").on(table.ticketId),
+}));
 
 export const auditLogs = sqliteTable("audit_logs", {
   id: text("id").primaryKey(),

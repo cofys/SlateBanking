@@ -60,6 +60,20 @@ function ensureDatabaseSchemaSynced() {
   createTableIfNotExists("escrows", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, buyer_account_id TEXT NOT NULL, seller_account_id TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("bank_staff", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, discord_id TEXT NOT NULL, role TEXT NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("support_tickets", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, discord_id TEXT NOT NULL, subject TEXT NOT NULL, created_at INTEGER NOT NULL");
+  checkAndAddColumn("support_tickets", "mc_username", "TEXT");
+  checkAndAddColumn("support_tickets", "description", "TEXT");
+  checkAndAddColumn("support_tickets", "category", "TEXT DEFAULT 'general'");
+  checkAndAddColumn("support_tickets", "priority", "TEXT DEFAULT 'medium'");
+  checkAndAddColumn("support_tickets", "status", "TEXT DEFAULT 'open'");
+  checkAndAddColumn("support_tickets", "account_id", "TEXT");
+  checkAndAddColumn("support_tickets", "transaction_id", "TEXT");
+  checkAndAddColumn("support_tickets", "escrow_id", "TEXT");
+  checkAndAddColumn("support_tickets", "assigned_to_discord_id", "TEXT");
+  checkAndAddColumn("support_tickets", "staff_notes", "TEXT");
+  checkAndAddColumn("support_tickets", "resolved_at", "INTEGER");
+  checkAndAddColumn("support_tickets", "updated_at", "INTEGER");
+
+  createTableIfNotExists("ticket_messages", "id TEXT PRIMARY KEY NOT NULL, ticket_id TEXT NOT NULL, sender_discord_id TEXT NOT NULL, sender_name TEXT NOT NULL, sender_role TEXT DEFAULT 'customer', message TEXT NOT NULL, attachment_url TEXT, created_at INTEGER NOT NULL");
   createTableIfNotExists("audit_logs", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, user_discord_id TEXT NOT NULL, action TEXT NOT NULL, timestamp INTEGER NOT NULL");
   createTableIfNotExists("loans", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, discord_id TEXT NOT NULL, account_id TEXT NOT NULL, principal_amount INTEGER NOT NULL, remaining_amount INTEGER NOT NULL, interest_rate INTEGER NOT NULL, next_payment_date INTEGER NOT NULL, created_at INTEGER NOT NULL");
   checkAndAddColumn("loans", "contract_text", "TEXT");
@@ -311,6 +325,8 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("escrows", "description", "TEXT");
   checkAndAddColumn("escrows", "status", "TEXT DEFAULT 'pending'");
   checkAndAddColumn("escrows", "contract_url", "TEXT");
+  checkAndAddColumn("escrows", "contract_text", "TEXT");
+  checkAndAddColumn("escrows", "client_signed_at", "INTEGER");
 
   // Credit Applications table
   checkAndAddColumn("credit_applications", "purpose", "TEXT");

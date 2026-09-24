@@ -31,6 +31,17 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
     - `personalAccountNamingMode`: `custom` (freeform name tagged with prefix), `discord_username` (standardizes account tags to `PREFIX-discord_username`), or `choice_or_username` (allows citizens to choose between freeform and their verified Discord handle).
     - `businessAccountNamingMode`: `business_name` (standardizes account tags to `PREFIX-BusinessName`) or `discord_plus_business` (standardizes to `PREFIX-discord_username-BusinessName`).
     - **Tier-Level Overrides**: Individual account tiers configure a `customPrefix` and `namingMode` to override global defaults for specialized customer tiers (e.g. `VIP-`, `SAVINGS-`, `TREASURY-`).
+  - **Account Tiers & Minimum Required Balance Architecture**:
+    - **Tier Minimum Balance (`minBalance`)**: Account tiers configure an optional minimum maintenance balance (in cents).
+    - **In-Game Deposit Education**: New accounts and accounts that fall below the required minimum balance are taught the exact in-game command syntax required to deposit into their account via Minecraft chat:
+      `/c account deposit <bankcorpname> <accountname> <amount>`
+    - **Automated Detection & Multi-Channel Deficit Alerts**:
+      - **Account Registration**: Upon creating an account with a tier minimum, the user is presented with a celebratory onboarding modal highlighting their tier requirements, in-game instructions, and a copyable deposit command.
+      - **CityCorp Balance Sync & Background Sweep**: When balances sync from the remote ledger or during the recurring 15-minute background sweep (`runBankMinBalanceSweep` in `cron.ts`), accounts below their tier threshold are flagged.
+      - **Customer Notifications & Discord DMs**: The system logs a record in `customer_notifications` (visible in the portal Alerts drawer and Home banner) with live deficit calculations and an interactive 1-click copyable command. Concurrently, a direct Discord DM is dispatched to the user's verified Discord account via the bank bot.
+    - **Refactored Account Application Portal**:
+      - High-fidelity interactive Tier Selection Cards displaying APY yield, minimum required balance, monthly maintenance fee, and current user holding limits.
+      - Real-time in-game ID and deposit command preview that dynamically reacts to naming preference toggles.
   - **Custom Account Fee Overrides**: Individual accounts can be configured with custom fee rates (`customTransferFeePercent`, `customDepositFeePercent`, `customWithdrawFeePercent`). When defined, transaction fee processing respects the custom account rate rather than the global bank default. When updating bank-wide fee settings in `Bank Settings`, staff can check a toggle to either overwrite custom account overrides or leave them preserved.
   - **Transaction Memo & Detailed Receipt Modal**: In the Citizen Bank Portal, all transactions across the Home dashboard and the Activity tab are clickable. Clicking any transaction row opens a high-fidelity modal displaying complete ledger metadata: gross/net amounts, verified status, formatted settlement timestamps, counterparty account handles and masked IDs, transaction type, settlement reference ID, and prominent memo inspection. Outgoing payments also include one-click "Split Bill" actions.
 - **Savings Interest Accrual Engine**: Banks can configure `savingsApyPercent` (e.g. 300 basis points = 3.00% APY) in `Bank Settings`. Staff can trigger daily interest compounding via `POST /api/banks/:bankId/accrue-interest`, which atomically calculates pro-rated daily interest across active, non-frozen accounts, logs interest credit transactions, and updates `lastInterestAccrualAt`.
@@ -1540,6 +1551,69 @@ Slate Banking features a categorized, search-indexed **Bank Settings Management 
 
 ---
 
+## Escrow Custody Schema & Multi-Identifier Counterparty Resolver
+
+### Database Schema Updates (`escrows` table)
+* `id` (`TEXT PRIMARY KEY`): Unique identifier (`esc_${timestamp}_${uuid}`).
+* `bank_id` (`TEXT`): Institutional tenant ID.
+* `buyer_account_id` (`TEXT`): Debtor account holding funds in custody.
+* `seller_account_id` (`TEXT`): Creditor recipient account.
+* `amount` (`INTEGER`): Transaction amount in integer cents.
+* `description` (`TEXT`): Deal memo or asset title.
+* `status` (`TEXT`): Agreement status (`pending`, `funded`, `released`, `refunded`).
+* `contract_url` (`TEXT`): External signed Google Docs / PDF contract link.
+* `contract_text` (`TEXT`): Custom inline terms, conditions, milestones, or coordinates.
+* `client_signed_at` (`INTEGER`): Timestamp when funds were locked into custody.
+* `created_at` (`INTEGER`): Agreement draft creation timestamp.
+
+### Multi-Identifier Counterparty Resolution (`resolveEscrowCounterpartyAccount`)
+The escrow creation engine seamlessly resolves seller counterparties using:
+1. **Direct Account ID** (e.g. `acc_1740000000_abcd`).
+2. **Account Name** (case-insensitive, e.g. `Main`, `daily-spending`).
+3. **Prefix-Normalized Account Names** (automatically strips or prepends prefixes like `ACC-`, `CORP-`, `SAV-`).
+4. **Owner Discord ID or Mention** (e.g. `123456789012345678`, `@username`).
+5. **Owner Minecraft Username** (case-insensitive).
+6. **Authorized Account Operators** (`account_members` matching `discord_id`, `mc_username`, `mc_uuid`).
+7. **Linked Customer Profiles** (`bank_customers` matching registered names or handles).
+
+---
+
+## 🎧 Customer Support Desk & Dispute System
+
+Slate includes an enterprise banking support and dispute management system seamlessly connecting customers with institution staff.
+
+### Architecture & Data Schema
+1. **`support_tickets`**:
+   - `id` (`TEXT` Primary Key): Unique ticket identifier.
+   - `bank_id` (`TEXT`): Institution holding the inquiry.
+   - `user_id` (`TEXT`): Customer user identifier.
+   - `category` (`TEXT`): Ticket category (`general`, `dispute`, `escrow_dispute`, `account`, `card`, `loan`, `technical`, `other`).
+   - `priority` (`TEXT`): Urgency level (`low`, `normal`, `high`, `urgent`).
+   - `status` (`TEXT`): Inquiry lifecycle (`open`, `in_progress`, `resolved`, `closed`).
+   - `subject` (`TEXT`): Inquiry summary or dispute title.
+   - `transaction_id` (`TEXT`): Optional foreign key to disputed double-entry transaction record.
+   - `escrow_id` (`TEXT`): Optional foreign key to disputed escrow agreement.
+   - `assigned_to` (`TEXT`): Staff member assigned to the investigation.
+   - `resolution_notes` (`TEXT`): Internal staff settlement notes upon resolving/closing.
+   - `created_at`, `updated_at`, `resolved_at` (`INTEGER`): Audit timestamps.
+
+2. **`ticket_messages`**:
+   - `id` (`TEXT` Primary Key): Message identifier.
+   - `ticket_id` (`TEXT`): Parent support ticket reference.
+   - `sender_id` (`TEXT`): User identifier of author.
+   - `sender_role` (`TEXT`): Role tag (`customer`, `bank_staff`, `admin`).
+   - `sender_name` (`TEXT`): Cached display name of author.
+   - `message` (`TEXT`): Body text of the response.
+   - `created_at` (`INTEGER`): Timestamp of transmission.
+
+### Integration Points
+- **Transaction Receipt Modal Integration**: Customers can open formal dispute claims directly from any transaction receipt modal via a "Dispute / Help" action button, pre-populating the disputed transaction ID, amount, and reference details.
+- **Escrow Mediation Integration**: Buyers and sellers can initiate dispute mediation directly from active escrow agreement action bars.
+- **Dedicated Staff Support Desk**: Bank administrators can inspect incoming inquiries, filter by status or priority, assign staff handlers, exchange threaded replies with clients, and officially resolve disputes.
+- **Customer Support Hub**: Citizens have access to a dedicated Support view with real-time status indicators, historical inquiry logs, and live reply threads.
+
+---
+
 ## 📋 Comprehensive Feature List by Platform Role
 
 ### 🌐 1. Slate Global Admins (SaaS Superusers)
@@ -1553,10 +1627,11 @@ Slate Banking features a categorized, search-indexed **Bank Settings Management 
 ### 👔 2. Bank Staff (Executives, Branch Managers, Loan Officers, Tellers, Auditors)
 * **Dynamic Product & Catalog Management**: Configure custom account tiers (checking, savings, corporate), tiered interest APYs, credit lines, loan limits/APRs, and debit/credit card products with instant catalog synchronization.
 * **Underwriting & Loan Lifecycle**: Review incoming financing applications, inspect pledged collateral, manually or automatically approve/reject credit, assess delinquency penalties, and manage loan payoffs.
-* **Institutional Escrow Custody**: Supervise neutral third-party escrow holds, draw and lock customer funds, execute final settlement releases, and process voluntary refunds or contract cancellations.
+* **Institutional Escrow Custody & Mediation**: Supervise neutral third-party escrow holds, draw and lock customer funds, execute final settlement releases, and resolve customer disputes.
 * **Automated Batch Payroll & Direct Debit**: Schedule and execute bulk recurring salary disbursements across enterprise client teams with pre-flight liquidity verification.
 * **Accounts Receivable & Invoicing**: Track billing pipelines, generate printable institutional PDF invoices with bank letterheads, and perform manual reconciliation.
-* **Customer Relationship Management (CRM)**: Manage support tickets, inspect KYC customer profiles, freeze/unfreeze accounts, and assign granular staff roles (admin, manager, loan_officer, compliance, teller).
+* **Customer Support Desk & Dispute Resolution**: Manage client tickets, investigate disputed transactions and escrow claims, converse in real-time threads, and log formal settlement determinations.
+* **Customer Relationship Management (CRM)**: Inspect KYC customer profiles, freeze/unfreeze accounts, adjust credit lines, and assign granular staff roles (`admin`, `manager`, `loan_officer`, `compliance`, `teller`).
 * **Automated Encrypted Backups**: Daily 24-hour AES-256-GCM encrypted database snapshots with Discord webhook delivery, manual one-shot triggers, and browser decryption verifiers.
 
 ### 👥 3. Customers & Citizens
@@ -1568,6 +1643,7 @@ Slate Banking features a categorized, search-indexed **Bank Settings Management 
   * **Payment Cards**: Request contactless debit and premium credit cards linked to bank accounts with instant freeze/unfreeze controls.
   * **Time Vault Bonds**: Lock savings into fixed-term high-yield bonds with guaranteed maturity payouts.
   * **Trustless Escrow Agreements**: Draft peer-to-peer escrow holds with auto-funding, seller fulfillment tracking, and self-service buyer release controls.
+* **Integrated Support & Dispute Center**: Open support tickets, report unauthorized or erroneous transaction charges directly from receipts, and request escrow mediation.
 * **Corporate Team Management**: Add and manage Minecraft username operators and managers on business accounts with live skin head avatar previews.
 * **Bill Payments & Point-of-Sale**: Pay invoices, manage direct debit subscriptions, and execute contactless Onyx merchant checkouts.
 

@@ -426,11 +426,59 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
         .from(loans)
         .where(and(eq(loans.bankId, bankId), or(inArray(loans.discordId, candidateIds), inArray(loans.accountId, accountIds))));
 
+      const { bankSettings, banks: banksTable, customerNotifications } = await import("../../db/schema");
+      const { getBankCorpName, getDepositCommand } = await import("../../lib/min_balance_service.js");
+      const bankRec = await db.select().from(banksTable).where(eq(banksTable.id, bankId)).get();
+      const settingsRec = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
+      const rawTiers = Array.isArray(settingsRec?.accountTiers) ? settingsRec.accountTiers : [];
+      const bankCorpName = getBankCorpName(bankRec, settingsRec);
+
+      const enrichedAccounts = userAccounts.map(a => {
+        const tier = rawTiers.find((t: any) => t.id === a.tierId) || rawTiers.find((t: any) => t.isDefault);
+        const minBalance = tier?.minBalance ? Number(tier.minBalance) : 0;
+        const isBelowMinBalance = minBalance > 0 && (a.balance || 0) < minBalance;
+        const deficitCents = isBelowMinBalance ? minBalance - (a.balance || 0) : 0;
+        const depositDollars = Math.ceil((deficitCents || minBalance || 10000) / 100);
+        const depositCommand = getDepositCommand(bankCorpName, a.accountName, depositDollars);
+
+        return {
+          ...a,
+          tierName: tier?.name || null,
+          minBalance,
+          isBelowMinBalance,
+          deficitCents,
+          depositCommand,
+          tierDetails: tier ? {
+            name: tier.name,
+            minBalance: tier.minBalance,
+            monthlyFee: tier.monthlyFee,
+            apyPercent: tier.apyPercent,
+            creditLimit: tier.creditLimit,
+          } : null,
+        };
+      });
+
+      // Fetch customer notifications
+      const userNotifications = await db.select()
+        .from(customerNotifications)
+        .where(
+          and(
+            eq(customerNotifications.bankId, bankId),
+            inArray(customerNotifications.discordId, candidateIds)
+          )
+        )
+        .orderBy(desc(customerNotifications.createdAt))
+        .limit(30);
+
+      const unreadNotificationCount = userNotifications.filter(n => !n.isRead).length;
+
       res.json({
         isStaff,
-        accounts: userAccounts,
+        accounts: enrichedAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
+        notifications: userNotifications,
+        unreadNotificationCount,
         cards: userCards.map((c: any) => ({
           ...c,
           cardNumber: c.cardNumber ? `•••• ${String(c.cardNumber).slice(-4)}` : null,
@@ -1202,10 +1250,9 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
 
     // 3.5. Auto-Provision Credit Card if Tier specifies a Credit Limit
     let provisionedCardInfo: any = null;
-    if (finalTierId && settings?.accountTiers) {
-      const assignedTier = settings.accountTiers.find((t: any) => t.id === finalTierId);
-      if (assignedTier && assignedTier.creditLimit && assignedTier.creditLimit > 0) {
-        const { cards } = await import("../../db/schema");
+    const assignedTier = finalTierId && settings?.accountTiers ? settings.accountTiers.find((t: any) => t.id === finalTierId) : null;
+    if (assignedTier && assignedTier.creditLimit && assignedTier.creditLimit > 0) {
+      const { cards } = await import("../../db/schema");
         const generateCardNum = () => "4" + Array.from({length: 15}, () => Math.floor(Math.random() * 10)).join("");
         const cardNum = generateCardNum();
         const cvv = Math.floor(100 + Math.random() * 900).toString();
@@ -1229,7 +1276,6 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
         });
         provisionedCardInfo = { cardId, creditLimit: assignedTier.creditLimit };
       }
-    }
 
     // 4. Business Account Special Integration: Auto-provision Onyx Merchant Storefront
     let merchantInfo: any = null;
@@ -1266,6 +1312,14 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       ]
     });
 
+    // Minimum Maintenance Balance check and deposit guide trigger
+    const { checkAndNotifyAccountMinBalance, getBankCorpName, getDepositCommand } = await import("../../lib/min_balance_service.js");
+    const minBalResult = await checkAndNotifyAccountMinBalance(id, { isNewAccount: true });
+    const bankCorpName = getBankCorpName(bank, settings);
+    const requiredMinCents = assignedTier?.minBalance ? Number(assignedTier.minBalance) : 0;
+    const initialDepositDollars = Math.ceil((requiredMinCents || 10000) / 100);
+    const depositCommand = getDepositCommand(bankCorpName, accountName, initialDepositDollars);
+
     const successMessage = existsInGame
       ? (type === "business" ? "Business Account registered and provisioned in CityCorp in-game!" : "Personal Account opened and provisioned in CityCorp in-game!")
       : (settings?.autoProvisionInGame
@@ -1275,11 +1329,23 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
     res.json({
       success: true,
       message: successMessage,
+      depositInstructions: {
+        command: depositCommand,
+        bankCorpName,
+        accountName,
+        minBalanceCents: requiredMinCents,
+        recommendedDepositDollars: initialDepositDollars,
+        instructions: `Run /c account deposit ${bankCorpName} ${accountName} ${initialDepositDollars} on the Minecraft server to fund your account.`
+      },
       account: {
         id,
         bankId,
         accountName,
         accountType: type,
+        tierId: assignedTier?.id || null,
+        tierName: assignedTier?.name || null,
+        minBalance: requiredMinCents,
+        depositCommand,
         businessTaxId,
         businessSector,
         merchantInfo,
@@ -2200,17 +2266,12 @@ portalRouter.post("/api/portal/:bankId/escrows", requireAuth, async (req: expres
       return res.status(400).json({ error: "Seller counterparty account or handle is required." });
     }
 
-    const allBankAccounts = await db.select().from(bankAccounts).where(eq(bankAccounts.bankId, bankId)).all();
-    const seller = allBankAccounts.find(a => 
-      a.id === cleanSeller ||
-      a.accountName.toLowerCase() === cleanSeller.toLowerCase() ||
-      (a.ownerDiscordId && a.ownerDiscordId.toLowerCase() === cleanSeller.toLowerCase()) ||
-      (a.ownerMinecraftName && a.ownerMinecraftName.toLowerCase() === cleanSeller.toLowerCase())
-    );
-
-    if (!seller) {
-      return res.status(404).json({ error: `Could not locate seller counterparty "${cleanSeller}" at this bank.` });
+    const { resolveEscrowCounterpartyAccount } = await import("../../lib/account_lookup.js");
+    const sellerResult = await resolveEscrowCounterpartyAccount(cleanSeller, { bankId, excludeAccountId: buyer.id });
+    if (!sellerResult.account) {
+      return res.status(404).json({ error: sellerResult.error || `Could not locate seller counterparty "${cleanSeller}" at this bank.` });
     }
+    const seller = sellerResult.account;
 
     if (seller.id === buyer.id) {
       return res.status(400).json({ error: "Buyer and Seller cannot be the exact same account." });
@@ -2437,4 +2498,292 @@ portalRouter.post("/api/portal/:bankId/escrows/:escrowId/cancel", requireAuth, a
     res.status(500).json({ error: e.message || "Failed to cancel escrow" });
   }
 });
+
+// ==========================================
+// CUSTOMER SUPPORT TICKETS & DISPUTES
+// ==========================================
+
+portalRouter.get("/api/portal/:bankId/tickets", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets, ticketMessages } = await import("../../db/schema");
+  const { eq, and, desc, inArray } = await import("drizzle-orm");
+
+  try {
+    const { bankId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    const tickets = await db.select()
+      .from(supportTickets)
+      .where(
+        and(
+          eq(supportTickets.bankId, bankId),
+          inArray(supportTickets.discordId, candidateIds)
+        )
+      )
+      .orderBy(desc(supportTickets.updatedAt), desc(supportTickets.createdAt));
+
+    // Also fetch message counts or preview for each ticket
+    const ticketIds = tickets.map(t => t.id);
+    let messages: any[] = [];
+    if (ticketIds.length > 0) {
+      messages = await db.select()
+        .from(ticketMessages)
+        .where(inArray(ticketMessages.ticketId, ticketIds))
+        .orderBy(ticketMessages.createdAt);
+    }
+
+    const ticketsWithMessages = tickets.map(t => ({
+      ...t,
+      messages: messages.filter(m => m.ticketId === t.id),
+      messageCount: messages.filter(m => m.ticketId === t.id).length,
+    }));
+
+    res.json(ticketsWithMessages);
+  } catch (e: any) {
+    console.error("Error fetching customer tickets:", e);
+    res.status(500).json({ error: e.message || "Failed to fetch support tickets" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/tickets", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets, ticketMessages, bankCustomers } = await import("../../db/schema");
+  const { eq, and } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { bankId } = req.params;
+    const { subject, description, category, priority, accountId, transactionId, escrowId, initialMessage } = req.body;
+
+    if (!subject || !subject.trim()) {
+      return res.status(400).json({ error: "Ticket subject is required" });
+    }
+
+    const discordId = (req as any).user?.discordId || (req as any).user?.id;
+    if (!discordId) return res.status(401).json({ error: "Unauthorized" });
+
+    // Lookup customer MC username
+    const customer = await db.select().from(bankCustomers).where(
+      and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
+    ).get();
+
+    const mcUsername = customer?.mcUsername || (req as any).user?.username || null;
+    const ticketId = `tkt_${Date.now()}_${uuidv4().slice(0, 8)}`;
+    const now = new Date();
+
+    const newTicket = await db.insert(supportTickets).values({
+      id: ticketId,
+      bankId,
+      discordId,
+      mcUsername,
+      subject: subject.trim(),
+      description: description ? description.trim() : null,
+      category: category || "general",
+      priority: priority || "medium",
+      status: "open",
+      accountId: accountId || null,
+      transactionId: transactionId || null,
+      escrowId: escrowId || null,
+      createdAt: now,
+      updatedAt: now,
+    }).returning().get();
+
+    // Create initial message if provided
+    const msgText = initialMessage ? initialMessage.trim() : (description ? description.trim() : subject.trim());
+    const firstMsg = await db.insert(ticketMessages).values({
+      id: uuidv4(),
+      ticketId,
+      senderDiscordId: discordId,
+      senderName: mcUsername || (req as any).user?.username || "Customer",
+      senderRole: "customer",
+      message: msgText,
+      createdAt: now,
+    }).returning().get();
+
+    res.json({ ...newTicket, messages: [firstMsg], messageCount: 1 });
+  } catch (e: any) {
+    console.error("Error creating customer ticket:", e);
+    res.status(500).json({ error: e.message || "Failed to create support ticket" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/tickets/:ticketId/messages", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets, ticketMessages, bankCustomers } = await import("../../db/schema");
+  const { eq, and, inArray } = await import("drizzle-orm");
+  const { v4: uuidv4 } = await import("uuid");
+
+  try {
+    const { bankId, ticketId } = req.params;
+    const { message, attachmentUrl } = req.body;
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Message content cannot be empty" });
+    }
+
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+    const ticket = await db.select().from(supportTickets).where(
+      and(
+        eq(supportTickets.id, ticketId),
+        eq(supportTickets.bankId, bankId),
+        inArray(supportTickets.discordId, candidateIds)
+      )
+    ).get();
+
+    if (!ticket) {
+      return res.status(404).json({ error: "Support ticket not found" });
+    }
+
+    if (ticket.status === "closed") {
+      // Reopen ticket if customer replies
+      await db.update(supportTickets).set({
+        status: "in_progress",
+        updatedAt: new Date(),
+      }).where(eq(supportTickets.id, ticketId));
+    } else {
+      await db.update(supportTickets).set({
+        updatedAt: new Date(),
+      }).where(eq(supportTickets.id, ticketId));
+    }
+
+    const discordId = (req as any).user?.discordId || (req as any).user?.id;
+    const customer = await db.select().from(bankCustomers).where(
+      and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, discordId))
+    ).get();
+
+    const senderName = customer?.mcUsername || (req as any).user?.username || "Customer";
+    const now = new Date();
+
+    const newMsg = await db.insert(ticketMessages).values({
+      id: uuidv4(),
+      ticketId,
+      senderDiscordId: discordId,
+      senderName,
+      senderRole: "customer",
+      message: message.trim(),
+      attachmentUrl: attachmentUrl || null,
+      createdAt: now,
+    }).returning().get();
+
+    res.json(newMsg);
+  } catch (e: any) {
+    console.error("Error posting ticket message:", e);
+    res.status(500).json({ error: e.message || "Failed to post message" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/tickets/:ticketId/close", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { supportTickets } = await import("../../db/schema");
+  const { eq, and, inArray } = await import("drizzle-orm");
+
+  try {
+    const { bankId, ticketId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    const ticket = await db.select().from(supportTickets).where(
+      and(
+        eq(supportTickets.id, ticketId),
+        eq(supportTickets.bankId, bankId),
+        inArray(supportTickets.discordId, candidateIds)
+      )
+    ).get();
+
+    if (!ticket) return res.status(404).json({ error: "Support ticket not found" });
+
+    const now = new Date();
+    await db.update(supportTickets).set({
+      status: "closed",
+      resolvedAt: now,
+      updatedAt: now,
+    }).where(eq(supportTickets.id, ticketId));
+
+    res.json({ success: true, status: "closed" });
+  } catch (e: any) {
+    console.error("Error closing ticket:", e);
+    res.status(500).json({ error: e.message || "Failed to close ticket" });
+  }
+});
+
+// Customer Notifications Endpoints
+portalRouter.get("/api/portal/:bankId/notifications", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { customerNotifications } = await import("../../db/schema");
+  const { eq, and, inArray, desc } = await import("drizzle-orm");
+
+  try {
+    const { bankId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    const notifs = await db.select()
+      .from(customerNotifications)
+      .where(
+        and(
+          eq(customerNotifications.bankId, bankId),
+          inArray(customerNotifications.discordId, candidateIds)
+        )
+      )
+      .orderBy(desc(customerNotifications.createdAt))
+      .limit(50);
+
+    const unreadCount = notifs.filter(n => !n.isRead).length;
+
+    res.json({ notifications: notifs, unreadCount });
+  } catch (e: any) {
+    console.error("Error fetching customer notifications:", e);
+    res.status(500).json({ error: e.message || "Failed to fetch notifications" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/notifications/:id/read", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { customerNotifications } = await import("../../db/schema");
+  const { eq, and, inArray } = await import("drizzle-orm");
+
+  try {
+    const { bankId, id } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    await db.update(customerNotifications)
+      .set({ isRead: true })
+      .where(
+        and(
+          eq(customerNotifications.id, id),
+          eq(customerNotifications.bankId, bankId),
+          inArray(customerNotifications.discordId, candidateIds)
+        )
+      );
+
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("Error marking notification read:", e);
+    res.status(500).json({ error: e.message || "Failed to update notification" });
+  }
+});
+
+portalRouter.post("/api/portal/:bankId/notifications/read-all", requireAuth, async (req: express.Request, res: express.Response) => {
+  const { db } = await import("../../db/index");
+  const { customerNotifications } = await import("../../db/schema");
+  const { eq, and, inArray } = await import("drizzle-orm");
+
+  try {
+    const { bankId } = req.params;
+    const candidateIds = await getUserCandidateIdentifiers(req, bankId);
+
+    await db.update(customerNotifications)
+      .set({ isRead: true })
+      .where(
+        and(
+          eq(customerNotifications.bankId, bankId),
+          inArray(customerNotifications.discordId, candidateIds)
+        )
+      );
+
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("Error marking all notifications read:", e);
+    res.status(500).json({ error: e.message || "Failed to update notifications" });
+  }
+});
+
 

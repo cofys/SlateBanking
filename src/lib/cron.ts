@@ -20,8 +20,10 @@ export function startCronJobs() {
       await notifyUpcomingLoanPayments();
       const { processDueNetSettlements } = await import("./net_settlement");
       await processDueNetSettlements();
+      const { runBankMinBalanceSweep } = await import("./min_balance_service");
+      await runBankMinBalanceSweep();
     } catch (e) {
-      console.error("[Cron] Loan/Yield processing error:", e);
+      console.error("[Cron] Loan/Yield/MinBalance processing error:", e);
     }
   }, 15 * 60 * 1000);
   
