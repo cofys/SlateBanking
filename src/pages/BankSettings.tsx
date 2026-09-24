@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   Building2,
@@ -36,7 +36,8 @@ import {
   Sparkles,
   ChevronRight,
   ExternalLink,
-  Info
+  Info,
+  ChevronDown
 } from "lucide-react";
 import { SchemeSwatches } from "../components/ui/chrome";
 import { SCHEME_HEX, accentForeground, type ColorSchemeId } from "../lib/theme";
@@ -156,6 +157,9 @@ export function BankSettings() {
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
+  const mobileNavRef = useRef<HTMLDivElement>(null);
+  const contentSectionRef = useRef<HTMLDivElement>(null);
+
   // Form states
   const [schemeId, setSchemeId] = useState<ColorSchemeId>("slate");
   const [brandHex, setBrandHex] = useState("#8b95a5");
@@ -180,6 +184,16 @@ export function BankSettings() {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2500);
+  };
+
+  const handleSelectTab = (tabId: SettingsTab) => {
+    setActiveTab(tabId);
+    // On mobile, scroll smoothly to the content so it's instantly in view
+    if (window.innerWidth < 1024 && contentSectionRef.current) {
+      setTimeout(() => {
+        contentSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+    }
   };
 
   const isDefaultDummyVaultTiers = (tiers: any[]): boolean => {
@@ -303,6 +317,7 @@ export function BankSettings() {
     setSaveSuccess(false);
 
     const form = document.getElementById("bank-settings-form") as HTMLFormElement;
+    if (!form) return;
     const formData = new FormData(form);
 
     const newSettings = {
@@ -507,18 +522,18 @@ export function BankSettings() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto animate-in fade-in duration-300 pb-20">
+    <div className="max-w-6xl mx-auto animate-in fade-in duration-300 pb-28 px-2 sm:px-4">
       {/* Header Bar */}
-      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 shadow-xl">
+      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 shadow-xl">
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-              <Sliders size={24} />
+            <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shrink-0">
+              <Sliders size={22} />
             </div>
             <div>
-              <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                Bank Settings
-                <span className="text-xs font-mono font-normal px-2.5 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/10">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2 flex-wrap">
+                <span>Bank Settings</span>
+                <span className="text-[11px] font-mono font-normal px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/10">
                   {bank?.name || "Tenant"}
                 </span>
               </h2>
@@ -529,7 +544,7 @@ export function BankSettings() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 self-stretch sm:self-auto">
           <button
             type="button"
             onClick={() => {
@@ -541,27 +556,27 @@ export function BankSettings() {
               link.click();
               document.body.removeChild(link);
             }}
-            className="bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-2"
+            className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-center gap-2"
             title="Download full JSON cryptographic snapshot"
           >
-            <Download size={15} />
-            Export Snapshot
+            <Download size={14} />
+            <span>Export</span>
           </button>
 
           <button
             type="button"
             onClick={(e) => handleSave(e as any)}
             disabled={saving}
-            className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-indigo-600/20 cursor-pointer"
+            className="flex-1 sm:flex-initial bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold px-4 sm:px-5 py-2 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-indigo-600/20 cursor-pointer"
           >
-            {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-            {saving ? "Saving..." : "Save Settings"}
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            <span>{saving ? "Saving..." : "Save"}</span>
           </button>
         </div>
       </div>
 
       {/* Global Search & Category Filter */}
-      <div className="mb-6 flex flex-col sm:flex-row items-center gap-3">
+      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" size={16} />
           <input
@@ -569,12 +584,12 @@ export function BankSettings() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search all settings (e.g. fees, prefix, discord, apy, backup, webhook)..."
-            className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-indigo-500 transition-colors"
+            className="w-full bg-[var(--bg-elevated)] border border-white/10 rounded-xl pl-10 pr-12 py-2.5 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-indigo-500 transition-colors"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs bg-white/10 px-1.5 py-0.5 rounded"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs bg-white/10 px-2 py-0.5 rounded"
             >
               Clear
             </button>
@@ -582,7 +597,7 @@ export function BankSettings() {
         </div>
 
         {searchQuery && (
-          <div className="text-xs text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-3 py-2 rounded-xl shrink-0">
+          <div className="text-xs text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-3 py-2 rounded-xl shrink-0 w-full sm:w-auto text-center">
             {matchingTabs.length} {matchingTabs.length === 1 ? "category" : "categories"} matched
           </div>
         )}
@@ -590,7 +605,7 @@ export function BankSettings() {
 
       {/* Success Notification */}
       {saveSuccess && (
-        <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+        <div className="mb-4 sm:mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center justify-between animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
             <span>Bank configuration saved and live services updated successfully.</span>
@@ -599,10 +614,55 @@ export function BankSettings() {
         </div>
       )}
 
+      {/* MOBILE-ONLY Category Navigation Bar (Sticky, Scrollable Horizontal Pills + Quick Picker) */}
+      <div className="lg:hidden mb-4 space-y-2" ref={mobileNavRef}>
+        {/* Mobile Quick Dropdown Jump */}
+        <div className="flex items-center gap-2 bg-[var(--bg-elevated)] border border-white/10 rounded-xl p-2">
+          <span className="text-[11px] font-semibold text-white/50 pl-2 shrink-0">Category:</span>
+          <div className="relative flex-1">
+            <select
+              value={activeTab}
+              onChange={(e) => handleSelectTab(e.target.value as SettingsTab)}
+              className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-3 py-1.5 text-xs font-semibold text-white focus:outline-none appearance-none cursor-pointer pr-8"
+            >
+              {matchingTabs.map((t) => (
+                <option key={t.id} value={t.id} className="bg-[#18181c] text-white">
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none" />
+          </div>
+        </div>
+
+        {/* Mobile Horizontal Pill Scrollbar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 pt-0.5 no-scrollbar touch-pan-x">
+          {matchingTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleSelectTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all shrink-0 cursor-pointer ${
+                  isActive
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-500/50"
+                    : "bg-[var(--bg-elevated)] border border-white/10 text-white/70 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Icon size={14} className={isActive ? "text-white" : tab.color} />
+                <span>{tab.shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Main Settings Navigation & Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Navigation Sidebar */}
-        <div className="lg:col-span-4 space-y-1 bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-2.5 shadow-lg sticky top-4">
+        {/* Left Navigation Sidebar (Desktop Only) */}
+        <div className="hidden lg:block lg:col-span-4 space-y-1 bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-2.5 shadow-lg sticky top-4">
           <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-white/40 flex items-center justify-between">
             <span>Settings Categories</span>
             <span className="text-[10px] text-white/30 font-mono">⌘S to save</span>
@@ -659,24 +719,24 @@ export function BankSettings() {
         </div>
 
         {/* Right Settings Form Container */}
-        <div className="lg:col-span-8">
-          <form id="bank-settings-form" onSubmit={handleSave} className="space-y-6">
+        <div className="lg:col-span-8 w-full" ref={contentSectionRef}>
+          <form id="bank-settings-form" onSubmit={handleSave} className="space-y-4 sm:space-y-6">
             {/* Active Tab Banner */}
-            <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-5 shadow-md flex items-center justify-between gap-4">
+            <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-5 shadow-md flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-xl bg-white/5 border border-white/10 ${activeTabDef.color}`}>
+                <div className={`p-2.5 rounded-xl bg-white/5 border border-white/10 shrink-0 ${activeTabDef.color}`}>
                   <activeTabDef.icon size={20} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">{activeTabDef.label}</h3>
+                  <h3 className="text-sm sm:text-base font-bold text-white">{activeTabDef.label}</h3>
                   <p className="text-xs text-white/50">{activeTabDef.description}</p>
                 </div>
               </div>
             </div>
 
             {/* TAB 1: Brand & Identity */}
-            <div className={activeTab === "brand" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
+            <div className={activeTab === "brand" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
                 <div>
                   <label className="block text-xs font-semibold text-white/60 mb-3 uppercase tracking-wider">
                     Color Scheme Preset
@@ -693,7 +753,7 @@ export function BankSettings() {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-white/5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 pt-4 border-t border-white/5">
                   <div>
                     <label className="block text-xs font-semibold text-white/60 mb-2 uppercase tracking-wider">
                       Custom Accent Color
@@ -714,7 +774,7 @@ export function BankSettings() {
                           if (/^#[0-9a-fA-F]{0,6}$/.test(hex)) setBrandHex(hex);
                         }}
                         placeholder="#8b95a5"
-                        className="flex-1 bg-transparent text-sm text-white font-mono focus:outline-none"
+                        className="flex-1 bg-transparent text-sm text-white font-mono focus:outline-none min-w-0"
                       />
                     </div>
                     <div
@@ -743,7 +803,7 @@ export function BankSettings() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-white/5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 pt-4 border-t border-white/5">
                   <div>
                     <label className="block text-xs font-semibold text-white/60 mb-2 uppercase tracking-wider">
                       Brand Logo URL
@@ -791,7 +851,7 @@ export function BankSettings() {
                       Custom Portal Domain
                     </label>
                     <div className="flex bg-[var(--bg-subtle)] border border-white/10 rounded-xl overflow-hidden focus-within:border-indigo-500 transition-colors">
-                      <span className="px-4 py-2.5 text-white/40 border-r border-white/10 text-xs flex items-center bg-black/20 font-mono">
+                      <span className="px-3 sm:px-4 py-2.5 text-white/40 border-r border-white/10 text-xs flex items-center bg-black/20 font-mono shrink-0">
                         https://
                       </span>
                       <input
@@ -799,13 +859,13 @@ export function BankSettings() {
                         type="text"
                         placeholder="portal.mybank.com"
                         defaultValue={settings?.customDomain || ""}
-                        className="flex-1 bg-transparent px-4 py-2.5 text-xs text-white focus:outline-none placeholder:text-white/20 font-mono"
+                        className="flex-1 bg-transparent px-3 sm:px-4 py-2.5 text-xs text-white focus:outline-none placeholder:text-white/20 font-mono min-w-0"
                       />
                     </div>
-                    <p className="text-xs text-white/40 mt-1.5 flex items-center gap-1.5">
-                      <Info size={13} className="text-indigo-400" />
-                      Point your DNS CNAME record to:{" "}
-                      <code className="text-[11px] text-white/70 bg-white/10 px-1.5 py-0.5 rounded font-mono">
+                    <p className="text-xs text-white/40 mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      <Info size={13} className="text-indigo-400 shrink-0" />
+                      <span>Point your DNS CNAME record to:</span>
+                      <code className="text-[11px] text-white/70 bg-white/10 px-1.5 py-0.5 rounded font-mono break-all">
                         {window.location.host}
                       </code>
                     </p>
@@ -815,7 +875,7 @@ export function BankSettings() {
                 {/* SEO & Social Metadata */}
                 <div className="pt-4 border-t border-white/5 space-y-4">
                   <div className="flex items-center gap-2">
-                    <Sparkles size={16} className="text-purple-400" />
+                    <Sparkles size={16} className="text-purple-400 shrink-0" />
                     <h4 className="text-xs font-bold uppercase tracking-wider text-white">
                       Search & Social Embed Metadata
                     </h4>
@@ -859,9 +919,9 @@ export function BankSettings() {
             </div>
 
             {/* TAB 2: Fees & Tariffs */}
-            <div className={activeTab === "fees" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className={activeTab === "fees" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   <div>
                     <label className="block text-xs font-semibold text-white/60 mb-2 uppercase tracking-wider">
                       Deposit Fee (%)
@@ -984,12 +1044,12 @@ export function BankSettings() {
                 </div>
 
                 <div className="pt-4 border-t border-white/5 bg-black/20 p-4 rounded-xl space-y-2">
-                  <label className="flex items-center gap-3 cursor-pointer">
+                  <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
                       id="overwriteCustomAccountFees"
                       name="overwriteCustomAccountFees"
-                      className="w-4 h-4 rounded bg-[var(--bg-subtle)] border-white/20 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      className="w-4 h-4 rounded bg-[var(--bg-subtle)] border-white/20 text-indigo-600 focus:ring-indigo-500 cursor-pointer mt-0.5 shrink-0"
                     />
                     <span className="text-xs sm:text-sm text-white/90 font-medium">
                       Apply these base rates to accounts with custom fee overrides (overwrite custom fees)
@@ -1003,16 +1063,16 @@ export function BankSettings() {
             </div>
 
             {/* TAB 3: Account Rules & Limits */}
-            <div className={activeTab === "accounts" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className={activeTab === "accounts" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   {/* Personal */}
-                  <div className="bg-black/20 border border-white/5 rounded-xl p-5 space-y-4">
-                    <div className="flex items-center justify-between">
+                  <div className="bg-black/20 border border-white/5 rounded-xl p-4 sm:p-5 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <span className="text-sm font-semibold text-white flex items-center gap-2">
                         <User size={16} className="text-indigo-400" /> Personal Accounts
                       </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 truncate max-w-[160px]">
                         {personalPrefix || "ACC-"}
                         {personalNamingMode === "discord_username" ? "DiscordUser" : "my-savings"}
                       </span>
@@ -1050,12 +1110,12 @@ export function BankSettings() {
                   </div>
 
                   {/* Business */}
-                  <div className="bg-black/20 border border-white/5 rounded-xl p-5 space-y-4">
-                    <div className="flex items-center justify-between">
+                  <div className="bg-black/20 border border-white/5 rounded-xl p-4 sm:p-5 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <span className="text-sm font-semibold text-white flex items-center gap-2">
                         <Building2 size={16} className="text-emerald-400" /> Corporate Accounts
                       </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 truncate max-w-[160px]">
                         {businessPrefix || "CORP-"}
                         {businessNamingMode === "discord_plus_business" ? "Owner-Company" : "AcmeCorp"}
                       </span>
@@ -1094,9 +1154,9 @@ export function BankSettings() {
 
                 {/* Account Limits */}
                 <div className="pt-4 border-t border-white/5 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <Shield size={16} className="text-amber-400" />
+                      <Shield size={16} className="text-amber-400 shrink-0" />
                       <span className="text-xs font-bold text-white uppercase tracking-wider">
                         Citizen Account Holding Caps
                       </span>
@@ -1104,7 +1164,7 @@ export function BankSettings() {
                     <span className="text-[11px] text-white/40">Blank or 0 = unlimited</span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-xs font-medium text-white/50 mb-1">Max Personal Accounts</label>
                       <input
@@ -1149,9 +1209,9 @@ export function BankSettings() {
             </div>
 
             {/* TAB 4: Feature Modules */}
-            <div className={activeTab === "modules" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className={activeTab === "modules" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                   {[
                     { key: "enableLoans", label: "Loan Center", icon: Landmark },
                     { key: "enableVaults", label: "Fixed Bonds", icon: Database },
@@ -1202,8 +1262,8 @@ export function BankSettings() {
 
                 {/* Bond Terms Ladder */}
                 {settings?.enableVaults !== false && (
-                  <div className="pt-6 border-t border-white/5 space-y-4">
-                    <div className="flex items-center justify-between">
+                  <div className="pt-5 border-t border-white/5 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <div>
                         <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                           <Database size={15} className="text-indigo-400" />
@@ -1247,7 +1307,7 @@ export function BankSettings() {
                         {vaultTiers.map((t, i) => (
                           <div
                             key={i}
-                            className="grid grid-cols-3 sm:grid-cols-4 gap-2 items-end bg-black/20 p-3 rounded-xl border border-white/5"
+                            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 items-end bg-black/20 p-3 rounded-xl border border-white/5"
                           >
                             <label className="text-[11px] text-white/50">
                               Lock Days
@@ -1291,9 +1351,9 @@ export function BankSettings() {
                             <button
                               type="button"
                               onClick={() => setVaultTiers(vaultTiers.filter((_, j) => j !== i))}
-                              className="text-xs text-rose-400 hover:text-rose-300 py-1.5 font-medium transition-colors"
+                              className="w-full sm:w-auto text-xs text-rose-400 hover:text-rose-300 py-2 font-medium transition-colors bg-rose-500/10 sm:bg-transparent rounded-lg text-center"
                             >
-                              Remove
+                              Remove Term
                             </button>
                           </div>
                         ))}
@@ -1305,9 +1365,9 @@ export function BankSettings() {
             </div>
 
             {/* TAB 5: Lending Policy */}
-            <div className={activeTab === "lending" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <div className={activeTab === "lending" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                   {[
                     { key: "loanAllowCitizenApply", label: "Citizen Applications", def: true },
                     { key: "loanAutoDebitEnabled", label: "Auto-Debit Installments", def: true },
@@ -1356,7 +1416,7 @@ export function BankSettings() {
                   <h4 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3">
                     Origination Baseline Parameters
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-xs font-medium text-white/50 mb-1.5">Default APR (%)</label>
                       <input
@@ -1409,7 +1469,7 @@ export function BankSettings() {
                   <h4 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3">
                     Delinquency & Default Schedules
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-xs font-medium text-white/50 mb-1">Late Fee Floor ($)</label>
                       <input
@@ -1471,17 +1531,17 @@ export function BankSettings() {
             </div>
 
             {/* TAB 6: Treasury & Settlement */}
-            <div className={activeTab === "treasury" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
+            <div className={activeTab === "treasury" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
                 <div>
                   <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <Building2 size={16} className="text-emerald-400" />
-                    Internal Institutional Subaccounts
+                    <Building2 size={16} className="text-emerald-400 shrink-0" />
+                    <span>Internal Institutional Subaccounts</span>
                   </h4>
                   <p className="text-xs text-white/50 mb-4">
                     Designate named accounts in CityCorp to route loans, fee revenues, and interest payouts.
                   </p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-xs font-medium text-white/50 mb-1.5">Loan Pool Account</label>
                       <input
@@ -1517,15 +1577,15 @@ export function BankSettings() {
                   </div>
                 </div>
 
-                <div className="pt-6 border-t border-white/5">
+                <div className="pt-5 border-t border-white/5">
                   <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <Zap size={16} className="text-amber-400" />
-                    Onyx Interbank Settlement Float
+                    <Zap size={16} className="text-amber-400 shrink-0" />
+                    <span>Onyx Interbank Settlement Float</span>
                   </h4>
                   <p className="text-xs text-white/50 mb-4">
                     Cross-bank payments settle through your SETTLEMENT subaccount at 0% internal CityCorp fees.
                   </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-xs font-medium text-white/50 mb-1.5">Settlement Account Name</label>
                       <input
@@ -1579,8 +1639,8 @@ export function BankSettings() {
             </div>
 
             {/* TAB 7: Discord Terminal */}
-            <div className={activeTab === "discord" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
+            <div className={activeTab === "discord" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
                     <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">
@@ -1666,7 +1726,7 @@ export function BankSettings() {
                 </div>
 
                 {/* Role IDs */}
-                <div className="pt-4 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="pt-4 border-t border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">
                       Verified Customer Role ID
@@ -1697,12 +1757,12 @@ export function BankSettings() {
                 </div>
 
                 {/* Channel GUI Spawners */}
-                <div className="pt-4 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="pt-4 border-t border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3">
                     <h5 className="text-xs font-bold text-white uppercase tracking-wider">
                       Public Customer Lobby GUI
                     </h5>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         id="guiChannelInput"
                         type="text"
@@ -1728,7 +1788,7 @@ export function BankSettings() {
                             alert(e.message || "Failed to spawn GUI");
                           }
                         }}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl text-xs font-semibold"
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl text-xs font-semibold text-center"
                       >
                         Spawn Lobby
                       </button>
@@ -1739,7 +1799,7 @@ export function BankSettings() {
                     <h5 className="text-xs font-bold text-white uppercase tracking-wider">
                       Staff Teller Desk GUI
                     </h5>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         id="staffChannelInput"
                         type="text"
@@ -1765,7 +1825,7 @@ export function BankSettings() {
                             alert(e.message || "Failed to spawn Staff Panel");
                           }
                         }}
-                        className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-2 rounded-xl text-xs font-semibold"
+                        className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-2 rounded-xl text-xs font-semibold text-center"
                       >
                         Spawn Staff Desk
                       </button>
@@ -1776,13 +1836,13 @@ export function BankSettings() {
             </div>
 
             {/* TAB 8: CityCorp & Integrations */}
-            <div className={activeTab === "integrations" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
+            <div className={activeTab === "integrations" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
                 {/* In-Game Provisioning */}
-                <div className="bg-black/20 border border-white/5 rounded-xl p-5 space-y-4">
-                  <div className="flex items-center justify-between">
+                <div className="bg-black/20 border border-white/5 rounded-xl p-4 sm:p-5 space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <Gamepad2 className="text-emerald-400" size={18} />
+                      <Gamepad2 className="text-emerald-400 shrink-0" size={18} />
                       <span className="text-sm font-bold text-white">In-Game Account Auto-Provisioning</span>
                     </div>
                     <span
@@ -1796,7 +1856,7 @@ export function BankSettings() {
                     </span>
                   </div>
 
-                  <label className="flex items-start gap-4 cursor-pointer">
+                  <label className="flex items-start gap-3 sm:gap-4 cursor-pointer">
                     <div
                       className={`w-11 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors mt-0.5 ${
                         settings?.autoProvisionInGame ? "bg-emerald-500" : "bg-white/15"
@@ -1829,7 +1889,7 @@ export function BankSettings() {
                 </div>
 
                 {/* CityCorp Credentials */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">
                       CityCorp Application ID
@@ -1885,7 +1945,7 @@ export function BankSettings() {
 
                 {/* Redirect Callback URIs Box */}
                 <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
                       Required CityCorp OAuth Redirect URI
                     </span>
@@ -1912,7 +1972,7 @@ export function BankSettings() {
                 <div className="pt-4 border-t border-white/5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <FileText size={18} className="text-emerald-400" />
+                      <FileText size={18} className="text-emerald-400 shrink-0" />
                       <span className="text-sm font-bold text-white">Google Docs Contract Automation</span>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1969,10 +2029,10 @@ export function BankSettings() {
             </div>
 
             {/* TAB 9: Security & Backups */}
-            <div className={activeTab === "security" ? "space-y-6" : "hidden"}>
-              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-6 space-y-6 shadow-md">
+            <div className={activeTab === "security" ? "space-y-4 sm:space-y-6" : "hidden"}>
+              <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-6 space-y-5 shadow-md">
                 {/* Security Toggles */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                   {[
                     { key: "maintenanceMode", label: "Bot Maintenance Mode", desc: "Temporarily disconnects Discord bot", color: "amber" },
                     { key: "requireKyc", label: "Enforce KYC Verification", desc: "Mandates identity before opening ledgers", color: "emerald" },
@@ -2016,12 +2076,12 @@ export function BankSettings() {
                 </div>
 
                 {/* Automated Daily Encrypted Backups */}
-                <div className="pt-6 border-t border-white/5 space-y-5">
-                  <div className="flex items-center justify-between">
+                <div className="pt-5 border-t border-white/5 space-y-4 sm:space-y-5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                       <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                        <Database size={16} className="text-emerald-400" />
-                        Automated Daily Encrypted Backups (AES-256-GCM)
+                        <Database size={16} className="text-emerald-400 shrink-0" />
+                        <span>Automated Daily Encrypted Backups (AES-256-GCM)</span>
                       </h4>
                       <p className="text-xs text-white/50 mt-0.5">
                         Tenant-isolated daily cryptographic exports transmitted to your private Discord webhook.
@@ -2057,7 +2117,7 @@ export function BankSettings() {
                     </div>
                   )}
 
-                  <label className="flex items-start gap-4 cursor-pointer bg-black/20 p-4 rounded-xl border border-white/5">
+                  <label className="flex items-start gap-3 sm:gap-4 cursor-pointer bg-black/20 p-4 rounded-xl border border-white/5">
                     <div
                       className={`w-11 h-6 shrink-0 rounded-full flex items-center p-1 transition-colors mt-0.5 ${
                         settings?.dailyBackupEnabled ? "bg-emerald-500" : "bg-white/15"
@@ -2089,7 +2149,7 @@ export function BankSettings() {
                     </div>
                   </label>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-white/50 mb-1.5 uppercase tracking-wide">
                         Backup Discord Webhook URL
@@ -2124,7 +2184,7 @@ export function BankSettings() {
                     </div>
                   </div>
 
-                  <div className="bg-black/30 p-4 rounded-xl border border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="bg-black/30 p-4 rounded-xl border border-white/5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                     <div>
                       <span className="text-xs font-bold text-white block">Manual Webhook Dispatch</span>
                       <span className="text-[11px] text-white/40">
@@ -2139,19 +2199,19 @@ export function BankSettings() {
                         type="button"
                         onClick={handleTriggerBackup}
                         disabled={triggeringBackup}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-900/20"
+                        className="flex-1 sm:flex-initial justify-center bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-900/20"
                       >
                         {triggeringBackup ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                        {triggeringBackup ? "Dispatching..." : "Send to Webhook"}
+                        <span>{triggeringBackup ? "Dispatching..." : "Send Webhook"}</span>
                       </button>
 
                       <a
                         href={`/api/banks/${bank?.id}/backup/download`}
                         download
-                        className="bg-white/10 hover:bg-white/15 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors flex items-center gap-1.5 border border-white/10"
+                        className="flex-1 sm:flex-initial justify-center bg-white/10 hover:bg-white/15 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors flex items-center gap-1.5 border border-white/10"
                       >
                         <Download size={13} />
-                        Download .enc
+                        <span>Download .enc</span>
                       </a>
                     </div>
                   </div>
@@ -2161,7 +2221,7 @@ export function BankSettings() {
                     <span className="text-xs font-bold text-white/70 uppercase tracking-wider block">
                       Offline Passphrase Decryption Verifier
                     </span>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         type="password"
                         value={testPassphrase}
@@ -2173,10 +2233,10 @@ export function BankSettings() {
                         type="button"
                         onClick={handleTestPassphrase}
                         disabled={testingPassphrase || !testPassphrase}
-                        className="bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 disabled:opacity-40"
+                        className="justify-center bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 disabled:opacity-40"
                       >
                         {testingPassphrase ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                        Test
+                        <span>Test</span>
                       </button>
                     </div>
                     {testResult && (
@@ -2196,32 +2256,32 @@ export function BankSettings() {
             </div>
 
             {/* Bottom Floating Save Action Bar */}
-            <div className="sticky bottom-4 z-20 bg-[var(--bg-elevated)]/90 backdrop-blur-md border border-white/15 rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-xs text-white/70">
-                  Editing <strong className="text-white">{activeTabDef.label}</strong>
+            <div className="sticky bottom-3 sm:bottom-4 z-20 bg-[var(--bg-elevated)]/95 backdrop-blur-md border border-white/15 rounded-2xl p-3 sm:p-4 shadow-2xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="text-xs text-white/70 truncate">
+                  Editing <strong className="text-white">{activeTabDef.shortLabel}</strong>
                 </span>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={loadSettings}
                   disabled={saving}
-                  className="px-3.5 py-2 rounded-xl text-xs font-medium text-white/60 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-1.5"
+                  className="px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-medium text-white/60 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-1.5"
                 >
                   <RotateCcw size={13} />
-                  Reset
+                  <span className="hidden sm:inline">Reset</span>
                 </button>
 
                 <button
                   type="submit"
                   disabled={saving}
-                  className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-indigo-600/25 cursor-pointer"
+                  className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/25 cursor-pointer"
                 >
                   {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                  {saving ? "Saving Changes..." : "Save All Settings"}
+                  <span>{saving ? "Saving..." : "Save Settings"}</span>
                 </button>
               </div>
             </div>
