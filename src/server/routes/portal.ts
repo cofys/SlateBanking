@@ -245,7 +245,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
 portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { banks, bankAccounts, transactions, invoices, cards, bankSettings, bankCustomers, loans, accountMembers, subscriptions } = await import("../../db/schema");
-    const { eq, and, or, desc, inArray } = await import("drizzle-orm");
+    const { eq, and, or, desc, inArray, sql } = await import("drizzle-orm");
 
     try {
       const bankId = req.params.bankId;
@@ -287,7 +287,16 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
       // 2. Member accounts
       let memberAccounts: any[] = [];
       try {
-        const memberships = await db.select().from(accountMembers).where(inArray(accountMembers.discordId, candidateIds));
+        const loweredCandidateIds = candidateIds.map(c => c.toLowerCase());
+        const memberships = await db.select().from(accountMembers).where(
+          or(
+            inArray(accountMembers.discordId, candidateIds),
+            inArray(sql`lower(${accountMembers.discordId})`, loweredCandidateIds),
+            inArray(accountMembers.mcUsername, candidateIds),
+            inArray(sql`lower(${accountMembers.mcUsername})`, loweredCandidateIds),
+            inArray(accountMembers.mcUuid, candidateIds)
+          )
+        );
         const memberAccountIds = memberships.map(m => m.accountId);
         if (memberAccountIds.length > 0) {
           memberAccounts = await db.select({
@@ -697,7 +706,7 @@ portalRouter.patch("/api/portal/:bankId/cards/:cardId/lock", requireAuth, async 
 portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index");
   const { banks, bankAccounts, transactions, invoices, cards, loans, bankSettings, accountMembers } = await import("../../db/schema");
-  const { eq, or, and, desc, inArray } = await import("drizzle-orm");
+  const { eq, or, and, desc, inArray, sql } = await import("drizzle-orm");
 
   try {
     const candidateIds = await getUserCandidateIdentifiers(req);
@@ -725,7 +734,16 @@ portalRouter.get("/api/citizen/lookup", requireAuth, async (req: express.Request
     // 2. Member accounts across all banks
     let memberAccounts: any[] = [];
     try {
-      const memberships = await db.select().from(accountMembers).where(inArray(accountMembers.discordId, candidateIds));
+      const loweredCandidateIds = candidateIds.map(c => c.toLowerCase());
+      const memberships = await db.select().from(accountMembers).where(
+        or(
+          inArray(accountMembers.discordId, candidateIds),
+          inArray(sql`lower(${accountMembers.discordId})`, loweredCandidateIds),
+          inArray(accountMembers.mcUsername, candidateIds),
+          inArray(sql`lower(${accountMembers.mcUsername})`, loweredCandidateIds),
+          inArray(accountMembers.mcUuid, candidateIds)
+        )
+      );
       const memberAccountIds = memberships.map(m => m.accountId);
       if (memberAccountIds.length > 0) {
         memberAccounts = await db.select({
@@ -1646,8 +1664,9 @@ portalRouter.post("/api/portal/:bankId/cards/:cardId/cash-advance", requireAuth,
 
 portalRouter.get("/api/portal/:bankId/accounts/:accountId/members", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index.js");
-  const { bankAccounts, accountMembers } = await import("../../db/schema.js");
+  const { bankAccounts, accountMembers, banks } = await import("../../db/schema.js");
   const { eq, and } = await import("drizzle-orm");
+  const { resolvePlayerIdentity } = await import("../player_resolver.js");
 
   try {
     const { bankId, accountId } = req.params;
@@ -1658,8 +1677,53 @@ portalRouter.get("/api/portal/:bankId/accounts/:accountId/members", requireAuth,
     const isMemberOrOwner = await isUserAccountOwnerOrMember(account, candidateIds);
     if (!isMemberOrOwner) return res.status(403).json({ error: "Unauthorized" });
 
-    const members = await db.select().from(accountMembers).where(eq(accountMembers.accountId, accountId));
     const isOwner = candidateIds.some(c => c === account.ownerDiscordId || c.toLowerCase() === (account.ownerDiscordId || "").toLowerCase());
+
+    // Resolve owner's Minecraft identity
+    const ownerIdentity = await resolvePlayerIdentity(account.ownerDiscordId);
+    const owner = {
+      identifier: account.ownerDiscordId,
+      mcUsername: ownerIdentity?.mcUsername || account.ownerDiscordId,
+      mcUuid: ownerIdentity?.mcUuid || null,
+      discordId: ownerIdentity?.discordId || account.ownerDiscordId,
+      avatarUrl: ownerIdentity?.avatarUrl || `https://mc-heads.net/avatar/${ownerIdentity?.mcUsername || "MHF_Steve"}/64`,
+    };
+
+    const rawMembers = await db.select().from(accountMembers).where(eq(accountMembers.accountId, accountId));
+
+    const members = await Promise.all(rawMembers.map(async (m) => {
+      let mcUsername = m.mcUsername;
+      let mcUuid = m.mcUuid;
+      let avatarUrl = mcUsername ? `https://mc-heads.net/avatar/${mcUsername}/64` : "";
+
+      if (!mcUsername) {
+        const resolved = await resolvePlayerIdentity(m.discordId);
+        if (resolved) {
+          mcUsername = resolved.mcUsername;
+          mcUuid = resolved.mcUuid;
+          avatarUrl = resolved.avatarUrl;
+          db.update(accountMembers)
+            .set({ mcUsername: resolved.mcUsername, mcUuid: resolved.mcUuid })
+            .where(eq(accountMembers.id, m.id))
+            .catch(() => {});
+        }
+      }
+
+      if (!avatarUrl) {
+        avatarUrl = `https://mc-heads.net/avatar/${mcUsername || "MHF_Steve"}/64`;
+      }
+
+      return {
+        id: m.id,
+        accountId: m.accountId,
+        discordId: m.discordId,
+        mcUsername: mcUsername || m.discordId,
+        mcUuid: mcUuid || null,
+        role: m.role,
+        createdAt: m.createdAt,
+        avatarUrl,
+      };
+    }));
 
     res.json({
       accountId,
@@ -1667,6 +1731,7 @@ portalRouter.get("/api/portal/:bankId/accounts/:accountId/members", requireAuth,
       accountType: account.accountType,
       isOwner,
       ownerDiscordId: account.ownerDiscordId,
+      owner,
       members,
     });
   } catch (e: any) {
@@ -1677,57 +1742,123 @@ portalRouter.get("/api/portal/:bankId/accounts/:accountId/members", requireAuth,
 
 portalRouter.post("/api/portal/:bankId/accounts/:accountId/members", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index.js");
-  const { bankAccounts, accountMembers } = await import("../../db/schema.js");
-  const { eq, and } = await import("drizzle-orm");
+  const { bankAccounts, accountMembers, banks } = await import("../../db/schema.js");
+  const { eq, and, or } = await import("drizzle-orm");
   const { v4: uuidv4 } = await import("uuid");
+  const { resolvePlayerIdentity } = await import("../player_resolver.js");
 
   try {
     const { bankId, accountId } = req.params;
-    const { memberDiscordId, role } = req.body;
-    if (!memberDiscordId || !role) return res.status(400).json({ error: "Missing member Discord ID or role" });
-    if (!["manager", "viewer"].includes(role)) return res.status(400).json({ error: "Role must be 'manager' or 'viewer'" });
+    const { minecraftUsername, username, memberDiscordId, role } = req.body;
+    const targetInput = String(minecraftUsername || username || memberDiscordId || "").trim();
+
+    if (!targetInput) {
+      return res.status(400).json({ error: "Please enter a Minecraft username." });
+    }
+    if (!role || !["manager", "viewer"].includes(role)) {
+      return res.status(400).json({ error: "Role must be 'manager' or 'viewer'" });
+    }
 
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
     const account = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.bankId, bankId))).get();
     if (!account) return res.status(404).json({ error: "Account not found" });
 
     const isOwner = candidateIds.some(c => c === account.ownerDiscordId || c.toLowerCase() === (account.ownerDiscordId || "").toLowerCase());
-    if (!isOwner) return res.status(403).json({ error: "Only the account owner can manage members" });
+    if (!isOwner) return res.status(403).json({ error: "Only the account owner can manage operators" });
 
-    const cleanDiscordId = String(memberDiscordId).trim().replace(/^<@!?/, "").replace(/>$/, "");
-    if (!cleanDiscordId) return res.status(400).json({ error: "Invalid Discord ID" });
+    // Optional CityCorp Client for bank
+    const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+    let cityCorpClient: any = undefined;
+    if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+      try {
+        const { CityCorpClient } = await import("../../lib/citycorp_api.js");
+        cityCorpClient = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey);
+      } catch (_) {}
+    }
 
-    // Check if user is the owner
-    if (cleanDiscordId === account.ownerDiscordId) {
-      return res.status(400).json({ error: "Owner already has full management rights" });
+    // Resolve player identity
+    const resolved = await resolvePlayerIdentity(targetInput, cityCorpClient);
+    if (!resolved || !resolved.mcUsername) {
+      return res.status(400).json({ error: `Could not find Minecraft player "${targetInput}". Please check the username.` });
+    }
+
+    // Check if player is already the owner
+    const ownerIdentity = await resolvePlayerIdentity(account.ownerDiscordId, cityCorpClient);
+    if (
+      (ownerIdentity && ownerIdentity.mcUsername.toLowerCase() === resolved.mcUsername.toLowerCase()) ||
+      (ownerIdentity?.mcUuid && resolved.mcUuid && ownerIdentity.mcUuid === resolved.mcUuid) ||
+      account.ownerDiscordId.toLowerCase() === resolved.mcUsername.toLowerCase() ||
+      account.ownerDiscordId === resolved.discordId
+    ) {
+      return res.status(400).json({ error: `${resolved.mcUsername} is already the primary owner of this account.` });
     }
 
     // Check if already a member
-    const existing = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.discordId, cleanDiscordId))).get();
+    const existing = await db.select().from(accountMembers).where(
+      and(
+        eq(accountMembers.accountId, accountId),
+        or(
+          resolved.discordId ? eq(accountMembers.discordId, resolved.discordId) : undefined,
+          eq(accountMembers.mcUsername, resolved.mcUsername),
+          resolved.mcUuid ? eq(accountMembers.mcUuid, resolved.mcUuid) : undefined
+        )
+      )
+    ).get();
+
     if (existing) {
-      await db.update(accountMembers).set({ role }).where(eq(accountMembers.id, existing.id));
-      return res.json({ success: true, memberId: existing.id, updated: true });
+      await db.update(accountMembers).set({
+        role,
+        mcUsername: resolved.mcUsername,
+        mcUuid: resolved.mcUuid || existing.mcUuid
+      }).where(eq(accountMembers.id, existing.id));
+
+      return res.json({
+        success: true,
+        memberId: existing.id,
+        updated: true,
+        mcUsername: resolved.mcUsername,
+        role
+      });
     }
 
     const id = uuidv4();
+    const effectiveDiscordId = resolved.discordId || (resolved.mcUuid ? `mc_${resolved.mcUuid.replace(/-/g, "")}` : `mc:${resolved.mcUsername.toLowerCase()}`);
+
     await db.insert(accountMembers).values({
       id,
       accountId,
-      discordId: cleanDiscordId,
+      discordId: effectiveDiscordId,
+      mcUsername: resolved.mcUsername,
+      mcUuid: resolved.mcUuid,
       role,
       createdAt: new Date(),
     });
 
-    res.json({ success: true, memberId: id, created: true });
+    // Sync subuser into CityCorp if configured
+    if (cityCorpClient && resolved.mcUuid) {
+      try {
+        await cityCorpClient.addSubuser(account.accountName, resolved.mcUuid);
+      } catch (err) {
+        console.warn("[CityCorp] addSubuser warning:", err);
+      }
+    }
+
+    res.json({
+      success: true,
+      memberId: id,
+      created: true,
+      mcUsername: resolved.mcUsername,
+      role
+    });
   } catch (e: any) {
     console.error(e);
-    res.status(500).json({ error: e.message || "Failed to add member" });
+    res.status(500).json({ error: e.message || "Failed to add operator" });
   }
 });
 
 portalRouter.delete("/api/portal/:bankId/accounts/:accountId/members/:memberId", requireAuth, async (req: express.Request, res: express.Response) => {
   const { db } = await import("../../db/index.js");
-  const { bankAccounts, accountMembers } = await import("../../db/schema.js");
+  const { bankAccounts, accountMembers, banks } = await import("../../db/schema.js");
   const { eq, and } = await import("drizzle-orm");
 
   try {
@@ -1737,13 +1868,29 @@ portalRouter.delete("/api/portal/:bankId/accounts/:accountId/members/:memberId",
     if (!account) return res.status(404).json({ error: "Account not found" });
 
     const isOwner = candidateIds.some(c => c === account.ownerDiscordId || c.toLowerCase() === (account.ownerDiscordId || "").toLowerCase());
-    if (!isOwner) return res.status(403).json({ error: "Only the account owner can remove members" });
+    if (!isOwner) return res.status(403).json({ error: "Only the account owner can remove operators" });
+
+    const member = await db.select().from(accountMembers).where(and(eq(accountMembers.id, memberId), eq(accountMembers.accountId, accountId))).get();
+
+    // Remove from CityCorp if configured
+    if (member?.mcUuid) {
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+        try {
+          const { CityCorpClient } = await import("../../lib/citycorp_api.js");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey);
+          await client.removeSubuser(account.accountName, member.mcUuid);
+        } catch (err) {
+          console.warn("[CityCorp] removeSubuser warning:", err);
+        }
+      }
+    }
 
     await db.delete(accountMembers).where(and(eq(accountMembers.id, memberId), eq(accountMembers.accountId, accountId)));
     res.json({ success: true });
   } catch (e: any) {
     console.error(e);
-    res.status(500).json({ error: e.message || "Failed to remove member" });
+    res.status(500).json({ error: e.message || "Failed to remove operator" });
   }
 });
 

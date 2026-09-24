@@ -643,11 +643,14 @@ export const accountMembers = sqliteTable("account_members", {
   id: text("id").primaryKey(),
   accountId: text("account_id").references(() => bankAccounts.id).notNull(),
   discordId: text("discord_id").notNull(),
+  mcUsername: text("mc_username"),
+  mcUuid: text("mc_uuid"),
   role: text("role").notNull().default("viewer"), // owner, manager, viewer
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
   accountIdIdx: index("idx_account_members_account_id").on(table.accountId),
   discordIdIdx: index("idx_account_members_discord_id").on(table.discordId),
+  mcUsernameIdx: index("idx_account_members_mc_username").on(table.mcUsername),
 }));
 
 export const saasInvoices = sqliteTable("saas_invoices", {

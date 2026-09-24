@@ -1418,4 +1418,24 @@ To ensure mathematical parity between Slate's quote engine and in-game CityCorp 
     - **Direct Download (`GET /api/banks/:bankId/backup/download`)**: Direct browser download of `{bankId}_backup_{timestamp}.slate.enc` for offline physical storage or cold recovery.
     - **Passphrase Decryption Verifier (`POST /api/banks/:bankId/backup/verify-decrypt`)**: In-app cryptographic testing interface allowing staff to verify that their recovery passphrase successfully unpacks and decrypts the bank's live encrypted snapshot.
 
+## Business Account Team Members & Minecraft Username Operator Resolution (Sep 2026)
+- **Minecraft Username Operator Identification**:
+  - Replaced legacy Discord snowflake IDs with **Minecraft usernames** as the primary identity format for adding operators and team members to corporate and business accounts.
+  - Multi-tiered Player Identity Resolver (`resolvePlayerIdentity` in `src/server/player_resolver.ts`):
+    1. **Local Database User Index**: Resolves against local `users` and `bankCustomers` tables by `mcUsername`, `rpName`, `mcUuid`, or linked credentials.
+    2. **Mojang Official API**: Resolves Minecraft usernames to canonical UUIDs and exact capitalization using `https://api.mojang.com/users/profiles/minecraft/{username}` with timeout protection.
+    3. **PlayerDB Fallback**: Secondary lookup via `https://playerdb.co/api/player/minecraft/{username}` for skin avatars and UUIDs.
+    4. **CityCorp API Player Sync**: In banks integrated with CityCorp, automatically syncs added operators to CityCorp accounts as subusers (`addSubuser` / `removeSubuser`).
+    5. **Direct Handle Support**: Seamlessly falls back to local and custom roleplay handles for offline or non-Mojang environments.
+- **Enhanced Schema (`account_members`)**:
+  - Added `mc_username` (`TEXT`) and `mc_uuid` (`TEXT`) columns with database migration and index (`idx_account_members_mc_username`).
+  - Seamlessly links Discord IDs (`mc_{uuid}` or linked Discord snowflake) to ensure backward compatibility across all permission checks, Discord bot commands, and web portal sessions.
+- **Portal & Staff UI Polish (`BankPortal.tsx`)**:
+  - **Live Head Avatar Preview**: As users type a Minecraft username (2+ characters), a live Minecraft player skin head preview dynamically renders next to the input.
+  - **Operator Roles**: Support for `manager` (full management access, outgoing transfers, invoices) and `viewer` (read-only balance and ledger view).
+  - **Owner & Member Cards**: Displays high-fidelity Minecraft player skin avatars (`https://mc-heads.net/avatar/{username}/64`) with fallback error handling, clean role indicators, and instant revocation buttons.
+- **Security & Authorization**:
+  - Validates that an account owner cannot duplicate themselves into the operators list.
+  - Account queries and access gates in `userResolver.ts` and `portal.ts` verify candidate identifiers against `mcUsername`, `mcUuid`, and `discordId` (case-insensitively).
+
 

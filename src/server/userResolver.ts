@@ -335,10 +335,14 @@ export async function getAccountsForUser(bankId: string, candidateIds: string[])
     // 2. Member/co-owned accounts via accountMembers
     let memberAccounts: any[] = [];
     try {
+      const loweredCandidateList = candidateList.map((c) => c.toLowerCase());
       const memberships = await db.select().from(accountMembers).where(
         or(
           inArray(accountMembers.discordId, candidateList),
-          inArray(sql`lower(${accountMembers.discordId})`, candidateList)
+          inArray(sql`lower(${accountMembers.discordId})`, loweredCandidateList),
+          inArray(accountMembers.mcUsername, candidateList),
+          inArray(sql`lower(${accountMembers.mcUsername})`, loweredCandidateList),
+          inArray(accountMembers.mcUuid, candidateList)
         )
       );
       const memberAccountIds = memberships.map((m) => m.accountId).filter(Boolean);
@@ -557,9 +561,21 @@ export async function isUserAccountOwnerOrMember(account: any, candidateIds: str
   }
 
   try {
+    const loweredCandidates = candidateIds.map((c) => c.toLowerCase());
     const membership = await db.select()
       .from(accountMembers)
-      .where(and(eq(accountMembers.accountId, account.id), inArray(accountMembers.discordId, candidateIds)))
+      .where(
+        and(
+          eq(accountMembers.accountId, account.id),
+          or(
+            inArray(accountMembers.discordId, candidateIds),
+            inArray(sql`lower(${accountMembers.discordId})`, loweredCandidates),
+            inArray(accountMembers.mcUsername, candidateIds),
+            inArray(sql`lower(${accountMembers.mcUsername})`, loweredCandidates),
+            inArray(accountMembers.mcUuid, candidateIds)
+          )
+        )
+      )
       .get();
     if (membership) return true;
   } catch (e) {}
@@ -575,9 +591,21 @@ export async function requireOwnedAccount(req: express.Request, account: any, ma
     if (candidateIds.some((c) => normalizedOwner.includes(c) || c === account.ownerDiscordId)) return true;
   }
   try {
+    const loweredCandidates = candidateIds.map((c) => c.toLowerCase());
     const membership = await db.select()
       .from(accountMembers)
-      .where(and(eq(accountMembers.accountId, account.id), inArray(accountMembers.discordId, candidateIds)))
+      .where(
+        and(
+          eq(accountMembers.accountId, account.id),
+          or(
+            inArray(accountMembers.discordId, candidateIds),
+            inArray(sql`lower(${accountMembers.discordId})`, loweredCandidates),
+            inArray(accountMembers.mcUsername, candidateIds),
+            inArray(sql`lower(${accountMembers.mcUsername})`, loweredCandidates),
+            inArray(accountMembers.mcUuid, candidateIds)
+          )
+        )
+      )
       .get();
     if (!membership) return false;
     if (managerOnly) return membership.role === "manager";

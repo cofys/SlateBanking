@@ -366,6 +366,10 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("onyx_settings", "corp_api_uuid", "TEXT");
   checkAndAddColumn("onyx_settings", "corp_api_key", "TEXT");
 
+  // Account Members Minecraft fields
+  checkAndAddColumn("account_members", "mc_username", "TEXT");
+  checkAndAddColumn("account_members", "mc_uuid", "TEXT");
+
   // Ensure high-performance indexes exist
   createIndexIfNotExists("idx_bank_accounts_bank_id", "bank_accounts", "bank_id");
   createIndexIfNotExists("idx_bank_accounts_owner_discord_id", "bank_accounts", "owner_discord_id");

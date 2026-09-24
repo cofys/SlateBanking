@@ -979,15 +979,16 @@ citizenRouter.get("/api/citizen/payment-links/:id", async (req: express.Request,
 citizenRouter.post("/api/citizen/accounts/:accountId/members", requireAuth, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
     const { bankAccounts, accountMembers } = await import("../../db/schema.js");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, or } = await import("drizzle-orm");
     const { v4: uuidv4 } = await import("uuid");
     const discordId = (req as any).user.discordId;
 
     try {
-      const { memberDiscordId, role } = req.body;
+      const { memberDiscordId, minecraftUsername, username, role } = req.body;
       const { accountId } = req.params;
+      const targetInput = String(minecraftUsername || username || memberDiscordId || "").trim();
 
-      if (!memberDiscordId || !role) return res.status(400).json({ error: "Missing memberDiscordId or role" });
+      if (!targetInput || !role) return res.status(400).json({ error: "Missing Minecraft username or role" });
       if (!["manager", "viewer"].includes(role)) return res.status(400).json({ error: "Role must be manager or viewer" });
 
       const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, accountId)).get();
@@ -997,23 +998,46 @@ citizenRouter.post("/api/citizen/accounts/:accountId/members", requireAuth, asyn
         return res.status(403).json({ error: "Unauthorized to add members" });
       }
 
+      const { resolvePlayerIdentity } = await import("../player_resolver.js");
+      const resolved = await resolvePlayerIdentity(targetInput);
+      if (!resolved || !resolved.mcUsername) {
+        return res.status(400).json({ error: `Could not find player "${targetInput}"` });
+      }
+
+      const effectiveDiscordId = resolved.discordId || (resolved.mcUuid ? `mc_${resolved.mcUuid.replace(/-/g, "")}` : `mc:${resolved.mcUsername.toLowerCase()}`);
+
       // Check if already a member
-      const existing = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.discordId, memberDiscordId))).get();
+      const existing = await db.select().from(accountMembers).where(
+        and(
+          eq(accountMembers.accountId, accountId),
+          or(
+            eq(accountMembers.discordId, effectiveDiscordId),
+            eq(accountMembers.mcUsername, resolved.mcUsername)
+          )
+        )
+      ).get();
+
       if (existing) {
-        await db.update(accountMembers).set({ role }).where(eq(accountMembers.id, existing.id));
-        return res.json({ success: true, memberId: existing.id, updated: true });
+        await db.update(accountMembers).set({
+          role,
+          mcUsername: resolved.mcUsername,
+          mcUuid: resolved.mcUuid || existing.mcUuid
+        }).where(eq(accountMembers.id, existing.id));
+        return res.json({ success: true, memberId: existing.id, updated: true, mcUsername: resolved.mcUsername });
       }
 
       const id = uuidv4();
       await db.insert(accountMembers).values({
         id,
         accountId,
-        discordId: memberDiscordId,
+        discordId: effectiveDiscordId,
+        mcUsername: resolved.mcUsername,
+        mcUuid: resolved.mcUuid,
         role,
         createdAt: new Date(),
       });
 
-      res.json({ success: true, memberId: id });
+      res.json({ success: true, memberId: id, mcUsername: resolved.mcUsername });
     } catch(e) {
       console.error(e);
       res.status(500).json({ error: "Internal error" });

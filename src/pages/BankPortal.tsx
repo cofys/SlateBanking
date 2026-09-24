@@ -87,7 +87,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [managingMembersAcc, setManagingMembersAcc] = useState<any | null>(null);
   const [accountMembersList, setAccountMembersList] = useState<any[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [newMemberDiscordId, setNewMemberDiscordId] = useState("");
+  const [newMemberUsername, setNewMemberUsername] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<"manager" | "viewer">("manager");
   const [addingMember, setAddingMember] = useState(false);
 
@@ -583,6 +583,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       const d = await res.json();
       if (res.ok && Array.isArray(d.members)) {
         setAccountMembersList(d.members);
+        if (d.owner) {
+          setManagingMembersAcc((prev: any) => ({ ...prev, ownerInfo: d.owner }));
+        }
       }
     } catch (e) {
       console.error(e);
@@ -592,28 +595,33 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
   const addAccountMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!managingMembersAcc || !newMemberDiscordId.trim()) return;
+    if (!managingMembersAcc || !newMemberUsername.trim()) return;
     setAddingMember(true);
     try {
       const res = await fetch(`/api/portal/${bankId}/accounts/${managingMembersAcc.id}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          memberDiscordId: newMemberDiscordId.trim(),
+          minecraftUsername: newMemberUsername.trim(),
           role: newMemberRole,
         }),
       });
       const d = await res.json();
-      if (!res.ok) flash(d.error || "Failed to add member");
+      if (!res.ok) flash(d.error || "Failed to add operator");
       else {
-        flash("Operator added to account.");
-        setNewMemberDiscordId("");
+        flash(`Operator "${d.mcUsername || newMemberUsername.trim()}" granted access.`);
+        setNewMemberUsername("");
         const refreshed = await fetch(`/api/portal/${bankId}/accounts/${managingMembersAcc.id}/members`).then(r => r.json());
-        if (Array.isArray(refreshed.members)) setAccountMembersList(refreshed.members);
+        if (Array.isArray(refreshed.members)) {
+          setAccountMembersList(refreshed.members);
+          if (refreshed.owner) {
+            setManagingMembersAcc((prev: any) => ({ ...prev, ownerInfo: refreshed.owner }));
+          }
+        }
         handleSearch();
       }
     } catch {
-      flash("Error adding member");
+      flash("Error adding operator");
     }
     setAddingMember(false);
   };
@@ -1996,13 +2004,16 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   <div className="rounded-2xl border border-white/10 divide-y divide-white/5 bg-white/[0.02] overflow-hidden">
                     {/* Primary Owner Row */}
                     <div className="p-3.5 flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center justify-center text-xs font-bold font-mono">
-                          ★
-                        </div>
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={managingMembersAcc.ownerInfo?.avatarUrl || `https://mc-heads.net/avatar/${managingMembersAcc.ownerInfo?.mcUsername || "MHF_Steve"}/64`}
+                          alt="Owner Head"
+                          className="w-8 h-8 rounded-lg border border-amber-500/30 object-cover bg-black/40 shadow-sm"
+                          onError={(e: any) => { e.currentTarget.src = "https://mc-heads.net/avatar/MHF_Steve/64"; }}
+                        />
                         <div>
-                          <p className="text-xs font-mono font-medium text-white/90">
-                            {managingMembersAcc.ownerDiscordId || "Account Owner"}
+                          <p className="text-xs font-semibold text-white/95">
+                            {managingMembersAcc.ownerInfo?.mcUsername || managingMembersAcc.ownerDiscordId || "Account Owner"}
                           </p>
                           <p className="text-[10px] text-white/40">Primary Account Creator</p>
                         </div>
@@ -2015,19 +2026,22 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     {/* Member Rows */}
                     {accountMembersList.length === 0 ? (
                       <div className="p-4 text-center text-xs text-white/40">
-                        No additional operators added yet. Add trusted members below.
+                        No additional team members added yet. Grant access to trusted operators below.
                       </div>
                     ) : (
                       accountMembersList.map((m: any) => (
                         <div key={m.id} className="p-3.5 flex items-center justify-between">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 text-white/60 flex items-center justify-center text-xs font-mono">
-                              #
-                            </div>
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={m.avatarUrl || `https://mc-heads.net/avatar/${m.mcUsername || "MHF_Steve"}/64`}
+                              alt={m.mcUsername}
+                              className="w-8 h-8 rounded-lg border border-white/10 object-cover bg-black/40 shadow-sm"
+                              onError={(e: any) => { e.currentTarget.src = "https://mc-heads.net/avatar/MHF_Steve/64"; }}
+                            />
                             <div>
-                              <p className="text-xs font-mono font-medium text-white/90">{m.discordId}</p>
+                              <p className="text-xs font-semibold text-white/95">{m.mcUsername || m.discordId}</p>
                               <p className="text-[10px] text-white/40">
-                                {m.role === "manager" ? "Can send funds & view balance" : "Read-only view access"}
+                                {m.role === "manager" ? "Full access • Can dispatch transfers & manage settings" : "Read-only • Can view balance and ledger"}
                               </p>
                             </div>
                           </div>
@@ -2039,7 +2053,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               type="button"
                               onClick={() => removeAccountMember(m.id)}
                               title="Remove operator"
-                              className="p-1 rounded-lg hover:bg-rose-500/20 text-white/30 hover:text-rose-300 transition"
+                              className="p-1.5 rounded-lg hover:bg-rose-500/20 text-white/30 hover:text-rose-300 transition"
                             >
                               <Trash2 size={13} />
                             </button>
@@ -2053,33 +2067,48 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
               {/* Add Member Form */}
               <form onSubmit={addAccountMember} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
-                <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <UserPlus size={14} /> Add Operator
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <UserPlus size={14} /> Add Team Member
+                  </p>
+                  {newMemberUsername.trim().length >= 2 && (
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] text-white/70">
+                      <img
+                        src={`https://mc-heads.net/avatar/${newMemberUsername.trim()}/24`}
+                        alt=""
+                        className="w-4 h-4 rounded object-cover"
+                        onError={(e: any) => { e.currentTarget.style.display = "none"; }}
+                      />
+                      <span>{newMemberUsername.trim()}</span>
+                    </div>
+                  )}
+                </div>
                 <p className="text-[11px] text-white/40">
-                  Enter their Discord ID (snowflake) to grant access to this business account in the Discord bot and Web Portal.
+                  Enter their Minecraft username to grant them multi-user access to this business account in the Web Portal and in-game.
                 </p>
                 <div className="space-y-2">
-                  <input
-                    type="text"
-                    required
-                    value={newMemberDiscordId}
-                    onChange={(e) => setNewMemberDiscordId(e.target.value)}
-                    placeholder="Discord User ID (e.g. 102938475610293847)"
-                    className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder:text-white/20"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={newMemberUsername}
+                      onChange={(e) => setNewMemberUsername(e.target.value)}
+                      placeholder="Minecraft Username (e.g. Cofys)"
+                      className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-xs font-medium text-white placeholder:text-white/20 focus:outline-none focus:border-white/25"
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setNewMemberRole("manager")}
-                      className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition ${newMemberRole === "manager" ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300" : "bg-[#18181c] border-white/10 text-white/50"}`}
+                      className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition ${newMemberRole === "manager" ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300" : "bg-[#18181c] border-white/10 text-white/50 hover:text-white"}`}
                     >
                       Manager (Full Access)
                     </button>
                     <button
                       type="button"
                       onClick={() => setNewMemberRole("viewer")}
-                      className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition ${newMemberRole === "viewer" ? "bg-sky-500/15 border-sky-500/40 text-sky-300" : "bg-[#18181c] border-white/10 text-white/50"}`}
+                      className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition ${newMemberRole === "viewer" ? "bg-sky-500/15 border-sky-500/40 text-sky-300" : "bg-[#18181c] border-white/10 text-white/50 hover:text-white"}`}
                     >
                       Viewer (Read-only)
                     </button>
@@ -2087,12 +2116,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </div>
                 <button
                   type="submit"
-                  disabled={addingMember || !newMemberDiscordId.trim()}
-                  className="w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+                  disabled={addingMember || !newMemberUsername.trim()}
+                  className="w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition"
                   style={btnBrand}
                 >
                   {addingMember ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                  <span>Grant Access</span>
+                  <span>Grant Operator Access</span>
                 </button>
               </form>
             </motion.div>
