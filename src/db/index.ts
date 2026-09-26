@@ -172,6 +172,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("banks", "city_corp_app_id", "TEXT");
   checkAndAddColumn("banks", "city_corp_app_secret", "TEXT");
   checkAndAddColumn("banks", "city_corp_auth_url", "TEXT");
+  checkAndAddColumn("banks", "city_corp_org_name", "TEXT");
   checkAndAddColumn("banks", "custom_domain", "TEXT");
   checkAndAddColumn("banks", "branding_color", "TEXT DEFAULT '#4f46e5'");
   checkAndAddColumn("banks", "logo_url", "TEXT");
@@ -293,6 +294,7 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "interest_calculation_method", "TEXT DEFAULT 'current_balance'");
   checkAndAddColumn("bank_settings", "interest_eligible_account_types", "TEXT");
   checkAndAddColumn("bank_settings", "default_corp_account", "TEXT");
+  checkAndAddColumn("bank_settings", "city_corp_org_name", "TEXT");
   checkAndAddColumn("bank_settings", "settlement_account", "TEXT");
   checkAndAddColumn("bank_settings", "settlement_floor_cents", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "settlement_warn_cents", "INTEGER DEFAULT 0");

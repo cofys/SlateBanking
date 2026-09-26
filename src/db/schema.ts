@@ -37,6 +37,7 @@ export const banks = sqliteTable("banks", {
   cityCorpAppId: text("city_corp_app_id"),
   cityCorpAppSecret: encryptedText("city_corp_app_secret"),
   cityCorpAuthUrl: text("city_corp_auth_url"),
+  cityCorpOrgName: text("city_corp_org_name"),
   customDomain: text("custom_domain"),
   brandingColor: text("branding_color").default("#8b95a5"),
   logoUrl: text("logo_url"),
@@ -226,6 +227,7 @@ export const bankSettings = sqliteTable("bank_settings", {
   googleDocsFolderUrl: text("google_docs_folder_url"),
   googleDocsAutoGenerate: integer("google_docs_auto_generate", { mode: "boolean" }).default(false),
   defaultCorpAccount: text("default_corp_account"),
+  cityCorpOrgName: text("city_corp_org_name"),
 
   // Lending policy (loan interest, collections, origination)
   defaultLoanApr: integer("default_loan_apr").default(500), // 5.00% as percent * 100

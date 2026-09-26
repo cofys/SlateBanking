@@ -122,4 +122,3 @@ Built from the ground up with high performance, strict double-entry ledger integ
 
 - **`WIKI.md`**: Complete and exhaustive technical specification of all system components, data models, and business logic.
 - **`PUBLIC_API.md`**: Integration reference for third-party developers, Minecraft plugins, and external merchant systems.
-- **`DOCS.md`**: Architecture notes and developer workflows.

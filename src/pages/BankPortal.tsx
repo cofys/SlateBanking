@@ -533,7 +533,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         setSelectedTierId("");
         handleSearch();
 
-        const bankCorp = d.depositInstructions?.bankCorpName || bank?.name?.replace(/\s+/g, '') || "Bank";
+        const bankCorp = d.depositInstructions?.bankCorpName || userData?.bankCorpName || bank?.cityCorpOrgName || bank?.settings?.cityCorpOrgName || (bank?.name?.toLowerCase().includes("vance") && bank?.name?.toLowerCase().includes("hamilton") ? "VH" : bank?.name?.replace(/[^a-zA-Z0-9]/g, "")) || "Bank";
         const depCmd = d.depositInstructions?.command || `/c account deposit ${bankCorp} ${accName} 100`;
         const minBal = d.depositInstructions?.minBalanceCents ?? d.account?.minBalance ?? (chosenTier?.minBalance || 0);
 
@@ -1267,12 +1267,13 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   <span className="text-[10px] text-white/40 block font-sans uppercase font-bold tracking-wider">In-Game Deposit Command:</span>
                   <div className="flex items-center justify-between gap-2 overflow-x-auto">
                     <code className="text-amber-300">
-                      {accounts.find((a: any) => a.isBelowMinBalance)?.depositCommand || `/c account deposit ${bank?.name?.replace(/\s+/g, '')} <account> <amount>`}
+                      {accounts.find((a: any) => a.isBelowMinBalance)?.depositCommand || `/c account deposit ${userData?.bankCorpName || bank?.cityCorpOrgName || bank?.settings?.cityCorpOrgName || (bank?.name?.toLowerCase().includes("vance") && bank?.name?.toLowerCase().includes("hamilton") ? "VH" : bank?.name?.replace(/[^a-zA-Z0-9]/g, "")) || "Bank"} <account> <amount>`}
                     </code>
                     <button
                       type="button"
                       onClick={() => {
-                        const targetCmd = accounts.find((a: any) => a.isBelowMinBalance)?.depositCommand || `/c account deposit ${bank?.name?.replace(/\s+/g, '')} ${accounts[0]?.accountName} 100`;
+                        const defaultCorp = userData?.bankCorpName || bank?.cityCorpOrgName || bank?.settings?.cityCorpOrgName || (bank?.name?.toLowerCase().includes("vance") && bank?.name?.toLowerCase().includes("hamilton") ? "VH" : bank?.name?.replace(/[^a-zA-Z0-9]/g, "")) || "Bank";
+                        const targetCmd = accounts.find((a: any) => a.isBelowMinBalance)?.depositCommand || `/c account deposit ${defaultCorp} ${accounts[0]?.accountName} 100`;
                         copy(targetCmd, "banner_dep_cmd");
                       }}
                       className="shrink-0 flex items-center gap-1 font-sans text-[11px] font-bold text-black bg-amber-400 hover:bg-amber-300 px-2.5 py-1 rounded transition"

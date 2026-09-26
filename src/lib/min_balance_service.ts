@@ -8,10 +8,26 @@ import { sendCustomerDm } from "./customer_notify.js";
  * Derives the in-game CityCorp corporation name for a given bank.
  */
 export function getBankCorpName(bank: any, settings?: any): string {
-  if (bank?.cityCorpOrgName) return String(bank.cityCorpOrgName).trim();
-  if (settings?.cityCorpOrgName) return String(settings.cityCorpOrgName).trim();
+  const explicit = (bank?.cityCorpOrgName || settings?.cityCorpOrgName || "")?.trim();
+  if (explicit) return explicit;
+
   if (bank?.name) {
-    const clean = String(bank.name).replace(/[^a-zA-Z0-9]/g, "");
+    const rawName = String(bank.name).trim();
+
+    // Check for parentheses acronym, e.g., "Vance & Hamilton (VH)"
+    const matchParen = rawName.match(/\(([^)]+)\)/);
+    if (matchParen && matchParen[1]?.trim()) {
+      return matchParen[1].trim();
+    }
+
+    // Known canonical server banks: "Vance & Hamilton" -> "VH"
+    const lower = rawName.toLowerCase();
+    if (lower.includes("vance") && lower.includes("hamilton")) {
+      return "VH";
+    }
+
+    // Default clean alphanumeric
+    const clean = rawName.replace(/[^a-zA-Z0-9]/g, "");
     if (clean) return clean;
   }
   return "Bank";

@@ -225,6 +225,8 @@ Every bank defined in the platform can attach a unique Discord Bot Token to its 
 
 ### Bank Staff Portals (Authentication: Bank Staff Cookie)
 *These routes generally reside under `/api/banks/:bankId/*`*
+- `POST /api/banks/:bankId/fetch-citycorp-corp` - Live query against CityCorp API (`/citycorp/corp`) to auto-detect and synchronize the in-game Corporation tag/name (e.g., `VH`).
+- **In-Game Deposit Command Generation**: Resolves the exact CityCorp corporation tag (`cityCorpOrgName`, fallback to smart server acronyms like `VH` for "Vance & Hamilton") to construct canonical `/c account deposit <CorpName> <AccountName> <Amount>` guidance across minimum balance alerts, new account modals, and customer notification drawers.
 - **Settings & Config**: `GET / settings`, `PUT / settings`
 - **Analytics**: `GET / analytics` (Returns revenue, deposit matrices, charts).
 - **Accounts**: `GET / accounts`, `POST / accounts`.

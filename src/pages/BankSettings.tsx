@@ -37,6 +37,7 @@ import {
   ChevronRight,
   ExternalLink,
   Info,
+  RefreshCw,
   ChevronDown
 } from "lucide-react";
 import { SchemeSwatches } from "../components/ui/chrome";
@@ -171,6 +172,8 @@ export function BankSettings() {
   const [maxBusinessAccounts, setMaxBusinessAccounts] = useState<string>("");
   const [maxTotalAccounts, setMaxTotalAccounts] = useState<string>("");
   const [vaultTiers, setVaultTiers] = useState<any[]>([]);
+  const [cityCorpOrgName, setCityCorpOrgName] = useState<string>("");
+  const [fetchingCorp, setFetchingCorp] = useState(false);
 
   // Backup & Crypto verification state
   const [triggeringBackup, setTriggeringBackup] = useState(false);
@@ -235,6 +238,7 @@ export function BankSettings() {
         setMaxTotalAccounts(
           data.maxTotalAccountsPerUser != null ? String(data.maxTotalAccountsPerUser) : ""
         );
+        setCityCorpOrgName(data.cityCorpOrgName || "");
         setLoading(false);
       })
       .catch((err) => {
@@ -307,6 +311,26 @@ export function BankSettings() {
       setTestResult({ text: e.message || "Network error", success: false });
     } finally {
       setTestingPassphrase(false);
+    }
+  };
+
+  const fetchCityCorpName = async () => {
+    if (!bank?.id) return;
+    setFetchingCorp(true);
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/fetch-citycorp-corp`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.corpName) {
+        setCityCorpOrgName(data.corpName);
+        setSettings((prev: any) => ({ ...prev, cityCorpOrgName: data.corpName }));
+        alert(`Detected CityCorp Corporation: "${data.corpName}"`);
+      } else {
+        alert(data.error || "Could not retrieve corporation from CityCorp.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to query CityCorp");
+    } finally {
+      setFetchingCorp(false);
     }
   };
 
@@ -400,6 +424,7 @@ export function BankSettings() {
       cityCorpAppId: formData.get("cityCorpAppId"),
       cityCorpAppSecret: formData.get("cityCorpAppSecret"),
       cityCorpAuthUrl: formData.get("cityCorpAuthUrl"),
+      cityCorpOrgName: (formData.get("cityCorpOrgName") as string) || cityCorpOrgName || null,
       defaultCorpAccount: formData.get("defaultCorpAccount"),
       loanPoolAccount: formData.get("loanPoolAccount"),
       feeCollectionAccount: formData.get("feeCollectionAccount"),
@@ -1917,6 +1942,35 @@ export function BankSettings() {
                   </div>
 
                   <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-white/60 uppercase tracking-wider">
+                        In-Game Corporation Name (CityCorp)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={fetchCityCorpName}
+                        disabled={fetchingCorp}
+                        className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 disabled:opacity-50"
+                        title="Query CityCorp API to auto-fill the exact corporation tag"
+                      >
+                        <RefreshCw size={11} className={fetchingCorp ? "animate-spin" : ""} />
+                        <span>{fetchingCorp ? "Detecting…" : "Auto-Detect from API"}</span>
+                      </button>
+                    </div>
+                    <input
+                      name="cityCorpOrgName"
+                      type="text"
+                      placeholder="e.g. VH"
+                      value={cityCorpOrgName}
+                      onChange={(e) => setCityCorpOrgName(e.target.value)}
+                      className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                    <p className="text-[10px] text-white/40 mt-1">
+                      The exact in-game Corporation Name used in Minecraft chat commands (e.g. <code className="text-amber-300">/c account deposit VH &lt;Account&gt; &lt;Amount&gt;</code>).
+                    </p>
+                  </div>
+
+                  <div>
                     <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">
                       Default Corp Subaccount Name
                     </label>
@@ -1927,6 +1981,7 @@ export function BankSettings() {
                       defaultValue={settings?.defaultCorpAccount || ""}
                       className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
                     />
+                    <p className="text-[10px] text-white/40 mt-1">Default sub-account (e.g. Main or Vault) inside this corporation.</p>
                   </div>
 
                   <div>

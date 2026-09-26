@@ -79,6 +79,7 @@ banksRouter.put("/api/banks/:id", requireGlobalAdmin, async (req: express.Reques
         updateData.cityCorpAppSecret = b.cityCorpAppSecret;
         updateData.corpApiKey = b.cityCorpAppSecret; // Unified App Token synchronizes to corpApiKey
       }
+      if (b.cityCorpOrgName !== undefined) updateData.cityCorpOrgName = b.cityCorpOrgName;
       if (b.customDomain !== undefined) updateData.customDomain = b.customDomain;
       if (b.discordClientId !== undefined) updateData.discordClientId = b.discordClientId;
       if (b.discordClientSecret !== undefined && b.discordClientSecret !== "") updateData.discordClientSecret = b.discordClientSecret;
@@ -1521,6 +1522,7 @@ banksRouter.get("/api/banks/:bankId/settings", requireBankStaff, async (req: exp
         brandingColor: bank?.brandingColor || "#4f46e5",
         discordClientId: bank?.discordClientId || "",
         cityCorpAppId: bank?.cityCorpAppId || "",
+        cityCorpOrgName: settings?.cityCorpOrgName || bank?.cityCorpOrgName || "",
         hasCityCorpAppSecret: !!bank?.cityCorpAppSecret,
         maintenanceMode: bank?.maintenanceMode || false,
       });
@@ -1536,6 +1538,10 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
     const { eq } = await import("drizzle-orm");
     try {
       const bId = req.params.bankId;
+      
+      if (req.body.cityCorpOrgName !== undefined) {
+         await db.update(banks).set({ cityCorpOrgName: req.body.cityCorpOrgName }).where(eq(banks.id, bId));
+      }
       
       if (req.body.discordClientId !== undefined) {
          await db.update(banks).set({ discordClientId: req.body.discordClientId }).where(eq(banks.id, bId));
@@ -1630,6 +1636,7 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         feeCollectionAccount: req.body.feeCollectionAccount,
         interestPoolAccount: req.body.interestPoolAccount,
         defaultCorpAccount: req.body.defaultCorpAccount,
+        cityCorpOrgName: req.body.cityCorpOrgName !== undefined ? (req.body.cityCorpOrgName ? String(req.body.cityCorpOrgName).trim() : null) : undefined,
         settlementAccount: req.body.settlementAccount,
         settlementFloorCents: req.body.settlementFloorCents,
         settlementWarnCents: req.body.settlementWarnCents,
@@ -1764,6 +1771,48 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: (e as any).message });
+    }
+  });
+
+banksRouter.post("/api/banks/:bankId/fetch-citycorp-corp", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { banks, bankSettings } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { CityCorpClient } = await import("../../lib/citycorp_api");
+
+    try {
+      const bankId = req.params.bankId;
+      const bank = await db.select().from(banks).where(eq(banks.id, bankId)).get();
+      if (!bank) return res.status(404).json({ error: "Bank not found" });
+
+      if (!bank.corpId || !bank.corpApiUuid || !bank.corpApiKey) {
+        return res.status(400).json({ error: "CityCorp API credentials (Corp ID, API UUID, API Key) are not configured for this bank." });
+      }
+
+      const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+      const corpData = await client.getCorpData();
+
+      if (!corpData) {
+        return res.status(400).json({ error: "Could not fetch corporation data from CityCorp API." });
+      }
+
+      const corpName = corpData.name || corpData.corp_name || corpData.tag || corpData.corporation_name || corpData.data?.name || null;
+      if (!corpName) {
+        return res.status(400).json({ error: "CityCorp returned corporation data but no corporation name/tag was found.", data: corpData });
+      }
+
+      // Automatically update the bank and settings with the discovered Corp Name
+      await db.update(banks).set({ cityCorpOrgName: corpName }).where(eq(banks.id, bankId));
+      await db.update(bankSettings).set({ cityCorpOrgName: corpName }).where(eq(bankSettings.bankId, bankId));
+
+      res.json({
+        success: true,
+        corpName,
+        corpData
+      });
+    } catch (e: any) {
+      console.error("fetch-citycorp-corp error:", e);
+      res.status(500).json({ error: e.message || "Failed to fetch corporation data from CityCorp" });
     }
   });
 

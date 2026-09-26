@@ -209,6 +209,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
         businessAccountPrefix: settings.businessAccountPrefix ?? "CORP-",
         personalAccountNamingMode: settings.personalAccountNamingMode ?? "custom",
         businessAccountNamingMode: settings.businessAccountNamingMode ?? "business_name",
+        cityCorpOrgName: settings.cityCorpOrgName || bank.cityCorpOrgName || "",
         tagline: settings.tagline,
         discordShowStats: settings.discordShowStats,
       } : null;
@@ -222,6 +223,7 @@ portalRouter.get("/api/portal/:bankId/info", async (req: express.Request, res: e
         guildId: bank.guildId,
         discordClientId: bank.discordClientId,
         corpId: bank.corpId,
+        cityCorpOrgName: bank.cityCorpOrgName || settings?.cityCorpOrgName || "",
         cityCorpAppId: bank.cityCorpAppId,
         cityCorpAuthUrl: bank.cityCorpAuthUrl,
         customDomain: bank.customDomain,
@@ -534,6 +536,7 @@ portalRouter.get("/api/portal/:bankId/lookup", requireAuth, async (req: express.
 
       res.json({
         isStaff,
+        bankCorpName,
         accounts: enrichedAccounts,
         recentTx: mappedTxs,
         pendingInvoices: userInvoices,
