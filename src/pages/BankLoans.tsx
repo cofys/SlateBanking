@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Landmark, Plus, RefreshCw, AlertCircle, Banknote, Calendar, FileText, X, Percent, CheckCircle2, ShieldAlert, ArrowUpRight, DollarSign, ShieldCheck, Zap, AlertTriangle } from "lucide-react";
+import { Landmark, Plus, RefreshCw, AlertCircle, Banknote, Calendar, FileText, X, Percent, CheckCircle2, ShieldAlert, ArrowUpRight, DollarSign, ShieldCheck, Zap, AlertTriangle, Calculator, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown, convertTermToDays, LoanInterestType, LoanTermUnit } from "../lib/loan_utils";
 
 export function BankLoans() {
   const { bankId } = useParams();
@@ -24,7 +25,10 @@ export function BankLoans() {
   const [customNextDueDate, setCustomNextDueDate] = useState("");
   const [discordId, setCityCorpId] = useState("");
   const [principalAmount, setPrincipalAmount] = useState("");
-  const [interestRate, setInterestRate] = useState("10.0"); 
+  const [interestRate, setInterestRate] = useState("2.0"); 
+  const [interestRateType, setInterestRateType] = useState<string>("weekly");
+  const [termUnit, setTermUnit] = useState<string>("weeks");
+  const [termDuration, setTermDuration] = useState<string>("2");
   const [depositAccountId, setDepositAccountId] = useState("");
   const [collateralDescription, setCollateralDescription] = useState("");
   const [collateralValue, setCollateralValue] = useState("");
@@ -161,11 +165,18 @@ export function BankLoans() {
     if (!discordId || !principalAmount || !interestRate || !depositAccountId) return;
     
     try {
+      const dur = parseFloat(termDuration) || 2;
+      const totalDays = convertTermToDays(dur, termUnit, 30);
+      const computedMonths = Math.max(1, Math.round(totalDays / 30));
+
       const payload: any = { 
         discordId,
         depositAccountId,
         principalAmount: Math.round(parseFloat(principalAmount) * 100), 
         interestRate: Math.round(parseFloat(interestRate) * 100),
+        interestRateType,
+        termUnit,
+        termMonths: computedMonths,
         collateralDescription,
         collateralValue,
         isOffSystem
@@ -455,7 +466,7 @@ export function BankLoans() {
                 <th className="p-4 font-semibold">Principal</th>
                 <th className="p-4 font-semibold">Remaining Bal</th>
                 <th className="p-4 font-semibold">Collateral & Risk</th>
-                <th className="p-4 font-semibold">APR</th>
+                <th className="p-4 font-semibold">Rate & Terms</th>
                 <th className="p-4 font-semibold">Next Due</th>
                 <th className="p-4 font-semibold">Status</th>
                 <th className="p-4 font-semibold text-right">Underwriting</th>
@@ -527,7 +538,18 @@ export function BankLoans() {
                     )}
                   </td>
                   <td className="p-4 text-sm font-mono text-white/80">
-                    {(loan.interestRate / 100).toFixed(2)}%
+                    <span className="font-semibold text-emerald-400">
+                      {formatLoanRate(loan.interestRate, loan.interestRateType, true)}
+                    </span>
+                    {loan.interestRateType && loan.interestRateType !== "apr" ? (
+                      <span className="block text-[10px] text-zinc-500 font-mono">
+                        ≈ {getEquivalentApr(loan.interestRate, loan.interestRateType, (loan.termMonths || 1) * 30).toFixed(0)}% APR
+                      </span>
+                    ) : (
+                      <span className="block text-[10px] text-zinc-500">
+                        {loan.termMonths ? `${loan.termMonths} mo` : "Standard"}
+                      </span>
+                    )}
                   </td>
                   <td className="p-4 text-sm text-zinc-400">
                     {loan.status === 'paid' || loan.status === 'paid_off' ? '-' : new Date(loan.nextPaymentDate).toLocaleDateString()}
@@ -690,21 +712,28 @@ export function BankLoans() {
 
                 {!isOffSystem && loanProducts.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-white/80 mb-1.5">Loan Product (Optional)</label>
+                    <label className="block text-sm font-medium text-white/80 mb-1.5">Loan Product Template (Optional)</label>
                     <select
                       value={selectedProductId}
                       onChange={(e) => {
                         const id = e.target.value;
                         setSelectedProductId(id);
                         const p = loanProducts.find((x: any) => x.id === id);
-                        if (p) setInterestRate(String(p.interestRate));
+                        if (p) {
+                          setInterestRate(String(p.interestRate));
+                          setInterestRateType(p.interestRateType || "apr");
+                          setTermUnit(p.termUnit || "days");
+                          if (p.termUnit === "weeks" && p.termDays) setTermDuration(String(Math.round(p.termDays / 7)));
+                          else if (p.termUnit === "months" && p.termDays) setTermDuration(String(Math.round(p.termDays / 30)));
+                          else setTermDuration(String(p.termDays || 30));
+                        }
                       }}
                       className="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     >
                       <option value="">Custom terms...</option>
                       {loanProducts.map((p: any) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} — {Number(p.interestRate).toFixed(1)}% APR, max ${(p.maxAmount / 100).toLocaleString()}, {p.termDays} days
+                          {p.name} — {formatLoanRate(p.interestRate, p.interestRateType, true)}, max ${(p.maxAmount / 100).toLocaleString()}, {p.termDays} days
                         </option>
                       ))}
                     </select>
@@ -733,7 +762,7 @@ export function BankLoans() {
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-white/80 mb-1.5">
                       {isOffSystem ? "Original Principal ($)" : "Principal Amount"}
@@ -755,13 +784,32 @@ export function BankLoans() {
                           }
                         }}
                         className="w-full bg-slate-800 border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        placeholder="100000.00"
+                        placeholder="5000.00"
                         required
                       />
                     </div>
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium text-white/80 mb-1.5">APR (%)</label>
+                    <label className="block text-sm font-medium text-white/80 mb-1.5">Rate Calculation Model</label>
+                    <select
+                      value={interestRateType}
+                      onChange={(e) => setInterestRateType(e.target.value)}
+                      className="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="weekly">Weekly Simple Interest (% / week)</option>
+                      <option value="monthly">Monthly Simple Interest (% / month)</option>
+                      <option value="flat">Flat Surcharge (% Flat Fee)</option>
+                      <option value="apr">Annual Percentage Rate (APR %)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-1.5">
+                      {interestRateType === "weekly" ? "Weekly Rate (% / week)" : interestRateType === "monthly" ? "Monthly Rate (% / month)" : interestRateType === "flat" ? "Flat Surcharge Rate (%)" : "Interest Rate (APR %)"}
+                    </label>
                     <input
                       type="number"
                       step="0.01"
@@ -769,10 +817,77 @@ export function BankLoans() {
                       value={interestRate}
                       onChange={(e) => setInterestRate(e.target.value)}
                       className="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder={interestRateType === "weekly" ? "2.0" : "5.0"}
                       required
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-1.5">Loan Term Tenor</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        value={termDuration}
+                        onChange={(e) => setTermDuration(e.target.value)}
+                        className="w-24 bg-slate-800 border border-white/10 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <select
+                        value={termUnit}
+                        onChange={(e) => setTermUnit(e.target.value)}
+                        className="flex-1 bg-slate-800 border border-white/10 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="weeks">Weeks</option>
+                        <option value="months">Months</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Real-Time Underwriting Breakdown */}
+                {parseFloat(principalAmount) > 0 && (
+                  (() => {
+                    const breakdown = calculateLoanBreakdown({
+                      principalCents: Math.round(parseFloat(principalAmount) * 100),
+                      rate: parseFloat(interestRate) || 0,
+                      rateType: interestRateType,
+                      termDuration: parseFloat(termDuration) || 2,
+                      termUnit: termUnit,
+                      repaymentFrequency: termUnit === "weeks" ? "weekly" : "monthly"
+                    });
+
+                    return (
+                      <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 space-y-2 text-xs">
+                        <div className="flex items-center justify-between font-bold text-white">
+                          <span className="flex items-center gap-1.5 text-emerald-300">
+                            <Calculator size={14} /> Underwriting Breakdown
+                          </span>
+                          <span className="font-mono text-emerald-400">{breakdown.rateDisplay}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 pt-1 border-t border-emerald-500/20 text-[11px]">
+                          <div>
+                            <span className="text-white/50 block">Finance Charge:</span>
+                            <span className="font-mono font-bold text-white">{formatLoanRate(breakdown.ratePercent, breakdown.rateType, true)} (${(breakdown.totalInterestCents / 100).toFixed(2)})</span>
+                          </div>
+                          <div>
+                            <span className="text-white/50 block">Total Payoff:</span>
+                            <span className="font-mono font-bold text-emerald-400">${(breakdown.totalPayoffCents / 100).toFixed(2)}</span>
+                          </div>
+                          <div>
+                            <span className="text-white/50 block">Installment:</span>
+                            <span className="font-mono font-bold text-white">${(breakdown.installmentCents / 100).toFixed(2)} / {breakdown.frequencyLabel.toLowerCase()}</span>
+                          </div>
+                        </div>
+                        {interestRateType !== "apr" && (
+                          <p className="text-[10px] text-white/40 font-mono">
+                            Regulatory APR Equivalent: ≈ {breakdown.equivalentApr.toFixed(1)}% APR
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()
+                )}
 
                 {isOffSystem && (
                   <div className="grid grid-cols-2 gap-4 pt-1">

@@ -301,7 +301,9 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("bank_settings", "slate_advance_cents", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "default_fee_payer_mode", "TEXT DEFAULT 'from_payment'");
   checkAndAddColumn("bank_settings", "default_loan_apr", "INTEGER DEFAULT 500");
+  checkAndAddColumn("bank_settings", "default_loan_interest_type", "TEXT DEFAULT 'apr'");
   checkAndAddColumn("bank_settings", "default_loan_term_months", "INTEGER DEFAULT 12");
+  checkAndAddColumn("bank_settings", "default_loan_term_unit", "TEXT DEFAULT 'months'");
   checkAndAddColumn("bank_settings", "max_loan_amount_cents", "INTEGER DEFAULT 0");
   checkAndAddColumn("bank_settings", "loan_payment_period_days", "INTEGER DEFAULT 30");
   checkAndAddColumn("bank_settings", "loan_auto_debit_enabled", "INTEGER DEFAULT 1");
@@ -346,6 +348,8 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("transactions", "fee_breakdown", "TEXT");
 
   // Loans table
+  checkAndAddColumn("loans", "interest_rate_type", "TEXT DEFAULT 'apr'");
+  checkAndAddColumn("loans", "term_unit", "TEXT DEFAULT 'days'");
   checkAndAddColumn("loans", "purpose", "TEXT");
   checkAndAddColumn("loans", "status", "TEXT DEFAULT 'pending'");
   checkAndAddColumn("loans", "contract_url", "TEXT");
@@ -430,6 +434,8 @@ function ensureDatabaseSchemaSynced() {
   checkAndAddColumn("account_members", "mc_uuid", "TEXT");
 
   // Extended Product Fields
+  checkAndAddColumn("loan_products", "interest_rate_type", "TEXT DEFAULT 'apr'");
+  checkAndAddColumn("loan_products", "term_unit", "TEXT DEFAULT 'days'");
   checkAndAddColumn("loan_products", "description", "TEXT");
   checkAndAddColumn("loan_products", "category", "TEXT DEFAULT 'personal'");
   checkAndAddColumn("loan_products", "min_amount", "INTEGER DEFAULT 10000");

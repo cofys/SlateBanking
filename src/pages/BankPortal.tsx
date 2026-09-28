@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
+import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown } from "../lib/loan_utils";
 
 type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply" | "escrow" | "support";
 
@@ -2811,7 +2812,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       >
                         {loanProducts.map((p: any) => (
                           <option key={p.id} value={p.id} className="bg-[#18181c] text-[#f4f4f5]">
-                            {p.name} — {(Number(p.interestRate) / (Number(p.interestRate) > 100 ? 100 : 1)).toFixed(2)}% APR · max {formatMoney(p.maxAmount)}
+                            {p.name} — {formatLoanRate(p.interestRate, p.interestRateType, true)} · max {formatMoney(p.maxAmount)}
                           </option>
                         ))}
                       </select>
@@ -2823,21 +2824,35 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     if (!curProd) return null;
                     const minDol = curProd.minAmount ? curProd.minAmount / 100 : 10;
                     const maxDol = curProd.maxAmount ? curProd.maxAmount / 100 : 10000;
-                    const apr = (Number(curProd.interestRate) / (Number(curProd.interestRate) > 100 ? 100 : 1)).toFixed(2);
                     const termMonths = curProd.termDays ? Math.max(1, Math.round(curProd.termDays / 30)) : 1;
+                    const termDisplay = curProd.termDays % 7 === 0 && curProd.termDays <= 28
+                      ? `${curProd.termDays / 7} Weeks (${curProd.termDays} Days)`
+                      : curProd.termDays % 30 === 0
+                      ? `${curProd.termDays / 30} Months (${curProd.termDays} Days)`
+                      : `${curProd.termDays || 30} Days`;
+
+                    const breakdown = calculateLoanBreakdown({
+                      principalCents: minDol * 100,
+                      rate: curProd.interestRate,
+                      rateType: curProd.interestRateType || "apr",
+                      termDays: curProd.termDays || 30,
+                      repaymentFrequency: curProd.repaymentFrequency || (curProd.termDays <= 28 ? "weekly" : "monthly")
+                    });
 
                     return (
                       <>
                         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3 text-xs">
                           <div className="flex items-center justify-between font-bold text-white text-sm">
                             <span>{curProd.name}</span>
-                            <span className="text-emerald-400 font-mono">{apr}% Fixed APR</span>
+                            <span className="text-emerald-400 font-mono">
+                              {formatLoanRate(curProd.interestRate, curProd.interestRateType, false)}
+                            </span>
                           </div>
                           {curProd.description && <p className="text-white/65">{curProd.description}</p>}
                           <div className="grid grid-cols-3 gap-3 pt-2 border-t border-white/5 text-[11px]">
                             <div>
                               <span className="text-white/40 block">Term Duration</span>
-                              <span className="font-bold text-white">{curProd.termDays || 30} days ({termMonths} mo)</span>
+                              <span className="font-bold text-white">{termDisplay}</span>
                             </div>
                             <div>
                               <span className="text-white/40 block">Borrow Limit</span>
@@ -2847,6 +2862,18 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               <span className="text-white/40 block">Category</span>
                               <span className="font-bold text-white capitalize">{curProd.category || "personal"}</span>
                             </div>
+                          </div>
+
+                          {/* Quick Installment and Finance Charge Preview */}
+                          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                            <span className="text-white/60">
+                              Schedule: <strong className="text-white">{breakdown.installmentCount} {breakdown.frequencyLabel.toLowerCase()} payments</strong>
+                            </span>
+                            {curProd.interestRateType && curProd.interestRateType !== "apr" && (
+                              <span className="text-white/40 font-mono">
+                                Disclosure: ≈ {breakdown.equivalentApr.toFixed(1)}% APR
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -2874,7 +2901,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                             <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Purpose of Financing</label>
                             <input
                               name="purpose"
-                              placeholder="e.g. Business expansion, asset acquisition"
+                              placeholder="e.g. Business inventory, expansion, equipment"
                               required
                               className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:border-white/30"
                             />

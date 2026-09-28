@@ -502,6 +502,22 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - **One-Click Markdown Export**: Generates the complete, standardized MEA 5-page submission document formatted with clean tables, ready for Discord announcements or government forum posts.
   - **Print & PDF Layout**: Clean letter-sized layout optimized for PDF generation (`@media print`) with preserved page breaks across all 5 disclosure sections.
 
+## Flexible Loan Rate Models & Term Units (Lending Engine)
+- **Multi-Model Loan Pricing**:
+  - In short-term community and gaming roleplay banking, displaying high annual percentage rates (e.g., 104% APR for a 2-week loan at 2%/week) creates unnecessary friction and misunderstanding.
+  - The lending engine and loan catalog support four flexible interest pricing structures:
+    1. **Weekly Simple Interest (`weekly`)**: Direct simple interest calculated per 7-day period (e.g., `2.00% / week`).
+    2. **Monthly Simple Interest (`monthly`)**: Direct simple interest calculated per 30-day period (e.g., `5.00% / month`).
+    3. **Flat Surcharge / Total Fee (`flat`)**: One-time fixed percentage fee applied once across the entire duration of the loan (e.g., `3.00% flat fee`).
+    4. **Standard APR (`apr`)**: Traditional annualized percentage rate calculated on an annualized basis (e.g., `12.00% APR`).
+- **Flexible Term Units**:
+  - Loan products and originations support explicit term units: **Days**, **Weeks**, or **Months** (`termUnit`), with automatic mathematical day normalization (`convertTermToDays`).
+- **Standardized Calculations & APR Equivalence (`src/lib/loan_utils.ts`)**:
+  - `calculateLoanBreakdown`: Computes exact total finance charges, total repayment amount, installment counts, schedule payment amounts, and annualized equivalent APR for regulatory disclosure and customer transparency.
+  - `formatLoanRate`: Generates human-friendly rate badges and labels across Bank Products, Loan Origination modals, Loan Tables, Customer Catalogs, and Discord bot panels.
+- **Accrual Engine Compatibility (`loan_processor.ts`)**:
+  - `accrueLoanInterest` evaluates the loan's `interestRateType` dynamically, applying exact weekly simple steps, monthly interest steps, or flat interest caps with comprehensive transaction memo logging.
+
 ## Bot Maintenance Modes
 - Two levels of Discord bot maintenance controls have been implemented:
   - **Global Bot Maintenance (`onyxSettings.globalBotMaintenance`)**: Available in the Global Admin Onyx Settings panel. Activating this forcibly stops all running bot instances across the entire platform and suspends provisioning for any new or restarting banks.

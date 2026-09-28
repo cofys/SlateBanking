@@ -16,7 +16,9 @@ export const MISSES_TO_DEFAULT = 3;
 
 export type LoanPolicy = {
   defaultApr: number;
+  defaultInterestType: "apr" | "weekly" | "monthly" | "flat";
   defaultTermMonths: number;
+  defaultTermUnit: "days" | "weeks" | "months";
   maxAmountCents: number;
   paymentPeriodDays: number;
   autoDebit: boolean;
@@ -45,9 +47,16 @@ function num(v: any, fallback: number): number {
 
 export function policyFromSettings(settings: any | null | undefined): LoanPolicy {
   const accrual = String(settings?.loanInterestAccrual || "daily");
+  const interestType = String(settings?.defaultLoanInterestType || "apr").toLowerCase() as any;
+  const validInterestType = ["apr", "weekly", "monthly", "flat"].includes(interestType) ? interestType : "apr";
+  const termUnit = String(settings?.defaultLoanTermUnit || "months").toLowerCase() as any;
+  const validTermUnit = ["days", "weeks", "months"].includes(termUnit) ? termUnit : "months";
+
   return {
     defaultApr: Math.max(0, num(settings?.defaultLoanApr, DEFAULT_LOAN_APR)),
+    defaultInterestType: validInterestType,
     defaultTermMonths: Math.max(1, Math.round(num(settings?.defaultLoanTermMonths, DEFAULT_TERM_MONTHS))),
+    defaultTermUnit: validTermUnit,
     maxAmountCents: Math.max(0, Math.round(num(settings?.maxLoanAmountCents, 0))),
     paymentPeriodDays: Math.max(1, Math.round(num(settings?.loanPaymentPeriodDays, 30))),
     autoDebit: settings?.loanAutoDebitEnabled !== false && settings?.loanAutoDebitEnabled !== 0,
@@ -307,7 +316,9 @@ export async function submitLoanApplication(opts: {
   purpose?: string | null;
   productId?: string | null;
   termMonths?: number | null;
+  termUnit?: string | null;
   interestRate?: number | null;
+  interestRateType?: string | null;
   collateralDescription?: string | null;
   collateralValue?: string | number | null;
   allowAutoApprove?: boolean;
@@ -335,8 +346,10 @@ export async function submitLoanApplication(opts: {
 
   let interestRate = opts.interestRate != null ? Math.round(Number(opts.interestRate)) : policy.defaultApr;
   if (!Number.isFinite(interestRate) || interestRate < 0) interestRate = policy.defaultApr;
+  let interestRateType: string = opts.interestRateType || policy.defaultInterestType || "apr";
   let termMonths = opts.termMonths != null ? Math.round(Number(opts.termMonths)) : policy.defaultTermMonths;
   if (!Number.isFinite(termMonths) || termMonths < 1) termMonths = policy.defaultTermMonths;
+  let termUnit: string = opts.termUnit || policy.defaultTermUnit || "months";
   let productId: string | null = opts.productId || null;
 
   if (opts.allowAutoApprove && !productId) {
@@ -362,6 +375,8 @@ export async function submitLoanApplication(opts: {
       throw new Error(`Amount exceeds this product's maximum of $${(product.maxAmount / 100).toFixed(2)}`);
     }
     interestRate = productAprToLoanRate(product.interestRate);
+    interestRateType = product.interestRateType || "apr";
+    termUnit = product.termUnit || "days";
     termMonths = Math.max(1, Math.round((product.termDays || 30) / 30));
   }
 
@@ -413,6 +428,8 @@ export async function submitLoanApplication(opts: {
     principalAmount,
     remainingAmount: principalAmount,
     interestRate,
+    interestRateType,
+    termUnit,
     nextPaymentDate,
     purpose: opts.purpose || null,
     collateralDescription: opts.collateralDescription || null,
@@ -668,11 +685,33 @@ export async function accrueLoanInterest(targetBankId?: string) {
     const minDays = policy.interestAccrual === "monthly" ? 30 : 1;
     if (daysElapsed < minDays) continue;
 
-    const annualRate = loan.interestRate / 10000;
-    const daysInYear = policy.daysInYear || 365;
-    const interest = policy.interestAccrual === "monthly"
-      ? Math.floor((loan.remainingAmount * annualRate * Math.floor(daysElapsed / 30)) / 12)
-      : Math.floor((loan.remainingAmount * annualRate * daysElapsed) / daysInYear);
+    const rateType = (loan.interestRateType || "apr").toLowerCase();
+    let interest = 0;
+    let rateDescription = "";
+
+    if (rateType === "weekly") {
+      const weeklyRateDecimal = loan.interestRate / 10000;
+      interest = Math.floor((loan.remainingAmount * weeklyRateDecimal * daysElapsed) / 7);
+      rateDescription = `${(loan.interestRate / 100).toFixed(2)}% / week`;
+    } else if (rateType === "monthly") {
+      const monthlyRateDecimal = loan.interestRate / 10000;
+      interest = policy.interestAccrual === "monthly"
+        ? Math.floor(loan.remainingAmount * monthlyRateDecimal * Math.floor(daysElapsed / 30))
+        : Math.floor((loan.remainingAmount * monthlyRateDecimal * daysElapsed) / 30);
+      rateDescription = `${(loan.interestRate / 100).toFixed(2)}% / month`;
+    } else if (rateType === "flat") {
+      // Flat fee loans do not accrue ongoing interest unless explicitly configured
+      interest = 0;
+      rateDescription = `${(loan.interestRate / 100).toFixed(2)}% Flat`;
+    } else {
+      // Standard APR
+      const annualRate = loan.interestRate / 10000;
+      const daysInYear = policy.daysInYear || 365;
+      interest = policy.interestAccrual === "monthly"
+        ? Math.floor((loan.remainingAmount * annualRate * Math.floor(daysElapsed / 30)) / 12)
+        : Math.floor((loan.remainingAmount * annualRate * daysElapsed) / daysInYear);
+      rateDescription = `${(loan.interestRate / 100).toFixed(2)}% APR`;
+    }
 
     if (interest > 0) {
       const newRemaining = loan.remainingAmount + interest;
@@ -688,7 +727,7 @@ export async function accrueLoanInterest(targetBankId?: string) {
         bankId: loan.bankId,
         userDiscordId: loan.discordId,
         action: "loan_interest_accrued",
-        details: `Accrued $${(interest / 100).toFixed(2)} interest over ${daysElapsed} days at APR ${(loan.interestRate / 100).toFixed(2)}% on Loan #${loan.id.substring(0, 8)}. New balance: $${(newRemaining / 100).toFixed(2)}`,
+        details: `Accrued $${(interest / 100).toFixed(2)} interest over ${daysElapsed} days at rate ${rateDescription} on Loan #${loan.id.substring(0, 8)}. New balance: $${(newRemaining / 100).toFixed(2)}`,
         timestamp: now,
       });
 

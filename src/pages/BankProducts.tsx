@@ -8,6 +8,7 @@ import {
   Briefcase, Landmark, ShieldCheck, Zap, Info, Filter, Search
 } from "lucide-react";
 import { formatMoney, formatNumber, safeFormatDate } from "../lib/utils";
+import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown, convertTermToDays, LoanInterestType, LoanTermUnit } from "../lib/loan_utils";
 
 type ProductType = "loan" | "credit" | "vault";
 
@@ -61,6 +62,9 @@ export function BankProducts() {
   const [liveProductName, setLiveProductName] = useState("");
   const [liveRewards, setLiveRewards] = useState(1.5);
   const [liveApr, setLiveApr] = useState(12.5);
+  const [liveLoanInterestType, setLiveLoanInterestType] = useState<LoanInterestType>("weekly");
+  const [liveLoanTermUnit, setLiveLoanTermUnit] = useState<LoanTermUnit>("weeks");
+  const [liveLoanTermValue, setLiveLoanTermValue] = useState<number>(2);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const copyToClipboard = (text: string, id: string) => {
@@ -122,6 +126,14 @@ export function BankProducts() {
     setLiveRewards(product.rewardsPercent || 0);
     setLiveCardDesign(product.cardDesign || "obsidian_vip");
     setLiveCardKind(product.cardKind || "credit");
+    setLiveLoanInterestType((product.interestRateType || "apr") as LoanInterestType);
+    
+    // Determine term unit and duration
+    const termU = (product.termUnit || (product.termDays && product.termDays % 7 === 0 && product.termDays <= 28 ? "weeks" : product.termDays && product.termDays % 30 === 0 ? "months" : "days")) as LoanTermUnit;
+    setLiveLoanTermUnit(termU);
+    if (termU === "weeks" && product.termDays) setLiveLoanTermValue(Math.round(product.termDays / 7));
+    else if (termU === "months" && product.termDays) setLiveLoanTermValue(Math.round(product.termDays / 30));
+    else setLiveLoanTermValue(product.termDays || 30);
     
     let parsedPerks: string[] = [];
     try {
@@ -139,8 +151,11 @@ export function BankProducts() {
     setFormType(type);
     setModalMode("create");
     setActiveTab("basics");
-    setLiveProductName(type === "loan" ? "Prime Commercial Loan" : type === "vault" ? "High-Yield Term CD" : "Onyx Platinum Rewards");
-    setLiveApr(type === "loan" ? 7.5 : type === "vault" ? 4.5 : 14.9);
+    setLiveProductName(type === "loan" ? "Prime Short-Term Advance" : type === "vault" ? "High-Yield Term CD" : "Onyx Platinum Rewards");
+    setLiveApr(type === "loan" ? 2.0 : type === "vault" ? 4.5 : 14.9);
+    setLiveLoanInterestType("weekly");
+    setLiveLoanTermUnit("weeks");
+    setLiveLoanTermValue(2);
     setLiveRewards(type === "credit" ? 2.0 : 0);
     setLiveCardDesign("obsidian_vip");
     setLiveCardKind("credit");
@@ -197,6 +212,8 @@ export function BankProducts() {
           type,
           name: product.name,
           interestRate: product.interestRate,
+          interestRateType: product.interestRateType,
+          termUnit: product.termUnit,
           isActive: nextState,
           termDays: product.termDays || 30,
         }),
@@ -227,14 +244,21 @@ export function BankProducts() {
     };
 
     if (formType === "loan") {
+      const rateType = String(fd.get("interestRateType") || liveLoanInterestType || "apr");
+      const termUnit = String(fd.get("termUnit") || liveLoanTermUnit || "weeks");
+      const termDuration = Number(fd.get("termDuration") || liveLoanTermValue || 2);
+      const calculatedTermDays = convertTermToDays(termDuration, termUnit, Number(fd.get("termDays") || 30));
+
+      payload.interestRateType = rateType;
+      payload.termUnit = termUnit;
+      payload.termDays = calculatedTermDays;
       payload.category = String(fd.get("category") || "personal");
       payload.minAmount = Number(fd.get("minAmount") || 100);
       payload.maxLimit = Number(fd.get("maxLimit") || 5000);
-      payload.termDays = Number(fd.get("termDays") || 30);
       payload.originationFeePercent = Number(fd.get("originationFeePercent") || 0);
       payload.lateFeePercent = Number(fd.get("lateFeePercent") || 5);
       payload.gracePeriodDays = Number(fd.get("gracePeriodDays") || 3);
-      payload.repaymentFrequency = String(fd.get("repaymentFrequency") || "monthly");
+      payload.repaymentFrequency = String(fd.get("repaymentFrequency") || (termUnit === "weeks" ? "weekly" : "monthly"));
       payload.collateralRequired = fd.get("collateralRequired") === "on";
       payload.minCreditScore = Number(fd.get("minCreditScore") || 0);
       payload.autoApproveMaxAmount = Number(fd.get("autoApproveMaxAmount") || 0);
@@ -627,7 +651,13 @@ export function BankProducts() {
                           <div className="flex items-center gap-1.5 text-[11px] text-white/40 mt-0.5">
                             <span className="capitalize">{p.category || "Personal"}</span>
                             <span>·</span>
-                            <span>{p.termDays} Days</span>
+                            <span>
+                              {p.termDays % 7 === 0 && p.termDays <= 28
+                                ? `${p.termDays / 7} Wk${p.termDays / 7 > 1 ? "s" : ""}`
+                                : p.termDays % 30 === 0
+                                ? `${p.termDays / 30} Mo${p.termDays / 30 > 1 ? "s" : ""}`
+                                : `${p.termDays} Days`}
+                            </span>
                             {p.repaymentFrequency && (
                               <>
                                 <span>·</span>
@@ -661,8 +691,13 @@ export function BankProducts() {
                         <div>
                           <p className="text-[10px] text-white/40 uppercase font-mono">Interest Rate</p>
                           <p className="text-xs font-bold font-mono text-emerald-400 tabular-nums">
-                            {p.interestRate}% APR
+                            {formatLoanRate(p.interestRate, p.interestRateType, true)}
                           </p>
+                          {p.interestRateType && p.interestRateType !== "apr" && (
+                            <p className="text-[9px] text-white/30 font-mono">
+                              ≈ {getEquivalentApr(p.interestRate, p.interestRateType, p.termDays).toFixed(0)}% APR
+                            </p>
+                          )}
                         </div>
                         <div>
                           <p className="text-[10px] text-white/40 uppercase font-mono">Max Principal</p>
@@ -1405,68 +1440,201 @@ export function BankProducts() {
               {/* TAB 2: RATES & LIMITS */}
               {activeTab === "financial" && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-white/70 mb-1">
-                        {formType === "vault" ? "Annual Percentage Yield (APY %)" : "Annual Percentage Rate (APR %)"} *
-                      </label>
-                      <input
-                        required
-                        name="interestRate"
-                        type="number"
-                        step="0.01"
-                        defaultValue={editingProduct ? (formType === "vault" ? (editingProduct.interestRate / 100) : editingProduct.interestRate) : liveApr}
-                        onChange={(e) => setLiveApr(Number(e.target.value))}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                        placeholder="7.5"
-                      />
-                      <p className="text-[11px] text-white/40 mt-1">Stated annual rate applied or accrued.</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-white/70 mb-1">
-                        {formType === "loan" ? "Maximum Loan Amount ($)" : formType === "vault" ? "Minimum Deposit ($)" : "Maximum Credit Limit ($)"} *
-                      </label>
-                      <input
-                        required
-                        name={formType === "vault" ? "minDeposit" : "maxLimit"}
-                        type="number"
-                        step="1"
-                        defaultValue={
-                          editingProduct
-                            ? formType === "vault"
-                              ? editingProduct.minDeposit / 100
-                              : (editingProduct.maxAmount || editingProduct.maxLimit) / 100
-                            : 5000
-                        }
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                        placeholder="10000"
-                      />
-                    </div>
-                  </div>
-
                   {formType === "loan" && (
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Minimum Loan Amount ($)</label>
-                        <input
-                          name="minAmount"
-                          type="number"
-                          defaultValue={editingProduct ? (editingProduct.minAmount || 10000) / 100 : 100}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                        />
+                        <label className="block text-xs font-medium text-white/70 mb-1">
+                          Interest Rate Calculation Model *
+                        </label>
+                        <select
+                          name="interestRateType"
+                          value={liveLoanInterestType}
+                          onChange={(e: any) => setLiveLoanInterestType(e.target.value)}
+                          className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                        >
+                          <option value="weekly">Weekly Simple Interest (% / week) — e.g. 2%/wk</option>
+                          <option value="monthly">Monthly Simple Interest (% / month) — e.g. 5%/mo</option>
+                          <option value="flat">Flat Surcharge / Fixed Fee (% Flat) — e.g. 5% flat</option>
+                          <option value="apr">Annual Percentage Rate (Standard APR %)</option>
+                        </select>
+                        <p className="text-[10px] text-white/40 mt-1">
+                          {liveLoanInterestType === "weekly"
+                            ? "Advertised as simple weekly % (e.g. 2.0%/wk instead of 104% APR)."
+                            : liveLoanInterestType === "monthly"
+                            ? "Advertised as simple monthly % (e.g. 5.0%/mo instead of 60% APR)."
+                            : liveLoanInterestType === "flat"
+                            ? "Fixed one-time term surcharge on the borrowed principal."
+                            : "Standard continuous 365-day annualized APR."}
+                        </p>
                       </div>
+
                       <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Default Term Duration (Days) *</label>
+                        <label className="block text-xs font-medium text-white/70 mb-1">
+                          {liveLoanInterestType === "weekly"
+                            ? "Weekly Rate (% / week) *"
+                            : liveLoanInterestType === "monthly"
+                            ? "Monthly Rate (% / month) *"
+                            : liveLoanInterestType === "flat"
+                            ? "Flat Surcharge Rate (% Flat) *"
+                            : "Annual Percentage Rate (APR %) *"}
+                        </label>
                         <input
                           required
-                          name="termDays"
+                          name="interestRate"
                           type="number"
-                          defaultValue={editingProduct?.termDays || 30}
+                          step="0.01"
+                          defaultValue={editingProduct ? editingProduct.interestRate : liveApr}
+                          onChange={(e) => setLiveApr(Number(e.target.value))}
                           className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          placeholder={liveLoanInterestType === "weekly" ? "2.0" : liveLoanInterestType === "monthly" ? "5.0" : "12.0"}
+                        />
+                        <p className="text-[10px] text-emerald-400 font-mono mt-1">
+                          Displays to borrowers as: <span className="font-bold">{formatLoanRate(liveApr, liveLoanInterestType, false)}</span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {formType !== "loan" && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-white/70 mb-1">
+                          {formType === "vault" ? "Annual Percentage Yield (APY %)" : "Annual Percentage Rate (APR %)"} *
+                        </label>
+                        <input
+                          required
+                          name="interestRate"
+                          type="number"
+                          step="0.01"
+                          defaultValue={editingProduct ? (formType === "vault" ? (editingProduct.interestRate / 100) : editingProduct.interestRate) : liveApr}
+                          onChange={(e) => setLiveApr(Number(e.target.value))}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          placeholder="7.5"
+                        />
+                        <p className="text-[11px] text-white/40 mt-1">Stated annual rate applied or accrued.</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-white/70 mb-1">
+                          {formType === "vault" ? "Minimum Deposit ($)" : "Maximum Credit Limit ($)"} *
+                        </label>
+                        <input
+                          required
+                          name={formType === "vault" ? "minDeposit" : "maxLimit"}
+                          type="number"
+                          step="1"
+                          defaultValue={
+                            editingProduct
+                              ? formType === "vault"
+                                ? editingProduct.minDeposit / 100
+                                : (editingProduct.maxAmount || editingProduct.maxLimit) / 100
+                              : 5000
+                          }
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          placeholder="10000"
                         />
                       </div>
                     </div>
+                  )}
+
+                  {formType === "loan" && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-white/70 mb-1">Loan Term Duration & Unit *</label>
+                          <div className="flex gap-2">
+                            <input
+                              required
+                              type="number"
+                              min={1}
+                              name="termDuration"
+                              value={liveLoanTermValue}
+                              onChange={(e) => setLiveLoanTermValue(Math.max(1, Number(e.target.value)))}
+                              className="w-24 bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                            />
+                            <select
+                              name="termUnit"
+                              value={liveLoanTermUnit}
+                              onChange={(e: any) => setLiveLoanTermUnit(e.target.value)}
+                              className="flex-1 bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                            >
+                              <option value="weeks">Weeks</option>
+                              <option value="months">Months</option>
+                              <option value="days">Days</option>
+                            </select>
+                          </div>
+                          <input type="hidden" name="termDays" value={convertTermToDays(liveLoanTermValue, liveLoanTermUnit, 30)} />
+                          <p className="text-[10px] text-white/40 mt-1">
+                            Calculated tenor: {convertTermToDays(liveLoanTermValue, liveLoanTermUnit, 30)} calendar days
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-white/70 mb-1">Maximum Loan Cap ($) *</label>
+                          <input
+                            required
+                            name="maxLimit"
+                            type="number"
+                            step="1"
+                            defaultValue={editingProduct ? (editingProduct.maxAmount || 500000) / 100 : 5000}
+                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                            placeholder="5000"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-white/70 mb-1">Minimum Loan Amount ($)</label>
+                          <input
+                            name="minAmount"
+                            type="number"
+                            defaultValue={editingProduct ? (editingProduct.minAmount || 10000) / 100 : 100}
+                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          />
+                        </div>
+
+                        {/* Live Simulation / Calculation Matrix */}
+                        {(() => {
+                          const demoAmount = 1000;
+                          const breakdown = calculateLoanBreakdown({
+                            principalCents: demoAmount * 100,
+                            rate: liveApr,
+                            rateType: liveLoanInterestType,
+                            termDuration: liveLoanTermValue,
+                            termUnit: liveLoanTermUnit,
+                            repaymentFrequency: liveLoanTermUnit === "weeks" ? "weekly" : "monthly"
+                          });
+
+                          return (
+                            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-1.5 text-xs text-emerald-300">
+                              <div className="flex items-center justify-between font-bold text-white">
+                                <span>Borrower Repayment Preview</span>
+                                <span className="font-mono text-emerald-400">{breakdown.rateDisplay}</span>
+                              </div>
+                              <p className="text-[11px] text-white/70">
+                                Example $1,000.00 loan over {breakdown.termDisplay}:
+                              </p>
+                              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-emerald-500/20 text-[11px]">
+                                <div>
+                                  <span className="text-white/50 block">Total Interest:</span>
+                                  <span className="font-mono font-bold text-white">{formatMoney(breakdown.totalInterestCents)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-white/50 block">Installment:</span>
+                                  <span className="font-mono font-bold text-white">{formatMoney(breakdown.installmentCents)} / {breakdown.frequencyLabel.toLowerCase()}</span>
+                                </div>
+                              </div>
+                              {liveLoanInterestType !== "apr" && (
+                                <p className="text-[10px] text-white/40 pt-1 font-mono">
+                                  Transparent APR Equiv: {breakdown.equivalentApr.toFixed(1)}% (hidden from hero banner)
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </>
                   )}
 
                   {formType === "credit" && (
@@ -2004,7 +2172,7 @@ export function BankProducts() {
                   className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                 >
                   <optgroup label="Loan Products">
-                    {loans.map(l => <option key={l.id} value={l.id}>{l.name} ({l.interestRate}% APR)</option>)}
+                    {loans.map(l => <option key={l.id} value={l.id}>{l.name} ({formatLoanRate(l.interestRate, l.interestRateType, true)})</option>)}
                   </optgroup>
                   <optgroup label="Credit Cards">
                     {credits.map(c => <option key={c.id} value={c.id}>{c.name} ({c.interestRate}% APR)</option>)}
@@ -2032,35 +2200,65 @@ export function BankProducts() {
                   </div>
 
                   {/* Calculated Breakdown Matrix */}
-                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5 space-y-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-white/40">Interest Rate:</span>
-                      <span className="font-mono text-white">{simProduct.interestRate}% APR</span>
-                    </div>
+                  {(() => {
+                    const breakdown = calculateLoanBreakdown({
+                      principalCents: simAmount * 100,
+                      rate: simProduct.interestRate,
+                      rateType: simProduct.interestRateType || "apr",
+                      termDays: simProduct.termDays || 30,
+                      repaymentFrequency: simProduct.repaymentFrequency || "monthly"
+                    });
 
-                    {simProduct.termDays && (
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-white/40">Loan Tenor:</span>
-                        <span className="font-mono text-white">{simProduct.termDays} Days</span>
+                    return (
+                      <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5 space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-white/40">Advertised Rate:</span>
+                          <span className="font-mono font-bold text-emerald-400">{breakdown.rateDisplay}</span>
+                        </div>
+
+                        {simProduct.termDays && (
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-white/40">Loan Tenor:</span>
+                            <span className="font-mono text-white">{breakdown.termDisplay} ({simProduct.termDays} Days)</span>
+                          </div>
+                        )}
+
+                        {simProduct.originationFeePercent > 0 && (
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-white/40">Origination Fee ({(simProduct.originationFeePercent / 100).toFixed(1)}%):</span>
+                            <span className="font-mono text-amber-400">
+                              {formatMoney(simAmount * (simProduct.originationFeePercent / 100))}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-white/40">Estimated Installment:</span>
+                          <span className="font-mono text-white font-bold">
+                            {formatMoney(breakdown.installmentCents)} / {breakdown.frequencyLabel.toLowerCase()} ({breakdown.installmentCount} payments)
+                          </span>
+                        </div>
+
+                        <div className="pt-2 border-t border-white/5 flex items-center justify-between text-sm font-semibold">
+                          <span className="text-white">Estimated Finance Charge (Interest):</span>
+                          <span className="font-mono text-emerald-400 tabular-nums">
+                            {formatMoney(breakdown.totalInterestCents)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs text-white/60 font-mono">
+                          <span>Total Payoff Amount:</span>
+                          <span className="text-white font-bold">{formatMoney(breakdown.totalPayoffCents)}</span>
+                        </div>
+
+                        {simProduct.interestRateType && simProduct.interestRateType !== "apr" && (
+                          <div className="text-[10px] text-white/40 pt-1 font-mono">
+                            Annualized Disclosure: ≈ {breakdown.equivalentApr.toFixed(1)}% APR
+                          </div>
+                        )}
                       </div>
-                    )}
-
-                    {simProduct.originationFeePercent > 0 && (
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-white/40">Origination Fee ({simProduct.originationFeePercent / 100}%):</span>
-                        <span className="font-mono text-amber-400">
-                          {formatMoney(simAmount * (simProduct.originationFeePercent / 100))}
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="pt-2 border-t border-white/5 flex items-center justify-between text-sm font-semibold">
-                      <span className="text-white">Estimated Finance Charge:</span>
-                      <span className="font-mono text-emerald-400 tabular-nums">
-                        {formatMoney(Math.round((simAmount * 100) * (simProduct.interestRate / 100) * ((simProduct.termDays || 365) / 365)))}
-                      </span>
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </>
               )}
             </div>

@@ -231,7 +231,9 @@ export const bankSettings = sqliteTable("bank_settings", {
 
   // Lending policy (loan interest, collections, origination)
   defaultLoanApr: integer("default_loan_apr").default(500), // 5.00% as percent * 100
+  defaultLoanInterestType: text("default_loan_interest_type").default("apr"), // apr | weekly | monthly | flat
   defaultLoanTermMonths: integer("default_loan_term_months").default(12),
+  defaultLoanTermUnit: text("default_loan_term_unit").default("months"), // days | weeks | months
   maxLoanAmountCents: integer("max_loan_amount_cents").default(0), // 0 = no global cap
   loanPaymentPeriodDays: integer("loan_payment_period_days").default(30),
   loanAutoDebitEnabled: integer("loan_auto_debit_enabled", { mode: "boolean" }).default(true),
@@ -351,7 +353,9 @@ export const loans = sqliteTable("loans", {
   accountId: text("account_id").references(() => bankAccounts.id).notNull(), // specific account that gets funded/pays
   principalAmount: integer("principal_amount").notNull(),
   remainingAmount: integer("remaining_amount").notNull(),
-  interestRate: integer("interest_rate").notNull(), // percentage * 100 (500 = 5.00% APR)
+  interestRate: integer("interest_rate").notNull(), // percentage * 100 (500 = 5.00% APR or 200 = 2.00% / wk)
+  interestRateType: text("interest_rate_type").default("apr"), // apr | weekly | monthly | flat
+  termUnit: text("term_unit").default("days"), // days | weeks | months
   nextPaymentDate: integer("next_payment_date", { mode: "timestamp" }).notNull(),
   purpose: text("purpose"), // Why do they need it?
   status: text("status").default("pending"), // pending, active, rejected, paid_off, defaulted
@@ -587,6 +591,8 @@ export const loanProducts = sqliteTable("loan_products", {
   description: text("description"),
   category: text("category").default("personal"), // personal, business, mortgage, micro, auto, commercial
   interestRate: integer("interest_rate").notNull(), 
+  interestRateType: text("interest_rate_type").default("apr"), // apr | weekly | monthly | flat
+  termUnit: text("term_unit").default("days"), // days | weeks | months
   minAmount: integer("min_amount").default(10000), // in cents ($100)
   maxAmount: integer("max_amount").notNull(), // in cents
   termDays: integer("term_days").notNull(),

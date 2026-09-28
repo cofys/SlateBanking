@@ -1644,7 +1644,9 @@ banksRouter.put("/api/banks/:bankId/settings", [requireBankStaff, requireRole(["
         requirePersonalForBusiness: req.body.requirePersonalForBusiness,
         savingsApyPercent: req.body.savingsApyPercent,
         defaultLoanApr: req.body.defaultLoanApr,
+        defaultLoanInterestType: req.body.defaultLoanInterestType,
         defaultLoanTermMonths: req.body.defaultLoanTermMonths,
+        defaultLoanTermUnit: req.body.defaultLoanTermUnit,
         maxLoanAmountCents: req.body.maxLoanAmountCents,
         loanPaymentPeriodDays: req.body.loanPaymentPeriodDays,
         loanAutoDebitEnabled: req.body.loanAutoDebitEnabled,
@@ -2110,6 +2112,8 @@ banksRouter.post("/api/banks/:bankId/products", requireBankStaff, async (req: ex
           description: description ? String(description).trim() : null,
           category: category || "personal",
           interestRate: Number(interestRate),
+          interestRateType: req.body.interestRateType || "apr",
+          termUnit: req.body.termUnit || "days",
           minAmount: minAmount !== undefined ? Math.round(Number(minAmount) * 100) : 10000,
           maxAmount: Math.round(Number(maxLimit) * 100), // convert dollars to cents
           termDays: Number(termDays),
@@ -2192,7 +2196,7 @@ banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, asyn
       
       const { bankId, productId } = req.params;
       const {
-        type, name, description, interestRate, maxLimit, minAmount, termDays, isActive,
+        type, name, description, interestRate, interestRateType, termUnit, maxLimit, minAmount, termDays, isActive,
         category, originationFeePercent, lateFeePercent, gracePeriodDays, repaymentFrequency, collateralRequired, minCreditScore, autoApproveMaxAmount,
         rewardsPercent, tierId, cashAdvanceEnabled, cashAdvanceFeePercent, annualFee, cardKind, cardDesign, minPaymentPercent, latePaymentFeeCents, foreignTxFeePercent, welcomeBonusCents, perksJson,
         lockupDays, minDeposit, maxDeposit, earlyWithdrawalPenaltyPercent, compoundFrequency
@@ -2209,6 +2213,8 @@ banksRouter.put("/api/banks/:bankId/products/:productId", requireBankStaff, asyn
           description: description !== undefined ? (description ? String(description).trim() : null) : undefined,
           category: category || undefined,
           interestRate: Number(interestRate),
+          interestRateType: interestRateType || undefined,
+          termUnit: termUnit || undefined,
           minAmount: minAmount !== undefined ? Math.round(Number(minAmount) * 100) : undefined,
           maxAmount: maxLimit !== undefined ? Math.round(Number(maxLimit) * 100) : undefined,
           termDays: Number(termDays),
@@ -4349,6 +4355,8 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         discordId, 
         principalAmount, 
         interestRate, 
+        interestRateType,
+        termUnit,
         depositAccountId, 
         collateralDescription, 
         collateralValue,
@@ -4395,12 +4403,16 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
 
       let resolvedRate = Math.round(Number(interestRate));
       if (!Number.isFinite(resolvedRate) || resolvedRate < 0) resolvedRate = policy.defaultApr;
+      let resolvedRateType = interestRateType || policy.defaultInterestType || "apr";
       let resolvedTerm = termMonths ? Math.max(1, Math.round(Number(termMonths))) : policy.defaultTermMonths;
+      let resolvedTermUnit = termUnit || policy.defaultTermUnit || "months";
       let resolvedProductId = productId || null;
       if (resolvedProductId) {
         const product = await db.select().from(loanProducts).where(and(eq(loanProducts.id, resolvedProductId), eq(loanProducts.bankId, req.params.bankId))).get();
         if (product) {
           resolvedRate = productAprToLoanRate(product.interestRate);
+          resolvedRateType = product.interestRateType || "apr";
+          resolvedTermUnit = product.termUnit || "days";
           resolvedTerm = Math.max(1, Math.round((product.termDays || 30) / 30));
         }
       }
@@ -4435,7 +4447,9 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         initialPaidAmount: parsedPaid,
         isOffSystem: Boolean(isOffSystem),
         offSystemReference: offSystemReference || (isOffSystem ? `Off-system import: ${parsedPaid > 0 ? `$${(parsedPaid/100).toFixed(2)} paid prior` : 'manual entry'}` : null),
-        interestRate,
+        interestRate: resolvedRate,
+        interestRateType: resolvedRateType,
+        termUnit: resolvedTermUnit,
         nextPaymentDate,
         purpose: purpose || (isOffSystem ? "Existing off-system loan record" : null),
         collateralDescription: collateralDescription || null,
