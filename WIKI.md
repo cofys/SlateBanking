@@ -1127,6 +1127,13 @@ Slate Banking features an enterprise-grade **Financial Products & Underwriting S
    - **Executive Portfolio Strip**: Aggregate overview of active catalog size, total loan portfolio, total credit extended/utilized, and locked vault deposits.
    - **Product Details & Customer Accounts Drawer**: Deep inspection of any product displaying its live ledger bindings, list of active accounts/cardholders/borrowers with copyable IDs, and recent credit application history.
    - **One-Click Product Duplication**: Rapidly clone existing products (`POST /api/banks/:bankId/products/:productId/duplicate`) to create tiered product ladders (e.g., Gold vs Platinum, 30-Day vs 90-Day).
+   - **Multi-Tab Product Creation Wizard & Persistent DOM State**: The creation and editing modal organizes configuration into dedicated tabs:
+     - *1. Basic Info & Branding*: Title, tagline/description, category, repayment cadence, and active toggle.
+     - *2. Rates & Limits*: Calculation models (weekly, monthly, flat, APR), rates, loan caps, tenors, and live calculation preview.
+     - *3. Fees & Surcharges*: Origination fees, late fees, grace periods, annual fees, and cash advance settings.
+     - *4. Card Perks & Rewards* (Credit only): Welcome bonus credit and dynamic perks bullet list builder.
+     - *5. Underwriting Rules*: Minimum credit score thresholds, account tier gating, auto-approval ceilings, and collateral requirements.
+     - All tab panels remain mounted in the DOM with visibility toggling, ensuring zero data loss when staff navigate between tabs during product configuration. Form submission executes comprehensive programmatic validation with automatic tab redirection to missing or invalid fields.
    - **Financial Product Calculator & Simulator**: Built-in interactive quoting simulator allowing bank staff to adjust loan/credit amounts on sliders to instantly calculate customer installment schedules, origination fee deductions, total finance charges, and institutional net profit margin.
 
 ### Global Security Suite (Added Sep 2026)

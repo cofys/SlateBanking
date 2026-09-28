@@ -232,14 +232,30 @@ export function BankProducts() {
   // Handle Form Submit
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setSubmitting(true);
     const fd = new FormData(e.currentTarget);
+
+    const name = String(fd.get("name") || "").trim();
+    if (!name) {
+      setActiveTab("basics");
+      flash("Product Title is required.");
+      return;
+    }
+
+    const rateVal = fd.get("interestRate");
+    const interestRate = rateVal !== null && rateVal !== "" ? Number(rateVal) : NaN;
+    if (isNaN(interestRate) || interestRate < 0) {
+      setActiveTab("financial");
+      flash("A valid Interest Rate / APY / APR is required.");
+      return;
+    }
+
+    setSubmitting(true);
 
     const payload: any = {
       type: formType,
-      name: String(fd.get("name") || "").trim(),
+      name,
       description: String(fd.get("description") || "").trim(),
-      interestRate: Number(fd.get("interestRate")),
+      interestRate,
       isActive: fd.get("isActive") === "on",
     };
 
@@ -249,12 +265,20 @@ export function BankProducts() {
       const termDuration = Number(fd.get("termDuration") || liveLoanTermValue || 2);
       const calculatedTermDays = convertTermToDays(termDuration, termUnit, Number(fd.get("termDays") || 30));
 
+      const maxLimit = Number(fd.get("maxLimit") || 5000);
+      if (isNaN(maxLimit) || maxLimit <= 0) {
+        setSubmitting(false);
+        setActiveTab("financial");
+        flash("Maximum Loan Cap must be greater than 0.");
+        return;
+      }
+
       payload.interestRateType = rateType;
       payload.termUnit = termUnit;
       payload.termDays = calculatedTermDays;
       payload.category = String(fd.get("category") || "personal");
       payload.minAmount = Number(fd.get("minAmount") || 100);
-      payload.maxLimit = Number(fd.get("maxLimit") || 5000);
+      payload.maxLimit = maxLimit;
       payload.originationFeePercent = Number(fd.get("originationFeePercent") || 0);
       payload.lateFeePercent = Number(fd.get("lateFeePercent") || 5);
       payload.gracePeriodDays = Number(fd.get("gracePeriodDays") || 3);
@@ -263,7 +287,14 @@ export function BankProducts() {
       payload.minCreditScore = Number(fd.get("minCreditScore") || 0);
       payload.autoApproveMaxAmount = Number(fd.get("autoApproveMaxAmount") || 0);
     } else if (formType === "vault") {
-      payload.lockupDays = Number(fd.get("lockupDays") || 90);
+      const lockupDays = Number(fd.get("lockupDays") || 90);
+      if (isNaN(lockupDays) || lockupDays <= 0) {
+        setSubmitting(false);
+        setActiveTab("basics");
+        flash("Lockup Term Duration must be at least 1 day.");
+        return;
+      }
+      payload.lockupDays = lockupDays;
       payload.minDeposit = Number(fd.get("minDeposit") || 500);
       payload.maxDeposit = fd.get("maxDeposit") ? Number(fd.get("maxDeposit")) : null;
       payload.earlyWithdrawalPenaltyPercent = Number(fd.get("earlyWithdrawalPenaltyPercent") || 2);
@@ -271,7 +302,14 @@ export function BankProducts() {
       payload.tierId = String(fd.get("tierId") || "").trim() || null;
     } else {
       // Credit Card
-      payload.maxLimit = Number(fd.get("maxLimit") || 10000);
+      const maxLimit = Number(fd.get("maxLimit") || 10000);
+      if (isNaN(maxLimit) || maxLimit <= 0) {
+        setSubmitting(false);
+        setActiveTab("financial");
+        flash("Maximum Credit Limit must be greater than 0.");
+        return;
+      }
+      payload.maxLimit = maxLimit;
       payload.rewardsPercent = Number(fd.get("rewardsPercent") || 0);
       payload.cardKind = String(fd.get("cardKind") || "credit");
       payload.cardDesign = liveCardDesign;
@@ -1143,7 +1181,9 @@ export function BankProducts() {
       {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <form
+            key={`${modalMode}-${editingProduct?.id || formType}`}
             onSubmit={handleFormSubmit}
+            noValidate
             className="bg-[#111118] border border-white/15 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 my-8 flex flex-col max-h-[90vh]"
           >
             {/* Modal Header */}
@@ -1282,424 +1322,447 @@ export function BankProducts() {
             {/* Modal Body / Tab Content */}
             <div className="p-6 overflow-y-auto space-y-4 flex-1">
               {/* TAB 1: BASICS */}
-              {activeTab === "basics" && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-white/70 mb-1">Product Title *</label>
-                    <input
-                      required
-                      name="name"
-                      type="text"
-                      defaultValue={editingProduct?.name || liveProductName}
-                      onChange={(e) => setLiveProductName(e.target.value)}
-                      placeholder="e.g. Onyx Commercial Credit Line"
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-white/70 mb-1">Marketing Tagline / Description</label>
-                    <textarea
-                      name="description"
-                      rows={2}
-                      defaultValue={editingProduct?.description || ""}
-                      placeholder="e.g. Tier-1 business financing designed for corporate growth with competitive revolving terms."
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                    />
-                  </div>
-
-                  {formType === "loan" && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Lending Category</label>
-                        <select
-                          name="category"
-                          defaultValue={editingProduct?.category || "personal"}
-                          className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                        >
-                          <option value="personal">Personal Loan</option>
-                          <option value="business">Commercial & Business Loan</option>
-                          <option value="mortgage">Mortgage & Real Estate</option>
-                          <option value="micro">Micro-Advance / Payday</option>
-                          <option value="auto">Vehicle & Equipment Financing</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Repayment Schedule</label>
-                        <select
-                          name="repaymentFrequency"
-                          defaultValue={editingProduct?.repaymentFrequency || "monthly"}
-                          className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                        >
-                          <option value="monthly">Monthly Installments</option>
-                          <option value="biweekly">Bi-weekly Installments</option>
-                          <option value="weekly">Weekly Installments</option>
-                          <option value="daily">Daily Installments</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {formType === "credit" && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Card Classification</label>
-                          <select
-                            name="cardKind"
-                            value={liveCardKind}
-                            onChange={(e) => setLiveCardKind(e.target.value)}
-                            className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                          >
-                            <option value="credit">Revolving Credit Card</option>
-                            <option value="debit">Direct Debit Card</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Visual Card Skin Theme</label>
-                          <select
-                            name="cardDesign"
-                            value={liveCardDesign}
-                            onChange={(e) => setLiveCardDesign(e.target.value)}
-                            className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                          >
-                            <option value="obsidian_vip">Obsidian VIP (Black / Platinum)</option>
-                            <option value="gold_prestige">Gold Prestige (Brushed Amber)</option>
-                            <option value="emerald_corp">Emerald Commercial (Deep Green)</option>
-                            <option value="sapphire_rewards">Sapphire Rewards (Cobalt Blue)</option>
-                            <option value="velvet_crimson">Velvet Crimson (Deep Rose)</option>
-                            <option value="cyber_neon">Cyberpunk Neon (Cyan / Purple)</option>
-                            <option value="classic_dark">Classic Slate</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Interactive Card Live Preview */}
-                      <div>
-                        <p className="text-[11px] font-medium text-white/40 uppercase mb-2">Live Visual Card Preview</p>
-                        <div className={`p-4 rounded-xl border max-w-sm shadow-xl ${getCardDesignStyle(liveCardDesign).bg}`}>
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="text-[9px] font-mono tracking-widest opacity-60 uppercase">{bank?.name || "ONYX BANK"}</p>
-                              <p className="text-xs font-bold text-white mt-0.5">{liveProductName || "Card Name"}</p>
-                            </div>
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/15 border border-white/20">
-                              {liveCardKind.toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="mt-4 flex items-center justify-between">
-                            <span className="text-[11px] font-mono opacity-70">•••• 5821</span>
-                            <span className="text-xs font-mono font-bold text-white tabular-nums">{liveApr}% APR</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {formType === "vault" && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Compounding Cadence</label>
-                        <select
-                          name="compoundFrequency"
-                          defaultValue={editingProduct?.compoundFrequency || "monthly"}
-                          className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                        >
-                          <option value="monthly">Monthly Compounding</option>
-                          <option value="daily">Daily Compounding</option>
-                          <option value="maturity">Paid at Maturity Only</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Lockup Term Duration (Days)</label>
-                        <input
-                          type="number"
-                          required
-                          name="lockupDays"
-                          defaultValue={editingProduct?.lockupDays || 90}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="pt-2 border-t border-white/5">
-                    <label className="flex items-center gap-2.5 text-xs text-white/90 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="isActive"
-                        defaultChecked={editingProduct ? !!editingProduct.isActive : true}
-                        className="rounded border-white/20 bg-black/40 text-emerald-500 focus:ring-0"
-                      />
-                      <span>Active & Available in Customer Application Portals</span>
-                    </label>
-                  </div>
+              <div className={activeTab === "basics" ? "space-y-4" : "hidden"}>
+                <div>
+                  <label className="block text-xs font-medium text-white/70 mb-1">Product Title *</label>
+                  <input
+                    name="name"
+                    type="text"
+                    defaultValue={editingProduct?.name || liveProductName}
+                    onChange={(e) => setLiveProductName(e.target.value)}
+                    placeholder="e.g. Onyx Commercial Credit Line"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                  />
                 </div>
-              )}
+
+                <div>
+                  <label className="block text-xs font-medium text-white/70 mb-1">Marketing Tagline / Description</label>
+                  <textarea
+                    name="description"
+                    rows={2}
+                    defaultValue={editingProduct?.description || ""}
+                    placeholder="e.g. Tier-1 business financing designed for corporate growth with competitive revolving terms."
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+
+                {formType === "loan" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Lending Category</label>
+                      <select
+                        name="category"
+                        defaultValue={editingProduct?.category || "personal"}
+                        className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                      >
+                        <option value="personal">Personal Loan</option>
+                        <option value="business">Commercial & Business Loan</option>
+                        <option value="mortgage">Mortgage & Real Estate</option>
+                        <option value="micro">Micro-Advance / Payday</option>
+                        <option value="auto">Vehicle & Equipment Financing</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Repayment Schedule</label>
+                      <select
+                        name="repaymentFrequency"
+                        defaultValue={editingProduct?.repaymentFrequency || "monthly"}
+                        className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                      >
+                        <option value="monthly">Monthly Installments</option>
+                        <option value="biweekly">Bi-weekly Installments</option>
+                        <option value="weekly">Weekly Installments</option>
+                        <option value="daily">Daily Installments</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {formType === "credit" && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Card Classification</label>
+                        <select
+                          name="cardKind"
+                          value={liveCardKind}
+                          onChange={(e) => setLiveCardKind(e.target.value)}
+                          className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                        >
+                          <option value="credit">Revolving Credit Card</option>
+                          <option value="debit">Direct Debit Card</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Visual Card Skin Theme</label>
+                        <select
+                          name="cardDesign"
+                          value={liveCardDesign}
+                          onChange={(e) => setLiveCardDesign(e.target.value)}
+                          className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                        >
+                          <option value="obsidian_vip">Obsidian VIP (Black / Platinum)</option>
+                          <option value="gold_prestige">Gold Prestige (Brushed Amber)</option>
+                          <option value="emerald_corp">Emerald Commercial (Deep Green)</option>
+                          <option value="sapphire_rewards">Sapphire Rewards (Cobalt Blue)</option>
+                          <option value="velvet_crimson">Velvet Crimson (Deep Rose)</option>
+                          <option value="cyber_neon">Cyberpunk Neon (Cyan / Purple)</option>
+                          <option value="classic_dark">Classic Slate</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Interactive Card Live Preview */}
+                    <div>
+                      <p className="text-[11px] font-medium text-white/40 uppercase mb-2">Live Visual Card Preview</p>
+                      <div className={`p-4 rounded-xl border max-w-sm shadow-xl ${getCardDesignStyle(liveCardDesign).bg}`}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-[9px] font-mono tracking-widest opacity-60 uppercase">{bank?.name || "ONYX BANK"}</p>
+                            <p className="text-xs font-bold text-white mt-0.5">{liveProductName || "Card Name"}</p>
+                          </div>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/15 border border-white/20">
+                            {liveCardKind.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex items-center justify-between">
+                          <span className="text-[11px] font-mono opacity-70">•••• 5821</span>
+                          <span className="text-xs font-mono font-bold text-white tabular-nums">{liveApr}% APR</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {formType === "vault" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Compounding Cadence</label>
+                      <select
+                        name="compoundFrequency"
+                        defaultValue={editingProduct?.compoundFrequency || "monthly"}
+                        className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                      >
+                        <option value="monthly">Monthly Compounding</option>
+                        <option value="daily">Daily Compounding</option>
+                        <option value="maturity">Paid at Maturity Only</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Lockup Term Duration (Days)</label>
+                      <input
+                        type="number"
+                        name="lockupDays"
+                        defaultValue={editingProduct?.lockupDays || 90}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-white/5">
+                  <label className="flex items-center gap-2.5 text-xs text-white/90 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="isActive"
+                      defaultChecked={editingProduct ? !!editingProduct.isActive : true}
+                      className="rounded border-white/20 bg-black/40 text-emerald-500 focus:ring-0"
+                    />
+                    <span>Active & Available in Customer Application Portals</span>
+                  </label>
+                </div>
+              </div>
 
               {/* TAB 2: RATES & LIMITS */}
-              {activeTab === "financial" && (
-                <div className="space-y-4">
-                  {formType === "loan" && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">
-                          Interest Rate Calculation Model *
-                        </label>
-                        <select
-                          name="interestRateType"
-                          value={liveLoanInterestType}
-                          onChange={(e: any) => setLiveLoanInterestType(e.target.value)}
-                          className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                        >
-                          <option value="weekly">Weekly Simple Interest (% / week) — e.g. 2%/wk</option>
-                          <option value="monthly">Monthly Simple Interest (% / month) — e.g. 5%/mo</option>
-                          <option value="flat">Flat Surcharge / Fixed Fee (% Flat) — e.g. 5% flat</option>
-                          <option value="apr">Annual Percentage Rate (Standard APR %)</option>
-                        </select>
-                        <p className="text-[10px] text-white/40 mt-1">
-                          {liveLoanInterestType === "weekly"
-                            ? "Advertised as simple weekly % (e.g. 2.0%/wk instead of 104% APR)."
-                            : liveLoanInterestType === "monthly"
-                            ? "Advertised as simple monthly % (e.g. 5.0%/mo instead of 60% APR)."
-                            : liveLoanInterestType === "flat"
-                            ? "Fixed one-time term surcharge on the borrowed principal."
-                            : "Standard continuous 365-day annualized APR."}
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">
-                          {liveLoanInterestType === "weekly"
-                            ? "Weekly Rate (% / week) *"
-                            : liveLoanInterestType === "monthly"
-                            ? "Monthly Rate (% / month) *"
-                            : liveLoanInterestType === "flat"
-                            ? "Flat Surcharge Rate (% Flat) *"
-                            : "Annual Percentage Rate (APR %) *"}
-                        </label>
-                        <input
-                          required
-                          name="interestRate"
-                          type="number"
-                          step="0.01"
-                          defaultValue={editingProduct ? editingProduct.interestRate : liveApr}
-                          onChange={(e) => setLiveApr(Number(e.target.value))}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          placeholder={liveLoanInterestType === "weekly" ? "2.0" : liveLoanInterestType === "monthly" ? "5.0" : "12.0"}
-                        />
-                        <p className="text-[10px] text-emerald-400 font-mono mt-1">
-                          Displays to borrowers as: <span className="font-bold">{formatLoanRate(liveApr, liveLoanInterestType, false)}</span>
-                        </p>
-                      </div>
+              <div className={activeTab === "financial" ? "space-y-4" : "hidden"}>
+                {formType === "loan" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">
+                        Interest Rate Calculation Model *
+                      </label>
+                      <select
+                        name="interestRateType"
+                        value={liveLoanInterestType}
+                        onChange={(e: any) => setLiveLoanInterestType(e.target.value)}
+                        className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                      >
+                        <option value="weekly">Weekly Simple Interest (% / week) — e.g. 2%/wk</option>
+                        <option value="monthly">Monthly Simple Interest (% / month) — e.g. 5%/mo</option>
+                        <option value="flat">Flat Surcharge / Fixed Fee (% Flat) — e.g. 5% flat</option>
+                        <option value="apr">Annual Percentage Rate (Standard APR %)</option>
+                      </select>
+                      <p className="text-[10px] text-white/40 mt-1">
+                        {liveLoanInterestType === "weekly"
+                          ? "Advertised as simple weekly % (e.g. 2.0%/wk instead of 104% APR)."
+                          : liveLoanInterestType === "monthly"
+                          ? "Advertised as simple monthly % (e.g. 5.0%/mo instead of 60% APR)."
+                          : liveLoanInterestType === "flat"
+                          ? "Fixed one-time term surcharge on the borrowed principal."
+                          : "Standard continuous 365-day annualized APR."}
+                      </p>
                     </div>
-                  )}
 
-                  {formType !== "loan" && (
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">
+                        {liveLoanInterestType === "weekly"
+                          ? "Weekly Rate (% / week) *"
+                          : liveLoanInterestType === "monthly"
+                          ? "Monthly Rate (% / month) *"
+                          : liveLoanInterestType === "flat"
+                          ? "Flat Surcharge Rate (% Flat) *"
+                          : "Annual Percentage Rate (APR %) *"}
+                      </label>
+                      <input
+                        name="interestRate"
+                        type="number"
+                        step="0.01"
+                        defaultValue={editingProduct ? editingProduct.interestRate : liveApr}
+                        onChange={(e) => setLiveApr(Number(e.target.value))}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                        placeholder={liveLoanInterestType === "weekly" ? "2.0" : liveLoanInterestType === "monthly" ? "5.0" : "12.0"}
+                      />
+                      <p className="text-[10px] text-emerald-400 font-mono mt-1">
+                        Displays to borrowers as: <span className="font-bold">{formatLoanRate(liveApr, liveLoanInterestType, false)}</span>
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {formType !== "loan" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">
+                        {formType === "vault" ? "Annual Percentage Yield (APY %)" : "Annual Percentage Rate (APR %)"} *
+                      </label>
+                      <input
+                        name="interestRate"
+                        type="number"
+                        step="0.01"
+                        defaultValue={editingProduct ? (formType === "vault" ? (editingProduct.interestRate / 100) : editingProduct.interestRate) : liveApr}
+                        onChange={(e) => setLiveApr(Number(e.target.value))}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                        placeholder="7.5"
+                      />
+                      <p className="text-[11px] text-white/40 mt-1">Stated annual rate applied or accrued.</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">
+                        {formType === "vault" ? "Minimum Deposit ($)" : "Maximum Credit Limit ($)"} *
+                      </label>
+                      <input
+                        name={formType === "vault" ? "minDeposit" : "maxLimit"}
+                        type="number"
+                        step="1"
+                        defaultValue={
+                          editingProduct
+                            ? formType === "vault"
+                              ? editingProduct.minDeposit / 100
+                              : (editingProduct.maxAmount || editingProduct.maxLimit) / 100
+                            : 5000
+                        }
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                        placeholder="10000"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {formType === "loan" && (
+                  <>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">
-                          {formType === "vault" ? "Annual Percentage Yield (APY %)" : "Annual Percentage Rate (APR %)"} *
-                        </label>
-                        <input
-                          required
-                          name="interestRate"
-                          type="number"
-                          step="0.01"
-                          defaultValue={editingProduct ? (formType === "vault" ? (editingProduct.interestRate / 100) : editingProduct.interestRate) : liveApr}
-                          onChange={(e) => setLiveApr(Number(e.target.value))}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          placeholder="7.5"
-                        />
-                        <p className="text-[11px] text-white/40 mt-1">Stated annual rate applied or accrued.</p>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Loan Term Duration & Unit *</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            name="termDuration"
+                            value={liveLoanTermValue}
+                            onChange={(e) => setLiveLoanTermValue(Math.max(1, Number(e.target.value)))}
+                            className="w-24 bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          />
+                          <select
+                            name="termUnit"
+                            value={liveLoanTermUnit}
+                            onChange={(e: any) => setLiveLoanTermUnit(e.target.value)}
+                            className="flex-1 bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                          >
+                            <option value="weeks">Weeks</option>
+                            <option value="months">Months</option>
+                            <option value="days">Days</option>
+                          </select>
+                        </div>
+                        <input type="hidden" name="termDays" value={convertTermToDays(liveLoanTermValue, liveLoanTermUnit, 30)} />
+                        <p className="text-[10px] text-white/40 mt-1">
+                          Calculated tenor: {convertTermToDays(liveLoanTermValue, liveLoanTermUnit, 30)} calendar days
+                        </p>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">
-                          {formType === "vault" ? "Minimum Deposit ($)" : "Maximum Credit Limit ($)"} *
-                        </label>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Maximum Loan Cap ($) *</label>
                         <input
-                          required
-                          name={formType === "vault" ? "minDeposit" : "maxLimit"}
+                          name="maxLimit"
                           type="number"
                           step="1"
-                          defaultValue={
-                            editingProduct
-                              ? formType === "vault"
-                                ? editingProduct.minDeposit / 100
-                                : (editingProduct.maxAmount || editingProduct.maxLimit) / 100
-                              : 5000
-                          }
+                          defaultValue={editingProduct ? (editingProduct.maxAmount || 500000) / 100 : 5000}
                           className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          placeholder="10000"
+                          placeholder="5000"
                         />
                       </div>
                     </div>
-                  )}
 
-                  {formType === "loan" && (
-                    <>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Loan Term Duration & Unit *</label>
-                          <div className="flex gap-2">
-                            <input
-                              required
-                              type="number"
-                              min={1}
-                              name="termDuration"
-                              value={liveLoanTermValue}
-                              onChange={(e) => setLiveLoanTermValue(Math.max(1, Number(e.target.value)))}
-                              className="w-24 bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                            />
-                            <select
-                              name="termUnit"
-                              value={liveLoanTermUnit}
-                              onChange={(e: any) => setLiveLoanTermUnit(e.target.value)}
-                              className="flex-1 bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                            >
-                              <option value="weeks">Weeks</option>
-                              <option value="months">Months</option>
-                              <option value="days">Days</option>
-                            </select>
-                          </div>
-                          <input type="hidden" name="termDays" value={convertTermToDays(liveLoanTermValue, liveLoanTermUnit, 30)} />
-                          <p className="text-[10px] text-white/40 mt-1">
-                            Calculated tenor: {convertTermToDays(liveLoanTermValue, liveLoanTermUnit, 30)} calendar days
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Maximum Loan Cap ($) *</label>
-                          <input
-                            required
-                            name="maxLimit"
-                            type="number"
-                            step="1"
-                            defaultValue={editingProduct ? (editingProduct.maxAmount || 500000) / 100 : 5000}
-                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                            placeholder="5000"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Minimum Loan Amount ($)</label>
-                          <input
-                            name="minAmount"
-                            type="number"
-                            defaultValue={editingProduct ? (editingProduct.minAmount || 10000) / 100 : 100}
-                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          />
-                        </div>
-
-                        {/* Live Simulation / Calculation Matrix */}
-                        {(() => {
-                          const demoAmount = 1000;
-                          const breakdown = calculateLoanBreakdown({
-                            principalCents: demoAmount * 100,
-                            rate: liveApr,
-                            rateType: liveLoanInterestType,
-                            termDuration: liveLoanTermValue,
-                            termUnit: liveLoanTermUnit,
-                            repaymentFrequency: liveLoanTermUnit === "weeks" ? "weekly" : "monthly"
-                          });
-
-                          return (
-                            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-1.5 text-xs text-emerald-300">
-                              <div className="flex items-center justify-between font-bold text-white">
-                                <span>Borrower Repayment Preview</span>
-                                <span className="font-mono text-emerald-400">{breakdown.rateDisplay}</span>
-                              </div>
-                              <p className="text-[11px] text-white/70">
-                                Example $1,000.00 loan over {breakdown.termDisplay}:
-                              </p>
-                              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-emerald-500/20 text-[11px]">
-                                <div>
-                                  <span className="text-white/50 block">Total Interest:</span>
-                                  <span className="font-mono font-bold text-white">{formatMoney(breakdown.totalInterestCents)}</span>
-                                </div>
-                                <div>
-                                  <span className="text-white/50 block">Installment:</span>
-                                  <span className="font-mono font-bold text-white">{formatMoney(breakdown.installmentCents)} / {breakdown.frequencyLabel.toLowerCase()}</span>
-                                </div>
-                              </div>
-                              {liveLoanInterestType !== "apr" && (
-                                <p className="text-[10px] text-white/40 pt-1 font-mono">
-                                  Transparent APR Equiv: {breakdown.equivalentApr.toFixed(1)}% (hidden from hero banner)
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </>
-                  )}
-
-                  {formType === "credit" && (
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Rewards / Cashback Rate (%)</label>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Minimum Loan Amount ($)</label>
                         <input
-                          name="rewardsPercent"
+                          name="minAmount"
                           type="number"
-                          step="0.1"
-                          defaultValue={editingProduct?.rewardsPercent || 1.5}
+                          defaultValue={editingProduct ? (editingProduct.minAmount || 10000) / 100 : 100}
                           className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Minimum Monthly Payment (%)</label>
-                        <input
-                          name="minPaymentPercent"
-                          type="number"
-                          step="0.5"
-                          defaultValue={editingProduct ? (editingProduct.minPaymentPercent || 500) / 100 : 5.0}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                        />
-                      </div>
-                    </div>
-                  )}
 
-                  {formType === "vault" && (
+                      {/* Live Simulation / Calculation Matrix */}
+                      {(() => {
+                        const demoAmount = 1000;
+                        const breakdown = calculateLoanBreakdown({
+                          principalCents: demoAmount * 100,
+                          rate: liveApr,
+                          rateType: liveLoanInterestType,
+                          termDuration: liveLoanTermValue,
+                          termUnit: liveLoanTermUnit,
+                          repaymentFrequency: liveLoanTermUnit === "weeks" ? "weekly" : "monthly"
+                        });
+
+                        return (
+                          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-1.5 text-xs text-emerald-300">
+                            <div className="flex items-center justify-between font-bold text-white">
+                              <span>Borrower Repayment Preview</span>
+                              <span className="font-mono text-emerald-400">{breakdown.rateDisplay}</span>
+                            </div>
+                            <p className="text-[11px] text-white/70">
+                              Example $1,000.00 loan over {breakdown.termDisplay}:
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-emerald-500/20 text-[11px]">
+                              <div>
+                                <span className="text-white/50 block">Total Interest:</span>
+                                <span className="font-mono font-bold text-white">{formatMoney(breakdown.totalInterestCents)}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Installment:</span>
+                                <span className="font-mono font-bold text-white">{formatMoney(breakdown.installmentCents)} / {breakdown.frequencyLabel.toLowerCase()}</span>
+                              </div>
+                            </div>
+                            {liveLoanInterestType !== "apr" && (
+                              <p className="text-[10px] text-white/40 pt-1 font-mono">
+                                Transparent APR Equiv: {breakdown.equivalentApr.toFixed(1)}% (hidden from hero banner)
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </>
+                )}
+
+                {formType === "credit" && (
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-white/70 mb-1">Optional Max Deposit Cap ($)</label>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Rewards / Cashback Rate (%)</label>
                       <input
-                        name="maxDeposit"
+                        name="rewardsPercent"
                         type="number"
-                        defaultValue={editingProduct?.maxDeposit ? editingProduct.maxDeposit / 100 : ""}
-                        placeholder="Leave blank for no deposit ceiling"
+                        step="0.1"
+                        defaultValue={editingProduct?.rewardsPercent || 1.5}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                       />
                     </div>
-                  )}
-                </div>
-              )}
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Minimum Monthly Payment (%)</label>
+                      <input
+                        name="minPaymentPercent"
+                        type="number"
+                        step="0.5"
+                        defaultValue={editingProduct ? (editingProduct.minPaymentPercent || 500) / 100 : 5.0}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {formType === "vault" && (
+                  <div>
+                    <label className="block text-xs font-medium text-white/70 mb-1">Optional Max Deposit Cap ($)</label>
+                    <input
+                      name="maxDeposit"
+                      type="number"
+                      defaultValue={editingProduct?.maxDeposit ? editingProduct.maxDeposit / 100 : ""}
+                      placeholder="Leave blank for no deposit ceiling"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                )}
+              </div>
 
               {/* TAB 3: FEES & SURCHARGES */}
-              {activeTab === "fees" && (
-                <div className="space-y-4">
-                  {formType === "loan" && (
+              <div className={activeTab === "fees" ? "space-y-4" : "hidden"}>
+                {formType === "loan" && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Origination Fee (%)</label>
+                      <input
+                        name="originationFeePercent"
+                        type="number"
+                        step="0.1"
+                        defaultValue={editingProduct ? (editingProduct.originationFeePercent || 0) / 100 : 1.0}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                      />
+                      <p className="text-[10px] text-white/40 mt-1">Deducted at disbursement</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Late Payment Fee (%)</label>
+                      <input
+                        name="lateFeePercent"
+                        type="number"
+                        step="0.1"
+                        defaultValue={editingProduct ? (editingProduct.lateFeePercent || 500) / 100 : 5.0}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Grace Period (Days)</label>
+                      <input
+                        name="gracePeriodDays"
+                        type="number"
+                        defaultValue={editingProduct?.gracePeriodDays || 3}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {formType === "credit" && (
+                  <div className="space-y-3">
                     <div className="grid grid-cols-3 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Origination Fee (%)</label>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Annual Fee ($)</label>
                         <input
-                          name="originationFeePercent"
+                          name="annualFee"
                           type="number"
-                          step="0.1"
-                          defaultValue={editingProduct ? (editingProduct.originationFeePercent || 0) / 100 : 1.0}
+                          step="1"
+                          defaultValue={editingProduct ? (editingProduct.annualFeeCents || 0) / 100 : 0}
                           className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
-                        <p className="text-[10px] text-white/40 mt-1">Deducted at disbursement</p>
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Late Payment Fee (%)</label>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Late Fee ($)</label>
                         <input
-                          name="lateFeePercent"
+                          name="latePaymentFee"
                           type="number"
-                          step="0.1"
-                          defaultValue={editingProduct ? (editingProduct.lateFeePercent || 500) / 100 : 5.0}
+                          step="1"
+                          defaultValue={editingProduct ? (editingProduct.latePaymentFeeCents || 2500) / 100 : 25}
                           className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
@@ -1708,103 +1771,67 @@ export function BankProducts() {
                         <input
                           name="gracePeriodDays"
                           type="number"
-                          defaultValue={editingProduct?.gracePeriodDays || 3}
+                          defaultValue={editingProduct?.gracePeriodDays || 21}
                           className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
                     </div>
-                  )}
 
-                  {formType === "credit" && (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Annual Fee ($)</label>
-                          <input
-                            name="annualFee"
-                            type="number"
-                            step="1"
-                            defaultValue={editingProduct ? (editingProduct.annualFeeCents || 0) / 100 : 0}
-                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Late Fee ($)</label>
-                          <input
-                            name="latePaymentFee"
-                            type="number"
-                            step="1"
-                            defaultValue={editingProduct ? (editingProduct.latePaymentFeeCents || 2500) / 100 : 25}
-                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Grace Period (Days)</label>
-                          <input
-                            name="gracePeriodDays"
-                            type="number"
-                            defaultValue={editingProduct?.gracePeriodDays || 21}
-                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 pt-2">
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Cash Advance Fee (%)</label>
-                          <input
-                            name="cashAdvanceFeePercent"
-                            type="number"
-                            step="0.1"
-                            defaultValue={editingProduct ? (editingProduct.cashAdvanceFeePercent || 300) / 100 : 3.0}
-                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/70 mb-1">Foreign FX Fee (%)</label>
-                          <input
-                            name="foreignTxFeePercent"
-                            type="number"
-                            step="0.1"
-                            defaultValue={editingProduct ? (editingProduct.foreignTxFeePercent || 0) / 100 : 0}
-                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                          />
-                        </div>
-                      </div>
-
-                      <label className="flex items-center gap-2 text-xs text-white/80 cursor-pointer pt-1">
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Cash Advance Fee (%)</label>
                         <input
-                          type="checkbox"
-                          name="cashAdvanceEnabled"
-                          defaultChecked={editingProduct?.cashAdvanceEnabled !== false}
-                          className="rounded border-white/20 bg-black/40 text-blue-500 focus:ring-0"
+                          name="cashAdvanceFeePercent"
+                          type="number"
+                          step="0.1"
+                          defaultValue={editingProduct ? (editingProduct.cashAdvanceFeePercent || 300) / 100 : 3.0}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
-                        <span>Permit Cash Advances / ATM Withdrawals on this card</span>
-                      </label>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-white/70 mb-1">Foreign FX Fee (%)</label>
+                        <input
+                          name="foreignTxFeePercent"
+                          type="number"
+                          step="0.1"
+                          defaultValue={editingProduct ? (editingProduct.foreignTxFeePercent || 0) / 100 : 0}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                        />
+                      </div>
                     </div>
-                  )}
 
-                  {formType === "vault" && (
-                    <div>
-                      <label className="block text-xs font-medium text-white/70 mb-1">Early Break Penalty (%)</label>
+                    <label className="flex items-center gap-2 text-xs text-white/80 cursor-pointer pt-1">
                       <input
-                        name="earlyWithdrawalPenaltyPercent"
-                        type="number"
-                        step="0.1"
-                        defaultValue={editingProduct ? (editingProduct.earlyWithdrawalPenaltyPercent || 200) / 100 : 2.0}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                        type="checkbox"
+                        name="cashAdvanceEnabled"
+                        defaultChecked={editingProduct?.cashAdvanceEnabled !== false}
+                        className="rounded border-white/20 bg-black/40 text-blue-500 focus:ring-0"
                       />
-                      <p className="text-[11px] text-white/40 mt-1">
-                        Penalty charged against principal balance if broken prior to maturity.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
+                      <span>Permit Cash Advances / ATM Withdrawals on this card</span>
+                    </label>
+                  </div>
+                )}
+
+                {formType === "vault" && (
+                  <div>
+                    <label className="block text-xs font-medium text-white/70 mb-1">Early Break Penalty (%)</label>
+                    <input
+                      name="earlyWithdrawalPenaltyPercent"
+                      type="number"
+                      step="0.1"
+                      defaultValue={editingProduct ? (editingProduct.earlyWithdrawalPenaltyPercent || 200) / 100 : 2.0}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                    />
+                    <p className="text-[11px] text-white/40 mt-1">
+                      Penalty charged against principal balance if broken prior to maturity.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* TAB 4: CARD PERKS (FOR CREDIT) */}
-              {activeTab === "perks" && formType === "credit" && (
-                <div className="space-y-4">
+              {formType === "credit" && (
+                <div className={activeTab === "perks" ? "space-y-4" : "hidden"}>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-white/70 mb-1">Welcome Bonus ($)</label>
@@ -1881,62 +1908,60 @@ export function BankProducts() {
               )}
 
               {/* TAB 5: UNDERWRITING & QUALIFICATION */}
-              {activeTab === "underwriting" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-white/70 mb-1">Minimum Credit Score</label>
-                      <input
-                        name="minCreditScore"
-                        type="number"
-                        defaultValue={editingProduct?.minCreditScore || 0}
-                        placeholder="0 = No score threshold"
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                      />
-                      <p className="text-[10px] text-white/40 mt-1">Citizens below this rating are auto-flagged for review</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-white/70 mb-1">Account Tier Gating (Optional)</label>
-                      <input
-                        name="tierId"
-                        type="text"
-                        defaultValue={editingProduct?.tierId || ""}
-                        placeholder="e.g. VIP, Platinum, Commercial"
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                      />
-                      <p className="text-[10px] text-white/40 mt-1">Leave blank to make available to all customer tiers</p>
-                    </div>
+              <div className={activeTab === "underwriting" ? "space-y-4" : "hidden"}>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-white/70 mb-1">Minimum Credit Score</label>
+                    <input
+                      name="minCreditScore"
+                      type="number"
+                      defaultValue={editingProduct?.minCreditScore || 0}
+                      placeholder="0 = No score threshold"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                    />
+                    <p className="text-[10px] text-white/40 mt-1">Citizens below this rating are auto-flagged for review</p>
                   </div>
 
-                  {formType === "loan" && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-white/70 mb-1">Auto-Approval Max Limit ($)</label>
-                        <input
-                          name="autoApproveMaxAmount"
-                          type="number"
-                          defaultValue={editingProduct ? (editingProduct.autoApproveMaxAmount || 0) / 100 : 0}
-                          placeholder="0 = All loans require manual review"
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                        />
-                      </div>
-
-                      <div className="flex items-center pt-5">
-                        <label className="flex items-center gap-2.5 text-xs text-white/90 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            name="collateralRequired"
-                            defaultChecked={!!editingProduct?.collateralRequired}
-                            className="rounded border-white/20 bg-black/40 text-amber-500 focus:ring-0"
-                          />
-                          <span>Mandatory Physical / Account Collateral</span>
-                        </label>
-                      </div>
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-white/70 mb-1">Account Tier Gating (Optional)</label>
+                    <input
+                      name="tierId"
+                      type="text"
+                      defaultValue={editingProduct?.tierId || ""}
+                      placeholder="e.g. VIP, Platinum, Commercial"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                    />
+                    <p className="text-[10px] text-white/40 mt-1">Leave blank to make available to all customer tiers</p>
+                  </div>
                 </div>
-              )}
+
+                {formType === "loan" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-white/70 mb-1">Auto-Approval Max Limit ($)</label>
+                      <input
+                        name="autoApproveMaxAmount"
+                        type="number"
+                        defaultValue={editingProduct ? (editingProduct.autoApproveMaxAmount || 0) / 100 : 0}
+                        placeholder="0 = All loans require manual review"
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+
+                    <div className="flex items-center pt-5">
+                      <label className="flex items-center gap-2.5 text-xs text-white/90 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          name="collateralRequired"
+                          defaultChecked={!!editingProduct?.collateralRequired}
+                          className="rounded border-white/20 bg-black/40 text-amber-500 focus:ring-0"
+                        />
+                        <span>Mandatory Physical / Account Collateral</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Modal Footer Actions */}
