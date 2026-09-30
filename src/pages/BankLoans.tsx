@@ -247,6 +247,7 @@ export function BankLoans() {
 
   const handleToggleProductActive = async (p: any) => {
     const nextState = !p.isActive;
+    setLoanProducts(prev => prev.map(item => item.id === p.id ? { ...item, isActive: nextState } : item));
     try {
       const res = await fetch(`/api/banks/${bankId}/products/${p.id}`, {
         method: "PUT",
@@ -261,33 +262,83 @@ export function BankLoans() {
           termDays: p.termDays || 30,
         }),
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        flash(`Product "${p.name}" is now ${nextState ? "Active" : "Disabled"}.`);
+        fetchData();
+      } else {
+        flash("Failed to update product status");
+        fetchData();
+      }
     } catch (e) {
       console.error(e);
+      fetchData();
     }
   };
 
   const handleDeleteProduct = async (p: any) => {
     if (!confirm(`Are you sure you want to permanently delete "${p.name}"?`)) return;
     try {
+      setLoanProducts(prev => prev.filter(item => item.id !== p.id));
       const res = await fetch(`/api/banks/${bankId}/products/${p.id}?type=loan`, {
         method: "DELETE",
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        flash(`Deleted "${p.name}".`);
+        fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        flash(err.error || "Failed to delete product");
+        fetchData();
+      }
     } catch (e) {
       console.error(e);
+      fetchData();
     }
   };
 
   const handlePurgeAllLoanProducts = async () => {
     if (!confirm("Are you sure you want to permanently delete ALL loan products for this bank? This will remove all preset, demo, or unwanted products from both staff and customer portals.")) return;
     try {
+      setLoanProducts([]);
       const res = await fetch(`/api/banks/${bankId}/products?type=loan`, {
         method: "DELETE",
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        flash("All loan products purged successfully.");
+        fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        flash(err.error || "Failed to purge loan products");
+        fetchData();
+      }
     } catch (e) {
       console.error(e);
+      fetchData();
+    }
+  };
+
+  const handleDeleteLoan = async (loan: any) => {
+    const borrowerName = loan.mcUsername || loan.discordId || "borrower";
+    if (!confirm(`Are you sure you want to permanently delete this loan record for ${borrowerName} ($${((loan.principalAmount || 0) / 100).toFixed(2)})? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      setLoans(prev => prev.filter(l => l.id !== loan.id));
+      if (selectedLoan?.id === loan.id) setSelectedLoan(null);
+      const res = await fetch(`/api/banks/${bankId}/loans/${loan.id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        flash(`Loan for ${borrowerName} deleted successfully.`);
+        fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        flash(err.error || "Failed to delete loan");
+        fetchData();
+      }
+    } catch {
+      flash("Error deleting loan");
+      fetchData();
     }
   };
 
@@ -993,10 +1044,21 @@ export function BankLoans() {
                             repaymentFrequency: loan.termUnit === "weeks" ? "weekly" : "monthly",
                           });
                         }}
-                        className="text-xs bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 border border-emerald-500/30 px-2.5 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1"
+                        className="text-xs bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 border border-emerald-500/30 px-2.5 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer"
                       >
                         <Briefcase size={12} />
                         <span>To Product</span>
+                      </button>
+
+                      <button
+                        title="Permanently delete this loan record"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteLoan(loan);
+                        }}
+                        className="text-xs bg-rose-500/10 hover:bg-rose-500/20 text-white/40 hover:text-rose-400 border border-rose-500/20 px-2 py-1.5 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </td>
@@ -1767,6 +1829,27 @@ export function BankLoans() {
                     </div>
                   </div>
 
+                  {(selectedLoan.depositAmount > 0 || selectedLoan.requestedTermMonths || selectedLoan.requestedTermDuration) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5 text-xs">
+                      {selectedLoan.depositAmount > 0 && (
+                        <div>
+                          <p className="text-white/40 uppercase text-[10px] tracking-wider">Upfront Deposit / Down Payment</p>
+                          <p className="font-mono text-emerald-400 font-bold mt-0.5">
+                            ${(selectedLoan.depositAmount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      )}
+                      {(selectedLoan.requestedTermMonths || selectedLoan.requestedTermDuration) && (
+                        <div>
+                          <p className="text-white/40 uppercase text-[10px] tracking-wider">Requested Payback Term</p>
+                          <p className="font-medium text-white mt-0.5">
+                            {selectedLoan.requestedTermDuration || selectedLoan.requestedTermMonths} {selectedLoan.requestedTermUnit || "Months"}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {selectedLoan.isOffSystem && (
                     <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-xl space-y-2">
                       <div className="flex justify-between items-center text-xs font-semibold text-purple-300">
@@ -1904,9 +1987,17 @@ export function BankLoans() {
                   
                   <button
                     onClick={() => setIsEditingActiveLoan(true)}
-                    className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-2 rounded-xl transition-colors flex items-center justify-center gap-2"
+                    className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-2 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <FileText size={16} /> Edit Details Manually
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteLoan(selectedLoan)}
+                    className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 font-medium py-2 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer text-xs"
+                  >
+                    <Trash2 size={15} /> Delete Loan Record
                   </button>
                 </div>
               </>
@@ -2159,8 +2250,9 @@ export function BankLoans() {
                   </button>
                   <button
                     type="submit"
+                    onClick={(e) => handleSaveProduct(e as any)}
                     disabled={prodSubmitting}
-                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-emerald-600/20"
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-emerald-600/20 active:scale-95"
                   >
                     {prodSubmitting ? "Saving..." : productModalMode === "edit" ? "Save Changes" : "Create Product"}
                   </button>

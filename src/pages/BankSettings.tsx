@@ -745,7 +745,7 @@ export function BankSettings() {
 
         {/* Right Settings Form Container */}
         <div className="lg:col-span-8 w-full" ref={contentSectionRef}>
-          <form id="bank-settings-form" onSubmit={handleSave} className="space-y-4 sm:space-y-6">
+          <form id="bank-settings-form" onSubmit={handleSave} noValidate className="space-y-4 sm:space-y-6">
             {/* Active Tab Banner */}
             <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-4 sm:p-5 shadow-md flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -2311,29 +2311,41 @@ export function BankSettings() {
             </div>
 
             {/* Bottom Floating Save Action Bar */}
-            <div className="sticky bottom-3 sm:bottom-4 z-20 bg-[var(--bg-elevated)]/95 backdrop-blur-md border border-white/15 rounded-2xl p-3 sm:p-4 shadow-2xl flex items-center justify-between gap-3">
+            <div className="sticky bottom-3 sm:bottom-4 z-40 bg-[var(--bg-elevated)]/98 backdrop-blur-md border border-white/20 rounded-2xl p-3 sm:p-4 shadow-2xl flex items-center justify-between gap-3 touch-manipulation">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                 <span className="text-xs text-white/70 truncate">
                   Editing <strong className="text-white">{activeTabDef.shortLabel}</strong>
                 </span>
+                {saveSuccess && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-emerald-400 ml-2 animate-in fade-in">
+                    <CheckCircle2 size={13} /> Saved
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                {saveSuccess && (
+                  <span className="sm:hidden text-xs font-semibold text-emerald-400 animate-in fade-in flex items-center gap-1">
+                    <CheckCircle2 size={13} /> Saved!
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={loadSettings}
                   disabled={saving}
-                  className="px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-medium text-white/60 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-1.5"
+                  className="px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-medium text-white/60 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw size={13} />
                   <span className="hidden sm:inline">Reset</span>
                 </button>
 
                 <button
-                  type="submit"
+                  id="save-settings-btn-bottom"
+                  type="button"
+                  onClick={(e) => handleSave(e as any)}
                   disabled={saving}
-                  className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/25 cursor-pointer"
+                  className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold px-4 sm:px-6 py-2.5 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/25 cursor-pointer select-none"
                 >
                   {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   <span>{saving ? "Saving..." : "Save Settings"}</span>

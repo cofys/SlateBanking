@@ -1884,18 +1884,15 @@ banksRouter.post("/api/banks/:bankId/accrue-interest", requireBankStaff, async (
 
 banksRouter.get("/api/banks/:bankId/products", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
-    const { creditProducts, vaultProducts, loans, cards, creditApplications, vaultDeposits } = await import("../../db/schema.js");
+    const { loanProducts, creditProducts, vaultProducts, loans, cards, creditApplications, vaultDeposits } = await import("../../db/schema.js");
     const { eq } = await import("drizzle-orm");
-    const { ensureAndReconcileLoanProducts } = await import("../loan_processor.js");
     const { normalizeRatePercent } = await import("../../lib/loan_utils.js");
     
     try {
       const bankId = req.params.bankId;
 
-      // 1. Ensure loan products are fully reconciled from existing loans and starter products
-      const loansList = await ensureAndReconcileLoanProducts(bankId);
-
-      const [creditsList, vaultsList, allLoans, allCards, allApps, allVaultDeposits] = await Promise.all([
+      const [loansList, creditsList, vaultsList, allLoans, allCards, allApps, allVaultDeposits] = await Promise.all([
+        db.select().from(loanProducts).where(eq(loanProducts.bankId, bankId)).catch(err => { console.error("Error fetching loanProducts:", err); return []; }),
         db.select().from(creditProducts).where(eq(creditProducts.bankId, bankId)).catch(err => { console.error("Error fetching creditProducts:", err); return []; }),
         db.select().from(vaultProducts).where(eq(vaultProducts.bankId, bankId)).catch(err => { console.error("Error fetching vaultProducts:", err); return []; }),
         db.select().from(loans).where(eq(loans.bankId, bankId)).catch(err => { console.error("Error fetching loans:", err); return []; }),
@@ -2369,7 +2366,7 @@ banksRouter.post("/api/banks/:bankId/products/:productId/duplicate", requireBank
 
 banksRouter.delete("/api/banks/:bankId/products/:productId", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
-    const { loanProducts, creditProducts, vaultProducts } = await import("../../db/schema.js");
+    const { loanProducts, creditProducts, vaultProducts, loans, cards } = await import("../../db/schema.js");
     const { eq, and } = await import("drizzle-orm");
     
     try {
@@ -2383,14 +2380,17 @@ banksRouter.delete("/api/banks/:bankId/products/:productId", requireBankStaff, a
       const { type } = req.query; // pass ?type=loan or ?type=credit or ?type=vault
       
       if (type === 'loan') {
+        // Unlink any loans attached to this product so they don't hold dangling references
+        await db.update(loans).set({ productId: null }).where(and(eq(loans.productId, productId), eq(loans.bankId, bankId))).catch(() => {});
         await db.delete(loanProducts).where(and(eq(loanProducts.id, productId), eq(loanProducts.bankId, bankId)));
       } else if (type === 'vault') {
         await db.delete(vaultProducts).where(and(eq(vaultProducts.id, productId), eq(vaultProducts.bankId, bankId)));
       } else {
+        await db.update(cards).set({ productId: null }).where(and(eq(cards.productId, productId), eq(cards.bankId, bankId))).catch(() => {});
         await db.delete(creditProducts).where(and(eq(creditProducts.id, productId), eq(creditProducts.bankId, bankId)));
       }
       
-      res.json({ success: true });
+      res.json({ success: true, message: "Product deleted successfully." });
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Failed to delete product" });
@@ -2399,7 +2399,7 @@ banksRouter.delete("/api/banks/:bankId/products/:productId", requireBankStaff, a
 
 banksRouter.delete("/api/banks/:bankId/products", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
-    const { loanProducts, creditProducts, vaultProducts } = await import("../../db/schema.js");
+    const { loanProducts, creditProducts, vaultProducts, loans, cards } = await import("../../db/schema.js");
     const { eq } = await import("drizzle-orm");
     
     try {
@@ -2413,12 +2413,14 @@ banksRouter.delete("/api/banks/:bankId/products", requireBankStaff, async (req: 
       const type = String(req.query.type || "loan");
       
       if (type === 'loan' || type === 'all') {
+        await db.update(loans).set({ productId: null }).where(eq(loans.bankId, bankId)).catch(() => {});
         await db.delete(loanProducts).where(eq(loanProducts.bankId, bankId));
       }
       if (type === 'vault' || type === 'all') {
         await db.delete(vaultProducts).where(eq(vaultProducts.bankId, bankId));
       }
       if (type === 'credit' || type === 'all') {
+        await db.update(cards).set({ productId: null }).where(eq(cards.bankId, bankId)).catch(() => {});
         await db.delete(creditProducts).where(eq(creditProducts.bankId, bankId));
       }
       
@@ -4497,8 +4499,7 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
       } else {
         // Auto-create or link loan product so it immediately appears in the staff panel's loan products catalog
         try {
-          const { ensureAndReconcileLoanProducts } = await import("../loan_processor");
-          const allProds = await ensureAndReconcileLoanProducts(req.params.bankId);
+          const allProds = await db.select().from(loanProducts).where(eq(loanProducts.bankId, req.params.bankId)).all();
           const existingProd = allProds.find(p => 
             Math.abs(normalizeRatePercent(p.interestRate) - normalizedRate) < 0.05 &&
             (p.interestRateType || 'weekly').toLowerCase() === resolvedRateType
@@ -4765,6 +4766,43 @@ banksRouter.put("/api/banks/:bankId/loans/:loanId/status", requireBankStaff, asy
       res.status(500).json({ error: "Internal Error" });
     }
   });
+
+banksRouter.delete("/api/banks/:bankId/loans/:loanId", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index");
+    const { loans, auditLogs } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+
+    try {
+      const staffRole = String((req as any).staffRole || "").toLowerCase().trim();
+      const isGlobal = Boolean((req as any).user?.isGlobalAdmin);
+      if (!isGlobal && !["owner", "admin", "manager", "loan_officer"].includes(staffRole)) {
+         return res.status(403).json({ error: "Only Managers, Admins, and Loan Officers can delete loans." });
+      }
+
+      const { bankId, loanId } = req.params;
+      const loan = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId))).get();
+      if (!loan) return res.status(404).json({ error: "Loan not found" });
+
+      await db.delete(loans).where(and(eq(loans.id, loanId), eq(loans.bankId, bankId)));
+
+      try {
+        await db.insert(auditLogs).values({
+          id: uuidv4(),
+          bankId,
+          userDiscordId: (req as any).user?.discordId || "STAFF",
+          action: "DELETE_LOAN",
+          details: `Deleted loan ${loanId} for borrower ${loan.discordId} ($${((loan.principalAmount || 0) / 100).toFixed(2)}, status: ${loan.status})`,
+          timestamp: new Date(),
+        });
+      } catch (err) {}
+
+      res.json({ success: true, message: "Loan deleted successfully." });
+    } catch (e: any) {
+      console.error("[DeleteLoanError]:", e);
+      res.status(500).json({ error: "Failed to delete loan" });
+    }
+});
 
 banksRouter.get("/api/banks/:bankId/credit-applications", requireBankStaff, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");

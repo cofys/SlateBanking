@@ -367,6 +367,13 @@ export const loans = sqliteTable("loans", {
   collateralDescription: text("collateral_description"), // Real estate, vehicle, vault assets, etc.
   collateralValue: integer("collateral_value"),         // Estimated collateral value in cents
   collateralStatus: text("collateral_status").default("none"), // none, pledged, seized, released
+  collateralType: text("collateral_type"),             // property, vehicle, vault, equipment, license, other
+
+  // Down Payment / Upfront Deposit & Client Customization
+  depositAmount: integer("deposit_amount").default(0), // Upfront cash deposit / down payment in cents
+  requestedTermMonths: integer("requested_term_months"), // Client requested payback term
+  requestedTermDuration: integer("requested_term_duration"), // Client requested term count
+  requestedTermUnit: text("requested_term_unit"), // days, weeks, months
 
   // Delinquency, Late Fees & Repayment Tracking
   lateFeeAmount: integer("late_fee_amount").default(0),        // Total accumulated late fees in cents

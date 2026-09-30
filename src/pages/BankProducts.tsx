@@ -239,19 +239,25 @@ export function BankProducts() {
   const handleDelete = async (product: any, type: ProductType) => {
     if (!confirm(`Are you sure you want to permanently delete "${product.name}"? This action cannot be undone.`)) return;
     try {
+      if (type === "loan") setLoans(prev => prev.filter(p => p.id !== product.id));
+      else if (type === "credit") setCredits(prev => prev.filter(p => p.id !== product.id));
+      else if (type === "vault") setVaults(prev => prev.filter(p => p.id !== product.id));
+      if (detailProduct?.product.id === product.id) setDetailProduct(null);
+
       const res = await fetch(`/api/banks/${bank.id}/products/${product.id}?type=${type}`, {
         method: "DELETE",
       });
       const data = await res.json();
       if (res.ok) {
         flash(`Deleted "${product.name}".`);
-        if (detailProduct?.product.id === product.id) setDetailProduct(null);
         fetchProducts();
       } else {
         flash(data.error || "Failed to delete product");
+        fetchProducts();
       }
     } catch {
       flash("Error deleting product");
+      fetchProducts();
     }
   };
 
@@ -259,19 +265,23 @@ export function BankProducts() {
   const handlePurgeAllLoans = async () => {
     if (!confirm("Are you sure you want to permanently delete ALL loan products for this bank? This will remove all demo or presaved loan products from both staff and customer portals.")) return;
     try {
+      setLoans([]);
+      if (detailProduct?.type === "loan") setDetailProduct(null);
+
       const res = await fetch(`/api/banks/${bank.id}/products?type=loan`, {
         method: "DELETE",
       });
       const data = await res.json();
       if (res.ok) {
         flash("All loan products purged successfully.");
-        if (detailProduct?.type === "loan") setDetailProduct(null);
         fetchProducts();
       } else {
         flash(data.error || "Failed to purge loan products");
+        fetchProducts();
       }
     } catch {
       flash("Error purging loan products");
+      fetchProducts();
     }
   };
 
@@ -297,6 +307,10 @@ export function BankProducts() {
   // Toggle Active State
   const handleToggleActive = async (product: any, type: ProductType) => {
     const nextState = !product.isActive;
+    if (type === "loan") setLoans(prev => prev.map(p => p.id === product.id ? { ...p, isActive: nextState } : p));
+    else if (type === "credit") setCredits(prev => prev.map(p => p.id === product.id ? { ...p, isActive: nextState } : p));
+    else if (type === "vault") setVaults(prev => prev.map(p => p.id === product.id ? { ...p, isActive: nextState } : p));
+
     try {
       const res = await fetch(`/api/banks/${bank.id}/products/${product.id}`, {
         method: "PUT",
@@ -316,9 +330,11 @@ export function BankProducts() {
         fetchProducts();
       } else {
         flash("Failed to update product status");
+        fetchProducts();
       }
     } catch {
       flash("Error updating status");
+      fetchProducts();
     }
   };
 
@@ -1289,11 +1305,11 @@ export function BankProducts() {
       {/* PRODUCT CREATION & EDITING MODAL                                          */}
       {/* ========================================================================= */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-start sm:items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
           <form
             onSubmit={handleFormSubmit}
             noValidate
-            className="bg-[#111118] border border-white/15 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 my-8 flex flex-col max-h-[90vh]"
+            className="bg-[#111118] border border-white/15 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 my-2 sm:my-8 flex flex-col max-h-[94vh] sm:max-h-[90vh]"
           >
             {/* Modal Header */}
             <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
@@ -2108,8 +2124,11 @@ export function BankProducts() {
               <div className="flex items-center gap-2">
                 <button
                   type="submit"
+                  onClick={(e) => {
+                    handleFormSubmit(e as any);
+                  }}
                   disabled={submitting}
-                  className="px-5 py-2 rounded-xl bg-white text-black font-semibold text-xs transition hover:bg-white/90 shadow-sm flex items-center gap-1.5"
+                  className="px-5 py-2.5 rounded-xl bg-white text-black font-semibold text-xs transition hover:bg-white/90 active:scale-95 shadow-sm flex items-center gap-1.5 cursor-pointer select-none"
                 >
                   {submitting && <Loader2 size={13} className="animate-spin" />}
                   <span>{modalMode === "edit" ? "Save Product Changes" : "Create & Launch Product"}</span>

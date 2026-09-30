@@ -10,7 +10,8 @@ import {
   Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock, Link2, CheckCircle2,
   Users, Repeat, Play, Pause, Trash2, Calendar, UserPlus, LifeBuoy, HelpCircle, MessageSquare,
   ShieldAlert, ExternalLink, Bell, BellRing, Info, Terminal, ArrowRight, ChevronDown, CheckCircle,
-  Layers, Zap, Key, Store, Globe, RefreshCw, ShoppingBag, Filter, QrCode
+  Layers, Zap, Key, Store, Globe, RefreshCw, ShoppingBag, Filter, QrCode,
+  Sliders, DollarSign, Shield, ArrowUpDown
 } from "lucide-react";
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
@@ -42,6 +43,19 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [actionPending, setActionPending] = useState(false);
   const [loanProducts, setLoanProducts] = useState<any[]>([]);
   const [selectedLoanProductId, setSelectedLoanProductId] = useState<string>("");
+  // Interactive Loan Application Customization States
+  const [loanAmount, setLoanAmount] = useState<number>(1000);
+  const [loanDepositAmount, setLoanDepositAmount] = useState<number>(0);
+  const [loanTermDuration, setLoanTermDuration] = useState<number>(12);
+  const [loanTermUnit, setLoanTermUnit] = useState<"months" | "weeks" | "days">("months");
+  const [loanRepaymentFreq, setLoanRepaymentFreq] = useState<"monthly" | "biweekly" | "weekly">("monthly");
+  const [loanPledgeCollateral, setLoanPledgeCollateral] = useState<boolean>(false);
+  const [loanCollateralType, setLoanCollateralType] = useState<string>("property");
+  const [loanCollateralDesc, setLoanCollateralDesc] = useState<string>("");
+  const [loanCollateralVal, setLoanCollateralVal] = useState<string>("");
+  const [loanPurposeCategory, setLoanPurposeCategory] = useState<string>("business");
+  const [loanPurposeDetails, setLoanPurposeDetails] = useState<string>("");
+  const [loanDisbursementAccountId, setLoanDisbursementAccountId] = useState<string>("");
   const [cardProducts, setCardProducts] = useState<any[]>([]);
   const [selectedCardProductId, setSelectedCardProductId] = useState<string>("");
   const [bondProducts, setBondProducts] = useState<any[]>([]);
@@ -458,6 +472,41 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
       }
     }
   }, [availableCatalogTabs, applyTab]);
+
+  useEffect(() => {
+    if (loanProducts && loanProducts.length > 0) {
+      const activeP = loanProducts.find((p: any) => p.id === selectedLoanProductId) || loanProducts[0];
+      if (activeP) {
+        if (!selectedLoanProductId) {
+          setSelectedLoanProductId(activeP.id);
+        }
+        const minDol = activeP.minAmount ? activeP.minAmount / 100 : 100;
+        const maxDol = activeP.maxAmount ? activeP.maxAmount / 100 : 10000;
+        setLoanAmount((prev) => {
+          if (!prev || prev < minDol) return minDol;
+          if (prev > maxDol) return maxDol;
+          return prev;
+        });
+        if (activeP.termDays) {
+          if (activeP.termDays <= 28 && activeP.termDays % 7 === 0) {
+            setLoanTermUnit("weeks");
+            setLoanTermDuration(activeP.termDays / 7);
+            setLoanRepaymentFreq("weekly");
+          } else if (activeP.termDays % 30 === 0) {
+            setLoanTermUnit("months");
+            setLoanTermDuration(Math.max(1, Math.round(activeP.termDays / 30)));
+            setLoanRepaymentFreq("monthly");
+          } else {
+            setLoanTermUnit("days");
+            setLoanTermDuration(activeP.termDays);
+          }
+        }
+        if (activeP.collateralRequired) {
+          setLoanPledgeCollateral(true);
+        }
+      }
+    }
+  }, [selectedLoanProductId, loanProducts]);
   const netWorth = accounts.reduce((s: number, a: any) => s + (a.balance || 0), 0);
   const activeAccount = selectedAccountId !== "all" ? accounts.find((a: any) => a.id === selectedAccountId) : null;
   const loans = userData?.loans || [];
@@ -570,15 +619,48 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
   const applyLoan = async (e: React.FormEvent) => {
     e.preventDefault();
-    const form = e.target as HTMLFormElement;
-    const fd = new FormData(form);
-    const prodId = String(fd.get("productId") || "").trim();
+    const prodId = selectedLoanProductId || loanProducts[0]?.id;
     if (!prodId) {
       flash("Please select an active loan product from the catalog.");
       return;
     }
-    const chosenProduct = loanProducts.find((p: any) => p.id === prodId);
-    const calculatedTermMonths = chosenProduct?.termDays ? Math.max(1, Math.round(chosenProduct.termDays / 30)) : Number(fd.get("termMonths") || 1);
+    const chosenProduct = loanProducts.find((p: any) => p.id === prodId) || loanProducts[0];
+    const targetAccountId = loanDisbursementAccountId || accounts[0]?.id;
+    if (!targetAccountId) {
+      flash("Please select a deposit account for disbursement.");
+      return;
+    }
+
+    const minDol = chosenProduct?.minAmount ? chosenProduct.minAmount / 100 : 10;
+    const maxDol = chosenProduct?.maxAmount ? chosenProduct.maxAmount / 100 : 50000;
+    if (loanAmount < minDol) {
+      flash(`Loan amount cannot be less than $${minDol.toLocaleString()}`);
+      return;
+    }
+    if (loanAmount > maxDol) {
+      flash(`Loan amount cannot exceed $${maxDol.toLocaleString()}`);
+      return;
+    }
+    if (loanDepositAmount >= loanAmount) {
+      flash("Upfront deposit cannot equal or exceed the total loan amount.");
+      return;
+    }
+
+    if (chosenProduct?.collateralRequired && (!loanCollateralDesc || !loanCollateralDesc.trim())) {
+      flash("This loan product requires collateral asset description.");
+      return;
+    }
+
+    const calculatedMonths = loanTermUnit === "weeks" 
+      ? Math.max(1, Math.round((loanTermDuration * 7) / 30))
+      : loanTermUnit === "days"
+      ? Math.max(1, Math.round(loanTermDuration / 30))
+      : Math.max(1, loanTermDuration);
+
+    const compiledPurpose = [
+      loanPurposeCategory ? `[${loanPurposeCategory.toUpperCase()}]` : "",
+      loanPurposeDetails.trim() || "Financing application"
+    ].filter(Boolean).join(" ");
 
     setActionPending(true);
     try {
@@ -586,22 +668,28 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accountId: fd.get("accountId"),
-          amount: fd.get("amount"),
-          termMonths: calculatedTermMonths,
-          purpose: fd.get("purpose"),
+          accountId: targetAccountId,
+          amount: loanAmount,
+          depositAmount: loanDepositAmount > 0 ? loanDepositAmount : 0,
+          termDuration: loanTermDuration,
+          termUnit: loanTermUnit,
+          termMonths: calculatedMonths,
+          purpose: compiledPurpose,
           productId: prodId,
+          collateralDescription: loanPledgeCollateral ? loanCollateralDesc.trim() : undefined,
+          collateralValue: loanPledgeCollateral && loanCollateralVal ? parseFloat(loanCollateralVal) : undefined,
+          collateralType: loanPledgeCollateral ? loanCollateralType : undefined,
         }),
       });
       const d = await res.json();
       if (!res.ok) flash(d.error || "Application failed");
       else {
-        flash(d.autoApprove ? "Approved — funds are in your account." : d.awaitingSignature ? "Sign the contract to receive funds." : "Application submitted.");
+        flash(d.autoApprove ? "Approved — funds are in your account." : d.awaitingSignature ? "Sign the contract to receive funds." : "Application submitted for review.");
         setView("home");
         handleSearch();
       }
     } catch {
-      flash("Could not submit");
+      flash("Could not submit loan application");
     }
     setActionPending(false);
   };
@@ -3513,142 +3601,599 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   </p>
                 </div>
               ) : (
-                <form onSubmit={applyLoan} className="rounded-3xl border border-white/10 p-6 space-y-5 bg-white/[0.02]">
-                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                <form onSubmit={applyLoan} className="rounded-3xl border border-white/10 p-5 sm:p-7 space-y-6 bg-white/[0.02]">
+                  {/* Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-5">
                     <div>
-                      <h3 className="font-bold text-base flex items-center gap-2"><Landmark size={18} /> Apply for Financing</h3>
-                      <p className="text-xs text-white/45 mt-0.5">Underwritten financing with competitive APR and customizable repayment terms.</p>
+                      <h3 className="font-bold text-base sm:text-lg flex items-center gap-2 text-white">
+                        <Landmark size={20} className="text-emerald-400" /> Apply for Financing
+                      </h3>
+                      <p className="text-xs text-white/50 mt-1">
+                        Tailored lending with variable payback schedules, sliding scales, collateral pledging, and real-time payment breakdown.
+                      </p>
                     </div>
-                    <span className="text-[10px] text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-full uppercase font-mono font-bold">
-                      Catalog Verified
-                    </span>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <span className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full font-mono font-semibold flex items-center gap-1.5">
+                        <CheckCircle2 size={12} /> Interactive Calculator
+                      </span>
+                    </div>
                   </div>
 
+                  {/* Account & Product Selection */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Deposit Disbursement Account</label>
-                      <select name="accountId" required className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                        {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · ({formatMoney(a.balance)})</option>)}
+                      <label className="block text-xs font-semibold text-white/70 mb-1.5 uppercase tracking-wider">
+                        Disbursement & Repayment Account
+                      </label>
+                      <select
+                        name="accountId"
+                        required
+                        value={loanDisbursementAccountId || accounts[0]?.id || ""}
+                        onChange={(e) => setLoanDisbursementAccountId(e.target.value)}
+                        className="w-full bg-[#18181c] border border-white/15 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] focus:outline-none focus:border-indigo-500 transition [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                      >
+                        {accounts.map((a: any) => (
+                          <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">
+                            {a.accountName} · ({formatMoney(a.balance)} available)
+                          </option>
+                        ))}
                       </select>
+                      <p className="text-[11px] text-white/40 mt-1">Loan proceeds disburse here; future scheduled installments debit from this account.</p>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Select Loan Product</label>
+                      <label className="block text-xs font-semibold text-white/70 mb-1.5 uppercase tracking-wider">
+                        Financing Product / Catalog Tier
+                      </label>
                       <select
                         name="productId"
                         required
                         value={selectedLoanProductId || loanProducts[0]?.id || ""}
                         onChange={(e) => setSelectedLoanProductId(e.target.value)}
-                        className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
+                        className="w-full bg-[#18181c] border border-white/15 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] focus:outline-none focus:border-indigo-500 transition [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
                       >
                         {loanProducts.map((p: any) => (
                           <option key={p.id} value={p.id} className="bg-[#18181c] text-[#f4f4f5]">
-                            {p.name} — {formatLoanRate(p.interestRate, p.interestRateType, true)} · max {formatMoney(p.maxAmount)}
+                            {p.name} · {formatLoanRate(p.interestRate, p.interestRateType, true)} · max {formatMoney(p.maxAmount)}
                           </option>
                         ))}
                       </select>
+                      <p className="text-[11px] text-white/40 mt-1">Select underwriting guidelines and interest accrual rates from the catalog.</p>
                     </div>
                   </div>
 
                   {(() => {
                     const curProd = loanProducts.find((p: any) => p.id === (selectedLoanProductId || loanProducts[0]?.id)) || loanProducts[0];
                     if (!curProd) return null;
-                    const minDol = curProd.minAmount ? curProd.minAmount / 100 : 10;
+                    const minDol = curProd.minAmount ? curProd.minAmount / 100 : 100;
                     const maxDol = curProd.maxAmount ? curProd.maxAmount / 100 : 10000;
-                    const termMonths = curProd.termDays ? Math.max(1, Math.round(curProd.termDays / 30)) : 1;
-                    const termDisplay = curProd.termDays % 7 === 0 && curProd.termDays <= 28
-                      ? `${curProd.termDays / 7} Weeks (${curProd.termDays} Days)`
-                      : curProd.termDays % 30 === 0
-                      ? `${curProd.termDays / 30} Months (${curProd.termDays} Days)`
-                      : `${curProd.termDays || 30} Days`;
+                    const effectiveAmount = Math.max(minDol, Math.min(maxDol, loanAmount || minDol));
 
+                    // Max deposit is up to 50% of loan amount or maxDol / 2
+                    const maxDepositDol = Math.floor(effectiveAmount * 0.5);
+                    const effectiveDeposit = Math.min(loanDepositAmount, maxDepositDol);
+                    const financedPrincipal = Math.max(0, effectiveAmount - effectiveDeposit);
+
+                    // Dynamic real-time calculation based on customized term duration and unit
                     const breakdown = calculateLoanBreakdown({
-                      principalCents: minDol * 100,
+                      principalCents: financedPrincipal * 100,
                       rate: curProd.interestRate,
                       rateType: curProd.interestRateType || "apr",
-                      termDays: curProd.termDays || 30,
-                      repaymentFrequency: curProd.repaymentFrequency || (curProd.termDays <= 28 ? "weekly" : "monthly")
+                      termDuration: loanTermDuration,
+                      termUnit: loanTermUnit,
+                      repaymentFrequency: loanRepaymentFreq || curProd.repaymentFrequency || (loanTermUnit === "weeks" ? "weekly" : "monthly")
                     });
 
+                    // Quick presets for amount
+                    const step = maxDol - minDol > 10000 ? 500 : maxDol - minDol > 2000 ? 100 : 25;
+                    const p25 = Math.round(minDol + (maxDol - minDol) * 0.25);
+                    const p50 = Math.round(minDol + (maxDol - minDol) * 0.5);
+                    const p75 = Math.round(minDol + (maxDol - minDol) * 0.75);
+
+                    // Estimated payoff date calculation
+                    const payoffDate = new Date();
+                    payoffDate.setDate(payoffDate.getDate() + breakdown.termDays);
+                    const payoffDateFormatted = format(payoffDate, "MMM d, yyyy");
+
+                    // Collateral Coverage Calculation
+                    const collateralValNum = parseFloat(loanCollateralVal || "0") || 0;
+                    const collateralCoverageRatio = financedPrincipal > 0 ? Math.round((collateralValNum / financedPrincipal) * 100) : 0;
+
                     return (
-                      <>
-                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3 text-xs">
-                          <div className="flex items-center justify-between font-bold text-white text-sm">
-                            <span>{curProd.name}</span>
-                            <span className="text-emerald-400 font-mono">
+                      <div className="space-y-6">
+                        {/* Selected Product Overview Banner */}
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <span className="font-bold text-white text-sm sm:text-base">{curProd.name}</span>
+                              <span className="text-white/40 text-xs ml-2 capitalize">({curProd.category || "General"} Financing)</span>
+                            </div>
+                            <span className="text-emerald-400 font-mono font-bold text-sm bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl self-start sm:self-auto">
                               {formatLoanRate(curProd.interestRate, curProd.interestRateType, false)}
                             </span>
                           </div>
-                          {curProd.description && <p className="text-white/65">{curProd.description}</p>}
-                          <div className="grid grid-cols-3 gap-3 pt-2 border-t border-white/5 text-[11px]">
+                          {curProd.description && <p className="text-xs text-white/60 leading-relaxed">{curProd.description}</p>}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-white/5 text-xs">
                             <div>
-                              <span className="text-white/40 block">Term Duration</span>
-                              <span className="font-bold text-white">{termDisplay}</span>
+                              <span className="text-white/40 block text-[11px]">Allowable Limit</span>
+                              <span className="font-bold text-white font-mono">{formatMoney(curProd.minAmount || 10000)} – {formatMoney(curProd.maxAmount)}</span>
                             </div>
                             <div>
-                              <span className="text-white/40 block">Borrow Limit</span>
-                              <span className="font-bold text-white">{formatMoney(curProd.minAmount || 1000)} – {formatMoney(curProd.maxAmount)}</span>
+                              <span className="text-white/40 block text-[11px]">Interest Type</span>
+                              <span className="font-bold text-white uppercase font-mono">{curProd.interestRateType || "APR"}</span>
                             </div>
                             <div>
-                              <span className="text-white/40 block">Category</span>
-                              <span className="font-bold text-white capitalize">{curProd.category || "personal"}</span>
+                              <span className="text-white/40 block text-[11px]">Origination Surcharge</span>
+                              <span className="font-bold text-white font-mono">{(curProd.originationFeePercent ? curProd.originationFeePercent / 100 : 0).toFixed(1)}%</span>
+                            </div>
+                            <div>
+                              <span className="text-white/40 block text-[11px]">Collateral Policy</span>
+                              <span className={`font-bold ${curProd.collateralRequired ? "text-amber-400" : "text-white/70"}`}>
+                                {curProd.collateralRequired ? "Mandatory" : "Optional (Recommended)"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* SECTION 1: BORROWING AMOUNT (DUAL SLIDER + STEPPER) */}
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5 space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <label className="text-xs font-semibold uppercase tracking-wider text-white/80 flex items-center gap-1.5">
+                                <DollarSign size={14} className="text-emerald-400" /> Requested Borrowing Amount
+                              </label>
+                              <p className="text-[11px] text-white/40">Adjust the sliding scale or type your exact loan requirement.</p>
+                            </div>
+                            <div className="flex items-center gap-2 self-start sm:self-auto">
+                              <span className="text-white/40 font-mono text-sm">$</span>
+                              <input
+                                type="number"
+                                min={minDol}
+                                max={maxDol}
+                                step={1}
+                                value={loanAmount}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value);
+                                  setLoanAmount(isNaN(val) ? minDol : Math.max(minDol, Math.min(maxDol, val)));
+                                }}
+                                className="bg-[#18181c] border border-white/20 rounded-xl px-3 py-1.5 text-base sm:text-lg font-mono font-bold text-white w-32 sm:w-36 text-right focus:outline-none focus:border-indigo-500"
+                              />
                             </div>
                           </div>
 
-                          {/* Quick Installment and Finance Charge Preview */}
-                          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
-                            <span className="text-white/60">
-                              Schedule: <strong className="text-white">{breakdown.installmentCount} {breakdown.frequencyLabel.toLowerCase()} payments</strong>
-                            </span>
-                            {curProd.interestRateType && curProd.interestRateType !== "apr" && (
-                              <span className="text-white/40 font-mono">
-                                Disclosure: ≈ {breakdown.equivalentApr.toFixed(1)}% APR
+                          {/* Slider Range Track */}
+                          <div className="space-y-2 pt-1">
+                            <input
+                              type="range"
+                              min={minDol}
+                              max={maxDol}
+                              step={step}
+                              value={effectiveAmount}
+                              onChange={(e) => setLoanAmount(Number(e.target.value))}
+                              className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            />
+                            <div className="flex justify-between text-[11px] font-mono text-white/40">
+                              <span>${minDol.toLocaleString()}</span>
+                              <span>${p25.toLocaleString()}</span>
+                              <span>${p50.toLocaleString()}</span>
+                              <span>${p75.toLocaleString()}</span>
+                              <span>${maxDol.toLocaleString()}</span>
+                            </div>
+                          </div>
+
+                          {/* Quick Preset Buttons */}
+                          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                            <span className="text-[10px] text-white/40 uppercase tracking-wider mr-1">Quick Select:</span>
+                            {[
+                              { label: "Min", val: minDol },
+                              { label: "25%", val: p25 },
+                              { label: "50%", val: p50 },
+                              { label: "75%", val: p75 },
+                              { label: "Max", val: maxDol },
+                            ].map((preset) => (
+                              <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() => setLoanAmount(preset.val)}
+                                className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition ${
+                                  loanAmount === preset.val
+                                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-semibold"
+                                    : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10"
+                                }`}
+                              >
+                                {preset.label} (${preset.val.toLocaleString()})
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* SECTION 2: PAYBACK TERM LENGTH & FREQUENCY (SLIDING SCALE) */}
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5 space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <label className="text-xs font-semibold uppercase tracking-wider text-white/80 flex items-center gap-1.5">
+                                <Clock size={14} className="text-indigo-400" /> Repayment Term & Payback Duration
+                              </label>
+                              <p className="text-[11px] text-white/40">Customize how long you need to pay back the loan to fit your budget.</p>
+                            </div>
+
+                            {/* Unit Selector Tabs */}
+                            <div className="flex items-center p-1 bg-black/40 border border-white/10 rounded-xl self-start sm:self-auto">
+                              {(["months", "weeks", "days"] as const).map((unit) => (
+                                <button
+                                  key={unit}
+                                  type="button"
+                                  onClick={() => {
+                                    setLoanTermUnit(unit);
+                                    if (unit === "months") {
+                                      setLoanTermDuration(12);
+                                      setLoanRepaymentFreq("monthly");
+                                    } else if (unit === "weeks") {
+                                      setLoanTermDuration(8);
+                                      setLoanRepaymentFreq("weekly");
+                                    } else {
+                                      setLoanTermDuration(90);
+                                      setLoanRepaymentFreq("monthly");
+                                    }
+                                  }}
+                                  className={`px-3 py-1 rounded-lg text-xs font-medium capitalize transition cursor-pointer ${
+                                    loanTermUnit === unit
+                                      ? "bg-white/15 text-white font-semibold shadow-sm"
+                                      : "text-white/40 hover:text-white"
+                                  }`}
+                                >
+                                  {unit}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Term Slider */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-white/70">
+                                Selected Duration: <strong className="text-white font-mono text-sm">{loanTermDuration} {loanTermUnit}</strong> ({breakdown.termDays} calendar days)
+                              </span>
+                              <span className="text-xs font-mono text-indigo-300">
+                                {breakdown.installmentCount} {breakdown.frequencyLabel.toLowerCase()} installments
+                              </span>
+                            </div>
+
+                            <input
+                              type="range"
+                              min={loanTermUnit === "months" ? 1 : loanTermUnit === "weeks" ? 1 : 7}
+                              max={loanTermUnit === "months" ? 36 : loanTermUnit === "weeks" ? 52 : 365}
+                              step={loanTermUnit === "days" ? 7 : 1}
+                              value={loanTermDuration}
+                              onChange={(e) => setLoanTermDuration(Math.max(1, Number(e.target.value)))}
+                              className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+
+                            {/* Preset Buttons for Term */}
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                              <span className="text-[10px] text-white/40 uppercase tracking-wider mr-1">Term Presets:</span>
+                              {loanTermUnit === "months" ? (
+                                [1, 3, 6, 12, 24, 36].map((m) => (
+                                  <button
+                                    key={m}
+                                    type="button"
+                                    onClick={() => setLoanTermDuration(m)}
+                                    className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition ${
+                                      loanTermDuration === m
+                                        ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold"
+                                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                                    }`}
+                                  >
+                                    {m} Month{m > 1 ? "s" : ""}
+                                  </button>
+                                ))
+                              ) : loanTermUnit === "weeks" ? (
+                                [2, 4, 8, 12, 26, 52].map((w) => (
+                                  <button
+                                    key={w}
+                                    type="button"
+                                    onClick={() => setLoanTermDuration(w)}
+                                    className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition ${
+                                      loanTermDuration === w
+                                        ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold"
+                                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                                    }`}
+                                  >
+                                    {w} Wk{w > 1 ? "s" : ""}
+                                  </button>
+                                ))
+                              ) : (
+                                [30, 60, 90, 180, 365].map((d) => (
+                                  <button
+                                    key={d}
+                                    type="button"
+                                    onClick={() => setLoanTermDuration(d)}
+                                    className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition ${
+                                      loanTermDuration === d
+                                        ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold"
+                                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                                    }`}
+                                  >
+                                    {d} Days
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* SECTION 3: UPFRONT CASH DEPOSIT / DOWN PAYMENT */}
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <label className="text-xs font-semibold uppercase tracking-wider text-white/80 flex items-center gap-1.5">
+                                <PiggyBank size={14} className="text-cyan-400" /> Upfront Cash Deposit / Down Payment (Optional)
+                              </label>
+                              <p className="text-[11px] text-white/40">
+                                Pledging an upfront cash deposit reduces your financed principal, lowers monthly installments, and demonstrates creditworthiness.
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 self-start sm:self-auto">
+                              <span className="text-white/40 font-mono text-sm">$</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={maxDepositDol}
+                                step={50}
+                                value={loanDepositAmount}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  setLoanDepositAmount(Math.max(0, Math.min(maxDepositDol, val)));
+                                }}
+                                className="bg-[#18181c] border border-white/20 rounded-xl px-3 py-1.5 text-base sm:text-lg font-mono font-bold text-cyan-300 w-28 sm:w-32 text-right focus:outline-none focus:border-cyan-500"
+                              />
+                            </div>
+                          </div>
+
+                          <input
+                            type="range"
+                            min={0}
+                            max={maxDepositDol}
+                            step={Math.max(10, Math.round(maxDepositDol / 50))}
+                            value={effectiveDeposit}
+                            onChange={(e) => setLoanDepositAmount(Number(e.target.value))}
+                            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                          />
+
+                          <div className="flex items-center justify-between text-xs text-white/60 pt-1">
+                            <span>Upfront Deposit: <strong className="text-cyan-300 font-mono">${effectiveDeposit.toLocaleString()}</strong></span>
+                            <span>Net Disbursed Balance: <strong className="text-white font-mono">${financedPrincipal.toLocaleString()}</strong></span>
+                          </div>
+                        </div>
+
+                        {/* SECTION 4: REAL-TIME FINANCIAL SUMMARY DASHBOARD */}
+                        <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/30 via-black/40 to-emerald-950/20 p-5 space-y-4 shadow-xl">
+                          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-white/10 pb-4">
+                            <div>
+                              <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300 block">
+                                Real-Time Estimated {breakdown.frequencyLabel} Installment
+                              </span>
+                              <div className="flex items-baseline gap-2 mt-1">
+                                <span className="text-2xl sm:text-3xl font-bold font-mono text-white">
+                                  {formatMoney(breakdown.installmentCents)}
+                                </span>
+                                <span className="text-xs text-white/50">/ {breakdown.frequencyLabel.toLowerCase()}</span>
+                              </div>
+                            </div>
+
+                            <div className="text-left sm:text-right">
+                              <span className="text-[11px] text-white/50 block">Anticipated Final Payoff</span>
+                              <span className="text-sm font-semibold text-white font-mono">{payoffDateFormatted}</span>
+                            </div>
+                          </div>
+
+                          {/* Visual Amortization Proportion Bar */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] text-white/60">
+                              <span>Capital Composition</span>
+                              <span className="font-mono">
+                                Total Obligation: <strong>{formatMoney(breakdown.totalPayoffCents)}</strong>
+                              </span>
+                            </div>
+                            <div className="h-3 w-full bg-white/10 rounded-full overflow-hidden flex">
+                              {effectiveDeposit > 0 && (
+                                <div
+                                  style={{ width: `${Math.round((effectiveDeposit / (effectiveAmount + breakdown.totalInterestCents / 100)) * 100)}%` }}
+                                  className="bg-cyan-500 h-full"
+                                  title={`Deposit: $${effectiveDeposit}`}
+                                />
+                              )}
+                              <div
+                                style={{ width: `${Math.round((financedPrincipal / (effectiveAmount + breakdown.totalInterestCents / 100)) * 100)}%` }}
+                                className="bg-white/70 h-full"
+                                title={`Financed Principal: $${financedPrincipal}`}
+                              />
+                              <div
+                                style={{ width: `${Math.max(5, Math.round(((breakdown.totalInterestCents / 100) / (effectiveAmount + breakdown.totalInterestCents / 100)) * 100))}%` }}
+                                className="bg-emerald-500 h-full"
+                                title={`Total Interest: ${formatMoney(breakdown.totalInterestCents)}`}
+                              />
+                            </div>
+                            <div className="flex items-center gap-4 text-[10px] text-white/50 pt-0.5">
+                              {effectiveDeposit > 0 && (
+                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-cyan-400" /> Deposit: ${effectiveDeposit.toLocaleString()}</span>
+                              )}
+                              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-white/70" /> Financed Principal: ${financedPrincipal.toLocaleString()}</span>
+                              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Interest: {formatMoney(breakdown.totalInterestCents)}</span>
+                            </div>
+                          </div>
+
+                          {/* Key Breakdown Metrics Grid */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs">
+                            <div className="bg-black/30 p-2.5 rounded-xl border border-white/5">
+                              <span className="text-white/40 block text-[10px] uppercase">Financed Principal</span>
+                              <span className="font-mono font-bold text-white text-sm">{formatMoney(financedPrincipal * 100)}</span>
+                            </div>
+                            <div className="bg-black/30 p-2.5 rounded-xl border border-white/5">
+                              <span className="text-white/40 block text-[10px] uppercase">Finance Charge (Interest)</span>
+                              <span className="font-mono font-bold text-emerald-400 text-sm">+{formatMoney(breakdown.totalInterestCents)}</span>
+                            </div>
+                            <div className="bg-black/30 p-2.5 rounded-xl border border-white/5">
+                              <span className="text-white/40 block text-[10px] uppercase">Total Cost of Payoff</span>
+                              <span className="font-mono font-bold text-white text-sm">{formatMoney(breakdown.totalPayoffCents)}</span>
+                            </div>
+                            <div className="bg-black/30 p-2.5 rounded-xl border border-white/5">
+                              <span className="text-white/40 block text-[10px] uppercase">Annualized Rate (APR)</span>
+                              <span className="font-mono font-bold text-indigo-300 text-sm">≈ {breakdown.equivalentApr.toFixed(1)}% APR</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* SECTION 5: COLLATERAL PLEDGING & SECURITY ASSETS */}
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <label className="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-white/90 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={loanPledgeCollateral || Boolean(curProd.collateralRequired)}
+                                disabled={Boolean(curProd.collateralRequired)}
+                                onChange={(e) => setLoanPledgeCollateral(e.target.checked)}
+                                className="rounded border-white/20 bg-black/40 text-amber-500 focus:ring-0 w-4 h-4 cursor-pointer"
+                              />
+                              <span className="flex items-center gap-1.5">
+                                <ShieldCheck size={15} className="text-amber-400" />
+                                <span>Pledge Physical or Account Collateral</span>
+                                {curProd.collateralRequired && (
+                                  <span className="text-[10px] text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full lowercase font-mono">
+                                    mandatory
+                                  </span>
+                                )}
+                              </span>
+                            </label>
+
+                            {loanPledgeCollateral && collateralValNum > 0 && (
+                              <span className={`text-[11px] font-mono px-2.5 py-0.5 rounded-full border ${
+                                collateralCoverageRatio >= 100
+                                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                                  : "bg-amber-500/10 border-amber-500/30 text-amber-300"
+                              }`}>
+                                {collateralCoverageRatio}% Coverage ({collateralCoverageRatio >= 100 ? "Low Risk" : "Partial"})
                               </span>
                             )}
                           </div>
+
+                          <p className="text-xs text-white/50 -mt-1">
+                            Borrowers who pledge assets (vehicles, properties, rare items, or high-value vault holdings) receive higher borrowing caps and priority underwriting approval.
+                          </p>
+
+                          {(loanPledgeCollateral || curProd.collateralRequired) && (
+                            <div className="space-y-4 pt-2 border-t border-white/5 animate-in fade-in">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-medium text-white/70 mb-1">Collateral Asset Category</label>
+                                  <select
+                                    value={loanCollateralType}
+                                    onChange={(e) => setLoanCollateralType(e.target.value)}
+                                    className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                                  >
+                                    <option value="property">Real Estate / Land / Property Deed</option>
+                                    <option value="vehicle">Motor Vehicle / Fleet / Aircraft</option>
+                                    <option value="vault">Precious Commodities / Vault Bullion</option>
+                                    <option value="equipment">Commercial Machinery / Industrial Equipment</option>
+                                    <option value="inventory">Business Inventory / Stock Holding</option>
+                                    <option value="license">Corporate License / Roleplay Enterprise</option>
+                                    <option value="other">Other High-Value Secured Asset</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-white/70 mb-1">Estimated Asset Market Value ($)</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={100}
+                                    value={loanCollateralVal}
+                                    onChange={(e) => setLoanCollateralVal(e.target.value)}
+                                    placeholder="e.g. 25000"
+                                    className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-medium text-white/70 mb-1">
+                                  Collateral Item & Location Description {curProd.collateralRequired ? "*" : ""}
+                                </label>
+                                <textarea
+                                  value={loanCollateralDesc}
+                                  onChange={(e) => setLoanCollateralDesc(e.target.value)}
+                                  required={Boolean(curProd.collateralRequired)}
+                                  placeholder="Provide specific details: item serial numbers, coordinates, registration plates, safe box numbers, or title documentation (e.g. 2024 Armored Schafter V12, Plate #VINE-01, parked in Legion Square private garage)."
+                                  rows={2}
+                                  className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 placeholder:text-white/30"
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
 
-                        <input type="hidden" name="termMonths" value={termMonths} />
+                        {/* SECTION 6: PURPOSE OF FINANCING & USE OF FUNDS */}
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5 space-y-4">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-white/80 flex items-center gap-1.5">
+                            <FileText size={14} className="text-pink-400" /> Purpose of Financing & Business Case
+                          </label>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">
-                              Requested Amount (${minDol.toLocaleString()} – ${maxDol.toLocaleString()})
-                            </label>
-                            <input
-                              name="amount"
-                              type="number"
-                              step="0.01"
-                              min={minDol}
-                              max={maxDol}
-                              required
-                              defaultValue={minDol}
-                              placeholder={`Amount between $${minDol} and $${maxDol}`}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm font-mono focus:outline-none focus:border-white/30"
-                            />
-                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-white/70 mb-1">Financing Objective</label>
+                              <select
+                                value={loanPurposeCategory}
+                                onChange={(e) => setLoanPurposeCategory(e.target.value)}
+                                className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                              >
+                                <option value="business">Commercial / Business Expansion</option>
+                                <option value="property">Real Estate & Property Purchase</option>
+                                <option value="vehicle">Vehicle & Fleet Acquisition</option>
+                                <option value="equipment">Tools, Machinery & Equipment</option>
+                                <option value="inventory">Wholesale Inventory / Goods</option>
+                                <option value="consolidation">Debt & Credit Consolidation</option>
+                                <option value="emergency">Personal & Emergency Liquidity</option>
+                                <option value="other">Specialized Enterprise Need</option>
+                              </select>
+                            </div>
 
-                          <div>
-                            <label className="block text-xs font-semibold text-white/60 mb-1.5 uppercase tracking-wider">Purpose of Financing</label>
-                            <input
-                              name="purpose"
-                              placeholder="e.g. Business inventory, expansion, equipment"
-                              required
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:border-white/30"
-                            />
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-white/70 mb-1">
+                                Specific Funding Need & Repayment Strategy *
+                              </label>
+                              <input
+                                value={loanPurposeDetails}
+                                onChange={(e) => setLoanPurposeDetails(e.target.value)}
+                                required
+                                placeholder="Explain what you need the funds for and how you plan to generate the cashflow for repayment."
+                                className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/30"
+                              />
+                            </div>
                           </div>
                         </div>
-                      </>
+
+                        {/* Submit Action */}
+                        <button
+                          type="submit"
+                          disabled={actionPending}
+                          className="w-full py-4 rounded-2xl font-bold text-sm text-white shadow-xl transition-all hover:opacity-95 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                          style={btnBrand}
+                        >
+                          {actionPending ? (
+                            <>
+                              <Loader2 size={16} className="animate-spin" />
+                              <span>Evaluating & Submitting Application…</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Submit Application for ${financedPrincipal.toLocaleString()} ({loanTermDuration} {loanTermUnit})</span>
+                              <ArrowRight size={16} />
+                            </>
+                          )}
+                        </button>
+                      </div>
                     );
                   })()}
-
-                  <button
-                    disabled={actionPending}
-                    className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50"
-                    style={btnBrand}
-                  >
-                    {actionPending ? "Submitting Application…" : "Submit Loan Application"}
-                  </button>
                 </form>
               )
             )}

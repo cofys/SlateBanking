@@ -114,6 +114,11 @@ function ensureDatabaseSchemaSynced() {
   createTableIfNotExists("loans", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, discord_id TEXT NOT NULL, account_id TEXT NOT NULL, principal_amount INTEGER NOT NULL, remaining_amount INTEGER NOT NULL, interest_rate INTEGER NOT NULL, next_payment_date INTEGER NOT NULL, created_at INTEGER NOT NULL");
   checkAndAddColumn("loans", "contract_text", "TEXT");
   checkAndAddColumn("loans", "client_signed_at", "INTEGER");
+  checkAndAddColumn("loans", "deposit_amount", "INTEGER DEFAULT 0");
+  checkAndAddColumn("loans", "collateral_type", "TEXT");
+  checkAndAddColumn("loans", "requested_term_months", "INTEGER");
+  checkAndAddColumn("loans", "requested_term_duration", "INTEGER");
+  checkAndAddColumn("loans", "requested_term_unit", "TEXT");
   createTableIfNotExists("credit_applications", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, discord_id TEXT NOT NULL, account_id TEXT NOT NULL, requested_limit INTEGER NOT NULL, monthly_income INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("vault_deposits", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, account_id TEXT NOT NULL, amount INTEGER NOT NULL, locked_until INTEGER NOT NULL, interest_rate INTEGER NOT NULL, created_at INTEGER NOT NULL");
   createTableIfNotExists("cards", "id TEXT PRIMARY KEY NOT NULL, bank_id TEXT NOT NULL, account_id TEXT NOT NULL, card_number TEXT NOT NULL UNIQUE, cvv TEXT NOT NULL, expiry_date TEXT NOT NULL, type TEXT NOT NULL, created_at INTEGER NOT NULL");

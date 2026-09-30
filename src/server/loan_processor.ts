@@ -321,11 +321,19 @@ export async function submitLoanApplication(opts: {
   interestRateType?: string | null;
   collateralDescription?: string | null;
   collateralValue?: string | number | null;
+  collateralType?: string | null;
+  depositAmount?: number | null;
+  termDuration?: number | null;
   allowAutoApprove?: boolean;
 }): Promise<{ loan: LoanRow; autoApprove: boolean; awaitingSignature: boolean; status: string }> {
   const principalAmount = Math.round(Number(opts.principalAmount));
   if (!Number.isFinite(principalAmount) || principalAmount <= 0) {
     throw new Error("Invalid loan amount");
+  }
+
+  const depositAmount = Math.max(0, Math.round(Number(opts.depositAmount) || 0));
+  if (depositAmount >= principalAmount) {
+    throw new Error("Upfront deposit cannot be greater than or equal to the requested loan amount.");
   }
 
   const account = await db.select().from(bankAccounts).where(eq(bankAccounts.id, opts.accountId)).get();
@@ -347,9 +355,24 @@ export async function submitLoanApplication(opts: {
   let interestRate = opts.interestRate != null ? Math.round(Number(opts.interestRate)) : policy.defaultApr;
   if (!Number.isFinite(interestRate) || interestRate < 0) interestRate = policy.defaultApr;
   let interestRateType: string = opts.interestRateType || policy.defaultInterestType || "apr";
-  let termMonths = opts.termMonths != null ? Math.round(Number(opts.termMonths)) : policy.defaultTermMonths;
-  if (!Number.isFinite(termMonths) || termMonths < 1) termMonths = policy.defaultTermMonths;
+  
+  // Custom client-selected term duration & unit
   let termUnit: string = opts.termUnit || policy.defaultTermUnit || "months";
+  let termMonths = opts.termMonths != null && Number(opts.termMonths) > 0 
+    ? Math.max(1, Math.min(60, Math.round(Number(opts.termMonths))))
+    : policy.defaultTermMonths;
+
+  if (opts.termDuration != null && Number(opts.termDuration) > 0) {
+    const dur = Math.max(1, Math.round(Number(opts.termDuration)));
+    if (opts.termUnit === "weeks") {
+      termMonths = Math.max(1, Math.round((dur * 7) / 30));
+    } else if (opts.termUnit === "days") {
+      termMonths = Math.max(1, Math.round(dur / 30));
+    } else {
+      termMonths = dur;
+    }
+  }
+
   let productId: string | null = opts.productId || null;
 
   if (opts.allowAutoApprove && !productId) {
@@ -376,8 +399,14 @@ export async function submitLoanApplication(opts: {
     }
     interestRate = productAprToLoanRate(product.interestRate);
     interestRateType = product.interestRateType || "apr";
-    termUnit = product.termUnit || "days";
-    termMonths = Math.max(1, Math.round((product.termDays || 30) / 30));
+    
+    // If the client explicitly provided a custom payback term duration, honor their request; otherwise fallback to product default
+    if (opts.termMonths != null && Number(opts.termMonths) > 0) {
+      termMonths = Math.max(1, Math.min(60, Math.round(Number(opts.termMonths))));
+    } else if (!opts.termDuration) {
+      termMonths = Math.max(1, Math.round((product.termDays || 30) / 30));
+    }
+    termUnit = opts.termUnit || product.termUnit || "days";
   }
 
   if (policy.maxAmountCents > 0 && principalAmount > policy.maxAmountCents) {
@@ -420,13 +449,16 @@ export async function submitLoanApplication(opts: {
   const colStatus = opts.collateralDescription ? "pledged" : "none";
   const requireSignature = autoApprove && (policy.requireSignature || (!!settings.enableGoogleDocsContracts && !!settings.googleDocsAutoGenerate));
 
+  // Net financed balance accounts for any upfront down payment
+  const remainingAmount = Math.max(0, principalAmount - depositAmount);
+
   await db.insert(loans).values({
     id: loanId,
     bankId: opts.bankId,
     discordId: opts.discordId,
     accountId: opts.accountId,
     principalAmount,
-    remainingAmount: principalAmount,
+    remainingAmount,
     interestRate,
     interestRateType,
     termUnit,
@@ -435,6 +467,11 @@ export async function submitLoanApplication(opts: {
     collateralDescription: opts.collateralDescription || null,
     collateralValue: colVal,
     collateralStatus: colStatus,
+    collateralType: opts.collateralType || null,
+    depositAmount,
+    requestedTermMonths: termMonths,
+    requestedTermDuration: opts.termDuration != null ? Math.round(Number(opts.termDuration)) : termMonths,
+    requestedTermUnit: opts.termUnit || termUnit || "months",
     status: "pending",
     contractUrl,
     productId,

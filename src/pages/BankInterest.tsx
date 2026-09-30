@@ -121,7 +121,7 @@ export function BankInterest() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <form onSubmit={handleSave} className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl overflow-hidden">
+          <form onSubmit={handleSave} noValidate className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-white/10">
               <h2 className="text-lg font-medium text-white">Yield Configuration</h2>
               <p className="text-sm text-white/50">Define the global rules for interest accrual.</p>
@@ -276,9 +276,10 @@ export function BankInterest() {
 
             <div className="p-6 border-t border-white/10 bg-[#15151e] flex justify-end">
               <button
-                type="submit"
+                type="button"
+                onClick={(e) => handleSave(e as any)}
                 disabled={saving}
-                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-2 px-6 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+                className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 text-white py-2.5 px-6 rounded-xl font-medium text-sm transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-600/20"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 Save Configuration

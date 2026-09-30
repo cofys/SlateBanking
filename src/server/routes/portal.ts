@@ -1513,9 +1513,11 @@ portalRouter.post("/api/portal/:bankId/request-card", requireAuth, async (req, r
 // Portal Loan Request API
 portalRouter.get("/api/portal/:bankId/loan-products", requireAuth, async (req: express.Request, res: express.Response) => {
   try {
-    const { ensureAndReconcileLoanProducts } = await import("../loan_processor.js");
-    const products = await ensureAndReconcileLoanProducts(req.params.bankId);
-    res.json(products.filter((p: any) => p.isActive !== false && p.isActive !== 0));
+    const { db } = await import("../../db/index.js");
+    const { loanProducts } = await import("../../db/schema.js");
+    const { eq, and } = await import("drizzle-orm");
+    const products = await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, req.params.bankId), eq(loanProducts.isActive, true))).catch(() => []);
+    res.json(products);
   } catch (e: any) {
     res.status(500).json({ error: e.message || "Failed to load loan products" });
   }
@@ -1527,7 +1529,19 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
   const { eq, and } = await import("drizzle-orm");
 
   try {
-    const { accountId, amount, termMonths, purpose, productId } = req.body;
+    const {
+      accountId,
+      amount,
+      depositAmount,
+      termMonths,
+      termDuration,
+      termUnit,
+      purpose,
+      productId,
+      collateralDescription,
+      collateralValue,
+      collateralType,
+    } = req.body;
     const bankId = req.params.bankId;
     const candidateIds = await getUserCandidateIdentifiers(req, bankId);
     if (candidateIds.length === 0) return res.status(400).json({ error: "Missing identity" });
@@ -1554,6 +1568,12 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
     const loanAmountCents = Math.round(parseFloat(amount) * 100);
     if (!loanAmountCents || loanAmountCents <= 0) return res.status(400).json({ error: "Invalid loan amount" });
 
+    const depositCents = depositAmount ? Math.round(parseFloat(depositAmount) * 100) : 0;
+    if (depositCents < 0) return res.status(400).json({ error: "Deposit amount cannot be negative" });
+    if (depositCents >= loanAmountCents) {
+      return res.status(400).json({ error: "Deposit must be less than the total requested loan amount" });
+    }
+
     if (product.minAmount && loanAmountCents < product.minAmount) {
       return res.status(400).json({ error: `Amount cannot be less than this product's minimum of $${(product.minAmount / 100).toFixed(2)}` });
     }
@@ -1561,15 +1581,28 @@ portalRouter.post("/api/portal/:bankId/request-loan", requireAuth, async (req: e
       return res.status(400).json({ error: `Amount exceeds this product's maximum of $${(product.maxAmount / 100).toFixed(2)}` });
     }
 
+    // Check mandatory collateral if product enforces it
+    if (product.collateralRequired && (!collateralDescription || !collateralDescription.trim())) {
+      return res.status(400).json({ error: "This loan product requires physical or account collateral description." });
+    }
+
+    const colValCents = collateralValue ? Math.round(parseFloat(collateralValue) * 100) : undefined;
+
     const { submitLoanApplication } = await import("../loan_processor");
     const result = await submitLoanApplication({
       bankId,
       discordId: candidateIds[0],
       accountId,
       principalAmount: loanAmountCents,
-      purpose: purpose || "Personal loan request",
+      purpose: purpose ? String(purpose).trim() : "Financing request",
       productId,
-      termMonths: parseInt(termMonths) || undefined,
+      termMonths: termMonths ? parseInt(termMonths, 10) : undefined,
+      termDuration: termDuration ? parseInt(termDuration, 10) : undefined,
+      termUnit: termUnit ? String(termUnit).toLowerCase() : undefined,
+      depositAmount: depositCents,
+      collateralDescription: collateralDescription ? String(collateralDescription).trim() : undefined,
+      collateralValue: colValCents,
+      collateralType: collateralType ? String(collateralType).trim() : undefined,
       allowAutoApprove: true,
     });
 
@@ -1666,11 +1699,9 @@ portalRouter.get("/api/portal/:bankId/catalog", requireAuth, async (req: express
     const bankId = req.params.bankId;
     const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
     
-    const { ensureAndReconcileLoanProducts } = await import("../loan_processor.js");
     let loans: any[] = [];
     if (settings?.enableLoans !== false) {
-      loans = await ensureAndReconcileLoanProducts(bankId);
-      loans = loans.filter((p: any) => p.isActive !== false && p.isActive !== 0);
+      loans = await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, bankId), eq(loanProducts.isActive, true))).catch(() => []);
     }
 
     const cards = settings?.enableCards === false ? [] : await db.select().from(creditProducts).where(and(eq(creditProducts.bankId, bankId), eq(creditProducts.isActive, true))).catch(() => []);

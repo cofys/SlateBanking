@@ -1135,7 +1135,11 @@ Slate Banking features an enterprise-grade **Financial Products & Underwriting S
      - *5. Underwriting Rules*: Minimum credit score thresholds, account tier gating, auto-approval ceilings, and collateral requirements.
      - All tab panels remain mounted in the DOM with visibility toggling and are fully controlled via the component `formValues` state across all five tabs, ensuring zero data loss when staff navigate between tabs during product configuration. Form submission executes comprehensive programmatic validation with automatic tab redirection to missing or invalid fields.
    - **Unified Staff Loan Underwriting & Products Hub (`BankLoans.tsx`)**: Bank staff accessing `/bank/:bankId/loans` have a unified top tab switcher to toggle seamlessly between **Active Loans Portfolio** (servicing, debit processing, interest accrual, debt collection, loan origination) and **Loan Products Catalog** (full product card catalog, active/disabled toggling, loan product creator/editor modal, and instant one-click catalog purge), eliminating discrepancies between staff underwriting and customer application portals.
-   - **Automatic Loan Product Catalog Synchronization**: When staff members issue direct underwritten loans (e.g. 4.00%/week simple interest), the platform automatically creates and links a corresponding reusable catalog template in `loan_products` if one does not already exist. Additionally, `GET /api/banks/:bankId/products` and `GET /api/portal/:bankId/catalog` auto-synchronize uncataloged loans, ensuring that any custom loans created by staff immediately appear in both the staff management panels (`/bank/:bankId/loans` and `/bank/:bankId/products`) and customer loan application catalogs.
+   - **Product Lifecycle & Deletion Architecture (`BankProducts.tsx`, `BankLoans.tsx`, `/api/banks/:bankId/products`)**:
+     - Products deleted by staff are permanently deleted and unlinked immediately: `DELETE /api/banks/:bankId/products/:productId` removes the catalog product from the database, safely clears `loans.productId = null` (or `cards.productId = null`) for any historical accounts so no dangling references exist, and updates UI state optimistically.
+     - **Read Isolation**: Read endpoints (`GET /api/banks/:bankId/products` and `GET /api/portal/:bankId/catalog`) are strictly query-only and NEVER auto-resurrect, re-activate, or re-create deleted products. Deleted products stay deleted and will never automatically reappear at the bottom of the list.
+     - **Manual Reconcile & Sync**: When staff intentionally want to generate or reconcile catalog templates from existing loans, they can trigger the dedicated `POST /api/banks/:bankId/products/sync-loans` endpoint via the "Sync Products" button in both `BankLoans.tsx` and `BankProducts.tsx`.
+     - **Staff Loan Record Deletion (`DELETE /api/banks/:bankId/loans/:loanId`)**: Staff and administrators can permanently delete erroneous or test loan records directly from either the Active Loans table or the Loan Details modal in `BankLoans.tsx`, with automatic audit logging into `audit_logs`.
    - **Strict Customer Portal Options Visibility Discipline (`BankPortal.tsx`)**: The client application and catalog portal strictly enforce dynamic, configuration-driven visibility. If an institution has not configured or activated options for a given category (e.g., no account registration tiers, no payment cards, no time vaults, or disabled escrow), **zero options or registration forms are provided to the customer**. Inactive tabs are never rendered in the navigation header, and when an institution has published zero offerings across all categories, the customer portal exclusively displays an informational notice ("No Financial Offerings Published: If the bank has no options, none are provided to clients"), completely suppressing unconfigured inputs, generic fallbacks, and orphaned forms.
    - **Financial Product Calculator & Simulator**: Built-in interactive quoting simulator allowing bank staff to adjust loan/credit amounts on sliders to instantly calculate customer installment schedules, origination fee deductions, total finance charges, and institutional net profit margin.
 
@@ -1838,6 +1842,59 @@ To prevent catalogs from ever becoming desynchronized with active portfolios or 
 - **One-Click Staff Sync Action**: Both the staff **Product Catalog & Underwriting** page (`BankProducts.tsx`) and the **Loans & Credit Portfolio** page (`BankLoans.tsx`) feature a high-priority `"Sync from Issued Loans"` action.
 - Triggers instant recalculation, product synthesis, and updates live telemetry metrics across originated books, active borrower counts, and repayment rates.
 - Normalizes interest rate math between decimal percentages (e.g. `2.0%`) and integer basis points (e.g. `200 bps`), preventing NaN input failures and UI misalignments.
+
+---
+
+## 📈 Interactive Loan Application Engine & Sliding Scale Calculator
+
+The Customer Portal (`BankPortal.tsx`) features a real-time financing application engine with dynamic sliding scales, customizable payback schedules, upfront deposit mitigation, and collateral asset pledging:
+
+### 1. Dynamic Dual-Input Sliding Scales
+- **Borrowing Amount Slider & Stepper**:
+  - Continuous slider track coupled with precise currency number inputs bounded by catalog tier minimums and maximums (`minAmount` to `maxAmount`).
+  - Instant preset chips (`Min`, `25%`, `50%`, `75%`, `Max`) for quick value selection.
+- **Payback Term Duration Customization**:
+  - Flexible unit selection: `Months`, `Weeks`, or `Days`.
+  - Continuous slider allowing borrowers to choose their exact repayment horizon (e.g., 1 to 36 months, 1 to 52 weeks, or 7 to 365 days) rather than being locked into static rigid terms.
+  - Quick term presets (`3 Months`, `6 Months`, `12 Months`, `24 Months`, `36 Months`).
+- **Upfront Cash Deposit / Down Payment**:
+  - Optional slider and numeric input allowing borrowers to put down cash capital upfront (up to 50% of the loan amount).
+  - Dynamically lowers the net financed principal (`principalAmount - depositAmount`), slashes total interest charges, and reduces the periodic installment burden.
+
+### 2. Real-Time Amortization & Repayment Breakdown
+- **Live Calculation Engine (`calculateLoanBreakdown`)**:
+  - Recalculates immediately upon any slider drag or keystroke without network round-trips.
+  - **Estimated Periodic Installment**: Prominently displays the exact installment amount per repayment cadence (`$XX.XX / month` or `/ week`).
+  - **Capital Composition Bar**: Visual stacked bar depicting the proportional ratio between Upfront Deposit, Financed Principal, and Finance Charges (Interest).
+  - **Anticipated Payoff Date**: Real-time calendar projection of the final maturity date.
+  - **Statutory Transparency**: Displays annualized rate disclosure (Equivalent APR ≈ `XX.X%`).
+
+### 3. Collateral & Security Asset Pledging
+- **Bilateral Collateral Pledging**:
+  - Borrowers can declare and pledge security assets to guarantee financing and improve underwriting approval odds.
+  - Automatically required if the chosen product enforces `collateralRequired`.
+  - **Asset Classification**: Real Estate / Property Deeds, Motor Vehicles / Fleet / Aircraft, Vault Commodities / Precious Bullion, Commercial Machinery / Tools, Business Inventory, or Roleplay Enterprises.
+  - **Valuation & Coverage Gauge**: Borrowers provide estimated market values. The interface calculates and displays real-time **Collateral Coverage Ratio** (`Collateral Value / Loan Amount * 100%`) with visual risk categorization (e.g. `150% Coverage · Low Risk`).
+  - **Audit & Seizure Integration**: Declared collateral flows directly into staff loan management (`BankLoans.tsx`), supporting status transitions (`pledged`, `seized`, `released`).
+
+### 4. Purpose Categorization & Justification
+- Borrowers select their primary financing objective (Commercial Expansion, Property, Vehicles, Equipment, Wholesale Inventory, Debt Consolidation, Personal Liquidity, or Other).
+- Detailed repayment strategy and funding need textarea submitted directly to staff underwriters.
+
+---
+
+## 📱 Mobile Form Submission & Bottom Action Bar Architecture
+
+### 1. Form Validation Resilience (`noValidate`)
+- In multi-tab administrative panels (`BankSettings.tsx`, `BankTiers.tsx`, `BankInterest.tsx`), settings are partitioned into categorized tabs (Brand, Identity, Rates, Modules, Lending Policy, Treasury, Discord, Security, etc.).
+- Traditional HTML5 constraint validation fails silently on mobile devices when hidden inputs in inactive tabs (`display: none` / `hidden`) violate strict validation rules (such as URL formats or empty number constraints).
+- Adding `noValidate` to form tags and pairing action buttons with direct `onClick` event handlers ensures mobile touch events and browser form dispatches always execute reliably without silent drops.
+
+### 2. Sticky Floating Action Bars & Touch-Manipulation
+- Floating bottom bars across Settings and Products are configured with `z-40`, backdrop blur, and `touch-manipulation`.
+- Top and bottom buttons share identical direct execution handlers (`handleSave`), providing responsive mobile operation regardless of viewport scrolling depth.
+- In-line visual feedback indicators (`Saved!` with `CheckCircle2`) give immediate visual confirmation on smaller mobile screens where top banners may be scrolled out of view.
+
 
 
 

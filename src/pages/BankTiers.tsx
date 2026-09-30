@@ -141,7 +141,7 @@ export function BankTiers() {
           </button>
         </div>
       ) : (
-        <form onSubmit={handleSave} className="space-y-6">
+        <form onSubmit={handleSave} noValidate className="space-y-6">
           <div className="grid grid-cols-1 gap-6">
             {tiers.map((tier, index) => (
               <div key={tier.id} className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl overflow-hidden relative group">
@@ -477,9 +477,10 @@ export function BankTiers() {
 
           <div className="flex justify-end pt-4">
             <button
-              type="submit"
+              type="button"
+              onClick={(e) => handleSave(e as any)}
               disabled={saving}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-2 px-6 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+              className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 text-white py-2.5 px-6 rounded-xl font-medium text-sm transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-600/20"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               Save Configuration
