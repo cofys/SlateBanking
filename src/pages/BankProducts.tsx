@@ -57,15 +57,49 @@ export function BankProducts() {
   // Form interactive state (for perks builder and live card preview)
   const [formPerks, setFormPerks] = useState<string[]>([]);
   const [newPerkInput, setNewPerkInput] = useState("");
-  const [liveCardDesign, setLiveCardDesign] = useState("obsidian_vip");
-  const [liveCardKind, setLiveCardKind] = useState("credit");
-  const [liveProductName, setLiveProductName] = useState("");
-  const [liveRewards, setLiveRewards] = useState(1.5);
-  const [liveApr, setLiveApr] = useState(12.5);
-  const [liveLoanInterestType, setLiveLoanInterestType] = useState<LoanInterestType>("weekly");
-  const [liveLoanTermUnit, setLiveLoanTermUnit] = useState<LoanTermUnit>("weeks");
-  const [liveLoanTermValue, setLiveLoanTermValue] = useState<number>(2);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Fully controlled product form state across all tabs
+  const getInitialFormState = (type: ProductType = "loan") => ({
+    name: "",
+    description: "",
+    category: "personal",
+    interestRate: type === "loan" ? 2.0 : type === "vault" ? 4.5 : 14.9,
+    interestRateType: (type === "loan" ? "weekly" : "apr") as LoanInterestType,
+    termUnit: (type === "loan" ? "weeks" : "days") as LoanTermUnit,
+    termDuration: 2,
+    minAmount: 100,
+    maxLimit: type === "credit" ? 10000 : 5000,
+    originationFeePercent: 1.0,
+    lateFeePercent: 5.0,
+    gracePeriodDays: 3,
+    repaymentFrequency: "weekly",
+    collateralRequired: false,
+    minCreditScore: 0,
+    autoApproveMaxAmount: 0,
+    isActive: true,
+    // Vault fields
+    lockupDays: 90,
+    minDeposit: 500,
+    maxDeposit: "" as string | number,
+    earlyWithdrawalPenaltyPercent: 2.0,
+    compoundFrequency: "monthly",
+    tierId: "",
+    // Card fields
+    cardKind: "credit",
+    cardDesign: "obsidian_vip",
+    rewardsPercent: 1.5,
+    annualFee: 0,
+    latePaymentFee: 25,
+    cashAdvanceEnabled: true,
+    cashAdvanceFeePercent: 3.0,
+    minPaymentPercent: 5.0,
+    foreignTxFeePercent: 0,
+    welcomeBonus: 0,
+  });
+
+  const [formValues, setFormValues] = useState(getInitialFormState("loan"));
+  const updateForm = (key: string, value: any) => setFormValues(prev => ({ ...prev, [key]: value }));
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -121,20 +155,47 @@ export function BankProducts() {
     setFormType(type);
     setModalMode("edit");
     setActiveTab("basics");
-    setLiveProductName(product.name || "");
-    setLiveApr(product.interestRate || 10);
-    setLiveRewards(product.rewardsPercent || 0);
-    setLiveCardDesign(product.cardDesign || "obsidian_vip");
-    setLiveCardKind(product.cardKind || "credit");
-    setLiveLoanInterestType((product.interestRateType || "apr") as LoanInterestType);
     
     // Determine term unit and duration
     const termU = (product.termUnit || (product.termDays && product.termDays % 7 === 0 && product.termDays <= 28 ? "weeks" : product.termDays && product.termDays % 30 === 0 ? "months" : "days")) as LoanTermUnit;
-    setLiveLoanTermUnit(termU);
-    if (termU === "weeks" && product.termDays) setLiveLoanTermValue(Math.round(product.termDays / 7));
-    else if (termU === "months" && product.termDays) setLiveLoanTermValue(Math.round(product.termDays / 30));
-    else setLiveLoanTermValue(product.termDays || 30);
+    const termDur = termU === "weeks" && product.termDays ? Math.round(product.termDays / 7) : termU === "months" && product.termDays ? Math.round(product.termDays / 30) : (product.termDays || 30);
     
+    setFormValues({
+      name: product.name || "",
+      description: product.description || "",
+      category: product.category || "personal",
+      interestRate: type === "vault" ? (product.interestRate ? product.interestRate / 100 : 4.5) : (product.interestRate != null ? product.interestRate : 2.0),
+      interestRateType: (product.interestRateType || "apr") as LoanInterestType,
+      termUnit: termU,
+      termDuration: termDur,
+      minAmount: product.minAmount ? product.minAmount / 100 : 100,
+      maxLimit: type === "vault" ? 5000 : (product.maxAmount || product.maxLimit ? (product.maxAmount || product.maxLimit) / 100 : 5000),
+      originationFeePercent: product.originationFeePercent != null ? product.originationFeePercent / 100 : 1.0,
+      lateFeePercent: product.lateFeePercent != null ? product.lateFeePercent / 100 : 5.0,
+      gracePeriodDays: product.gracePeriodDays != null ? product.gracePeriodDays : 3,
+      repaymentFrequency: product.repaymentFrequency || "weekly",
+      collateralRequired: !!product.collateralRequired,
+      minCreditScore: product.minCreditScore || 0,
+      autoApproveMaxAmount: product.autoApproveMaxAmount ? product.autoApproveMaxAmount / 100 : 0,
+      isActive: product.isActive !== false && product.isActive !== 0,
+      lockupDays: product.lockupDays || 90,
+      minDeposit: product.minDeposit ? product.minDeposit / 100 : 500,
+      maxDeposit: product.maxDeposit ? (product.maxDeposit / 100).toString() : "",
+      earlyWithdrawalPenaltyPercent: product.earlyWithdrawalPenaltyPercent != null ? product.earlyWithdrawalPenaltyPercent / 100 : 2.0,
+      compoundFrequency: product.compoundFrequency || "monthly",
+      tierId: product.tierId || "",
+      cardKind: product.cardKind || "credit",
+      cardDesign: product.cardDesign || "obsidian_vip",
+      rewardsPercent: product.rewardsPercent || 1.5,
+      annualFee: product.annualFeeCents ? product.annualFeeCents / 100 : (product.annualFee || 0),
+      latePaymentFee: product.latePaymentFeeCents ? product.latePaymentFeeCents / 100 : (product.latePaymentFee || 25),
+      cashAdvanceEnabled: product.cashAdvanceEnabled !== false,
+      cashAdvanceFeePercent: product.cashAdvanceFeePercent ? product.cashAdvanceFeePercent / 100 : 3.0,
+      minPaymentPercent: product.minPaymentPercent ? product.minPaymentPercent / 100 : 5.0,
+      foreignTxFeePercent: product.foreignTxFeePercent ? product.foreignTxFeePercent / 100 : 0,
+      welcomeBonus: product.welcomeBonusCents ? product.welcomeBonusCents / 100 : 0,
+    });
+
     let parsedPerks: string[] = [];
     try {
       if (product.perksJson) {
@@ -151,14 +212,7 @@ export function BankProducts() {
     setFormType(type);
     setModalMode("create");
     setActiveTab("basics");
-    setLiveProductName(type === "loan" ? "Prime Short-Term Advance" : type === "vault" ? "High-Yield Term CD" : "Onyx Platinum Rewards");
-    setLiveApr(type === "loan" ? 2.0 : type === "vault" ? 4.5 : 14.9);
-    setLiveLoanInterestType("weekly");
-    setLiveLoanTermUnit("weeks");
-    setLiveLoanTermValue(2);
-    setLiveRewards(type === "credit" ? 2.0 : 0);
-    setLiveCardDesign("obsidian_vip");
-    setLiveCardKind("credit");
+    setFormValues(getInitialFormState(type));
     setFormPerks(type === "credit" ? ["2.0% Cashback on All Purchases", "Zero Foreign FX Transaction Fees", "24/7 Concierge Banking Support"] : []);
     setShowModal(true);
   };
@@ -201,6 +255,26 @@ export function BankProducts() {
     }
   };
 
+  // Purge All Loan Products
+  const handlePurgeAllLoans = async () => {
+    if (!confirm("Are you sure you want to permanently delete ALL loan products for this bank? This will remove all demo or presaved loan products from both staff and customer portals.")) return;
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/products?type=loan`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        flash("All loan products purged successfully.");
+        if (detailProduct?.type === "loan") setDetailProduct(null);
+        fetchProducts();
+      } else {
+        flash(data.error || "Failed to purge loan products");
+      }
+    } catch {
+      flash("Error purging loan products");
+    }
+  };
+
   // Toggle Active State
   const handleToggleActive = async (product: any, type: ProductType) => {
     const nextState = !product.isActive;
@@ -232,17 +306,15 @@ export function BankProducts() {
   // Handle Form Submit
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
 
-    const name = String(fd.get("name") || "").trim();
+    const name = formValues.name.trim();
     if (!name) {
       setActiveTab("basics");
       flash("Product Title is required.");
       return;
     }
 
-    const rateVal = fd.get("interestRate");
-    const interestRate = rateVal !== null && rateVal !== "" ? Number(rateVal) : NaN;
+    const interestRate = Number(formValues.interestRate);
     if (isNaN(interestRate) || interestRate < 0) {
       setActiveTab("financial");
       flash("A valid Interest Rate / APY / APR is required.");
@@ -254,18 +326,16 @@ export function BankProducts() {
     const payload: any = {
       type: formType,
       name,
-      description: String(fd.get("description") || "").trim(),
+      description: formValues.description.trim() || null,
       interestRate,
-      isActive: fd.get("isActive") === "on",
+      isActive: Boolean(formValues.isActive),
     };
 
     if (formType === "loan") {
-      const rateType = String(fd.get("interestRateType") || liveLoanInterestType || "apr");
-      const termUnit = String(fd.get("termUnit") || liveLoanTermUnit || "weeks");
-      const termDuration = Number(fd.get("termDuration") || liveLoanTermValue || 2);
-      const calculatedTermDays = convertTermToDays(termDuration, termUnit, Number(fd.get("termDays") || 30));
+      const termDuration = Math.max(1, Number(formValues.termDuration) || 1);
+      const calculatedTermDays = convertTermToDays(termDuration, formValues.termUnit, 30);
 
-      const maxLimit = Number(fd.get("maxLimit") || 5000);
+      const maxLimit = Number(formValues.maxLimit);
       if (isNaN(maxLimit) || maxLimit <= 0) {
         setSubmitting(false);
         setActiveTab("financial");
@@ -273,21 +343,21 @@ export function BankProducts() {
         return;
       }
 
-      payload.interestRateType = rateType;
-      payload.termUnit = termUnit;
+      payload.interestRateType = formValues.interestRateType;
+      payload.termUnit = formValues.termUnit;
       payload.termDays = calculatedTermDays;
-      payload.category = String(fd.get("category") || "personal");
-      payload.minAmount = Number(fd.get("minAmount") || 100);
+      payload.category = formValues.category;
+      payload.minAmount = Number(formValues.minAmount) || 100;
       payload.maxLimit = maxLimit;
-      payload.originationFeePercent = Number(fd.get("originationFeePercent") || 0);
-      payload.lateFeePercent = Number(fd.get("lateFeePercent") || 5);
-      payload.gracePeriodDays = Number(fd.get("gracePeriodDays") || 3);
-      payload.repaymentFrequency = String(fd.get("repaymentFrequency") || (termUnit === "weeks" ? "weekly" : "monthly"));
-      payload.collateralRequired = fd.get("collateralRequired") === "on";
-      payload.minCreditScore = Number(fd.get("minCreditScore") || 0);
-      payload.autoApproveMaxAmount = Number(fd.get("autoApproveMaxAmount") || 0);
+      payload.originationFeePercent = Number(formValues.originationFeePercent) || 0;
+      payload.lateFeePercent = Number(formValues.lateFeePercent) || 5;
+      payload.gracePeriodDays = Number(formValues.gracePeriodDays) || 3;
+      payload.repaymentFrequency = formValues.repaymentFrequency;
+      payload.collateralRequired = Boolean(formValues.collateralRequired);
+      payload.minCreditScore = Number(formValues.minCreditScore) || 0;
+      payload.autoApproveMaxAmount = Number(formValues.autoApproveMaxAmount) || 0;
     } else if (formType === "vault") {
-      const lockupDays = Number(fd.get("lockupDays") || 90);
+      const lockupDays = Number(formValues.lockupDays) || 90;
       if (isNaN(lockupDays) || lockupDays <= 0) {
         setSubmitting(false);
         setActiveTab("basics");
@@ -295,14 +365,14 @@ export function BankProducts() {
         return;
       }
       payload.lockupDays = lockupDays;
-      payload.minDeposit = Number(fd.get("minDeposit") || 500);
-      payload.maxDeposit = fd.get("maxDeposit") ? Number(fd.get("maxDeposit")) : null;
-      payload.earlyWithdrawalPenaltyPercent = Number(fd.get("earlyWithdrawalPenaltyPercent") || 2);
-      payload.compoundFrequency = String(fd.get("compoundFrequency") || "monthly");
-      payload.tierId = String(fd.get("tierId") || "").trim() || null;
+      payload.minDeposit = Number(formValues.minDeposit) || 500;
+      payload.maxDeposit = formValues.maxDeposit ? Number(formValues.maxDeposit) : null;
+      payload.earlyWithdrawalPenaltyPercent = Number(formValues.earlyWithdrawalPenaltyPercent) || 2;
+      payload.compoundFrequency = formValues.compoundFrequency;
+      payload.tierId = formValues.tierId.trim() || null;
     } else {
       // Credit Card
-      const maxLimit = Number(fd.get("maxLimit") || 10000);
+      const maxLimit = Number(formValues.maxLimit) || 10000;
       if (isNaN(maxLimit) || maxLimit <= 0) {
         setSubmitting(false);
         setActiveTab("financial");
@@ -310,19 +380,19 @@ export function BankProducts() {
         return;
       }
       payload.maxLimit = maxLimit;
-      payload.rewardsPercent = Number(fd.get("rewardsPercent") || 0);
-      payload.cardKind = String(fd.get("cardKind") || "credit");
-      payload.cardDesign = liveCardDesign;
-      payload.annualFee = Number(fd.get("annualFee") || 0);
-      payload.cashAdvanceEnabled = fd.get("cashAdvanceEnabled") === "on";
-      payload.cashAdvanceFeePercent = Number(fd.get("cashAdvanceFeePercent") || 3);
-      payload.minPaymentPercent = Number(fd.get("minPaymentPercent") || 5);
-      payload.latePaymentFeeCents = Number(fd.get("latePaymentFee") || 25);
-      payload.gracePeriodDays = Number(fd.get("gracePeriodDays") || 21);
-      payload.foreignTxFeePercent = Number(fd.get("foreignTxFeePercent") || 0);
-      payload.welcomeBonusCents = Number(fd.get("welcomeBonus") || 0);
-      payload.minCreditScore = Number(fd.get("minCreditScore") || 0);
-      payload.tierId = String(fd.get("tierId") || "").trim() || null;
+      payload.rewardsPercent = Number(formValues.rewardsPercent) || 0;
+      payload.cardKind = formValues.cardKind;
+      payload.cardDesign = formValues.cardDesign;
+      payload.annualFee = Number(formValues.annualFee) || 0;
+      payload.cashAdvanceEnabled = Boolean(formValues.cashAdvanceEnabled);
+      payload.cashAdvanceFeePercent = Number(formValues.cashAdvanceFeePercent) || 3;
+      payload.minPaymentPercent = Number(formValues.minPaymentPercent) || 5;
+      payload.latePaymentFeeCents = Number(formValues.latePaymentFee) || 25;
+      payload.gracePeriodDays = Number(formValues.gracePeriodDays) || 21;
+      payload.foreignTxFeePercent = Number(formValues.foreignTxFeePercent) || 0;
+      payload.welcomeBonusCents = Number(formValues.welcomeBonus) || 0;
+      payload.minCreditScore = Number(formValues.minCreditScore) || 0;
+      payload.tierId = formValues.tierId.trim() || null;
       payload.perksJson = JSON.stringify(formPerks);
     }
 
@@ -650,12 +720,24 @@ export function BankProducts() {
               <h2 className="text-sm font-semibold text-white">Commercial & Consumer Loan Products</h2>
               <span className="text-xs text-white/40">({filteredLoans.length})</span>
             </div>
-            <button
-              onClick={() => openCreateModal("loan")}
-              className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 transition"
-            >
-              <Plus size={13} /> Add Loan Product
-            </button>
+            <div className="flex items-center gap-3">
+              {loans.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handlePurgeAllLoans}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-medium flex items-center gap-1 transition cursor-pointer"
+                  title="Remove all preset, demo, or unwanted loan products"
+                >
+                  <Trash2 size={13} /> Purge All Loans
+                </button>
+              )}
+              <button
+                onClick={() => openCreateModal("loan")}
+                className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 transition cursor-pointer"
+              >
+                <Plus size={13} /> Add Loan Product
+              </button>
+            </div>
           </div>
 
           {filteredLoans.length === 0 ? (
@@ -1181,7 +1263,6 @@ export function BankProducts() {
       {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <form
-            key={`${modalMode}-${editingProduct?.id || formType}`}
             onSubmit={handleFormSubmit}
             noValidate
             className="bg-[#111118] border border-white/15 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 my-8 flex flex-col max-h-[90vh]"
@@ -1190,7 +1271,7 @@ export function BankProducts() {
             <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div>
                 <h3 className="text-base font-semibold text-white">
-                  {modalMode === "edit" ? `Edit Product: ${editingProduct?.name}` : `Create New ${formType === "loan" ? "Loan" : formType === "vault" ? "Term Vault" : "Card"} Product`}
+                  {modalMode === "edit" ? `Edit Product: ${editingProduct?.name || formValues.name}` : `Create New ${formType === "loan" ? "Loan" : formType === "vault" ? "Term Vault" : "Card"} Product`}
                 </h3>
                 <p className="text-xs text-white/40">
                   Configure interest rates, fees, underwriting guidelines, and visual branding.
@@ -1199,7 +1280,7 @@ export function BankProducts() {
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="text-white/40 hover:text-white transition"
+                className="text-white/40 hover:text-white transition cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -1213,10 +1294,11 @@ export function BankProducts() {
                     type="button"
                     onClick={() => {
                       setFormType("loan");
-                      setLiveProductName("Prime Commercial Loan");
-                      setLiveApr(7.5);
+                      updateForm("interestRate", 2.0);
+                      updateForm("interestRateType", "weekly");
+                      updateForm("maxLimit", 5000);
                     }}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition border flex items-center justify-center gap-1.5 ${
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition border flex items-center justify-center gap-1.5 cursor-pointer ${
                       formType === "loan"
                         ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
                         : "bg-white/[0.02] border-white/10 text-white/50 hover:bg-white/5"
@@ -1228,10 +1310,10 @@ export function BankProducts() {
                     type="button"
                     onClick={() => {
                       setFormType("credit");
-                      setLiveProductName("Onyx Platinum Rewards");
-                      setLiveApr(14.9);
+                      updateForm("interestRate", 14.9);
+                      updateForm("maxLimit", 10000);
                     }}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition border flex items-center justify-center gap-1.5 ${
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition border flex items-center justify-center gap-1.5 cursor-pointer ${
                       formType === "credit"
                         ? "bg-blue-500/15 border-blue-500/40 text-blue-300"
                         : "bg-white/[0.02] border-white/10 text-white/50 hover:bg-white/5"
@@ -1243,10 +1325,10 @@ export function BankProducts() {
                     type="button"
                     onClick={() => {
                       setFormType("vault");
-                      setLiveProductName("High-Yield Term CD");
-                      setLiveApr(4.5);
+                      updateForm("interestRate", 4.5);
+                      updateForm("minDeposit", 500);
                     }}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition border flex items-center justify-center gap-1.5 ${
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold transition border flex items-center justify-center gap-1.5 cursor-pointer ${
                       formType === "vault"
                         ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
                         : "bg-white/[0.02] border-white/10 text-white/50 hover:bg-white/5"
@@ -1263,7 +1345,7 @@ export function BankProducts() {
               <button
                 type="button"
                 onClick={() => setActiveTab("basics")}
-                className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap ${
+                className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap cursor-pointer ${
                   activeTab === "basics"
                     ? "border-white text-white font-semibold"
                     : "border-transparent text-white/40 hover:text-white/80"
@@ -1274,7 +1356,7 @@ export function BankProducts() {
               <button
                 type="button"
                 onClick={() => setActiveTab("financial")}
-                className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap ${
+                className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap cursor-pointer ${
                   activeTab === "financial"
                     ? "border-white text-white font-semibold"
                     : "border-transparent text-white/40 hover:text-white/80"
@@ -1285,7 +1367,7 @@ export function BankProducts() {
               <button
                 type="button"
                 onClick={() => setActiveTab("fees")}
-                className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap ${
+                className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap cursor-pointer ${
                   activeTab === "fees"
                     ? "border-white text-white font-semibold"
                     : "border-transparent text-white/40 hover:text-white/80"
@@ -1297,7 +1379,7 @@ export function BankProducts() {
                 <button
                   type="button"
                   onClick={() => setActiveTab("perks")}
-                  className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap ${
+                  className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap cursor-pointer ${
                     activeTab === "perks"
                       ? "border-white text-white font-semibold"
                       : "border-transparent text-white/40 hover:text-white/80"
@@ -1309,7 +1391,7 @@ export function BankProducts() {
               <button
                 type="button"
                 onClick={() => setActiveTab("underwriting")}
-                className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap ${
+                className={`py-2.5 px-3 text-xs font-medium border-b-2 transition whitespace-nowrap cursor-pointer ${
                   activeTab === "underwriting"
                     ? "border-white text-white font-semibold"
                     : "border-transparent text-white/40 hover:text-white/80"
@@ -1328,9 +1410,9 @@ export function BankProducts() {
                   <input
                     name="name"
                     type="text"
-                    defaultValue={editingProduct?.name || liveProductName}
-                    onChange={(e) => setLiveProductName(e.target.value)}
-                    placeholder="e.g. Onyx Commercial Credit Line"
+                    value={formValues.name}
+                    onChange={(e) => updateForm("name", e.target.value)}
+                    placeholder={formType === "loan" ? "e.g. Commercial Term Loan, Payday Advance" : formType === "vault" ? "e.g. 90-Day Fixed Term Vault" : "e.g. Platinum Rewards Card"}
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                   />
                 </div>
@@ -1340,7 +1422,8 @@ export function BankProducts() {
                   <textarea
                     name="description"
                     rows={2}
-                    defaultValue={editingProduct?.description || ""}
+                    value={formValues.description}
+                    onChange={(e) => updateForm("description", e.target.value)}
                     placeholder="e.g. Tier-1 business financing designed for corporate growth with competitive revolving terms."
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                   />
@@ -1352,7 +1435,8 @@ export function BankProducts() {
                       <label className="block text-xs font-medium text-white/70 mb-1">Lending Category</label>
                       <select
                         name="category"
-                        defaultValue={editingProduct?.category || "personal"}
+                        value={formValues.category}
+                        onChange={(e) => updateForm("category", e.target.value)}
                         className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                       >
                         <option value="personal">Personal Loan</option>
@@ -1366,7 +1450,8 @@ export function BankProducts() {
                       <label className="block text-xs font-medium text-white/70 mb-1">Repayment Schedule</label>
                       <select
                         name="repaymentFrequency"
-                        defaultValue={editingProduct?.repaymentFrequency || "monthly"}
+                        value={formValues.repaymentFrequency}
+                        onChange={(e) => updateForm("repaymentFrequency", e.target.value)}
                         className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                       >
                         <option value="monthly">Monthly Installments</option>
@@ -1385,8 +1470,8 @@ export function BankProducts() {
                         <label className="block text-xs font-medium text-white/70 mb-1">Card Classification</label>
                         <select
                           name="cardKind"
-                          value={liveCardKind}
-                          onChange={(e) => setLiveCardKind(e.target.value)}
+                          value={formValues.cardKind}
+                          onChange={(e) => updateForm("cardKind", e.target.value)}
                           className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                         >
                           <option value="credit">Revolving Credit Card</option>
@@ -1397,8 +1482,8 @@ export function BankProducts() {
                         <label className="block text-xs font-medium text-white/70 mb-1">Visual Card Skin Theme</label>
                         <select
                           name="cardDesign"
-                          value={liveCardDesign}
-                          onChange={(e) => setLiveCardDesign(e.target.value)}
+                          value={formValues.cardDesign}
+                          onChange={(e) => updateForm("cardDesign", e.target.value)}
                           className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                         >
                           <option value="obsidian_vip">Obsidian VIP (Black / Platinum)</option>
@@ -1415,19 +1500,19 @@ export function BankProducts() {
                     {/* Interactive Card Live Preview */}
                     <div>
                       <p className="text-[11px] font-medium text-white/40 uppercase mb-2">Live Visual Card Preview</p>
-                      <div className={`p-4 rounded-xl border max-w-sm shadow-xl ${getCardDesignStyle(liveCardDesign).bg}`}>
+                      <div className={`p-4 rounded-xl border max-w-sm shadow-xl ${getCardDesignStyle(formValues.cardDesign).bg}`}>
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-[9px] font-mono tracking-widest opacity-60 uppercase">{bank?.name || "ONYX BANK"}</p>
-                            <p className="text-xs font-bold text-white mt-0.5">{liveProductName || "Card Name"}</p>
+                            <p className="text-xs font-bold text-white mt-0.5">{formValues.name || "Card Name"}</p>
                           </div>
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/15 border border-white/20">
-                            {liveCardKind.toUpperCase()}
+                            {String(formValues.cardKind).toUpperCase()}
                           </span>
                         </div>
                         <div className="mt-4 flex items-center justify-between">
                           <span className="text-[11px] font-mono opacity-70">•••• 5821</span>
-                          <span className="text-xs font-mono font-bold text-white tabular-nums">{liveApr}% APR</span>
+                          <span className="text-xs font-mono font-bold text-white tabular-nums">{formValues.interestRate}% APR</span>
                         </div>
                       </div>
                     </div>
@@ -1440,7 +1525,8 @@ export function BankProducts() {
                       <label className="block text-xs font-medium text-white/70 mb-1">Compounding Cadence</label>
                       <select
                         name="compoundFrequency"
-                        defaultValue={editingProduct?.compoundFrequency || "monthly"}
+                        value={formValues.compoundFrequency}
+                        onChange={(e) => updateForm("compoundFrequency", e.target.value)}
                         className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                       >
                         <option value="monthly">Monthly Compounding</option>
@@ -1453,7 +1539,8 @@ export function BankProducts() {
                       <input
                         type="number"
                         name="lockupDays"
-                        defaultValue={editingProduct?.lockupDays || 90}
+                        value={formValues.lockupDays}
+                        onChange={(e) => updateForm("lockupDays", Math.max(1, Number(e.target.value)))}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                       />
                     </div>
@@ -1465,7 +1552,8 @@ export function BankProducts() {
                     <input
                       type="checkbox"
                       name="isActive"
-                      defaultChecked={editingProduct ? !!editingProduct.isActive : true}
+                      checked={!!formValues.isActive}
+                      onChange={(e) => updateForm("isActive", e.target.checked)}
                       className="rounded border-white/20 bg-black/40 text-emerald-500 focus:ring-0"
                     />
                     <span>Active & Available in Customer Application Portals</span>
@@ -1483,8 +1571,8 @@ export function BankProducts() {
                       </label>
                       <select
                         name="interestRateType"
-                        value={liveLoanInterestType}
-                        onChange={(e: any) => setLiveLoanInterestType(e.target.value)}
+                        value={formValues.interestRateType}
+                        onChange={(e: any) => updateForm("interestRateType", e.target.value)}
                         className="w-full bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                       >
                         <option value="weekly">Weekly Simple Interest (% / week) — e.g. 2%/wk</option>
@@ -1493,11 +1581,11 @@ export function BankProducts() {
                         <option value="apr">Annual Percentage Rate (Standard APR %)</option>
                       </select>
                       <p className="text-[10px] text-white/40 mt-1">
-                        {liveLoanInterestType === "weekly"
+                        {formValues.interestRateType === "weekly"
                           ? "Advertised as simple weekly % (e.g. 2.0%/wk instead of 104% APR)."
-                          : liveLoanInterestType === "monthly"
+                          : formValues.interestRateType === "monthly"
                           ? "Advertised as simple monthly % (e.g. 5.0%/mo instead of 60% APR)."
-                          : liveLoanInterestType === "flat"
+                          : formValues.interestRateType === "flat"
                           ? "Fixed one-time term surcharge on the borrowed principal."
                           : "Standard continuous 365-day annualized APR."}
                       </p>
@@ -1505,11 +1593,11 @@ export function BankProducts() {
 
                     <div>
                       <label className="block text-xs font-medium text-white/70 mb-1">
-                        {liveLoanInterestType === "weekly"
+                        {formValues.interestRateType === "weekly"
                           ? "Weekly Rate (% / week) *"
-                          : liveLoanInterestType === "monthly"
+                          : formValues.interestRateType === "monthly"
                           ? "Monthly Rate (% / month) *"
-                          : liveLoanInterestType === "flat"
+                          : formValues.interestRateType === "flat"
                           ? "Flat Surcharge Rate (% Flat) *"
                           : "Annual Percentage Rate (APR %) *"}
                       </label>
@@ -1517,13 +1605,13 @@ export function BankProducts() {
                         name="interestRate"
                         type="number"
                         step="0.01"
-                        defaultValue={editingProduct ? editingProduct.interestRate : liveApr}
-                        onChange={(e) => setLiveApr(Number(e.target.value))}
+                        value={formValues.interestRate}
+                        onChange={(e) => updateForm("interestRate", Number(e.target.value))}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                        placeholder={liveLoanInterestType === "weekly" ? "2.0" : liveLoanInterestType === "monthly" ? "5.0" : "12.0"}
+                        placeholder={formValues.interestRateType === "weekly" ? "2.0" : formValues.interestRateType === "monthly" ? "5.0" : "12.0"}
                       />
                       <p className="text-[10px] text-emerald-400 font-mono mt-1">
-                        Displays to borrowers as: <span className="font-bold">{formatLoanRate(liveApr, liveLoanInterestType, false)}</span>
+                        Displays to borrowers as: <span className="font-bold">{formatLoanRate(formValues.interestRate, formValues.interestRateType, false)}</span>
                       </p>
                     </div>
                   </div>
@@ -1539,8 +1627,8 @@ export function BankProducts() {
                         name="interestRate"
                         type="number"
                         step="0.01"
-                        defaultValue={editingProduct ? (formType === "vault" ? (editingProduct.interestRate / 100) : editingProduct.interestRate) : liveApr}
-                        onChange={(e) => setLiveApr(Number(e.target.value))}
+                        value={formValues.interestRate}
+                        onChange={(e) => updateForm("interestRate", Number(e.target.value))}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         placeholder="7.5"
                       />
@@ -1555,13 +1643,8 @@ export function BankProducts() {
                         name={formType === "vault" ? "minDeposit" : "maxLimit"}
                         type="number"
                         step="1"
-                        defaultValue={
-                          editingProduct
-                            ? formType === "vault"
-                              ? editingProduct.minDeposit / 100
-                              : (editingProduct.maxAmount || editingProduct.maxLimit) / 100
-                            : 5000
-                        }
+                        value={formType === "vault" ? formValues.minDeposit : formValues.maxLimit}
+                        onChange={(e) => updateForm(formType === "vault" ? "minDeposit" : "maxLimit", Number(e.target.value))}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         placeholder="10000"
                       />
@@ -1579,14 +1662,14 @@ export function BankProducts() {
                             type="number"
                             min={1}
                             name="termDuration"
-                            value={liveLoanTermValue}
-                            onChange={(e) => setLiveLoanTermValue(Math.max(1, Number(e.target.value)))}
+                            value={formValues.termDuration}
+                            onChange={(e) => updateForm("termDuration", Math.max(1, Number(e.target.value)))}
                             className="w-24 bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                           />
                           <select
                             name="termUnit"
-                            value={liveLoanTermUnit}
-                            onChange={(e: any) => setLiveLoanTermUnit(e.target.value)}
+                            value={formValues.termUnit}
+                            onChange={(e: any) => updateForm("termUnit", e.target.value)}
                             className="flex-1 bg-[#16161f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                           >
                             <option value="weeks">Weeks</option>
@@ -1594,9 +1677,9 @@ export function BankProducts() {
                             <option value="days">Days</option>
                           </select>
                         </div>
-                        <input type="hidden" name="termDays" value={convertTermToDays(liveLoanTermValue, liveLoanTermUnit, 30)} />
+                        <input type="hidden" name="termDays" value={convertTermToDays(formValues.termDuration, formValues.termUnit, 30)} />
                         <p className="text-[10px] text-white/40 mt-1">
-                          Calculated tenor: {convertTermToDays(liveLoanTermValue, liveLoanTermUnit, 30)} calendar days
+                          Calculated tenor: {convertTermToDays(formValues.termDuration, formValues.termUnit, 30)} calendar days
                         </p>
                       </div>
 
@@ -1606,7 +1689,8 @@ export function BankProducts() {
                           name="maxLimit"
                           type="number"
                           step="1"
-                          defaultValue={editingProduct ? (editingProduct.maxAmount || 500000) / 100 : 5000}
+                          value={formValues.maxLimit}
+                          onChange={(e) => updateForm("maxLimit", Number(e.target.value))}
                           className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                           placeholder="5000"
                         />
@@ -1619,7 +1703,8 @@ export function BankProducts() {
                         <input
                           name="minAmount"
                           type="number"
-                          defaultValue={editingProduct ? (editingProduct.minAmount || 10000) / 100 : 100}
+                          value={formValues.minAmount}
+                          onChange={(e) => updateForm("minAmount", Number(e.target.value))}
                           className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
@@ -1629,11 +1714,11 @@ export function BankProducts() {
                         const demoAmount = 1000;
                         const breakdown = calculateLoanBreakdown({
                           principalCents: demoAmount * 100,
-                          rate: liveApr,
-                          rateType: liveLoanInterestType,
-                          termDuration: liveLoanTermValue,
-                          termUnit: liveLoanTermUnit,
-                          repaymentFrequency: liveLoanTermUnit === "weeks" ? "weekly" : "monthly"
+                          rate: formValues.interestRate,
+                          rateType: formValues.interestRateType,
+                          termDuration: formValues.termDuration,
+                          termUnit: formValues.termUnit,
+                          repaymentFrequency: formValues.termUnit === "weeks" ? "weekly" : "monthly"
                         });
 
                         return (
@@ -1655,7 +1740,7 @@ export function BankProducts() {
                                 <span className="font-mono font-bold text-white">{formatMoney(breakdown.installmentCents)} / {breakdown.frequencyLabel.toLowerCase()}</span>
                               </div>
                             </div>
-                            {liveLoanInterestType !== "apr" && (
+                            {formValues.interestRateType !== "apr" && (
                               <p className="text-[10px] text-white/40 pt-1 font-mono">
                                 Transparent APR Equiv: {breakdown.equivalentApr.toFixed(1)}% (hidden from hero banner)
                               </p>
@@ -1675,7 +1760,8 @@ export function BankProducts() {
                         name="rewardsPercent"
                         type="number"
                         step="0.1"
-                        defaultValue={editingProduct?.rewardsPercent || 1.5}
+                        value={formValues.rewardsPercent}
+                        onChange={(e) => updateForm("rewardsPercent", Number(e.target.value))}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                       />
                     </div>
@@ -1685,7 +1771,8 @@ export function BankProducts() {
                         name="minPaymentPercent"
                         type="number"
                         step="0.5"
-                        defaultValue={editingProduct ? (editingProduct.minPaymentPercent || 500) / 100 : 5.0}
+                        value={formValues.minPaymentPercent}
+                        onChange={(e) => updateForm("minPaymentPercent", Number(e.target.value))}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                       />
                     </div>
@@ -1698,7 +1785,8 @@ export function BankProducts() {
                     <input
                       name="maxDeposit"
                       type="number"
-                      defaultValue={editingProduct?.maxDeposit ? editingProduct.maxDeposit / 100 : ""}
+                      value={formValues.maxDeposit}
+                      onChange={(e) => updateForm("maxDeposit", e.target.value)}
                       placeholder="Leave blank for no deposit ceiling"
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                     />
@@ -1716,8 +1804,9 @@ export function BankProducts() {
                         name="originationFeePercent"
                         type="number"
                         step="0.1"
-                        defaultValue={editingProduct ? (editingProduct.originationFeePercent || 0) / 100 : 1.0}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                        value={formValues.originationFeePercent}
+                        onChange={(e) => updateForm("originationFeePercent", Number(e.target.value))}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                       />
                       <p className="text-[10px] text-white/40 mt-1">Deducted at disbursement</p>
                     </div>
@@ -1727,8 +1816,9 @@ export function BankProducts() {
                         name="lateFeePercent"
                         type="number"
                         step="0.1"
-                        defaultValue={editingProduct ? (editingProduct.lateFeePercent || 500) / 100 : 5.0}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                        value={formValues.lateFeePercent}
+                        onChange={(e) => updateForm("lateFeePercent", Number(e.target.value))}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                       />
                     </div>
                     <div>
@@ -1736,8 +1826,9 @@ export function BankProducts() {
                       <input
                         name="gracePeriodDays"
                         type="number"
-                        defaultValue={editingProduct?.gracePeriodDays || 3}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                        value={formValues.gracePeriodDays}
+                        onChange={(e) => updateForm("gracePeriodDays", Number(e.target.value))}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                       />
                     </div>
                   </div>
@@ -1752,8 +1843,9 @@ export function BankProducts() {
                           name="annualFee"
                           type="number"
                           step="1"
-                          defaultValue={editingProduct ? (editingProduct.annualFeeCents || 0) / 100 : 0}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          value={formValues.annualFee}
+                          onChange={(e) => updateForm("annualFee", Number(e.target.value))}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
                       <div>
@@ -1762,8 +1854,9 @@ export function BankProducts() {
                           name="latePaymentFee"
                           type="number"
                           step="1"
-                          defaultValue={editingProduct ? (editingProduct.latePaymentFeeCents || 2500) / 100 : 25}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          value={formValues.latePaymentFee}
+                          onChange={(e) => updateForm("latePaymentFee", Number(e.target.value))}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
                       <div>
@@ -1771,8 +1864,9 @@ export function BankProducts() {
                         <input
                           name="gracePeriodDays"
                           type="number"
-                          defaultValue={editingProduct?.gracePeriodDays || 21}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          value={formValues.gracePeriodDays}
+                          onChange={(e) => updateForm("gracePeriodDays", Number(e.target.value))}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
                     </div>
@@ -1784,8 +1878,9 @@ export function BankProducts() {
                           name="cashAdvanceFeePercent"
                           type="number"
                           step="0.1"
-                          defaultValue={editingProduct ? (editingProduct.cashAdvanceFeePercent || 300) / 100 : 3.0}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          value={formValues.cashAdvanceFeePercent}
+                          onChange={(e) => updateForm("cashAdvanceFeePercent", Number(e.target.value))}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
                       <div>
@@ -1794,8 +1889,9 @@ export function BankProducts() {
                           name="foreignTxFeePercent"
                           type="number"
                           step="0.1"
-                          defaultValue={editingProduct ? (editingProduct.foreignTxFeePercent || 0) / 100 : 0}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                          value={formValues.foreignTxFeePercent}
+                          onChange={(e) => updateForm("foreignTxFeePercent", Number(e.target.value))}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                         />
                       </div>
                     </div>
@@ -1804,7 +1900,8 @@ export function BankProducts() {
                       <input
                         type="checkbox"
                         name="cashAdvanceEnabled"
-                        defaultChecked={editingProduct?.cashAdvanceEnabled !== false}
+                        checked={formValues.cashAdvanceEnabled}
+                        onChange={(e) => updateForm("cashAdvanceEnabled", e.target.checked)}
                         className="rounded border-white/20 bg-black/40 text-blue-500 focus:ring-0"
                       />
                       <span>Permit Cash Advances / ATM Withdrawals on this card</span>
@@ -1819,7 +1916,8 @@ export function BankProducts() {
                       name="earlyWithdrawalPenaltyPercent"
                       type="number"
                       step="0.1"
-                      defaultValue={editingProduct ? (editingProduct.earlyWithdrawalPenaltyPercent || 200) / 100 : 2.0}
+                      value={formValues.earlyWithdrawalPenaltyPercent}
+                      onChange={(e) => updateForm("earlyWithdrawalPenaltyPercent", Number(e.target.value))}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                     />
                     <p className="text-[11px] text-white/40 mt-1">
@@ -1839,7 +1937,8 @@ export function BankProducts() {
                         name="welcomeBonus"
                         type="number"
                         step="1"
-                        defaultValue={editingProduct ? (editingProduct.welcomeBonusCents || 0) / 100 : 0}
+                        value={formValues.welcomeBonus}
+                        onChange={(e) => updateForm("welcomeBonus", Number(e.target.value))}
                         placeholder="e.g. 50"
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                       />
@@ -1915,7 +2014,8 @@ export function BankProducts() {
                     <input
                       name="minCreditScore"
                       type="number"
-                      defaultValue={editingProduct?.minCreditScore || 0}
+                      value={formValues.minCreditScore}
+                      onChange={(e) => updateForm("minCreditScore", Number(e.target.value))}
                       placeholder="0 = No score threshold"
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                     />
@@ -1927,7 +2027,8 @@ export function BankProducts() {
                     <input
                       name="tierId"
                       type="text"
-                      defaultValue={editingProduct?.tierId || ""}
+                      value={formValues.tierId}
+                      onChange={(e) => updateForm("tierId", e.target.value)}
                       placeholder="e.g. VIP, Platinum, Commercial"
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/30"
                     />
@@ -1942,7 +2043,8 @@ export function BankProducts() {
                       <input
                         name="autoApproveMaxAmount"
                         type="number"
-                        defaultValue={editingProduct ? (editingProduct.autoApproveMaxAmount || 0) / 100 : 0}
+                        value={formValues.autoApproveMaxAmount}
+                        onChange={(e) => updateForm("autoApproveMaxAmount", Number(e.target.value))}
                         placeholder="0 = All loans require manual review"
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
                       />
@@ -1953,7 +2055,8 @@ export function BankProducts() {
                         <input
                           type="checkbox"
                           name="collateralRequired"
-                          defaultChecked={!!editingProduct?.collateralRequired}
+                          checked={formValues.collateralRequired}
+                          onChange={(e) => updateForm("collateralRequired", e.target.checked)}
                           className="rounded border-white/20 bg-black/40 text-amber-500 focus:ring-0"
                         />
                         <span>Mandatory Physical / Account Collateral</span>

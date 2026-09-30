@@ -1916,6 +1916,7 @@ banksRouter.get("/api/banks/:bankId/products", requireBankStaff, async (req: exp
 
         return {
           ...p,
+          isActive: p.isActive !== false && (p.isActive as any) !== 0,
           stats: {
             activeLoansCount,
             totalOriginatedCount,
@@ -2124,7 +2125,7 @@ banksRouter.post("/api/banks/:bankId/products", requireBankStaff, async (req: ex
           collateralRequired: !!collateralRequired,
           minCreditScore: Number(minCreditScore) || 0,
           autoApproveMaxAmount: autoApproveMaxAmount !== undefined ? Math.round(Number(autoApproveMaxAmount) * 100) : 0,
-          isActive: true,
+          isActive: req.body.isActive !== undefined ? Boolean(req.body.isActive) : true,
           createdAt: new Date()
         });
         return res.json({ success: true, id });
@@ -2351,6 +2352,38 @@ banksRouter.delete("/api/banks/:bankId/products/:productId", requireBankStaff, a
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Failed to delete product" });
+    }
+});
+
+banksRouter.delete("/api/banks/:bankId/products", requireBankStaff, async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index.js");
+    const { loanProducts, creditProducts, vaultProducts } = await import("../../db/schema.js");
+    const { eq } = await import("drizzle-orm");
+    
+    try {
+      const staffRole = String((req as any).staffRole || "").toLowerCase().trim();
+      const isGlobal = Boolean((req as any).user?.isGlobalAdmin);
+      if (!isGlobal && !["owner", "admin", "manager"].includes(staffRole)) {
+         return res.status(403).json({ error: "Only Managers and Admins can purge products." });
+      }
+      
+      const { bankId } = req.params;
+      const type = String(req.query.type || "loan");
+      
+      if (type === 'loan' || type === 'all') {
+        await db.delete(loanProducts).where(eq(loanProducts.bankId, bankId));
+      }
+      if (type === 'vault' || type === 'all') {
+        await db.delete(vaultProducts).where(eq(vaultProducts.bankId, bankId));
+      }
+      if (type === 'credit' || type === 'all') {
+        await db.delete(creditProducts).where(eq(creditProducts.bankId, bankId));
+      }
+      
+      res.json({ success: true, message: `Successfully cleared ${type} products.` });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to purge products" });
     }
 });
 

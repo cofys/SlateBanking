@@ -1133,7 +1133,8 @@ Slate Banking features an enterprise-grade **Financial Products & Underwriting S
      - *3. Fees & Surcharges*: Origination fees, late fees, grace periods, annual fees, and cash advance settings.
      - *4. Card Perks & Rewards* (Credit only): Welcome bonus credit and dynamic perks bullet list builder.
      - *5. Underwriting Rules*: Minimum credit score thresholds, account tier gating, auto-approval ceilings, and collateral requirements.
-     - All tab panels remain mounted in the DOM with visibility toggling, ensuring zero data loss when staff navigate between tabs during product configuration. Form submission executes comprehensive programmatic validation with automatic tab redirection to missing or invalid fields.
+     - All tab panels remain mounted in the DOM with visibility toggling and are fully controlled via the component `formValues` state across all five tabs, ensuring zero data loss when staff navigate between tabs during product configuration. Form submission executes comprehensive programmatic validation with automatic tab redirection to missing or invalid fields.
+   - **Unified Staff Loan Underwriting & Products Hub (`BankLoans.tsx`)**: Bank staff accessing `/bank/:bankId/loans` have a unified top tab switcher to toggle seamlessly between **Active Loans Portfolio** (servicing, debit processing, interest accrual, debt collection, loan origination) and **Loan Products Catalog** (full product card catalog, active/disabled toggling, loan product creator/editor modal, and instant one-click catalog purge), eliminating discrepancies between staff underwriting and customer application portals.
    - **Financial Product Calculator & Simulator**: Built-in interactive quoting simulator allowing bank staff to adjust loan/credit amounts on sliders to instantly calculate customer installment schedules, origination fee deductions, total finance charges, and institutional net profit margin.
 
 ### Global Security Suite (Added Sep 2026)
