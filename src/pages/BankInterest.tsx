@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Percent, Save, Play, Loader2, AlertCircle, Calendar, Clock, Banknote, Users } from "lucide-react";
+import { Percent, Save, Play, Loader2, AlertCircle, Calendar, Clock, Banknote, Users, CheckCircle2 } from "lucide-react";
 import { safeFormatDate } from "../lib/utils";
 
 export function BankInterest() {
@@ -11,6 +11,7 @@ export function BankInterest() {
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<{ count: number; totalAmount: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const fetchSettings = () => {
     setLoading(true);
@@ -34,6 +35,7 @@ export function BankInterest() {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setSuccessMsg(null);
     setRunResult(null);
     const formData = new FormData(e.target as HTMLFormElement);
     const newSettings = {
@@ -58,6 +60,8 @@ export function BankInterest() {
       .then((data) => {
         if (data.error) throw new Error(data.error);
         setSettings(data);
+        setSuccessMsg("Interest configuration saved successfully!");
+        setTimeout(() => setSuccessMsg(null), 3500);
       })
       .catch((err) => setError(err.message))
       .finally(() => setSaving(false));
@@ -274,15 +278,29 @@ export function BankInterest() {
               </div>
             </div>
 
-            <div className="p-6 border-t border-white/10 bg-[#15151e] flex justify-end">
+            <div className="p-4 sm:p-6 border-t border-white/10 bg-[#15151e] sticky bottom-3 z-30 flex flex-wrap items-center justify-between gap-3 rounded-b-2xl shadow-xl">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="text-xs text-white/70">Yield Rules Engine</span>
+                {successMsg && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400 ml-2 animate-in fade-in">
+                    <CheckCircle2 size={13} /> Saved!
+                  </span>
+                )}
+                {error && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-400 ml-2 animate-in fade-in max-w-[200px] truncate" title={error}>
+                    <AlertCircle size={13} /> {error}
+                  </span>
+                )}
+              </div>
+
               <button
-                type="button"
-                onClick={(e) => handleSave(e as any)}
+                type="submit"
                 disabled={saving}
-                className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 text-white py-2.5 px-6 rounded-xl font-medium text-sm transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-600/20"
+                className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 text-white py-2.5 px-6 rounded-xl font-semibold text-xs sm:text-sm transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-600/20 ml-auto"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                Save Configuration
+                <span>{saving ? "Saving..." : "Save Configuration"}</span>
               </button>
             </div>
           </form>

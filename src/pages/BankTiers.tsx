@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Layers, Plus, Trash2, Save, Loader2, AlertCircle, ShieldAlert, Sliders, Users, Ban } from "lucide-react";
+import { Layers, Plus, Trash2, Save, Loader2, AlertCircle, ShieldAlert, Sliders, Users, Ban, CheckCircle2 } from "lucide-react";
 
 export function BankTiers() {
   const { bank } = useOutletContext<{ bank: any }>();
@@ -8,6 +8,7 @@ export function BankTiers() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (bank?.id) {
@@ -81,6 +82,7 @@ export function BankTiers() {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setSuccessMsg(null);
     fetch(`/api/banks/${bank.id}/tiers`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -90,6 +92,8 @@ export function BankTiers() {
       .then((data) => {
         if (data.error) throw new Error(data.error);
         setTiers(data.accountTiers || []);
+        setSuccessMsg("Account tiers saved successfully!");
+        setTimeout(() => setSuccessMsg(null), 3500);
       })
       .catch((err) => setError(err.message))
       .finally(() => setSaving(false));
@@ -475,15 +479,32 @@ export function BankTiers() {
             ))}
           </div>
 
-          <div className="flex justify-end pt-4">
+          {/* Bottom Floating Save Action Bar */}
+          <div className="sticky bottom-3 sm:bottom-4 z-40 bg-[var(--bg-elevated)]/98 backdrop-blur-md border border-white/20 rounded-2xl p-3 sm:p-4 shadow-2xl flex flex-wrap items-center justify-between gap-3 touch-manipulation">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span className="text-xs text-white/70 truncate">
+                {tiers.length} Account Tier{tiers.length === 1 ? "" : "s"} Configured
+              </span>
+              {successMsg && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400 ml-2 animate-in fade-in">
+                  <CheckCircle2 size={13} /> Saved!
+                </span>
+              )}
+              {error && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-400 ml-2 animate-in fade-in max-w-[220px] truncate" title={error}>
+                  <AlertCircle size={13} /> {error}
+                </span>
+              )}
+            </div>
+
             <button
-              type="button"
-              onClick={(e) => handleSave(e as any)}
+              type="submit"
               disabled={saving}
-              className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 text-white py-2.5 px-6 rounded-xl font-medium text-sm transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-600/20"
+              className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 text-white py-2.5 px-6 rounded-xl font-semibold text-xs sm:text-sm transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-600/25 ml-auto"
             >
-              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-              Save Configuration
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              <span>{saving ? "Saving..." : "Save Configuration"}</span>
             </button>
           </div>
         </form>

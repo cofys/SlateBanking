@@ -1189,9 +1189,10 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
     }
 
     // 2.5 Resolve Prefixes and Account Naming Standards
-    const { users } = await import("../../db/schema");
+    const { users, bankCustomers } = await import("../../db/schema");
     const userRow = await db.select().from(users).where(eq(users.discordId, primaryId)).get();
-    const discordUsername = userRow?.mcUsername || (req as any).user?.username || (req as any).user?.displayName || "client";
+    const customer = await db.select().from(bankCustomers).where(and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, primaryId))).get();
+    const mcUsername = customer?.mcUsername || userRow?.mcUsername || (req as any).user?.mcUsername || (req as any).user?.username || (req as any).user?.displayName || "client";
 
     const configuredPrefix = isBusiness
       ? (selectedTier?.customPrefix !== undefined && selectedTier?.customPrefix !== null && selectedTier?.customPrefix !== "" ? selectedTier.customPrefix : (settings?.businessAccountPrefix || "CORP-"))
@@ -1204,13 +1205,12 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
     let finalAccountName = (accountName || "").trim();
 
     if (!isBusiness) {
-      if (namingMode === "discord_username" || namingPreference === "discord") {
-        finalAccountName = `${configuredPrefix}${discordUsername}`;
+      if (namingMode === "discord_username" || namingMode === "mc_username" || namingPreference === "discord" || namingPreference === "mc") {
+        finalAccountName = `${configuredPrefix}${mcUsername}`;
       } else {
         if (!finalAccountName) {
-          return res.status(400).json({ error: "Account Name is required." });
-        }
-        if (!finalAccountName.startsWith(configuredPrefix)) {
+          finalAccountName = `${configuredPrefix}${mcUsername}`;
+        } else if (!finalAccountName.startsWith(configuredPrefix)) {
           finalAccountName = `${configuredPrefix}${finalAccountName}`;
         }
       }
@@ -1220,9 +1220,9 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
       if (!baseBiz) {
         return res.status(400).json({ error: "Business / Entity Name is required." });
       }
-      if (namingMode === "discord_plus_business") {
+      if (namingMode === "discord_plus_business" || namingMode === "mc_plus_business") {
         const strippedBiz = baseBiz.startsWith(configuredPrefix) ? baseBiz.slice(configuredPrefix.length) : baseBiz;
-        finalAccountName = `${configuredPrefix}${discordUsername}-${strippedBiz}`;
+        finalAccountName = `${configuredPrefix}${mcUsername}-${strippedBiz}`;
       } else {
         if (!baseBiz.startsWith(configuredPrefix)) {
           finalAccountName = `${configuredPrefix}${baseBiz}`;
@@ -1235,8 +1235,6 @@ portalRouter.post("/api/citizen/accounts/register", requireAuth, async (req: exp
     // 2.9 In-Game CityCorp Provisioning vs Staff Review
     let existsInGame = false;
     let syncError: string | null = null;
-    const { bankCustomers } = await import("../../db/schema");
-    const customer = await db.select().from(bankCustomers).where(and(eq(bankCustomers.bankId, bankId), eq(bankCustomers.discordId, primaryId))).get();
     const playerUuid = customer?.mcUuid || userRow?.mcUuid;
 
     if (settings?.autoProvisionInGame) {

@@ -28,10 +28,12 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
   - Uses lowest denomination (cents) to avoid floating-point errors.
   - **Account Prefixes & Naming Modes**: Banks can customize prefixes and identifier rules at the global bank level and override them per account tier:
     - `personalAccountPrefix` (default `ACC-`) and `businessAccountPrefix` (default `CORP-`).
-    - `personalAccountNamingMode`: `custom` (freeform name tagged with prefix), `discord_username` (standardizes account tags to `PREFIX-discord_username`), or `choice_or_username` (allows citizens to choose between freeform and their verified Discord handle).
-    - `businessAccountNamingMode`: `business_name` (standardizes account tags to `PREFIX-BusinessName`) or `discord_plus_business` (standardizes to `PREFIX-discord_username-BusinessName`).
+    - `personalAccountNamingMode`: `custom` (freeform name tagged with prefix), `mc_username` / `discord_username` (standardizes account tags to `PREFIX-mc_username`), or `choice_or_username` (allows citizens to choose between freeform and their verified Minecraft username).
+    - `businessAccountNamingMode`: `business_name` (standardizes account tags to `PREFIX-BusinessName`) or `mc_plus_business` / `discord_plus_business` (standardizes to `PREFIX-mc_username-BusinessName`).
+    - **Primary Identifier Standard**: Account generation natively defaults to the citizen's verified Minecraft in-game username rather than Discord display handles, guaranteeing 1:1 parity with in-game CityCorp corporate structures.
     - **Tier-Level Overrides**: Individual account tiers configure a `customPrefix` and `namingMode` to override global defaults for specialized customer tiers (e.g. `VIP-`, `SAVINGS-`, `TREASURY-`).
-  - **Account Tiers & Minimum Required Balance Architecture**:
+  - **Account Tiers & Holding Limits Architecture**:
+    - **Tier Limits (`maxAccountsPerUser`)**: Banks configure maximum allowable accounts per citizen per tier. The portal and server automatically enforce holding caps, visually disabling capped tiers and blocking requests when limits are met.
     - **Tier Minimum Balance (`minBalance`)**: Account tiers configure an optional minimum maintenance balance (in cents).
     - **In-Game Deposit Education**: New accounts and accounts that fall below the required minimum balance are taught the exact in-game command syntax required to deposit into their account via Minecraft chat:
       `/c account deposit <bankcorpname> <accountname> <amount>`
@@ -42,6 +44,9 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
     - **Refactored Account Application Portal**:
       - High-fidelity interactive Tier Selection Cards displaying APY yield, minimum required balance, monthly maintenance fee, and current user holding limits.
       - Real-time in-game ID and deposit command preview that dynamically reacts to naming preference toggles.
+    - **Customer Portal Hero & Onyx PSP Showcase**:
+      - Upgraded glassmorphic dashboard hero card featuring high-contrast typography, live portfolio metrics, and an integrated **Onyx PSP Quick Action & Network Status** trigger.
+      - Fully responsive mobile account selector dropdown designed to prevent clipping across viewport widths.
   - **Custom Account Fee Overrides**: Individual accounts can be configured with custom fee rates (`customTransferFeePercent`, `customDepositFeePercent`, `customWithdrawFeePercent`). When defined, transaction fee processing respects the custom account rate rather than the global bank default. When updating bank-wide fee settings in `Bank Settings`, staff can check a toggle to either overwrite custom account overrides or leave them preserved.
   - **Transaction Memo & Detailed Receipt Modal**: In the Citizen Bank Portal, all transactions across the Home dashboard and the Activity tab are clickable. Clicking any transaction row opens a high-fidelity modal displaying complete ledger metadata: gross/net amounts, verified status, formatted settlement timestamps, counterparty account handles and masked IDs, transaction type, settlement reference ID, and prominent memo inspection. Outgoing payments also include one-click "Split Bill" actions.
 - **Savings Interest Accrual Engine**: Banks can configure `savingsApyPercent` (e.g. 300 basis points = 3.00% APY) in `Bank Settings`. Staff can trigger daily interest compounding via `POST /api/banks/:bankId/accrue-interest`, which atomically calculates pro-rated daily interest across active, non-frozen accounts, logs interest credit transactions, and updates `lastInterestAccrualAt`.

@@ -11,11 +11,11 @@ import {
   Users, Repeat, Play, Pause, Trash2, Calendar, UserPlus, LifeBuoy, HelpCircle, MessageSquare,
   ShieldAlert, ExternalLink, Bell, BellRing, Info, Terminal, ArrowRight, ChevronDown, CheckCircle,
   Layers, Zap, Key, Store, Globe, RefreshCw, ShoppingBag, Filter, QrCode,
-  Sliders, DollarSign, Shield, ArrowUpDown
+  Sliders, DollarSign, Shield, ArrowUpDown, Activity, Ban
 } from "lucide-react";
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
-import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown } from "../lib/loan_utils";
+import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown, convertTermToDays } from "../lib/loan_utils";
 
 type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply" | "escrow" | "support" | "onyx";
 
@@ -64,7 +64,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [selectedTx, setSelectedTx] = useState<any | null>(null);
   const [selectedLoan, setSelectedLoan] = useState<any | null>(null);
   const [accountNameChoice, setAccountNameChoice] = useState("");
-  const [namingPref, setNamingPref] = useState<"custom" | "discord">("custom");
+  const [namingPref, setNamingPref] = useState<"custom" | "mc" | "discord">("mc");
   const [merchants, setMerchants] = useState<any[]>([]);
   const [repayingLoan, setRepayingLoan] = useState<any | null>(null);
   const [escrows, setEscrows] = useState<any[]>([]);
@@ -700,6 +700,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     const fd = new FormData(form);
     const chosenTierId = (fd.get("tierId") as string) || selectedTierId;
     const chosenTier = availableTiers.find((t: any) => t.id === chosenTierId);
+
+    if (chosenTier && typeof chosenTier.maxAccountsPerUser === "number" && chosenTier.maxAccountsPerUser > 0) {
+      const held = accounts.filter((a: any) => a.tierId === chosenTier.id).length;
+      if (held >= chosenTier.maxAccountsPerUser) {
+        flash(`Holding limit reached: You already have ${held} account(s) of tier '${chosenTier.name}' (limit: ${chosenTier.maxAccountsPerUser}).`);
+        return;
+      }
+    }
 
     let accountType = fd.get("accountType") as string;
     if (chosenTier) {
@@ -1550,13 +1558,13 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
               {accountPickerOpen && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setAccountPickerOpen(false)} />
+                  <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm sm:bg-black/20" onClick={() => setAccountPickerOpen(false)} />
                   <div
-                    className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 mt-2 w-72 sm:w-80 rounded-2xl border shadow-2xl p-2 z-50 space-y-1 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
-                    style={{ background: "rgba(18, 18, 24, 0.96)", borderColor: "var(--border)" }}
+                    className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto top-full mt-2 w-[calc(100vw-2rem)] max-w-[340px] rounded-2xl border shadow-2xl p-3 z-50 space-y-1 backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[80vh] overflow-y-auto"
+                    style={{ background: "rgba(18, 18, 26, 0.98)", borderColor: "var(--border)" }}
                   >
-                    <div className="px-2.5 py-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-white/40">
-                      <span>Select Account to Manage</span>
+                    <div className="px-2 py-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-white/40">
+                      <span>Select Account</span>
                       <span>{accounts.length} total</span>
                     </div>
 
@@ -1564,20 +1572,20 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <button
                       type="button"
                       onClick={() => { setSelectedAccountId("all"); setAccountPickerOpen(false); }}
-                      className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between text-xs transition ${
+                      className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between text-xs transition ${
                         selectedAccountId === "all" ? "bg-white/10 text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-white/70">
-                          <Layers size={13} />
+                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                        <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/70 shrink-0">
+                          <Layers size={14} />
                         </div>
-                        <div>
-                          <p className="font-semibold leading-tight">All Accounts</p>
+                        <div className="min-w-0">
+                          <p className="font-semibold leading-tight truncate">All Accounts</p>
                           <p className="text-[10px] text-white/40">Consolidated overview</p>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right shrink-0">
                         <p className="font-mono font-bold tabular-nums">{formatMoney(netWorth)}</p>
                         {selectedAccountId === "all" && <Check size={12} className="text-emerald-400 ml-auto" />}
                       </div>
@@ -1600,7 +1608,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                             <button
                               type="button"
                               onClick={() => { setSelectedAccountId(acc.id); setAccountPickerOpen(false); }}
-                              className="flex-1 min-w-0 text-left flex items-center gap-2 mr-2"
+                              className="flex-1 min-w-0 text-left flex items-center gap-2.5 mr-2"
                             >
                               <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                                 isCorp ? "bg-amber-500/15 text-amber-300 border border-amber-500/25" : "bg-white/5 text-white/70"
@@ -1608,10 +1616,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 {isCorp ? <Building2 size={13} /> : <Wallet size={13} />}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 min-w-0">
                                   <span className="truncate text-xs font-semibold">{acc.accountName}</span>
                                   {isCorp && (
-                                    <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
+                                    <span className="shrink-0 text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
                                       Corp
                                     </span>
                                   )}
@@ -1771,24 +1779,118 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="rounded-[28px] p-7 relative overflow-hidden border"
-              style={{ background: `linear-gradient(155deg, ${withAlpha(brand, 0.28)} 0%, var(--bg-elevated) 62%)`, borderColor: "var(--border)" }}
+              className="rounded-[32px] p-6 sm:p-8 relative overflow-hidden border shadow-2xl backdrop-blur-xl"
+              style={{
+                background: `linear-gradient(145deg, ${withAlpha(brand, 0.28)} 0%, rgba(18, 18, 28, 0.92) 50%, var(--bg-elevated) 100%)`,
+                borderColor: withAlpha(brand, 0.4)
+              }}
             >
-              <p className="text-sm" style={{ color: "var(--fg-muted)" }}>{greet()}, {displayName}</p>
-              <p className="text-[11px] uppercase tracking-[0.18em] mt-5" style={{ color: "var(--fg-subtle)" }}>Available</p>
-              <p className="text-4xl sm:text-5xl font-semibold tracking-tight mt-1 tabular-nums num" style={{ letterSpacing: "-0.03em" }}>{formatMoney(netWorth)}</p>
-              <p className="text-xs mt-2" style={{ color: "var(--fg-subtle)" }}>{accounts.length} account{accounts.length === 1 ? "" : "s"}</p>
-              <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 mt-7">
+              {/* Ambient High-Tech Glow Elements */}
+              <div 
+                className="absolute -top-24 -right-24 w-80 h-80 rounded-full blur-3xl opacity-25 pointer-events-none"
+                style={{ background: brand }}
+              />
+              <div 
+                className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full blur-3xl opacity-20 pointer-events-none"
+                style={{ background: "#6366f1" }}
+              />
+              <div 
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-[100px] opacity-10 pointer-events-none"
+                style={{ background: "#f59e0b" }}
+              />
+
+              {/* Greeting & Top Status Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 relative z-10">
+                <div className="flex items-center gap-2.5">
+                  <div className="relative flex items-center justify-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                    <div className="absolute w-4 h-4 rounded-full bg-emerald-400/40 animate-ping" />
+                  </div>
+                  <p className="text-xs sm:text-sm font-medium" style={{ color: "var(--fg-muted)" }}>
+                    {greet()}, <strong className="text-white font-semibold tracking-tight">{displayName}</strong>
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setView("onyx")}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 transition shadow-sm group cursor-pointer"
+                  >
+                    <Zap size={12} className="text-amber-400 group-hover:scale-110 transition-transform fill-amber-400" />
+                    <span>Onyx PSP Network</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  </button>
+                  <span className="text-[10px] sm:text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full border bg-white/5 text-white/70" style={{ borderColor: "var(--border)" }}>
+                    {accounts.length} Account{accounts.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Balance Readout & Liquidity Summary */}
+              <div className="mt-5 sm:mt-7 relative z-10">
+                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] font-bold text-white/50">
+                  <span>Available Liquidity</span>
+                  {selectedAccountId !== "all" && activeAccount ? (
+                    <span className="px-2 py-0.5 rounded-md bg-white/10 text-white font-mono text-[10px] flex items-center gap-1">
+                      <Wallet size={10} style={{ color: brand }} />
+                      <span>{activeAccount.accountName}</span>
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-md bg-white/10 text-emerald-300 font-mono text-[10px]">
+                      Consolidated Portfolio
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-2 mt-1.5">
+                  <p className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight tabular-nums text-white drop-shadow-sm" style={{ letterSpacing: "-0.035em" }}>
+                    {formatMoney(selectedAccountId === "all" ? netWorth : activeAccount?.balance || 0)}
+                  </p>
+                  
+                  {/* Quick in-hero micro telemetry */}
+                  <div className="flex items-center gap-3 text-xs font-mono text-white/50">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck size={13} className="text-emerald-400" /> CityCorp Verified
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1.5">
+                      <Activity size={13} className="text-indigo-400" /> Real-Time Settlement
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Action Navigation Grid Featuring Onyx PSP */}
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5 sm:gap-3 mt-7 sm:mt-8 relative z-10">
                 {[
-                  { id: "send" as View, label: "Send", icon: Send },
-                  { id: "bills" as View, label: "Pay", icon: Receipt },
-                  { id: "borrow" as View, label: "Loans", icon: Landmark },
-                  ...(settings?.enableEscrow !== false ? [{ id: "escrow" as View, label: "Escrow", icon: ShieldCheck }] : []),
-                  { id: "apply" as View, label: "Apply", icon: Plus },
+                  { id: "send" as View, label: "Send & Pay", icon: Send, color: "text-indigo-400 group-hover:text-indigo-300", bg: "group-hover:bg-indigo-500/15" },
+                  { id: "bills" as View, label: "Invoices", icon: Receipt, color: "text-blue-400 group-hover:text-blue-300", bg: "group-hover:bg-blue-500/15" },
+                  { id: "borrow" as View, label: "Financing", icon: Landmark, color: "text-emerald-400 group-hover:text-emerald-300", bg: "group-hover:bg-emerald-500/15" },
+                  { id: "onyx" as View, label: "Onyx PSP", icon: Zap, color: "text-amber-400 group-hover:text-amber-300", bg: "group-hover:bg-amber-500/15", badge: "PSP" },
+                  ...(settings?.enableEscrow !== false ? [{ id: "escrow" as View, label: "Escrow", icon: ShieldCheck, color: "text-teal-400 group-hover:text-teal-300", bg: "group-hover:bg-teal-500/15" }] : []),
+                  { id: "apply" as View, label: "Open / Apply", icon: Plus, color: "text-pink-400 group-hover:text-pink-300", bg: "group-hover:bg-pink-500/15" },
                 ].map((a) => (
-                  <button key={a.id} onClick={() => { if (a.id === "send") setTransferSuccess(null); setView(a.id); }} className="flex flex-col items-center gap-2 py-3 rounded-2xl border text-xs font-semibold" style={{ background: "color-mix(in oklab, var(--fg) 5%, transparent)", borderColor: "var(--border)" }}>
-                    <a.icon size={16} />
-                    {a.label}
+                  <button
+                    key={a.id}
+                    onClick={() => {
+                      if (a.id === "send") setTransferSuccess(null);
+                      setView(a.id);
+                    }}
+                    className={`group relative flex flex-col items-center justify-center gap-2 py-3.5 px-2 rounded-2xl border transition-all duration-200 cursor-pointer ${
+                      view === a.id
+                        ? "bg-white/20 border-white/50 text-white shadow-xl shadow-black/50 scale-[1.03]"
+                        : "bg-black/40 hover:bg-white/10 text-white/80 hover:text-white border-white/10 hover:border-white/25 hover:shadow-lg active:scale-95"
+                    }`}
+                  >
+                    {a.badge && (
+                      <span className="absolute -top-2 -right-1.5 text-[9px] font-black font-mono px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 text-black shadow-md uppercase tracking-wider animate-pulse">
+                        {a.badge}
+                      </span>
+                    )}
+                    <div className={`p-2.5 rounded-xl bg-white/5 transition-all duration-200 ${a.bg} ${a.color}`}>
+                      <a.icon size={19} className={a.id === "onyx" ? "fill-current" : ""} />
+                    </div>
+                    <span className="text-xs font-semibold tracking-tight text-center">{a.label}</span>
                   </button>
                 ))}
               </div>
@@ -3337,8 +3439,8 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
                 const effectivePrefix = activeSelectedTier?.customPrefix || (isBiz ? (settings.businessAccountPrefix || "CORP-") : (settings.personalAccountPrefix || "ACC-"));
                 const effectiveNamingMode = activeSelectedTier?.namingMode || (isBiz ? (settings.businessAccountNamingMode || "business_name") : (settings.personalAccountNamingMode || "custom"));
-                const discordName = user?.username || (user as any)?.global_name || "client";
-                const targetAccountName = `${effectivePrefix}${(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? discordName : (accountNameChoice || (isBiz ? "AcmeCorp" : "main"))}`;
+                const clientMcUsername = userData?.customer?.mcUsername || userData?.mcUsername || user?.mcUsername || (user?.username && !/^\d{17,20}$/.test(user.username) ? user.username : null) || "player";
+                const targetAccountName = `${effectivePrefix}${(!isBiz && (effectiveNamingMode === "discord_username" || effectiveNamingMode === "mc_username" || namingPref === "discord" || namingPref === "mc")) ? clientMcUsername : (accountNameChoice || (isBiz ? "AcmeCorp" : clientMcUsername))}`;
                 const bankCorpName = bank?.name?.replace(/\s+/g, '') || "Bank";
                 const suggestedDepositCents = activeSelectedTier?.minBalance && activeSelectedTier.minBalance > 0 ? activeSelectedTier.minBalance : 10000;
                 const liveCommandPreview = `/c account deposit ${bankCorpName} ${targetAccountName} ${(suggestedDepositCents / 100).toFixed(0)}`;
@@ -3368,18 +3470,22 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         {/* Visual Tier Cards Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
                           {availableTiers.map((t: any) => {
-                            const isSelected = (selectedTierId || (availableTiers.find((x: any) => x.isDefault)?.id || availableTiers[0]?.id)) === t.id;
+                            const isSelected = (selectedTierId || (availableTiers.find((x: any) => x.isDefault && (!x.maxAccountsPerUser || accounts.filter((a: any) => a.tierId === x.id).length < x.maxAccountsPerUser))?.id || availableTiers.find((x: any) => !x.maxAccountsPerUser || accounts.filter((a: any) => a.tierId === x.id).length < x.maxAccountsPerUser)?.id || availableTiers[0]?.id)) === t.id;
                             const tHeld = accounts.filter((a: any) => a.tierId === t.id).length;
                             const isCapReached = typeof t.maxAccountsPerUser === "number" && t.maxAccountsPerUser > 0 && tHeld >= t.maxAccountsPerUser;
 
                             return (
                               <div
                                 key={t.id}
-                                onClick={() => setSelectedTierId(t.id)}
-                                className={`cursor-pointer rounded-2xl p-4.5 border transition-all relative flex flex-col justify-between space-y-3.5 ${
-                                  isSelected
-                                    ? "bg-gradient-to-b from-indigo-500/15 via-white/[0.04] to-white/[0.02] border-indigo-400/50 shadow-lg shadow-indigo-500/10"
-                                    : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
+                                onClick={() => {
+                                  if (!isCapReached) setSelectedTierId(t.id);
+                                }}
+                                className={`rounded-2xl p-4.5 border transition-all relative flex flex-col justify-between space-y-3.5 ${
+                                  isCapReached
+                                    ? "bg-rose-500/[0.04] border-rose-500/30 opacity-60 cursor-not-allowed select-none"
+                                    : isSelected
+                                    ? "cursor-pointer bg-gradient-to-b from-indigo-500/15 via-white/[0.04] to-white/[0.02] border-indigo-400/50 shadow-lg shadow-indigo-500/10"
+                                    : "cursor-pointer bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
                                 }`}
                               >
                                 <div>
@@ -3398,9 +3504,13 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                       <h4 className="font-bold text-white text-base mt-2">{t.name}</h4>
                                     </div>
                                     <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${
-                                      isSelected ? "bg-indigo-500 border-indigo-400 text-white" : "border-white/20 bg-white/5 text-transparent"
+                                      isCapReached
+                                        ? "border-rose-500/40 bg-rose-500/10 text-rose-400"
+                                        : isSelected
+                                        ? "bg-indigo-500 border-indigo-400 text-white"
+                                        : "border-white/20 bg-white/5 text-transparent"
                                     }`}>
-                                      <Check size={12} strokeWidth={3} />
+                                      {isCapReached ? <Ban size={11} /> : <Check size={12} strokeWidth={3} />}
                                     </div>
                                   </div>
 
@@ -3431,8 +3541,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                 </div>
 
                                 {isCapReached && (
-                                  <div className="text-[10px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-lg text-center">
-                                    Holding Limit Reached ({tHeld}/{t.maxAccountsPerUser})
+                                  <div className="text-[10px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2 py-1 rounded-lg text-center flex items-center justify-center gap-1">
+                                    <Ban size={11} className="text-rose-400" />
+                                    <span>Holding Limit Reached ({tHeld}/{t.maxAccountsPerUser})</span>
                                   </div>
                                 )}
                               </div>
@@ -3482,7 +3593,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
                     {/* Dynamic Naming & In-Game Command Preview */}
                     <div className="space-y-4 pt-2 border-t border-white/5">
-                      {!isBiz && effectiveNamingMode === "choice_or_username" && (
+                      {!isBiz && (effectiveNamingMode === "choice_or_username" || effectiveNamingMode === "custom") && (
                         <div className="flex gap-2">
                           <button
                             type="button"
@@ -3493,10 +3604,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setNamingPref("discord")}
-                            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${namingPref === "discord" ? "bg-white/15 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
+                            onClick={() => setNamingPref("mc")}
+                            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${namingPref === "mc" || namingPref === "discord" ? "bg-white/15 border-white/30 text-white" : "bg-white/5 border-white/5 text-white/50 hover:text-white"}`}
                           >
-                            Discord Handle (@{discordName})
+                            Minecraft Username ({clientMcUsername})
                           </button>
                         </div>
                       )}
@@ -3511,12 +3622,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           </span>
                         </div>
 
-                        {(!isBiz && (effectiveNamingMode === "discord_username" || namingPref === "discord")) ? (
+                        {(!isBiz && (effectiveNamingMode === "discord_username" || effectiveNamingMode === "mc_username" || namingPref === "discord" || namingPref === "mc")) ? (
                           <div className="flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white font-mono">
                             <span className="text-indigo-400 font-bold">{effectivePrefix}</span>
-                            <span>{discordName}</span>
+                            <span>{clientMcUsername}</span>
                             <span className="ml-auto text-[11px] text-emerald-400 uppercase font-sans font-bold flex items-center gap-1">
-                              <CheckCircle2 size={13} /> Synced Handle
+                              <CheckCircle2 size={13} /> MC Username
                             </span>
                           </div>
                         ) : (
@@ -3529,7 +3640,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               required 
                               value={accountNameChoice}
                               onChange={(e) => setAccountNameChoice(e.target.value)}
-                              placeholder={isBiz ? "e.g. AcmeIndustries" : "e.g. savings"} 
+                              placeholder={isBiz ? "e.g. AcmeIndustries" : clientMcUsername || "e.g. savings"} 
                               className="flex-1 bg-transparent px-4 py-3.5 text-sm text-white focus:outline-none placeholder:text-white/20 font-medium" 
                             />
                           </div>
@@ -3649,7 +3760,24 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         name="productId"
                         required
                         value={selectedLoanProductId || loanProducts[0]?.id || ""}
-                        onChange={(e) => setSelectedLoanProductId(e.target.value)}
+                        onChange={(e) => {
+                          const pid = e.target.value;
+                          setSelectedLoanProductId(pid);
+                          const chosen = loanProducts.find((p: any) => p.id === pid);
+                          if (chosen) {
+                            const pDays = chosen.termDays || (chosen.termDuration && chosen.termUnit ? convertTermToDays(chosen.termDuration, chosen.termUnit, 30) : 30);
+                            const maxW = Math.max(1, Math.floor(pDays / 7));
+                            const maxM = Math.max(1, Math.floor(pDays / 30));
+                            const maxD = pDays;
+                            const maxT = loanTermUnit === "weeks" ? maxW : loanTermUnit === "months" ? maxM : maxD;
+                            if (loanTermDuration > maxT) {
+                              setLoanTermDuration(maxT);
+                            }
+                            if (chosen.maxAmount && loanAmount > chosen.maxAmount / 100) {
+                              setLoanAmount(chosen.maxAmount / 100);
+                            }
+                          }
+                        }}
                         className="w-full bg-[#18181c] border border-white/15 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] focus:outline-none focus:border-indigo-500 transition [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]"
                       >
                         {loanProducts.map((p: any) => (
@@ -3675,14 +3803,35 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     const financedPrincipal = Math.max(0, effectiveAmount - effectiveDeposit);
 
                     // Dynamic real-time calculation based on customized term duration and unit
+                    const prodDays = curProd.termDays || (curProd.termDuration && curProd.termUnit ? convertTermToDays(curProd.termDuration, curProd.termUnit, 30) : 30);
+                    const maxAllowedWeeks = Math.max(1, Math.floor(prodDays / 7));
+                    const maxAllowedMonths = Math.max(1, Math.floor(prodDays / 30));
+                    const maxAllowedDays = prodDays;
+
+                    const maxTermForUnit = loanTermUnit === "weeks" ? maxAllowedWeeks : loanTermUnit === "months" ? maxAllowedMonths : maxAllowedDays;
+                    const effectiveTermDuration = Math.max(1, Math.min(maxTermForUnit, loanTermDuration || maxTermForUnit));
+
                     const breakdown = calculateLoanBreakdown({
                       principalCents: financedPrincipal * 100,
                       rate: curProd.interestRate,
                       rateType: curProd.interestRateType || "apr",
-                      termDuration: loanTermDuration,
+                      termDuration: effectiveTermDuration,
                       termUnit: loanTermUnit,
                       repaymentFrequency: loanRepaymentFreq || curProd.repaymentFrequency || (loanTermUnit === "weeks" ? "weekly" : "monthly")
                     });
+
+                    // Term Presets filtered strictly to what the bank configured
+                    const rawPresets = loanTermUnit === "months" 
+                      ? [1, 2, 3, 6, 12, 18, 24, 36, 48].filter(m => m <= maxAllowedMonths)
+                      : loanTermUnit === "weeks"
+                      ? [1, 2, 4, 8, 12, 16, 24, 36, 52].filter(w => w <= maxAllowedWeeks)
+                      : [7, 14, 30, 60, 90, 180, 365].filter(d => d <= maxAllowedDays);
+
+                    if (!rawPresets.includes(maxTermForUnit) && maxTermForUnit > 0) {
+                      rawPresets.push(maxTermForUnit);
+                      rawPresets.sort((a, b) => a - b);
+                    }
+                    const termPresets = rawPresets.length > 0 ? rawPresets : [maxTermForUnit];
 
                     // Quick presets for amount
                     const step = maxDol - minDol > 10000 ? 500 : maxDol - minDol > 2000 ? 100 : 25;
@@ -3819,32 +3968,35 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
                             {/* Unit Selector Tabs */}
                             <div className="flex items-center p-1 bg-black/40 border border-white/10 rounded-xl self-start sm:self-auto">
-                              {(["months", "weeks", "days"] as const).map((unit) => (
-                                <button
-                                  key={unit}
-                                  type="button"
-                                  onClick={() => {
-                                    setLoanTermUnit(unit);
-                                    if (unit === "months") {
-                                      setLoanTermDuration(12);
-                                      setLoanRepaymentFreq("monthly");
-                                    } else if (unit === "weeks") {
-                                      setLoanTermDuration(8);
-                                      setLoanRepaymentFreq("weekly");
-                                    } else {
-                                      setLoanTermDuration(90);
-                                      setLoanRepaymentFreq("monthly");
-                                    }
-                                  }}
-                                  className={`px-3 py-1 rounded-lg text-xs font-medium capitalize transition cursor-pointer ${
-                                    loanTermUnit === unit
-                                      ? "bg-white/15 text-white font-semibold shadow-sm"
-                                      : "text-white/40 hover:text-white"
-                                  }`}
-                                >
-                                  {unit}
-                                </button>
-                              ))}
+                              {(["months", "weeks", "days"] as const).map((unit) => {
+                                const unitMax = unit === "weeks" ? maxAllowedWeeks : unit === "months" ? maxAllowedMonths : maxAllowedDays;
+                                return (
+                                  <button
+                                    key={unit}
+                                    type="button"
+                                    onClick={() => {
+                                      setLoanTermUnit(unit);
+                                      if (unit === "months") {
+                                        setLoanTermDuration(Math.min(maxAllowedMonths, 6));
+                                        setLoanRepaymentFreq("monthly");
+                                      } else if (unit === "weeks") {
+                                        setLoanTermDuration(Math.min(maxAllowedWeeks, 8));
+                                        setLoanRepaymentFreq("weekly");
+                                      } else {
+                                        setLoanTermDuration(Math.min(maxAllowedDays, 60));
+                                        setLoanRepaymentFreq("monthly");
+                                      }
+                                    }}
+                                    className={`px-3 py-1 rounded-lg text-xs font-medium capitalize transition cursor-pointer ${
+                                      loanTermUnit === unit
+                                        ? "bg-white/15 text-white font-semibold shadow-sm"
+                                        : "text-white/40 hover:text-white"
+                                    }`}
+                                  >
+                                    {unit}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
 
@@ -3852,72 +4004,40 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
                               <span className="text-xs text-white/70">
-                                Selected Duration: <strong className="text-white font-mono text-sm">{loanTermDuration} {loanTermUnit}</strong> ({breakdown.termDays} calendar days)
+                                Selected Duration: <strong className="text-white font-mono text-sm">{effectiveTermDuration} {loanTermUnit}</strong> ({breakdown.termDays} calendar days)
                               </span>
                               <span className="text-xs font-mono text-indigo-300">
-                                {breakdown.installmentCount} {breakdown.frequencyLabel.toLowerCase()} installments
+                                Max Allowed: {maxTermForUnit} {loanTermUnit} ({prodDays}d)
                               </span>
                             </div>
 
                             <input
                               type="range"
-                              min={loanTermUnit === "months" ? 1 : loanTermUnit === "weeks" ? 1 : 7}
-                              max={loanTermUnit === "months" ? 36 : loanTermUnit === "weeks" ? 52 : 365}
+                              min={loanTermUnit === "days" ? Math.min(7, maxTermForUnit) : 1}
+                              max={maxTermForUnit}
                               step={loanTermUnit === "days" ? 7 : 1}
-                              value={loanTermDuration}
-                              onChange={(e) => setLoanTermDuration(Math.max(1, Number(e.target.value)))}
+                              value={effectiveTermDuration}
+                              onChange={(e) => setLoanTermDuration(Math.min(maxTermForUnit, Math.max(1, Number(e.target.value))))}
                               className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                             />
 
                             {/* Preset Buttons for Term */}
                             <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                              <span className="text-[10px] text-white/40 uppercase tracking-wider mr-1">Term Presets:</span>
-                              {loanTermUnit === "months" ? (
-                                [1, 3, 6, 12, 24, 36].map((m) => (
-                                  <button
-                                    key={m}
-                                    type="button"
-                                    onClick={() => setLoanTermDuration(m)}
-                                    className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition ${
-                                      loanTermDuration === m
-                                        ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold"
-                                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
-                                    }`}
-                                  >
-                                    {m} Month{m > 1 ? "s" : ""}
-                                  </button>
-                                ))
-                              ) : loanTermUnit === "weeks" ? (
-                                [2, 4, 8, 12, 26, 52].map((w) => (
-                                  <button
-                                    key={w}
-                                    type="button"
-                                    onClick={() => setLoanTermDuration(w)}
-                                    className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition ${
-                                      loanTermDuration === w
-                                        ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold"
-                                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
-                                    }`}
-                                  >
-                                    {w} Wk{w > 1 ? "s" : ""}
-                                  </button>
-                                ))
-                              ) : (
-                                [30, 60, 90, 180, 365].map((d) => (
-                                  <button
-                                    key={d}
-                                    type="button"
-                                    onClick={() => setLoanTermDuration(d)}
-                                    className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition ${
-                                      loanTermDuration === d
-                                        ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold"
-                                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
-                                    }`}
-                                  >
-                                    {d} Days
-                                  </button>
-                                ))
-                              )}
+                              <span className="text-[10px] text-white/40 uppercase tracking-wider mr-1">Allowed Presets:</span>
+                              {termPresets.map((val) => (
+                                <button
+                                  key={val}
+                                  type="button"
+                                  onClick={() => setLoanTermDuration(val)}
+                                  className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition ${
+                                    effectiveTermDuration === val
+                                      ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold"
+                                      : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                                  }`}
+                                >
+                                  {val} {loanTermUnit === "months" ? (val > 1 ? "Months" : "Month") : loanTermUnit === "weeks" ? (val > 1 ? "Wks" : "Wk") : "Days"}
+                                </button>
+                              ))}
                             </div>
                           </div>
                         </div>

@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import {
   Building2,
   AlertTriangle,
+  AlertCircle,
   Save,
   Loader2,
   Paintbrush,
@@ -154,6 +155,7 @@ export function BankSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>("brand");
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -339,6 +341,7 @@ export function BankSettings() {
     if (!bank?.id) return;
     setSaving(true);
     setSaveSuccess(false);
+    setSaveError(null);
 
     const form = document.getElementById("bank-settings-form") as HTMLFormElement;
     if (!form) return;
@@ -488,16 +491,22 @@ export function BankSettings() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newSettings)
     })
-      .then((r) => r.json())
-      .then((d) => {
+      .then(async (r) => {
+        const d = await r.json();
+        if (!r.ok) {
+          throw new Error(d.error || `Save failed with status ${r.status}`);
+        }
         setSettings(d);
         setSaving(false);
         setSaveSuccess(true);
+        setSaveError(null);
         setTimeout(() => setSaveSuccess(false), 3500);
       })
       .catch((err) => {
-        alert("Failed to save settings: " + (err.message || "Unknown error"));
+        console.error("Failed to save settings:", err);
+        setSaveError(err.message || "Failed to save settings");
         setSaving(false);
+        setTimeout(() => setSaveError(null), 6000);
       });
   };
 
@@ -2311,25 +2320,25 @@ export function BankSettings() {
             </div>
 
             {/* Bottom Floating Save Action Bar */}
-            <div className="sticky bottom-3 sm:bottom-4 z-40 bg-[var(--bg-elevated)]/98 backdrop-blur-md border border-white/20 rounded-2xl p-3 sm:p-4 shadow-2xl flex items-center justify-between gap-3 touch-manipulation">
+            <div className="sticky bottom-3 sm:bottom-4 z-40 bg-[var(--bg-elevated)]/98 backdrop-blur-md border border-white/20 rounded-2xl p-3 sm:p-4 shadow-2xl flex flex-wrap items-center justify-between gap-3 touch-manipulation">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                 <span className="text-xs text-white/70 truncate">
                   Editing <strong className="text-white">{activeTabDef.shortLabel}</strong>
                 </span>
                 {saveSuccess && (
-                  <span className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-emerald-400 ml-2 animate-in fade-in">
-                    <CheckCircle2 size={13} /> Saved
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400 ml-2 animate-in fade-in">
+                    <CheckCircle2 size={13} /> Saved!
+                  </span>
+                )}
+                {saveError && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-400 ml-2 animate-in fade-in max-w-[200px] truncate" title={saveError}>
+                    <AlertCircle size={13} /> {saveError}
                   </span>
                 )}
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {saveSuccess && (
-                  <span className="sm:hidden text-xs font-semibold text-emerald-400 animate-in fade-in flex items-center gap-1">
-                    <CheckCircle2 size={13} /> Saved!
-                  </span>
-                )}
                 <button
                   type="button"
                   onClick={loadSettings}
@@ -2342,8 +2351,7 @@ export function BankSettings() {
 
                 <button
                   id="save-settings-btn-bottom"
-                  type="button"
-                  onClick={(e) => handleSave(e as any)}
+                  type="submit"
                   disabled={saving}
                   className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold px-4 sm:px-6 py-2.5 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/25 cursor-pointer select-none"
                 >

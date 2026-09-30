@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 export interface UserSession {
   discordId: string;
   username: string;
+  mcUsername?: string | null;
   avatarUrl?: string;
   isGlobalAdmin: string | boolean;
   linkedDiscordId?: string | null;

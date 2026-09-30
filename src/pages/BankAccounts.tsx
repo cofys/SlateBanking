@@ -273,8 +273,12 @@ export function BankAccounts() {
           <h3 className="text-lg font-medium text-white/90">Provision New Account</h3>
           <form onSubmit={handleAdd} className="w-full flex gap-4 md:items-end flex-col md:flex-row">
             <div className="flex-1 w-full">
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Account Name</label>
-              <input name="accountName" required type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="e.g. Checking" />
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Minecraft Username *</label>
+              <input name="minecraftUsername" required type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="e.g. Notch" />
+            </div>
+            <div className="flex-1 w-full">
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Account Identifier / Name</label>
+              <input name="accountName" required type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="e.g. ACC-Notch or Checking" />
             </div>
             {bank.settings?.enableAccountTiers && (
               <div className="flex-1 w-full">
@@ -288,12 +292,8 @@ export function BankAccounts() {
               </div>
             )}
             <div className="flex-1 w-full">
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Owner Username / Discord ID</label>
-              <input name="ownerDiscordId" required type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="123456789" />
-            </div>
-            <div className="flex-1 w-full">
-              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">MC Username</label>
-              <input name="minecraftUsername" required type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="Notch" />
+              <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Owner Discord ID (Optional)</label>
+              <input name="ownerDiscordId" type="text" className="w-full bg-[var(--bg-subtle)] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder:text-white/20" placeholder="Optional Discord ID" />
             </div>
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium text-white/50 mb-2 uppercase tracking-wide">Initial Balance ($)</label>

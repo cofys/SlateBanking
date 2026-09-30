@@ -946,8 +946,9 @@ export function registerAuthRoutes(app: express.Express) {
           or(eq(users.discordId, decoded.discordId), decoded.mcUuid ? eq(users.mcUuid, decoded.mcUuid) : eq(users.discordId, decoded.discordId))
         ).get();
         let linked = row?.linkedDiscordId || null;
+        let cust = null;
         if (!linked) {
-          const cust = await db.select().from(bankCustomers).where(
+          cust = await db.select().from(bankCustomers).where(
             or(
               eq(bankCustomers.discordId, decoded.discordId),
               decoded.mcUuid ? eq(bankCustomers.mcUuid, decoded.mcUuid) : eq(bankCustomers.discordId, decoded.discordId),
@@ -960,6 +961,7 @@ export function registerAuthRoutes(app: express.Express) {
         }
         decoded.linkedDiscordId = linked;
         if (row?.mcUuid) decoded.mcUuid = row.mcUuid;
+        decoded.mcUsername = row?.mcUsername || cust?.mcUsername || (decoded.provider === "citycorp" ? decoded.username : null) || null;
       } catch {}
       res.json(decoded);
     } catch(e) {

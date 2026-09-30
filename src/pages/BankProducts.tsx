@@ -5,7 +5,7 @@ import {
   Shield, TrendingUp, Users, ArrowUpRight, Copy, Check, Eye, Edit3,
   Trash2, Sliders, Sparkles, Layers, Lock, RefreshCw, X, ChevronRight,
   BarChart3, Calculator, CheckCircle2, ChevronDown, Award, ArrowDownLeft,
-  Briefcase, Landmark, ShieldCheck, Zap, Info, Filter, Search
+  Briefcase, Landmark, ShieldCheck, Zap, Info, Filter, Search, AlertCircle
 } from "lucide-react";
 import { formatMoney, formatNumber, safeFormatDate } from "../lib/utils";
 import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown, convertTermToDays, LoanInterestType, LoanTermUnit } from "../lib/loan_utils";
@@ -99,7 +99,11 @@ export function BankProducts() {
   });
 
   const [formValues, setFormValues] = useState(getInitialFormState("loan"));
-  const updateForm = (key: string, value: any) => setFormValues(prev => ({ ...prev, [key]: value }));
+  const [modalError, setModalError] = useState<string | null>(null);
+  const updateForm = (key: string, value: any) => {
+    setModalError(null);
+    setFormValues(prev => ({ ...prev, [key]: value }));
+  };
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -151,6 +155,7 @@ export function BankProducts() {
 
   // Open Edit Modal
   const openEditModal = (product: any, type: ProductType) => {
+    setModalError(null);
     setEditingProduct(product);
     setFormType(type);
     setModalMode("edit");
@@ -208,6 +213,7 @@ export function BankProducts() {
 
   // Open Create Modal
   const openCreateModal = (type: ProductType = "loan") => {
+    setModalError(null);
     setEditingProduct(null);
     setFormType(type);
     setModalMode("create");
@@ -341,10 +347,12 @@ export function BankProducts() {
   // Handle Form Submit
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setModalError(null);
 
     const name = formValues.name.trim();
     if (!name) {
       setActiveTab("basics");
+      setModalError("Product Title is required.");
       flash("Product Title is required.");
       return;
     }
@@ -352,6 +360,7 @@ export function BankProducts() {
     const interestRate = Number(formValues.interestRate);
     if (isNaN(interestRate) || interestRate < 0) {
       setActiveTab("financial");
+      setModalError("A valid Interest Rate / APY / APR is required.");
       flash("A valid Interest Rate / APY / APR is required.");
       return;
     }
@@ -374,6 +383,7 @@ export function BankProducts() {
       if (isNaN(maxLimit) || maxLimit <= 0) {
         setSubmitting(false);
         setActiveTab("financial");
+        setModalError("Maximum Loan Cap must be greater than 0.");
         flash("Maximum Loan Cap must be greater than 0.");
         return;
       }
@@ -396,6 +406,7 @@ export function BankProducts() {
       if (isNaN(lockupDays) || lockupDays <= 0) {
         setSubmitting(false);
         setActiveTab("basics");
+        setModalError("Lockup Term Duration must be at least 1 day.");
         flash("Lockup Term Duration must be at least 1 day.");
         return;
       }
@@ -411,6 +422,7 @@ export function BankProducts() {
       if (isNaN(maxLimit) || maxLimit <= 0) {
         setSubmitting(false);
         setActiveTab("financial");
+        setModalError("Maximum Credit Limit must be greater than 0.");
         flash("Maximum Credit Limit must be greater than 0.");
         return;
       }
@@ -450,10 +462,12 @@ export function BankProducts() {
         setShowModal(false);
         fetchProducts();
       } else {
+        setModalError(data.error || "Failed to save product");
         flash(data.error || "Failed to save product");
       }
     } catch {
       setSubmitting(false);
+      setModalError("Network error saving product");
       flash("Network error saving product");
     }
   };
@@ -1330,6 +1344,13 @@ export function BankProducts() {
               </button>
             </div>
 
+            {modalError && (
+              <div className="px-5 py-3 bg-rose-500/15 border-b border-rose-500/30 text-rose-300 text-xs font-medium flex items-center gap-2.5 animate-in fade-in shrink-0">
+                <AlertCircle size={16} className="text-rose-400 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
+
             {/* Product Type Selector (Only on create) */}
             {modalMode === "create" && (
               <div className="p-4 border-b border-white/5 bg-black/20">
@@ -2112,7 +2133,7 @@ export function BankProducts() {
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="p-4 border-t border-white/10 bg-white/[0.02] flex items-center justify-between">
+            <div className="p-4 border-t border-white/10 bg-[#111118] flex items-center justify-between shrink-0 sticky bottom-0 z-20">
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -2124,9 +2145,6 @@ export function BankProducts() {
               <div className="flex items-center gap-2">
                 <button
                   type="submit"
-                  onClick={(e) => {
-                    handleFormSubmit(e as any);
-                  }}
                   disabled={submitting}
                   className="px-5 py-2.5 rounded-xl bg-white text-black font-semibold text-xs transition hover:bg-white/90 active:scale-95 shadow-sm flex items-center gap-1.5 cursor-pointer select-none"
                 >
