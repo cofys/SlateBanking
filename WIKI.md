@@ -1135,6 +1135,8 @@ Slate Banking features an enterprise-grade **Financial Products & Underwriting S
      - *5. Underwriting Rules*: Minimum credit score thresholds, account tier gating, auto-approval ceilings, and collateral requirements.
      - All tab panels remain mounted in the DOM with visibility toggling and are fully controlled via the component `formValues` state across all five tabs, ensuring zero data loss when staff navigate between tabs during product configuration. Form submission executes comprehensive programmatic validation with automatic tab redirection to missing or invalid fields.
    - **Unified Staff Loan Underwriting & Products Hub (`BankLoans.tsx`)**: Bank staff accessing `/bank/:bankId/loans` have a unified top tab switcher to toggle seamlessly between **Active Loans Portfolio** (servicing, debit processing, interest accrual, debt collection, loan origination) and **Loan Products Catalog** (full product card catalog, active/disabled toggling, loan product creator/editor modal, and instant one-click catalog purge), eliminating discrepancies between staff underwriting and customer application portals.
+   - **Automatic Loan Product Catalog Synchronization**: When staff members issue direct underwritten loans (e.g. 4.00%/week simple interest), the platform automatically creates and links a corresponding reusable catalog template in `loan_products` if one does not already exist. Additionally, `GET /api/banks/:bankId/products` and `GET /api/portal/:bankId/catalog` auto-synchronize uncataloged loans, ensuring that any custom loans created by staff immediately appear in both the staff management panels (`/bank/:bankId/loans` and `/bank/:bankId/products`) and customer loan application catalogs.
+   - **Strict Customer Portal Options Visibility Discipline (`BankPortal.tsx`)**: The client application and catalog portal strictly enforce dynamic, configuration-driven visibility. If an institution has not configured or activated options for a given category (e.g., no account registration tiers, no payment cards, no time vaults, or disabled escrow), **zero options or registration forms are provided to the customer**. Inactive tabs are never rendered in the navigation header, and when an institution has published zero offerings across all categories, the customer portal exclusively displays an informational notice ("No Financial Offerings Published: If the bank has no options, none are provided to clients"), completely suppressing unconfigured inputs, generic fallbacks, and orphaned forms.
    - **Financial Product Calculator & Simulator**: Built-in interactive quoting simulator allowing bank staff to adjust loan/credit amounts on sliders to instantly calculate customer installment schedules, origination fee deductions, total finance charges, and institutional net profit margin.
 
 ### Global Security Suite (Added Sep 2026)
@@ -1753,6 +1755,67 @@ The platform guarantees that peer-to-peer and institutional escrow agreements ne
 - **Comprehensive Ownership & Participant Resolution**:
   - Customers see all escrows where their account is funder or beneficiary, including operator/signer permissions via `accountMembers` and direct candidate Discord/Minecraft handles.
   - Bank staff and global admins have unrestricted oversight over all institutional custody agreements in their operational desk (`/bank/:bankId/escrow`).
+
+---
+
+## 💼 Customer Portal Account-Level Focus & Granular Ledger Isolation
+
+### 1. Dedicated Single-Account Inspection Architecture
+To eliminate cognitive overhead for customers and corporate treasurers managing multiple checking, savings, payroll, and business accounts, the Customer Portal provides full single-account isolation mode:
+- **Header Account Switcher**:
+  - Always displays active account context (or "All Accounts"), real-time balance, and account category indicator (Personal vs. Corporate).
+  - Provides quick dropdown selection with balances, short account IDs, tier indicators, and quick-action shortcuts.
+- **Card Click-to-Focus**:
+  - Clicking any account card on the Home dashboard selects that account as the active context (`selectedAccountId`).
+  - A prominent **Account Focus Hero** appears above all modules, providing quick metrics: Available Balance, Account ID (with 1-click copy), Tier badge, and direct action buttons ("Send from Here", "Manage Operators & Team", "In-Game Deposit Command").
+  - An "All Accounts" pill allows returning to aggregated net-worth view with a single tap.
+- **Dynamic Ledger & Activity Filtering**:
+  - **Recent Activity & Full Activity Ledger**: Transactions are automatically isolated to show strictly transfers where `fromAccountId === selectedAccountId` or `toAccountId === selectedAccountId`. Inflows and outflows are calculated specifically for the selected account with live net change indicators.
+  - **Servicing Loans**: The loans overview dynamically isolates active financing lines backed by or serviced through the selected account.
+  - **Virtual Cards & Subscriptions**: Virtual contactless debit cards and scheduled billing mandates are filtered to the active account context.
+
+---
+
+## 👥 Corporate Account Delegation & Multi-User Operator Management
+
+### 1. Team & Operator Access Model (`accountMembers`)
+Corporations, gaming factions, and multi-user businesses can delegate operational access to their bank accounts without sharing credentials or Discord accounts:
+- **Two-Tier Role Hierarchy**:
+  - **Manager (`manager`)**: Full operational privileges. Can dispatch outbound wire transfers, sign payment agreements, issue payment cards, and configure merchant storefronts.
+  - **Viewer (`viewer`)**: Read-only oversight. Can monitor live balance, audit ledger activity, and inspect invoices and statements.
+- **Cross-Platform Identity Resolution**:
+  - Account owners can add operators by **Minecraft Username** or **Discord Snowflake ID**.
+  - The resolver queries both the Mojang session servers and Slate internal identity mapping (`customer_minecraft_links`) to fetch the player's 3D head avatar and canonical UUID.
+- **Security & Authorization Enforcement**:
+  - All member mutation routes (`GET /api/portal/:bankId/accounts/:accountId/members`, `POST .../members`, `DELETE .../members/:memberId`) enforce strict ownership verification. Only the primary account owner or active institutional staff can grant or revoke member permissions.
+  - Removal of an operator takes effect immediately across both the Web Portal and server bot commands.
+
+---
+
+## ⚡ Onyx Payment Service Provider (PSP) Hub in Customer Portal
+
+### 1. Central Clearinghouse Telemetry & Integration
+The Customer Portal incorporates a dedicated **Onyx Hub** (`view === "onyx"`), giving customers and corporations institutional payment rails:
+- **Live Clearinghouse KPIs**:
+  - Connected Banks count and operational heartbeat.
+  - Total Active Merchants on the Onyx network.
+  - Total Gross Volume Cleared ($ USD) across inter-bank and same-bank rails.
+  - Real-time B2B clearing fees (with 0% fee on same-bank internal settlements).
+- **Sub-Tab Navigation**:
+  - **Overview & Discord Integration Guide**: Complete architectural walkthrough on how to embed Onyx checkout into Discord roleplay servers, including bot slash commands (`/onyx checkout`, `/onyx paylink`, `/onyx balance`), and webhook event specifications.
+  - **My Storefronts**: Complete management of the user's provisioned Onyx merchant accounts:
+    - Live merchant IDs, API key management with key rolling (`/api/onyx/merchants/:id/roll-key`), and Discord webhook URL registration for instant transaction notifications.
+    - Product catalog management with custom price support and 1-click checkout links.
+    - Direct "Setup Corp Storefront" wizard to provision additional storefronts linked to any corporate account.
+  - **Subscriptions (Direct Debit Mandates)**:
+    - Dual perspective toggle: "Billed To Me" (outgoing customer debits) vs. "Billed By Me" (incoming corporate receivables).
+    - Summary metrics tracking active subscriptions, monthly liabilities, and revenues.
+    - 1-click mandate controls to pause, resume, or cancel direct debits.
+    - Built-in "Create Direct Debit Mandate" creator.
+  - **Payment Links & Instant Terminal Generator**:
+    - Generates instant shareable checkout links (`/onyx/checkout?merchantId=...&amount=...&memo=...`) for one-off payments, invoices, or Discord community purchases.
+    - Embeddable Discord markdown formatting for instant channel distribution.
+
 
 
 

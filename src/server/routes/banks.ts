@@ -1899,6 +1899,53 @@ banksRouter.get("/api/banks/:bankId/products", requireBankStaff, async (req: exp
         db.select().from(vaultDeposits).where(eq(vaultDeposits.bankId, bankId)),
       ]);
 
+      // Auto-sync: If any issued loans exist without a corresponding loan product in the catalog, automatically synthesize/create them
+      if (allLoans.length > 0) {
+        const { v4: uuidv4 } = await import("uuid");
+        for (const al of allLoans) {
+          const hasMatchingProduct = loansList.some(p => p.id === al.productId) ||
+            loansList.some(p => p.interestRate === al.interestRate && p.interestRateType === al.interestRateType);
+          if (!hasMatchingProduct) {
+            const autoProdId = uuidv4();
+            const rateBps = al.interestRate || 400;
+            const rateType = al.interestRateType || "weekly";
+            const termUnit = al.termUnit || (al.termMonths ? "months" : "weeks");
+            const termDays = termUnit === "weeks" ? ((al.termMonths || 2) * 7) : ((al.termMonths || 1) * 30);
+            const rateDisplay = rateType === "weekly" ? `${(rateBps / 100).toFixed(2)}%/week` : `${(rateBps / 100).toFixed(2)}% APR`;
+            const newProd = {
+              id: autoProdId,
+              bankId,
+              name: `${rateDisplay} Loan Product`,
+              description: `Institutional financing issued at ${rateDisplay}.`,
+              category: "personal",
+              interestRate: rateBps,
+              interestRateType: rateType,
+              termUnit,
+              minAmount: 10000,
+              maxAmount: Math.max(500000, al.principalAmount || 500000),
+              termDays,
+              originationFeePercent: 0,
+              lateFeePercent: 500,
+              gracePeriodDays: 3,
+              repaymentFrequency: termUnit === "weeks" ? "weekly" : "monthly",
+              collateralRequired: false,
+              minCreditScore: 0,
+              autoApproveMaxAmount: 0,
+              isActive: true,
+              createdAt: new Date(),
+            };
+            try {
+              await db.insert(loanProducts).values(newProd);
+              loansList.push(newProd as any);
+              await db.update(loans).set({ productId: autoProdId }).where(eq(loans.id, al.id));
+              al.productId = autoProdId;
+            } catch (err) {
+              console.error("[ProductAutoSyncError]:", err);
+            }
+          }
+        }
+      }
+
       // Calculate stats for Loan Products
       const enrichedLoans = loansList.map(p => {
         const matchingLoans = allLoans.filter(l => l.productId === p.id);
@@ -4447,6 +4494,49 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
           resolvedRateType = product.interestRateType || "apr";
           resolvedTermUnit = product.termUnit || "days";
           resolvedTerm = Math.max(1, Math.round((product.termDays || 30) / 30));
+        }
+      } else {
+        // Auto-create or link loan product so it immediately appears in the staff panel's loan products catalog
+        try {
+          const existingProd = await db.select().from(loanProducts).where(
+            and(
+              eq(loanProducts.bankId, req.params.bankId),
+              eq(loanProducts.interestRate, resolvedRate),
+              eq(loanProducts.interestRateType, resolvedRateType)
+            )
+          ).get();
+          if (existingProd) {
+            resolvedProductId = existingProd.id;
+          } else {
+            const autoProdId = uuidv4();
+            const rateDisplay = resolvedRateType === "weekly" ? `${(resolvedRate / 100).toFixed(2)}%/week` : `${(resolvedRate / 100).toFixed(2)}% APR`;
+            const autoTermDays = resolvedTermUnit === "weeks" ? (resolvedTerm * 7) : (resolvedTerm * 30);
+            await db.insert(loanProducts).values({
+              id: autoProdId,
+              bankId: req.params.bankId,
+              name: `${rateDisplay} Loan Product`,
+              description: `Institutional financing issued at ${rateDisplay}.`,
+              category: "personal",
+              interestRate: resolvedRate,
+              interestRateType: resolvedRateType,
+              termUnit: resolvedTermUnit,
+              minAmount: 10000,
+              maxAmount: Math.max(500000, parsedPrincipal),
+              termDays: autoTermDays,
+              originationFeePercent: 0,
+              lateFeePercent: 500,
+              gracePeriodDays: 3,
+              repaymentFrequency: resolvedTermUnit === "weeks" ? "weekly" : "monthly",
+              collateralRequired: false,
+              minCreditScore: 0,
+              autoApproveMaxAmount: 0,
+              isActive: true,
+              createdAt: new Date(),
+            });
+            resolvedProductId = autoProdId;
+          }
+        } catch (syncErr) {
+          console.error("[AutoCreateLoanProductErr]:", syncErr);
         }
       }
       if (policy.maxAmountCents > 0 && parsedPrincipal > policy.maxAmountCents && !isOffSystem) {

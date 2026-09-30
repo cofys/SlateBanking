@@ -9,13 +9,14 @@ import {
   FileText, Landmark, Loader2, Lock, LogIn, LogOut, Plus, Send, ShieldCheck,
   Sparkles, Unlock, Wallet, X, AlertTriangle, PiggyBank, Receipt, Clock, Link2, CheckCircle2,
   Users, Repeat, Play, Pause, Trash2, Calendar, UserPlus, LifeBuoy, HelpCircle, MessageSquare,
-  ShieldAlert, ExternalLink, Bell, BellRing, Info, Terminal, ArrowRight, ChevronDown, CheckCircle
+  ShieldAlert, ExternalLink, Bell, BellRing, Info, Terminal, ArrowRight, ChevronDown, CheckCircle,
+  Layers, Zap, Key, Store, Globe, RefreshCw, ShoppingBag, Filter, QrCode
 } from "lucide-react";
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
 import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown } from "../lib/loan_utils";
 
-type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply" | "escrow" | "support";
+type View = "home" | "send" | "activity" | "borrow" | "cards" | "bills" | "apply" | "escrow" | "support" | "onyx";
 
 function greet() {
   const h = new Date().getHours();
@@ -123,6 +124,36 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [newMemberUsername, setNewMemberUsername] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<"manager" | "viewer">("manager");
   const [addingMember, setAddingMember] = useState(false);
+
+  // Account Focus & Header Switcher State
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
+  const [accountPickerOpen, setAccountPickerOpen] = useState(false);
+
+  // Onyx Hub State
+  const [onyxSubTab, setOnyxSubTab] = useState<"overview" | "merchants" | "subscriptions" | "paylinks">("overview");
+  const [onyxStats, setOnyxStats] = useState<any>(null);
+  const [myMerchants, setMyMerchants] = useState<any[]>([]);
+  const [loadingOnyx, setLoadingOnyx] = useState(false);
+  const [registerMerchantOpen, setRegisterMerchantOpen] = useState(false);
+  const [newMerchantName, setNewMerchantName] = useState("");
+  const [newMerchantAccountId, setNewMerchantAccountId] = useState("");
+  const [registeringMerchant, setRegisteringMerchant] = useState(false);
+  const [newMerchantSuccess, setNewMerchantSuccess] = useState<any | null>(null);
+  const [managingProductsMerchant, setManagingProductsMerchant] = useState<any | null>(null);
+  const [merchantProductsList, setMerchantProductsList] = useState<any[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductPrice, setNewProductPrice] = useState("");
+  const [newProductPriceType, setNewProductPriceType] = useState<"fixed" | "custom_customer">("fixed");
+  const [newProductDesc, setNewProductDesc] = useState("");
+  const [addingProduct, setAddingProduct] = useState(false);
+  const [managingWebhookMerchant, setManagingWebhookMerchant] = useState<any | null>(null);
+  const [webhookUrlInput, setWebhookUrlInput] = useState("");
+  const [savingWebhook, setSavingWebhook] = useState(false);
+  const [quickPayLinkMerchantId, setQuickPayLinkMerchantId] = useState("");
+  const [quickPayLinkAmount, setQuickPayLinkAmount] = useState("");
+  const [quickPayLinkMemo, setQuickPayLinkMemo] = useState("");
+  const [rolledKeyModal, setRolledKeyModal] = useState<{ merchantName: string; apiKey: string } | null>(null);
 
   // Split Bill State
   const [splitBillModalOpen, setSplitBillModalOpen] = useState(false);
@@ -241,8 +272,38 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     fetch("/api/onyx/merchants").then((r) => r.json()).then((d) => setMerchants(Array.isArray(d) ? d : [])).catch(() => {});
   }, [bankId]);
 
+  const loadOnyxData = async () => {
+    setLoadingOnyx(true);
+    try {
+      const [statsRes, meRes] = await Promise.all([
+        fetch("/api/onyx/public-stats"),
+        fetch("/api/onyx/me"),
+      ]);
+      if (statsRes.ok) {
+        const stats = await statsRes.json();
+        setOnyxStats(stats);
+      }
+      if (meRes.ok) {
+        const me = await meRes.json();
+        setMyMerchants(Array.isArray(me) ? me : []);
+      }
+    } catch (err) {
+      console.error("Failed to load Onyx data", err);
+    }
+    setLoadingOnyx(false);
+  };
+
   useEffect(() => {
-    if (user && bank) handleSearch();
+    if (view === "onyx") {
+      loadOnyxData();
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (user && bank) {
+      handleSearch();
+      loadOnyxData();
+    }
   }, [user, bank]);
 
   useEffect(() => {
@@ -367,9 +428,38 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
   const accounts = userData?.accounts || [];
   const availableTiers = (
-    accountTiers.length > 0 ? accountTiers : (Array.isArray(settings?.accountTiers) ? settings.accountTiers : [])
+    accountTiers.length > 0 ? accountTiers : []
   ).filter((t: any) => !t.isPrivate);
+
+  const availableCatalogTabs = useMemo(() => {
+    const tabs: { id: "account" | "loan" | "card" | "bond" | "escrow"; label: string; icon: any; count?: number }[] = [];
+    if (availableTiers.length > 0) {
+      tabs.push({ id: "account", label: "Deposit Account", icon: Wallet, count: availableTiers.length });
+    }
+    if (settings?.enableLoans !== false && loanProducts.length > 0) {
+      tabs.push({ id: "loan", label: "Loans & Credit", icon: Landmark, count: loanProducts.length });
+    }
+    if (settings?.enableCards !== false && cardProducts.length > 0) {
+      tabs.push({ id: "card", label: "Payment Cards", icon: CreditCard, count: cardProducts.length });
+    }
+    if (settings?.enableVaults !== false && bondProducts.length > 0) {
+      tabs.push({ id: "bond", label: "Time Vaults", icon: PiggyBank, count: bondProducts.length });
+    }
+    if (settings?.enableEscrow === true) {
+      tabs.push({ id: "escrow", label: "Escrow Hold", icon: ShieldCheck });
+    }
+    return tabs;
+  }, [availableTiers.length, settings?.enableLoans, loanProducts.length, settings?.enableCards, cardProducts.length, settings?.enableVaults, bondProducts.length, settings?.enableEscrow]);
+
+  useEffect(() => {
+    if (availableCatalogTabs.length > 0) {
+      if (!availableCatalogTabs.some(t => t.id === applyTab)) {
+        setApplyTab(availableCatalogTabs[0].id);
+      }
+    }
+  }, [availableCatalogTabs, applyTab]);
   const netWorth = accounts.reduce((s: number, a: any) => s + (a.balance || 0), 0);
+  const activeAccount = selectedAccountId !== "all" ? accounts.find((a: any) => a.id === selectedAccountId) : null;
   const loans = userData?.loans || [];
   const activeLoans = loans.filter((l: any) => ["active", "delinquent", "defaulted", "pending", "awaiting_signature"].includes(l.status));
   const closedLoans = loans.filter((l: any) => ["paid_off", "rejected", "closed"].includes(l.status));
@@ -377,6 +467,33 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const subscriptions = userData?.subscriptions || [];
   const cards = userData?.cards || [];
   const tx = userData?.recentTx || [];
+
+  // Account-filtered slices for granular inspection
+  const displayedTx = useMemo(() => {
+    if (selectedAccountId === "all") return tx;
+    return tx.filter((t: any) => t.fromAccountId === selectedAccountId || t.toAccountId === selectedAccountId);
+  }, [tx, selectedAccountId]);
+
+  const displayedActiveLoans = useMemo(() => {
+    if (selectedAccountId === "all") return activeLoans;
+    return activeLoans.filter((l: any) => l.accountId === selectedAccountId);
+  }, [activeLoans, selectedAccountId]);
+
+  const displayedInvoices = useMemo(() => {
+    if (selectedAccountId === "all") return invoices;
+    return invoices.filter((i: any) => i.customerAccountId === selectedAccountId || i.billerAccountId === selectedAccountId);
+  }, [invoices, selectedAccountId]);
+
+  const displayedCards = useMemo(() => {
+    if (selectedAccountId === "all") return cards;
+    return cards.filter((c: any) => c.accountId === selectedAccountId);
+  }, [cards, selectedAccountId]);
+
+  const displayedSubscriptions = useMemo(() => {
+    if (selectedAccountId === "all") return subscriptions;
+    return subscriptions.filter((s: any) => s.customerAccountId === selectedAccountId || s.billerAccountId === selectedAccountId);
+  }, [subscriptions, selectedAccountId]);
+
   const defaultFeeMode = (settings.defaultFeePayerMode as any) === "sender_covers" ? "sender_covers" : "from_payment";
 
   useEffect(() => {
@@ -933,6 +1050,146 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
     }
   };
 
+  const handleRegisterMerchant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMerchantName.trim() || !newMerchantAccountId) {
+      flash("Please provide a shop name and select a settlement bank account.");
+      return;
+    }
+    setRegisteringMerchant(true);
+    try {
+      const res = await fetch("/api/onyx/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newMerchantName.trim(),
+          destinationAccountId: newMerchantAccountId,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        flash(`Storefront "${d.name}" registered with Onyx PSP!`);
+        setNewMerchantSuccess(d);
+        setNewMerchantName("");
+        setRegisterMerchantOpen(false);
+        loadOnyxData();
+      } else {
+        flash(d.error || "Failed to register merchant");
+      }
+    } catch {
+      flash("Error registering storefront");
+    }
+    setRegisteringMerchant(false);
+  };
+
+  const handleRollMerchantKey = async (merchantId: string) => {
+    if (!confirm("Are you sure you want to roll this API key? Existing integrations will stop working until updated with the new key.")) return;
+    try {
+      const res = await fetch(`/api/onyx/me/${merchantId}/roll-key`, { method: "POST" });
+      const d = await res.json();
+      if (res.ok) {
+        setRolledKeyModal({ merchantName: "Store", apiKey: d.apiKey });
+        flash("New API key generated successfully.");
+        loadOnyxData();
+      } else {
+        flash(d.error || "Failed to roll API key");
+      }
+    } catch {
+      flash("Error rolling API key");
+    }
+  };
+
+  const openManageProducts = async (merchant: any) => {
+    setManagingProductsMerchant(merchant);
+    setLoadingProducts(true);
+    setMerchantProductsList([]);
+    try {
+      const res = await fetch(`/api/onyx/me/${merchant.id}/products`);
+      if (res.ok) {
+        setMerchantProductsList(await res.json());
+      }
+    } catch {}
+    setLoadingProducts(false);
+  };
+
+  const handleAddMerchantProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!managingProductsMerchant || !newProductName.trim()) return;
+    setAddingProduct(true);
+    try {
+      const res = await fetch(`/api/onyx/me/${managingProductsMerchant.id}/products`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newProductName.trim(),
+          priceType: newProductPriceType,
+          price: newProductPrice,
+          description: newProductDesc.trim(),
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        flash(`Product "${d.name}" published!`);
+        setNewProductName("");
+        setNewProductPrice("");
+        setNewProductDesc("");
+        const refreshed = await fetch(`/api/onyx/me/${managingProductsMerchant.id}/products`).then(r => r.json());
+        if (Array.isArray(refreshed)) setMerchantProductsList(refreshed);
+        loadOnyxData();
+      } else {
+        flash(d.error || "Failed to add product");
+      }
+    } catch {
+      flash("Error adding product");
+    }
+    setAddingProduct(false);
+  };
+
+  const handleDeleteMerchantProduct = async (productId: string) => {
+    if (!managingProductsMerchant) return;
+    try {
+      const res = await fetch(`/api/onyx/me/${managingProductsMerchant.id}/products/${productId}`, { method: "DELETE" });
+      if (res.ok) {
+        flash("Product deleted.");
+        setMerchantProductsList(prev => prev.filter(p => p.id !== productId));
+        loadOnyxData();
+      } else {
+        flash("Failed to delete product");
+      }
+    } catch {
+      flash("Error deleting product");
+    }
+  };
+
+  const openWebhookSetup = (merchant: any) => {
+    setManagingWebhookMerchant(merchant);
+    setWebhookUrlInput(merchant.webhookUrlMasked || "");
+  };
+
+  const handleSaveWebhook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!managingWebhookMerchant) return;
+    setSavingWebhook(true);
+    try {
+      const res = await fetch(`/api/onyx/me/${managingWebhookMerchant.id}/webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: webhookUrlInput.trim() }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        flash(d.message || "Discord webhook saved!");
+        setManagingWebhookMerchant(null);
+        loadOnyxData();
+      } else {
+        flash(d.error || "Failed to update webhook");
+      }
+    } catch {
+      flash("Error saving webhook");
+    }
+    setSavingWebhook(false);
+  };
+
   const startSplitBill = (fromTx?: any) => {
     if (accounts.length > 0 && !splitFromAccountId) {
       setSplitFromAccountId(accounts[0].id);
@@ -1139,6 +1396,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const nav = [
     { id: "home" as View, label: "Home", icon: Wallet },
     { id: "send" as View, label: "Send", icon: Send },
+    { id: "onyx" as View, label: "Onyx", icon: Zap },
     ...(settings.enableEscrow !== false ? [{ id: "escrow" as View, label: "Escrow", icon: ShieldCheck }] : []),
     { id: "activity" as View, label: "Activity", icon: Clock },
     { id: "apply" as View, label: "Apply", icon: Sparkles },
@@ -1171,6 +1429,141 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               <p className="text-[10px] sm:text-[11px] truncate" style={{ color: "var(--fg-subtle)" }}>{settings.tagline || "Online banking"}</p>
             </div>
           </div>
+
+          {/* Center: Account Switcher Picker */}
+          {accounts.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAccountPickerOpen(!accountPickerOpen)}
+                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-semibold transition max-w-[150px] sm:max-w-[260px] truncate"
+                style={{
+                  borderColor: selectedAccountId !== "all" ? withAlpha(brand, 0.5) : "var(--border)",
+                  background: selectedAccountId !== "all" ? withAlpha(brand, 0.12) : "color-mix(in oklab, var(--fg) 4%, transparent)",
+                  color: selectedAccountId !== "all" ? "#fff" : "var(--fg-muted)"
+                }}
+                title="Switch active account"
+              >
+                {selectedAccountId !== "all" && activeAccount?.accountType?.includes("business") ? (
+                  <Building2 size={13} className="text-amber-400 shrink-0" />
+                ) : selectedAccountId !== "all" ? (
+                  <Wallet size={13} className="shrink-0" style={{ color: brand }} />
+                ) : (
+                  <Layers size={13} className="text-white/60 shrink-0" />
+                )}
+                <span className="truncate">
+                  {selectedAccountId === "all" ? "All Accounts" : activeAccount?.accountName || "Account"}
+                </span>
+                <span className="hidden md:inline font-mono opacity-80 text-[11px] tabular-nums">
+                  {formatMoney(selectedAccountId === "all" ? netWorth : activeAccount?.balance || 0)}
+                </span>
+                <ChevronDown size={12} className={`transition-transform shrink-0 ${accountPickerOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {accountPickerOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setAccountPickerOpen(false)} />
+                  <div
+                    className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 mt-2 w-72 sm:w-80 rounded-2xl border shadow-2xl p-2 z-50 space-y-1 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+                    style={{ background: "rgba(18, 18, 24, 0.96)", borderColor: "var(--border)" }}
+                  >
+                    <div className="px-2.5 py-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-white/40">
+                      <span>Select Account to Manage</span>
+                      <span>{accounts.length} total</span>
+                    </div>
+
+                    {/* All Accounts Option */}
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedAccountId("all"); setAccountPickerOpen(false); }}
+                      className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between text-xs transition ${
+                        selectedAccountId === "all" ? "bg-white/10 text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-white/70">
+                          <Layers size={13} />
+                        </div>
+                        <div>
+                          <p className="font-semibold leading-tight">All Accounts</p>
+                          <p className="text-[10px] text-white/40">Consolidated overview</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono font-bold tabular-nums">{formatMoney(netWorth)}</p>
+                        {selectedAccountId === "all" && <Check size={12} className="text-emerald-400 ml-auto" />}
+                      </div>
+                    </button>
+
+                    <div className="my-1 border-t border-white/5" />
+
+                    {/* Individual Account Options */}
+                    <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
+                      {accounts.map((acc: any) => {
+                        const isCorp = acc.accountType?.includes("business") || acc.accountType?.includes("corp");
+                        const isSelected = selectedAccountId === acc.id;
+                        return (
+                          <div
+                            key={acc.id}
+                            className={`group rounded-xl p-2 flex items-center justify-between transition ${
+                              isSelected ? "bg-white/10 text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => { setSelectedAccountId(acc.id); setAccountPickerOpen(false); }}
+                              className="flex-1 min-w-0 text-left flex items-center gap-2 mr-2"
+                            >
+                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                                isCorp ? "bg-amber-500/15 text-amber-300 border border-amber-500/25" : "bg-white/5 text-white/70"
+                              }`}>
+                                {isCorp ? <Building2 size={13} /> : <Wallet size={13} />}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="truncate text-xs font-semibold">{acc.accountName}</span>
+                                  {isCorp && (
+                                    <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
+                                      Corp
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-mono text-white/40 truncate block">
+                                  {acc.id.slice(0, 10)}… · {acc.accountType?.replace('_', ' ') || 'personal'}
+                                </span>
+                              </div>
+                            </button>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="font-mono text-xs font-bold tabular-nums">
+                                {formatMoney(acc.balance)}
+                              </span>
+                              {isCorp && (
+                                <button
+                                  type="button"
+                                  title="Manage Operators & Team"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setAccountPickerOpen(false);
+                                    openManageMembers(acc);
+                                  }}
+                                  className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition"
+                                >
+                                  <Users size={12} />
+                                </button>
+                              )}
+                              {isSelected && <Check size={13} className="text-emerald-400" />}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <button
               onClick={() => setNotificationsOpen(true)}
@@ -1360,9 +1753,114 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
               </button>
             )}
 
+            {/* Focused Account Details Bar */}
+            {selectedAccountId !== "all" && activeAccount && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-[24px] border p-5 space-y-3.5 relative overflow-hidden"
+                style={{
+                  background: `linear-gradient(135deg, ${withAlpha(brand, 0.2)} 0%, rgba(18, 18, 26, 0.9) 100%)`,
+                  borderColor: withAlpha(brand, 0.45)
+                }}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                      activeAccount.accountType?.includes("business") ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-white/10 text-white"
+                    }`}>
+                      {activeAccount.accountType?.includes("business") ? <Building2 size={22} /> : <Wallet size={22} />}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">Viewing Account Specifics</span>
+                        {activeAccount.accountType?.includes("business") && (
+                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            Corporate Account
+                          </span>
+                        )}
+                        {activeAccount.tierId && (
+                          <span className="text-[10px] font-mono text-white/60">
+                            {availableTiers.find((t: any) => t.id === activeAccount.tierId)?.name || activeAccount.tierId}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-xl font-black text-white">{activeAccount.accountName}</h3>
+                      <p className="text-xs font-mono text-white/40 flex items-center gap-1.5 mt-0.5">
+                        <span>{activeAccount.id}</span>
+                        <button
+                          type="button"
+                          onClick={() => copy(activeAccount.id, "active_acc_id")}
+                          className="hover:text-white transition"
+                          title="Copy account ID"
+                        >
+                          {copied === "active_acc_id" ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                        </button>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex sm:flex-col items-baseline sm:items-end justify-between sm:justify-center">
+                    <span className="text-[11px] uppercase tracking-wider text-white/40 sm:hidden">Available Balance</span>
+                    <div className="text-3xl font-black tabular-nums text-white">
+                      {formatMoney(activeAccount.balance)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSendFrom(activeAccount.id);
+                      setTransferSuccess(null);
+                      setView("send");
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl text-white transition shadow-sm"
+                    style={btnBrand}
+                  >
+                    <Send size={13} />
+                    <span>Send from Here</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openManageMembers(activeAccount)}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white transition"
+                  >
+                    <Users size={13} className="text-amber-400" />
+                    <span>Manage Operators & Team</span>
+                  </button>
+
+                  {activeAccount.depositCommand && (
+                    <button
+                      type="button"
+                      onClick={() => copy(activeAccount.depositCommand, "focused_dep_cmd")}
+                      className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition"
+                    >
+                      {copied === "focused_dep_cmd" ? <Check size={12} className="text-emerald-400" /> : <Terminal size={12} />}
+                      <span>{copied === "focused_dep_cmd" ? "Copied Command!" : "Copy Deposit Command"}</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAccountId("all")}
+                    className="ml-auto flex items-center gap-1 text-xs font-semibold text-white/50 hover:text-white px-2.5 py-1 rounded-lg hover:bg-white/5 transition"
+                  >
+                    <X size={13} />
+                    <span>View All Accounts</span>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
             <section>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Accounts</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Accounts</h2>
+                  <span className="text-[11px] text-white/40">· Click an account to isolate transactions & details</span>
+                </div>
                 <button onClick={() => setView("apply")} className="text-xs font-bold text-white/50 hover:text-white flex items-center gap-1"><Plus size={12} /> New</button>
               </div>
               {loading ? (
@@ -1374,74 +1872,145 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </div>
               ) : (
                 <div className="grid sm:grid-cols-2 gap-3">
-                  {accounts.map((acc: any) => (
-                    <div key={acc.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 hover:border-white/20 transition">
-                      <div className="flex justify-between items-start gap-3">
-                        <div>
-                          <p className="text-[11px] uppercase tracking-wider text-white/40">
-                            {acc.tierId && availableTiers.find((t: any) => t.id === acc.tierId)
-                              ? `${availableTiers.find((t: any) => t.id === acc.tierId).name} · ${acc.accountType?.replace('_', ' ') || 'personal'}`
-                              : (acc.accountType?.replace('_', ' ') || "personal")}
-                          </p>
-                          <p className="font-bold mt-0.5">{acc.accountName}</p>
-                        </div>
-                        {acc.isFrozen && <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-full">Frozen</span>}
-                      </div>
-                      <p className="text-2xl font-black tabular-nums mt-4">{formatMoney(acc.balance)}</p>
-
-                      {acc.isBelowMinBalance && (
-                        <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2">
-                          <div className="flex items-center justify-between gap-1 text-[11px]">
-                            <span className="font-bold text-amber-300 flex items-center gap-1">
-                              <AlertTriangle size={12} /> Below Min Balance ({formatMoney(acc.minBalance)})
-                            </span>
-                            <span className="text-amber-200/70 font-mono">
-                              Deficit: {formatMoney(acc.deficitCents || (acc.minBalance - acc.balance))}
-                            </span>
+                  {accounts.map((acc: any) => {
+                    const isSelected = selectedAccountId === acc.id;
+                    const isCorp = acc.accountType?.includes("business") || acc.accountType?.includes("corp");
+                    return (
+                      <div
+                        key={acc.id}
+                        onClick={() => setSelectedAccountId(isSelected ? "all" : acc.id)}
+                        className={`rounded-2xl border p-5 cursor-pointer transition-all group relative ${
+                          isSelected
+                            ? "bg-white/[0.07] border-white/40 ring-1 ring-white/30 shadow-lg"
+                            : "bg-white/[0.03] border-white/10 hover:border-white/25 hover:bg-white/[0.05]"
+                        }`}
+                      >
+                        <div className="flex justify-between items-start gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-[11px] uppercase tracking-wider text-white/40 truncate">
+                                {acc.tierId && availableTiers.find((t: any) => t.id === acc.tierId)
+                                  ? `${availableTiers.find((t: any) => t.id === acc.tierId).name} · ${acc.accountType?.replace('_', ' ') || 'personal'}`
+                                  : (acc.accountType?.replace('_', ' ') || "personal")}
+                              </p>
+                              {isCorp && (
+                                <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 shrink-0">
+                                  Corp
+                                </span>
+                              )}
+                            </div>
+                            <p className="font-bold text-base mt-0.5 text-white truncate">{acc.accountName}</p>
                           </div>
-                          {acc.depositCommand && (
-                            <button
-                              type="button"
-                              onClick={() => copy(acc.depositCommand, `dep_${acc.id}`)}
-                              className="w-full flex items-center justify-center gap-1.5 font-mono text-[10px] font-bold text-black bg-amber-400 hover:bg-amber-300 py-1.5 px-2 rounded-lg transition"
-                            >
-                              {copied === `dep_${acc.id}` ? <Check size={11} /> : <Terminal size={11} />}
-                              <span>{copied === `dep_${acc.id}` ? "Copied Command to Clipboard!" : "Copy Deposit Command"}</span>
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isSelected && (
+                              <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/25 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <Check size={10} /> Active Filter
+                              </span>
+                            )}
+                            {acc.isFrozen && <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-full">Frozen</span>}
+                          </div>
                         </div>
-                      )}
 
-                      <div className="mt-3 flex items-center justify-between">
-                        <button onClick={() => copy(acc.id, acc.id)} className="text-[11px] font-mono text-white/30 hover:text-white flex items-center gap-1">
-                          {copied === acc.id ? <Check size={11} /> : <Copy size={11} />}
-                          {acc.id.slice(0, 14)}…
-                        </button>
-                        {acc.accountType?.includes("business") && (
+                        <p className="text-2xl font-black tabular-nums mt-4 text-white">{formatMoney(acc.balance)}</p>
+
+                        {acc.isBelowMinBalance && (
+                          <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2">
+                            <div className="flex items-center justify-between gap-1 text-[11px]">
+                              <span className="font-bold text-amber-300 flex items-center gap-1">
+                                <AlertTriangle size={12} /> Below Min Balance ({formatMoney(acc.minBalance)})
+                              </span>
+                              <span className="text-amber-200/70 font-mono">
+                                Deficit: {formatMoney(acc.deficitCents || (acc.minBalance - acc.balance))}
+                              </span>
+                            </div>
+                            {acc.depositCommand && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copy(acc.depositCommand, `dep_${acc.id}`);
+                                }}
+                                className="w-full flex items-center justify-center gap-1.5 font-mono text-[10px] font-bold text-black bg-amber-400 hover:bg-amber-300 py-1.5 px-2 rounded-lg transition"
+                              >
+                                {copied === `dep_${acc.id}` ? <Check size={11} /> : <Terminal size={11} />}
+                                <span>{copied === `dep_${acc.id}` ? "Copied Command to Clipboard!" : "Copy Deposit Command"}</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between gap-2">
                           <button
                             type="button"
-                            onClick={() => openManageMembers(acc)}
-                            className="flex items-center gap-1 text-[11px] font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-lg border border-white/10 transition"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copy(acc.id, acc.id);
+                            }}
+                            className="text-[11px] font-mono text-white/30 hover:text-white flex items-center gap-1 transition"
+                            title="Copy full account ID"
                           >
-                            <Users size={12} />
-                            <span>Team & Operators</span>
+                            {copied === acc.id ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                            {acc.id.slice(0, 12)}…
                           </button>
-                        )}
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSendFrom(acc.id);
+                                setTransferSuccess(null);
+                                setView("send");
+                              }}
+                              className="flex items-center gap-1 text-[11px] font-semibold text-white/60 hover:text-white bg-white/5 hover:bg-white/10 px-2 py-1 rounded-lg border border-white/10 transition"
+                              title="Send transfer from this account"
+                            >
+                              <Send size={11} />
+                              <span className="hidden sm:inline">Send</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openManageMembers(acc);
+                              }}
+                              className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border transition ${
+                                isCorp
+                                  ? "text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/30"
+                                  : "text-white/70 hover:text-white bg-white/5 hover:bg-white/10 border-white/10"
+                              }`}
+                              title="Manage authorized team operators"
+                            >
+                              <Users size={11} />
+                              <span>{isCorp ? "Corp Team" : "Operators"}</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>
 
-            {activeLoans.length > 0 && (
+            {displayedActiveLoans.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Active Loans</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">
+                      {selectedAccountId !== "all" && activeAccount ? `Active Loans · ${activeAccount.accountName}` : "Active Loans"}
+                    </h2>
+                    {selectedAccountId !== "all" && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-white/70">
+                        Filtered
+                      </span>
+                    )}
+                  </div>
                   <button onClick={() => setView("borrow")} className="text-xs font-bold text-white/50 hover:text-white transition-colors">See all</button>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  {activeLoans.slice(0, 4).map((l: any) => {
+                  {displayedActiveLoans.slice(0, 4).map((l: any) => {
                     const principal = l.principalAmount || l.amount || 0;
                     const remaining = l.remainingAmount ?? l.remainingBalance ?? 0;
                     const paid = Math.max(0, principal - remaining);
@@ -1503,13 +2072,40 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
             <section>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">Recent Activity</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold tracking-wide uppercase text-white/50">
+                    {selectedAccountId !== "all" && activeAccount ? `Recent Activity · ${activeAccount.accountName}` : "Recent Activity"}
+                  </h2>
+                  {selectedAccountId !== "all" && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-white/70 flex items-center gap-1">
+                      <span>Filtered</span>
+                      <button type="button" onClick={() => setSelectedAccountId("all")} className="hover:text-white">
+                        <X size={10} />
+                      </button>
+                    </span>
+                  )}
+                </div>
                 <button onClick={() => setView("activity")} className="text-xs font-bold text-white/50 hover:text-white transition-colors">See all</button>
               </div>
               <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
-                {tx.slice(0, 6).length === 0 && <p className="p-5 text-sm text-white/40">No activity yet.</p>}
-                {tx.slice(0, 6).map((t: any) => {
-                  const inbound = accounts.some((a: any) => a.id === t.toAccountId);
+                {displayedTx.slice(0, 6).length === 0 && (
+                  <div className="p-6 text-center text-sm text-white/40 space-y-2">
+                    <p>No activity recorded {selectedAccountId !== "all" ? `for ${activeAccount?.accountName}` : "yet"}.</p>
+                    {selectedAccountId !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAccountId("all")}
+                        className="text-xs font-semibold text-white/70 hover:text-white underline"
+                      >
+                        View all accounts activity
+                      </button>
+                    )}
+                  </div>
+                )}
+                {displayedTx.slice(0, 6).map((t: any) => {
+                  const inbound = selectedAccountId !== "all"
+                    ? t.toAccountId === selectedAccountId
+                    : accounts.some((a: any) => a.id === t.toAccountId);
                   return (
                     <div 
                       key={t.id} 
@@ -1739,14 +2335,119 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
         {view === "activity" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-black">Activity</h2>
-              <span className="text-xs text-white/40">{tx.length} transaction{tx.length === 1 ? "" : "s"}</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-black text-white">
+                  {selectedAccountId !== "all" && activeAccount ? `Activity · ${activeAccount.accountName}` : "Account Activity"}
+                </h2>
+                <p className="text-xs text-white/40 mt-0.5">
+                  {selectedAccountId !== "all" && activeAccount
+                    ? `Displaying settled ledger transactions specifically for account ${activeAccount.id.slice(0, 10)}…`
+                    : "Real-time ledger audit trail across all your personal and corporate accounts."}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/50 font-mono">
+                  {displayedTx.length} transaction{displayedTx.length === 1 ? "" : "s"}
+                </span>
+                {selectedAccountId !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAccountId("all")}
+                    className="text-xs font-semibold text-white/70 hover:text-white px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition"
+                  >
+                    Clear Filter
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Account Filter Segmented Control */}
+            {accounts.length > 1 && (
+              <div className="flex items-center gap-1.5 p-1 bg-white/[0.03] border border-white/10 rounded-2xl overflow-x-auto pb-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAccountId("all")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 ${
+                    selectedAccountId === "all"
+                      ? "bg-white/15 text-white border border-white/20 shadow-sm"
+                      : "text-white/50 hover:text-white hover:bg-white/5 border border-transparent"
+                  }`}
+                >
+                  <Layers size={13} />
+                  <span>All Accounts ({tx.length})</span>
+                </button>
+                {accounts.map((acc: any) => {
+                  const accTxCount = tx.filter((t: any) => t.fromAccountId === acc.id || t.toAccountId === acc.id).length;
+                  const isCorp = acc.accountType?.includes("business") || acc.accountType?.includes("corp");
+                  const isSelected = selectedAccountId === acc.id;
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => setSelectedAccountId(isSelected ? "all" : acc.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 ${
+                        isSelected
+                          ? "bg-white/15 text-white border border-white/20 shadow-sm"
+                          : "text-white/50 hover:text-white hover:bg-white/5 border border-transparent"
+                      }`}
+                    >
+                      {isCorp ? <Building2 size={13} className="text-amber-400" /> : <Wallet size={13} />}
+                      <span>{acc.accountName}</span>
+                      <span className="text-[10px] font-mono opacity-60">({accTxCount})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Account Summary Strip when filtered */}
+            {selectedAccountId !== "all" && activeAccount && (() => {
+              const inCents = displayedTx
+                .filter((t: any) => t.toAccountId === selectedAccountId)
+                .reduce((s: number, t: any) => s + (t.amountReceived ?? t.amount ?? 0), 0);
+              const outCents = displayedTx
+                .filter((t: any) => t.fromAccountId === selectedAccountId)
+                .reduce((s: number, t: any) => s + (t.amountSubmitted ?? t.amount ?? 0), 0);
+              return (
+                <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-white/[0.02] border border-white/10 text-xs">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-white/40 block">Current Balance</span>
+                    <span className="text-sm font-bold text-white font-mono mt-0.5 block tabular-nums">{formatMoney(activeAccount.balance)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-emerald-400/80 block">Total Inflow</span>
+                    <span className="text-sm font-bold text-emerald-300 font-mono mt-0.5 block tabular-nums">+{formatMoney(inCents)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-white/40 block">Total Outflow</span>
+                    <span className="text-sm font-bold text-white font-mono mt-0.5 block tabular-nums">−{formatMoney(outCents)}</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
-              {tx.length === 0 && <p className="p-6 text-white/40 text-sm">Nothing here yet.</p>}
-              {tx.map((t: any) => {
-                const inbound = accounts.some((a: any) => a.id === t.toAccountId);
+              {displayedTx.length === 0 && (
+                <div className="p-8 text-center space-y-2">
+                  <p className="text-white/40 text-sm">
+                    No transactions recorded {selectedAccountId !== "all" ? `for ${activeAccount?.accountName}` : "yet"}.
+                  </p>
+                  {selectedAccountId !== "all" && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAccountId("all")}
+                      className="text-xs text-white/70 hover:text-white underline font-medium"
+                    >
+                      Show all accounts activity
+                    </button>
+                  )}
+                </div>
+              )}
+              {displayedTx.map((t: any) => {
+                const inbound = selectedAccountId !== "all"
+                  ? t.toAccountId === selectedAccountId
+                  : accounts.some((a: any) => a.id === t.toAccountId);
                 return (
                   <div 
                     key={t.id} 
@@ -2449,36 +3150,61 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             </div>
 
             {/* Categorized Tabs */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 border-b border-white/10 pb-3">
-              {[
-                { id: "account", label: "Deposit Account", icon: Wallet },
-                { id: "loan", label: "Loans & Credit", icon: Landmark },
-                { id: "card", label: "Payment Cards", icon: CreditCard },
-                { id: "bond", label: "Time Vaults", icon: PiggyBank },
-                { id: "escrow", label: "Escrow Hold", icon: ShieldCheck },
-              ].map(tab => {
-                const Icon = tab.icon;
-                const active = applyTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setApplyTab(tab.id as any)}
-                    className={`flex items-center gap-2 justify-center py-2.5 px-3 rounded-xl text-xs font-bold transition-all border ${
-                      active
-                        ? "bg-white/15 border-white/30 text-white shadow-md"
-                        : "bg-white/5 border-white/5 text-white/50 hover:text-white hover:bg-white/[0.08]"
-                    }`}
-                  >
-                    <Icon size={15} color={active ? brand : undefined} />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {availableCatalogTabs.length > 0 ? (
+              <div className="flex flex-wrap gap-2 border-b border-white/10 pb-3">
+                {availableCatalogTabs.map(tab => {
+                  const Icon = tab.icon;
+                  const active = applyTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setApplyTab(tab.id as any)}
+                      className={`flex items-center gap-2 justify-center py-2.5 px-3.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        active
+                          ? "bg-white/15 border-white/30 text-white shadow-md"
+                          : "bg-white/5 border-white/5 text-white/50 hover:text-white hover:bg-white/[0.08]"
+                      }`}
+                    >
+                      <Icon size={15} color={active ? brand : undefined} />
+                      <span>{tab.label}</span>
+                      {typeof tab.count === "number" && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-white/10 text-white/80">
+                          {tab.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-white/10 p-12 bg-white/[0.02] text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 mx-auto flex items-center justify-center text-white/40">
+                  <Landmark size={24} />
+                </div>
+                <h3 className="font-bold text-white text-base">No Financial Offerings Published</h3>
+                <p className="text-xs text-white/40 max-w-md mx-auto">
+                  This institution has not published any active account tiers, loan products, or financial options in its catalog. If the bank has no options, none are provided to clients.
+                </p>
+              </div>
+            )}
 
             {/* TAB: DEPOSIT ACCOUNT */}
-            {applyTab === "account" && (
+            {applyTab === "account" && availableCatalogTabs.some(t => t.id === "account") && (
               (() => {
+                if (availableTiers.length === 0) {
+                  return (
+                    <div className="rounded-2xl border border-white/10 p-8 bg-white/[0.02] text-center space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-white/5 mx-auto flex items-center justify-center text-white/40">
+                        <Wallet size={24} />
+                      </div>
+                      <h4 className="font-bold text-white text-base">No Published Account Options</h4>
+                      <p className="text-xs text-white/40 max-w-sm mx-auto">
+                        This bank has not configured or published account registration tiers. If the bank has no options, none are provided to clients.
+                      </p>
+                    </div>
+                  );
+                }
+
                 const activeSelectedTier = availableTiers.find((t: any) => t.id === (selectedTierId || availableTiers.find((x: any) => x.isDefault)?.id || availableTiers[0]?.id));
                 const heldCount = activeSelectedTier ? accounts.filter((a: any) => a.tierId === activeSelectedTier.id).length : 0;
                 const tierLimitReached = activeSelectedTier && typeof activeSelectedTier.maxAccountsPerUser === "number" && activeSelectedTier.maxAccountsPerUser > 0 && heldCount >= activeSelectedTier.maxAccountsPerUser;
@@ -2505,7 +3231,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 const bizCapReached = isBiz && typeof settings.maxBusinessAccountsPerUser === "number" && settings.maxBusinessAccountsPerUser > 0 && bizCount >= settings.maxBusinessAccountsPerUser;
                 const totalCapReached = typeof settings.maxTotalAccountsPerUser === "number" && settings.maxTotalAccountsPerUser > 0 && accounts.length >= settings.maxTotalAccountsPerUser;
 
-                const cannotRegisterReason = tierLimitReached
+                const cannotRegisterReason = availableTiers.length === 0
+                  ? "No account registration options are published by this bank. If the bank has no options, none are provided to clients."
+                  : tierLimitReached
                   ? `Holding Limit Reached: You already hold ${heldCount} of ${activeSelectedTier?.maxAccountsPerUser} allowed account(s) under '${activeSelectedTier?.name}'.`
                   : mutuallyExclusiveConflict
                   ? `Policy Restriction: You already hold account '${mutuallyExclusiveConflict.accountName}'. '${activeSelectedTier?.name}' is mutually exclusive with this tier (only one or the other may be held).`
@@ -2650,13 +3378,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                         )}
                       </div>
                     ) : (
-                      <div>
-                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wide mb-1.5">Account Type</label>
-                        <select name="accountType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                          <option value="personal_checking" className="bg-[#18181c] text-[#f4f4f5]">Personal Checking</option>
-                          <option value="personal_savings" className="bg-[#18181c] text-[#f4f4f5]">High-Yield Savings</option>
-                          <option value="business_checking" className="bg-[#18181c] text-[#f4f4f5]">Commercial Business Entity</option>
-                        </select>
+                      <div className="rounded-2xl border border-white/10 p-6 bg-white/[0.02] text-center space-y-2">
+                        <div className="w-10 h-10 rounded-xl bg-white/5 mx-auto flex items-center justify-center text-white/40">
+                          <Wallet size={20} />
+                        </div>
+                        <h4 className="font-bold text-white text-sm">No Published Account Options</h4>
+                        <p className="text-xs text-white/40 max-w-sm mx-auto">
+                          This bank has not configured or published account registration tiers. If the bank has no options, none are provided to clients.
+                        </p>
                       </div>
                     )}
 
@@ -2742,7 +3471,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     </div>
 
                     <button
-                      disabled={actionPending || Boolean(cannotRegisterReason)}
+                      disabled={actionPending || Boolean(cannotRegisterReason) || availableTiers.length === 0}
                       className="w-full py-4 rounded-2xl font-bold text-sm text-white shadow-xl transition-all hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       style={btnBrand}
                     >
@@ -2751,8 +3480,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           <Loader2 size={16} className="animate-spin" />
                           <span>Provisioning Account…</span>
                         </>
+                      ) : availableTiers.length === 0 ? (
+                        <span>No Account Options Available</span>
                       ) : cannotRegisterReason ? (
-                        <span>Registration Policy Restricted</span>
+                        <span>{cannotRegisterReason}</span>
                       ) : (
                         <>
                           <span>Open Account & View In-Game Setup</span>
@@ -2766,7 +3497,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             )}
 
             {/* TAB: LOANS & CREDIT */}
-            {applyTab === "loan" && (
+            {applyTab === "loan" && availableCatalogTabs.some(t => t.id === "loan") && (
               settings.enableLoans === false ? (
                 <div className="rounded-3xl border border-white/10 p-8 bg-white/[0.02] text-center">
                   <p className="text-white/50 text-sm">Loan applications are currently disabled for this institution.</p>
@@ -2923,7 +3654,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             )}
 
             {/* TAB: CARDS */}
-            {applyTab === "card" && (
+            {applyTab === "card" && availableCatalogTabs.some(t => t.id === "card") && (
               settings.enableCards === false ? (
                 <div className="rounded-3xl border border-white/10 p-8 bg-white/[0.02] text-center">
                   <p className="text-white/50 text-sm">Payment cards are currently disabled for this institution.</p>
@@ -2998,9 +3729,9 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                           ))}
                         </select>
                       ) : (
-                        <select name="cardType" className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-                          <option value="debit" className="bg-[#18181c] text-[#f4f4f5]">Standard Debit Card</option>
-                        </select>
+                        <div className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3.5 py-3 text-xs text-white/40 italic">
+                          No active payment card options offered by this bank.
+                        </div>
                       )}
                     </div>
                   </div>
@@ -3010,18 +3741,18 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   </p>
 
                   <button
-                    disabled={actionPending}
-                    className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50"
+                    disabled={actionPending || cardProducts.length === 0}
+                    className="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={btnBrand}
                   >
-                    {actionPending ? "Processing Card Request…" : "Issue Payment Card"}
+                    {actionPending ? "Processing Card Request…" : cardProducts.length === 0 ? "No Card Products Available" : "Issue Payment Card"}
                   </button>
                 </form>
               )
             )}
 
             {/* TAB: BONDS / TIME VAULTS */}
-            {applyTab === "bond" && (
+            {applyTab === "bond" && availableCatalogTabs.some(t => t.id === "bond") && (
               settings.enableVaults === false || !Array.isArray(bondProducts) || bondProducts.length === 0 ? (
                 <div className="rounded-3xl border border-white/10 p-8 bg-white/[0.02] text-center space-y-3">
                   <div className="w-12 h-12 rounded-2xl bg-white/5 mx-auto flex items-center justify-center text-white/40">
@@ -3088,7 +3819,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             )}
 
             {/* TAB: ESCROW AGREEMENT */}
-            {applyTab === "escrow" && (
+            {applyTab === "escrow" && availableCatalogTabs.some(t => t.id === "escrow") && (
               <form onSubmit={createEscrow} className="rounded-3xl border border-white/10 p-6 space-y-5 bg-white/[0.02]">
                 <div className="flex items-center justify-between border-b border-white/5 pb-4">
                   <div>
@@ -3316,13 +4047,549 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             )}
           </div>
         )}
+
+        {/* VIEW: ONYX PAYMENT SERVICE PROVIDER (PSP) & CLEARINGHOUSE */}
+        {view === "onyx" && (
+          <div className="space-y-6">
+            {/* Onyx Hero & Header */}
+            <div
+              className="rounded-[28px] p-6 sm:p-8 relative overflow-hidden border"
+              style={{
+                background: "linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(18, 18, 28, 0.95) 75%)",
+                borderColor: "rgba(99, 102, 241, 0.35)",
+              }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
+                      <Zap size={11} className="fill-indigo-300 text-indigo-300" />
+                      <span>Onyx Payment Service Provider (PSP)</span>
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Clearinghouse Operational</span>
+                    </span>
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    Discord Payments & Central Clearing
+                  </h2>
+                  <p className="text-xs sm:text-sm text-white/60 max-w-2xl">
+                    Accept automated payments on your Corp Discord server with instant settlement into your bank account. Manage direct debit subscriptions and generate instant checkout terminals.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (accounts.length > 0 && !newMerchantAccountId) {
+                        const corpAcc = accounts.find((a: any) => a.accountType?.includes("business") || a.accountType?.includes("corp"));
+                        setNewMerchantAccountId(corpAcc ? corpAcc.id : accounts[0].id);
+                      }
+                      setRegisterMerchantOpen(true);
+                    }}
+                    className="flex items-center gap-2 text-xs font-bold px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-lg shadow-indigo-600/30 active:scale-95"
+                  >
+                    <Store size={14} />
+                    <span>Setup Corp Storefront</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadOnyxData}
+                    title="Refresh Onyx network telemetry"
+                    className="p-2.5 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 text-white/70 hover:text-white transition"
+                  >
+                    <RefreshCw size={14} className={loadingOnyx ? "animate-spin" : ""} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Network KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 mt-6 pt-5 border-t border-white/10">
+                <div className="bg-black/30 border border-white/5 rounded-2xl p-3.5">
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-white/40">Connected Banks</p>
+                  <p className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">
+                    {onyxStats ? `${onyxStats.activeBankCount} / ${onyxStats.totalBanksCount}` : `${bank ? 1 : 0} Online`}
+                  </p>
+                  <p className="text-[10px] text-white/40 mt-0.5">Real-time inter-bank wire</p>
+                </div>
+
+                <div className="bg-black/30 border border-white/5 rounded-2xl p-3.5">
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-white/40">Active Merchants</p>
+                  <p className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">
+                    {onyxStats ? onyxStats.totalMerchantsCount : (myMerchants.length || 0)}
+                  </p>
+                  <p className="text-[10px] text-white/40 mt-0.5">Discord & web checkouts</p>
+                </div>
+
+                <div className="bg-black/30 border border-white/5 rounded-2xl p-3.5">
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-white/40">Onyx Volume</p>
+                  <p className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">
+                    {onyxStats ? formatMoney(onyxStats.onyxVolumeCents || 0) : "$0.00"}
+                  </p>
+                  <p className="text-[10px] text-white/40 mt-0.5">Cleared PSP transactions</p>
+                </div>
+
+                <div className="bg-black/30 border border-white/5 rounded-2xl p-3.5">
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-white/40">B2B Clearing Fee</p>
+                  <p className="text-xl sm:text-2xl font-black text-white mt-1 tabular-nums">
+                    {onyxStats ? `${(onyxStats.b2bApiFeePercent / 100).toFixed(2)}%` : "2.00%"}
+                  </p>
+                  <p className="text-[10px] text-emerald-400 mt-0.5">0% same-bank settlement</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-tab Navigation */}
+            <div className="flex items-center gap-1.5 p-1 bg-white/[0.03] border border-white/10 rounded-2xl overflow-x-auto">
+              {[
+                { id: "overview", label: "Overview & Discord Guide", icon: Globe },
+                { id: "merchants", label: `My Storefronts (${myMerchants.length})`, icon: Store },
+                { id: "subscriptions", label: `Subscriptions (${subscriptions.length})`, icon: Repeat },
+                { id: "paylinks", label: "Payment Links & Terminal", icon: QrCode },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = onyxSubTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setOnyxSubTab(tab.id as any)}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition ${
+                      isActive
+                        ? "bg-indigo-600 text-white shadow-sm font-bold"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    <Icon size={14} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* SUBTAB: OVERVIEW & DISCORD SETUP GUIDE */}
+            {onyxSubTab === "overview" && (
+              <div className="space-y-6">
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                      <Store size={16} />
+                    </div>
+                    <h3 className="font-bold text-white text-base">1. Register Storefront</h3>
+                    <p className="text-xs text-white/50 leading-relaxed">
+                      Link your Corporate Bank Account to an Onyx Merchant ID. Funds paid by players will settle directly into your balance.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                      <MessageSquare size={16} />
+                    </div>
+                    <h3 className="font-bold text-white text-base">2. Discord Slash Command</h3>
+                    <p className="text-xs text-white/50 leading-relaxed">
+                      In your Discord server, use <code className="text-indigo-300 bg-white/5 px-1 py-0.5 rounded">/onyx checkout</code> to spawn 1-click payment buttons for your members.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                      <BellRing size={16} />
+                    </div>
+                    <h3 className="font-bold text-white text-base">3. Instant Webhook Alerts</h3>
+                    <p className="text-xs text-white/50 leading-relaxed">
+                      Paste a Discord channel webhook URL to receive instant payment notifications whenever a client completes a checkout.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Discord Syntax Helper */}
+                <div className="rounded-2xl border border-white/10 bg-black/40 p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-2">
+                      <Terminal size={14} className="text-indigo-400" />
+                      <span>Discord Bot Command Syntax</span>
+                    </span>
+                    <span className="text-[11px] text-white/40">Use with the official Onyx Discord Bot</span>
+                  </div>
+                  <div className="p-3 bg-black/60 border border-white/5 rounded-xl font-mono text-xs text-indigo-200 flex items-center justify-between gap-2 overflow-x-auto">
+                    <code>
+                      /onyx checkout merchant:{myMerchants[0]?.slug || myMerchants[0]?.id || "your-store"} amount:50.00 memo:Rank Upgrade
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => copy(`/onyx checkout merchant:${myMerchants[0]?.slug || myMerchants[0]?.id || "your-store"} amount:50.00 memo:Rank Upgrade`, "copy_cmd_overview")}
+                      className="shrink-0 flex items-center gap-1 text-[11px] font-sans font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-2.5 py-1 rounded transition"
+                    >
+                      {copied === "copy_cmd_overview" ? <Check size={12} /> : <Copy size={12} />}
+                      <span>{copied === "copy_cmd_overview" ? "Copied" : "Copy"}</span>
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-white/40">
+                    Supports quotes via <code className="text-indigo-300">/onyx quote</code> or web checkout links with payment from any Slate bank.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* SUBTAB: MERCHANTS & DISCORD STOREFRONTS */}
+            {onyxSubTab === "merchants" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Your Registered Storefronts</h3>
+                    <p className="text-xs text-white/40 mt-0.5">Merchants hooked directly to your personal or corporate accounts.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (accounts.length > 0 && !newMerchantAccountId) {
+                        const corpAcc = accounts.find((a: any) => a.accountType?.includes("business") || a.accountType?.includes("corp"));
+                        setNewMerchantAccountId(corpAcc ? corpAcc.id : accounts[0].id);
+                      }
+                      setRegisterMerchantOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white transition border border-white/10"
+                  >
+                    <Plus size={13} />
+                    <span>New Storefront</span>
+                  </button>
+                </div>
+
+                {myMerchants.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 p-8 text-center bg-white/[0.02] space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center mx-auto">
+                      <Store size={24} />
+                    </div>
+                    <h4 className="font-bold text-white text-base">No Onyx Storefronts Registered Yet</h4>
+                    <p className="text-xs text-white/40 max-w-md mx-auto">
+                      Register your Corporate Bank Account as an Onyx checkout terminal to accept payments on Discord or online.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setRegisterMerchantOpen(true)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-lg"
+                    >
+                      Register First Storefront
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {myMerchants.map((m: any) => (
+                      <div key={m.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-4 hover:border-white/20 transition">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-lg text-white">{m.name}</h4>
+                              <span className="text-[10px] font-mono text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+                                {m.id}
+                              </span>
+                            </div>
+                            <p className="text-xs text-white/50 flex items-center gap-2">
+                              <span>Settlement Account:</span>
+                              <strong className="text-white font-medium flex items-center gap-1">
+                                <Building2 size={12} className="text-amber-400" />
+                                {m.destinationAccountName || m.destinationAccount}
+                              </strong>
+                              {m.bankName && <span className="text-white/40">· {m.bankName}</span>}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openManageProducts(m)}
+                              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition"
+                            >
+                              <ShoppingBag size={12} />
+                              <span>Products ({m.productsCount || 0})</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => openWebhookSetup(m)}
+                              className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition ${
+                                m.hasWebhook
+                                  ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
+                                  : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                              }`}
+                            >
+                              <Bell size={12} />
+                              <span>{m.hasWebhook ? "Webhook Active" : "Setup Webhook"}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRollMerchantKey(m.id)}
+                              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 transition"
+                              title="Regenerate API Key"
+                            >
+                              <Key size={12} />
+                              <span>Roll Key</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Discord Command Bar */}
+                        <div className="p-3 bg-black/40 border border-white/5 rounded-xl space-y-1.5 text-xs font-mono">
+                          <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-white/40 block">Discord Slash Command:</span>
+                          <div className="flex items-center justify-between gap-2 overflow-x-auto">
+                            <code className="text-indigo-300">
+                              /onyx checkout merchant:{m.slug || m.id} amount:25.00
+                            </code>
+                            <button
+                              type="button"
+                              onClick={() => copy(`/onyx checkout merchant:${m.slug || m.id} amount:25.00`, `cmd_${m.id}`)}
+                              className="shrink-0 flex items-center gap-1 font-sans text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-2 py-0.5 rounded transition"
+                            >
+                              {copied === `cmd_${m.id}` ? <Check size={11} /> : <Copy size={11} />}
+                              <span>{copied === `cmd_${m.id}` ? "Copied" : "Copy"}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between text-xs text-white/40 pt-1 border-t border-white/5 gap-2">
+                          <div className="flex items-center gap-2">
+                            <span>API Key:</span>
+                            <code className="font-mono text-white/60">••••••••-{m.apiKeyLast4 || "live"}</code>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => copy(`${window.location.origin}/onyx/checkout?merchantId=${m.id}`, `url_${m.id}`)}
+                              className="hover:text-white flex items-center gap-1 text-[11px]"
+                            >
+                              {copied === `url_${m.id}` ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                              <span>Copy Checkout Link</span>
+                            </button>
+                            <span>·</span>
+                            <Link
+                              to={`/onyx/checkout?merchantId=${m.id}`}
+                              target="_blank"
+                              className="text-indigo-400 hover:underline flex items-center gap-1 text-[11px]"
+                            >
+                              <span>Test Checkout</span>
+                              <ExternalLink size={11} />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUBTAB: SUBSCRIPTIONS & DIRECT DEBIT MANDATES */}
+            {onyxSubTab === "subscriptions" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Direct Debit Mandates & Subscriptions</h3>
+                    <p className="text-xs text-white/40 mt-0.5">Automated recurring billing debited on weekly or monthly schedules.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (accounts[0]) setSubFromAccount(accounts[0].id);
+                      setShowAddSubModal(true);
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-sm"
+                  >
+                    <Plus size={13} />
+                    <span>New Subscription</span>
+                  </button>
+                </div>
+
+                {subscriptions.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 p-8 text-center bg-white/[0.02] space-y-2">
+                    <p className="text-white/40 text-sm">No active or pending subscriptions found for your accounts.</p>
+                    <p className="text-xs text-white/30">Set up recurring direct debit payments for rent, clan dues, or retainers.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-white/10 divide-y divide-white/5 bg-white/[0.02] overflow-hidden">
+                    {subscriptions.map((s: any) => {
+                      const isCustomer = accounts.some((a: any) => a.id === s.customerAccountId);
+                      const isBiller = accounts.some((a: any) => a.id === s.billerAccountId);
+                      return (
+                        <div key={s.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-white/[0.02] transition">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              s.isActive ? "bg-indigo-500/20 text-indigo-300" : "bg-white/5 text-white/40"
+                            }`}>
+                              <Repeat size={16} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-bold text-sm text-white">{s.description || "Recurring Payment"}</h4>
+                                <span className={`text-[10px] font-bold uppercase px-2 py-0.2 rounded-full ${
+                                  s.isActive ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" : "bg-white/10 text-white/40"
+                                }`}>
+                                  {s.isActive ? "Active" : "Paused"}
+                                </span>
+                                <span className="text-[10px] font-mono text-white/40 uppercase">
+                                  {s.frequency}
+                                </span>
+                              </div>
+                              <p className="text-xs text-white/40 mt-0.5">
+                                {isCustomer ? `Paying to ${s.billerAccountName || "Merchant"}` : `Billing from ${s.customerAccountName || "Customer"}`}
+                                {s.nextRun && ` · Next run: ${format(new Date(s.nextRun), "MMM d, yyyy")}`}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 self-end sm:self-center">
+                            <span className="font-mono text-base font-bold text-white tabular-nums">
+                              {formatMoney(s.amount)}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={subTogglingId === s.id}
+                              onClick={async () => {
+                                setSubTogglingId(s.id);
+                                try {
+                                  const res = await fetch(`/api/portal/${bankId}/subscriptions/${s.id}/toggle`, { method: "POST" });
+                                  if (res.ok) {
+                                    handleSearch();
+                                  } else {
+                                    flash("Failed to toggle subscription");
+                                  }
+                                } catch {
+                                  flash("Error updating subscription");
+                                }
+                                setSubTogglingId(null);
+                              }}
+                              className={`p-2 rounded-xl text-xs font-semibold border transition ${
+                                s.isActive
+                                  ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/20"
+                                  : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/20"
+                              }`}
+                              title={s.isActive ? "Pause direct debits" : "Resume recurring billing"}
+                            >
+                              {s.isActive ? <Pause size={13} /> : <Play size={13} />}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUBTAB: PAYMENT LINKS & TERMINAL GENERATOR */}
+            {onyxSubTab === "paylinks" && (
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-4">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <QrCode size={16} className="text-indigo-400" />
+                      <span>Generate Instant Onyx Checkout Link</span>
+                    </h3>
+                    <p className="text-xs text-white/40 mt-0.5">
+                      Create shareable payment links that players can click in Discord channels, web embeds, or direct messages.
+                    </p>
+                  </div>
+
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40 mb-1">
+                        Select Storefront
+                      </label>
+                      <select
+                        value={quickPayLinkMerchantId || (myMerchants[0]?.id || "")}
+                        onChange={(e) => setQuickPayLinkMerchantId(e.target.value)}
+                        className="w-full bg-[#18181c] border border-white/10 rounded-xl px-3 py-2 text-xs text-white [&>option]:bg-[#18181c] [&>option]:text-white"
+                      >
+                        {myMerchants.map((m: any) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40 mb-1">
+                        Amount ($ USD)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Leave blank for customer input"
+                        value={quickPayLinkAmount}
+                        onChange={(e) => setQuickPayLinkAmount(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40 mb-1">
+                        Order Memo / Note
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. VIP Subscription"
+                        value={quickPayLinkMemo}
+                        onChange={(e) => setQuickPayLinkMemo(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const targetMchId = quickPayLinkMerchantId || myMerchants[0]?.id || "merchant_id";
+                    const amtParam = quickPayLinkAmount ? `&amount=${parseFloat(quickPayLinkAmount).toFixed(2)}` : "";
+                    const memoParam = quickPayLinkMemo ? `&memo=${encodeURIComponent(quickPayLinkMemo)}` : "";
+                    const fullUrl = `${window.location.origin}/onyx/checkout?merchantId=${targetMchId}${amtParam}${memoParam}`;
+                    const discordMarkdown = `[💳 Click here to pay ${quickPayLinkAmount ? `$${quickPayLinkAmount}` : "via Onyx"}](<${fullUrl}>)`;
+
+                    return (
+                      <div className="space-y-3 pt-2 border-t border-white/5">
+                        <div className="p-3 bg-black/50 border border-white/10 rounded-xl space-y-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 block">Direct URL:</span>
+                          <div className="flex items-center justify-between gap-2 overflow-x-auto font-mono text-xs text-indigo-300">
+                            <span className="truncate">{fullUrl}</span>
+                            <button
+                              type="button"
+                              onClick={() => copy(fullUrl, "copy_full_url")}
+                              className="shrink-0 flex items-center gap-1 font-sans text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-2.5 py-1 rounded transition"
+                            >
+                              {copied === "copy_full_url" ? <Check size={11} /> : <Copy size={11} />}
+                              <span>{copied === "copy_full_url" ? "Copied" : "Copy Link"}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-black/50 border border-white/10 rounded-xl space-y-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 block">Discord Markdown Embed Code:</span>
+                          <div className="flex items-center justify-between gap-2 overflow-x-auto font-mono text-xs text-white/70">
+                            <span className="truncate">{discordMarkdown}</span>
+                            <button
+                              type="button"
+                              onClick={() => copy(discordMarkdown, "copy_discord_md")}
+                              className="shrink-0 flex items-center gap-1 font-sans text-[11px] font-semibold text-white/70 hover:text-white bg-white/10 hover:bg-white/15 px-2.5 py-1 rounded transition"
+                            >
+                              {copied === "copy_discord_md" ? <Check size={11} /> : <Copy size={11} />}
+                              <span>{copied === "copy_discord_md" ? "Copied" : "Copy Markdown"}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       <nav className="fixed bottom-0 inset-x-0 z-30" style={{ borderTop: "1px solid var(--border)", background: "color-mix(in oklab, var(--bg) 88%, transparent)", backdropFilter: "blur(16px)", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="max-w-5xl mx-auto flex items-center justify-around">
           {nav.map((n) => {
             const Icon = n.icon;
-            const on = view === n.id || (n.id === "home" && ["bills", "borrow", "cards"].includes(view) === false && view !== "send" && view !== "activity" && view !== "apply" && view !== "escrow");
+            const on = view === n.id;
             return (
               <button key={n.id} onClick={() => { if (n.id === "send" && view !== "send") setTransferSuccess(null); setView(n.id); }} className="flex-1 py-3 min-h-[52px] text-[11px] font-semibold flex flex-col items-center gap-1" style={{ color: on ? "var(--fg)" : "var(--fg-subtle)" }}>
                 <Icon size={18} color={on ? brand : undefined} />

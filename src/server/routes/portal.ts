@@ -1667,7 +1667,50 @@ portalRouter.get("/api/portal/:bankId/catalog", requireAuth, async (req: express
   try {
     const bankId = req.params.bankId;
     const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-    const loans = settings?.enableLoans === false ? [] : await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, bankId), eq(loanProducts.isActive, true)));
+    let loans = settings?.enableLoans === false ? [] : await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, bankId), eq(loanProducts.isActive, true)));
+    
+    // If no catalog products exist yet, but loans have been issued by staff, auto-sync them into catalog
+    if (loans.length === 0 && settings?.enableLoans !== false) {
+      const { loans: loansTable } = await import("../../db/schema.js");
+      const { v4: uuidv4 } = await import("uuid");
+      const existingLoans = await db.select().from(loansTable).where(eq(loansTable.bankId, bankId));
+      for (const al of existingLoans) {
+        const autoProdId = uuidv4();
+        const rateBps = al.interestRate || 400;
+        const rateType = al.interestRateType || "weekly";
+        const termUnit = al.termUnit || (al.termMonths ? "months" : "weeks");
+        const termDays = termUnit === "weeks" ? ((al.termMonths || 2) * 7) : ((al.termMonths || 1) * 30);
+        const rateDisplay = rateType === "weekly" ? `${(rateBps / 100).toFixed(2)}%/week` : `${(rateBps / 100).toFixed(2)}% APR`;
+        const newProd = {
+          id: autoProdId,
+          bankId,
+          name: `${rateDisplay} Loan Product`,
+          description: `Institutional financing issued at ${rateDisplay}.`,
+          category: "personal",
+          interestRate: rateBps,
+          interestRateType: rateType,
+          termUnit,
+          minAmount: 10000,
+          maxAmount: Math.max(500000, al.principalAmount || 500000),
+          termDays,
+          originationFeePercent: 0,
+          lateFeePercent: 500,
+          gracePeriodDays: 3,
+          repaymentFrequency: termUnit === "weeks" ? "weekly" : "monthly",
+          collateralRequired: false,
+          minCreditScore: 0,
+          autoApproveMaxAmount: 0,
+          isActive: true,
+          createdAt: new Date(),
+        };
+        try {
+          await db.insert(loanProducts).values(newProd);
+          loans.push(newProd as any);
+          await db.update(loansTable).set({ productId: autoProdId }).where(eq(loansTable.id, al.id));
+        } catch (err) {}
+      }
+    }
+
     const cards = settings?.enableCards === false ? [] : await db.select().from(creditProducts).where(and(eq(creditProducts.bankId, bankId), eq(creditProducts.isActive, true)));
     const isDefaultDummyVaultTiers = (tiers: any[]): boolean => {
       if (!Array.isArray(tiers) || tiers.length !== 5) return false;
@@ -1679,7 +1722,7 @@ portalRouter.get("/api/portal/:bankId/catalog", requireAuth, async (req: express
     const rawVaultTiers = Array.isArray(settings?.vaultTiers) ? settings.vaultTiers : [];
     const bonds = (settings?.enableVaults === false || isDefaultDummyVaultTiers(rawVaultTiers)) ? [] : rawVaultTiers;
     const rawAccountTiers = Array.isArray(settings?.accountTiers) ? settings.accountTiers : [];
-    const accountTiers = (settings?.enableAccountTiers === false) 
+    const accountTiers = (settings?.enableAccountTiers !== true) 
       ? [] 
       : rawAccountTiers.filter((t: any) => !t.isPrivate);
 
@@ -1688,10 +1731,11 @@ portalRouter.get("/api/portal/:bankId/catalog", requireAuth, async (req: express
       cards, 
       bonds, 
       accountTiers,
-      enableLoans: settings?.enableLoans !== false, 
-      enableCards: settings?.enableCards !== false, 
+      enableLoans: settings?.enableLoans !== false && loans.length > 0, 
+      enableCards: settings?.enableCards !== false && cards.length > 0, 
       enableBonds: settings?.enableVaults !== false && bonds.length > 0,
-      enableAccountTiers: settings?.enableAccountTiers !== false && accountTiers.length > 0
+      enableAccountTiers: settings?.enableAccountTiers === true && accountTiers.length > 0,
+      enableEscrow: settings?.enableEscrow === true
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message || "Failed to load catalog" });

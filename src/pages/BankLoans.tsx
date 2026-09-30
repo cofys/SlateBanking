@@ -43,6 +43,15 @@ export function BankLoans() {
   const [prodIsActive, setProdIsActive] = useState(true);
   const [prodSubmitting, setProdSubmitting] = useState(false);
   
+  // In-app toast feedback
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const flash = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 4000);
+  };
+  const [alsoSaveAsProduct, setAlsoSaveAsProduct] = useState(true);
+  const [productTitleForSave, setProductTitleForSave] = useState("");
+  
   const [selectedLoan, setSelectedLoan] = useState<any | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -128,25 +137,25 @@ export function BankLoans() {
     });
   }, [loanProducts, productStatusFilter, productSearch]);
 
-  const openCreateProductModal = () => {
-    setEditingProduct(null);
-    setProductModalMode("create");
-    setProdName("");
-    setProdDescription("");
-    setProdCategory("personal");
-    setProdInterestRateType("weekly");
-    setProdInterestRate(2.0);
-    setProdTermUnit("weeks");
-    setProdTermDuration(2);
-    setProdMinAmount(100);
-    setProdMaxLimit(5000);
-    setProdRepaymentFrequency("weekly");
-    setProdOriginationFee(0);
-    setProdLateFee(5);
-    setProdGracePeriod(3);
-    setProdCollateral(false);
-    setProdAutoApprove(0);
-    setProdIsActive(true);
+  const openCreateProductModal = (prefill?: any) => {
+    setEditingProduct(prefill && prefill.id ? prefill : null);
+    setProductModalMode(prefill && prefill.id ? "edit" : "create");
+    setProdName(prefill?.name || "");
+    setProdDescription(prefill?.description || "");
+    setProdCategory(prefill?.category || "personal");
+    setProdInterestRateType(prefill?.interestRateType || "weekly");
+    setProdInterestRate(prefill?.interestRate != null ? Number(prefill.interestRate) : 4.0);
+    setProdTermUnit(prefill?.termUnit || "weeks");
+    setProdTermDuration(prefill?.termDuration || 2);
+    setProdMinAmount(prefill?.minAmount ? prefill.minAmount / 100 : 100);
+    setProdMaxLimit(prefill?.maxAmount ? prefill.maxAmount / 100 : 5000);
+    setProdRepaymentFrequency(prefill?.repaymentFrequency || "weekly");
+    setProdOriginationFee(prefill?.originationFeePercent != null ? prefill.originationFeePercent / 100 : 0);
+    setProdLateFee(prefill?.lateFeePercent != null ? prefill.lateFeePercent / 100 : 5);
+    setProdGracePeriod(prefill?.gracePeriodDays != null ? prefill.gracePeriodDays : 3);
+    setProdCollateral(Boolean(prefill?.collateralRequired));
+    setProdAutoApprove(prefill?.autoApproveMaxAmount ? prefill.autoApproveMaxAmount / 100 : 0);
+    setProdIsActive(prefill?.isActive !== false);
     setShowProductModal(true);
   };
 
@@ -223,13 +232,15 @@ export function BankLoans() {
       setProdSubmitting(false);
       if (res.ok) {
         setShowProductModal(false);
+        flash(productModalMode === "edit" ? "Loan product updated successfully." : "New loan product published to catalog.");
+        setActiveMainTab("products");
         fetchData();
       } else {
-        alert(d.error || "Failed to save loan product");
+        flash(d.error || "Failed to save loan product");
       }
     } catch {
       setProdSubmitting(false);
-      alert("Network error saving loan product");
+      flash("Network error saving loan product");
     }
   };
 
@@ -392,6 +403,31 @@ export function BankLoans() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
+        if (alsoSaveAsProduct) {
+          try {
+            const calcDays = convertTermToDays(parseFloat(termDuration) || 2, termUnit as any, 14);
+            await fetch(`/api/banks/${bankId}/products`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                type: "loan",
+                name: productTitleForSave.trim() || `${formatLoanRate(parseFloat(interestRate) || 4, interestRateType as any, true)} Financing`,
+                description: `Underwritten financing at ${formatLoanRate(parseFloat(interestRate) || 4, interestRateType as any, false)}.`,
+                category: "personal",
+                interestRate: Number(interestRate) || 4,
+                interestRateType,
+                termUnit,
+                termDays: calcDays,
+                minAmount: 100,
+                maxLimit: Math.max(5000, Number(principalAmount) || 5000),
+                repaymentFrequency: termUnit === "weeks" ? "weekly" : "monthly",
+                isActive: true,
+              })
+            });
+          } catch (err) {
+            console.error(err);
+          }
+        }
         setShowAddModal(false);
         setIsOffSystem(false);
         setInitialPaidAmount("");
@@ -403,14 +439,17 @@ export function BankLoans() {
         setCollateralDescription("");
         setCollateralValue("");
         setSelectedProductId("");
+        setAlsoSaveAsProduct(true);
+        setProductTitleForSave("");
+        flash(alsoSaveAsProduct ? "Direct loan issued and published to catalog!" : "Direct loan issued successfully.");
         fetchData();
       } else {
         const err = await res.json();
-        alert("Error creating loan: " + (err.error || "Unknown error"));
+        flash("Error creating loan: " + (err.error || "Unknown error"));
       }
     } catch (e: any) {
       console.error(e);
-      alert("Error: " + e.message);
+      flash("Error: " + e.message);
     }
   };
 
@@ -506,57 +545,61 @@ export function BankLoans() {
           </h1>
           <p className="text-white/60 text-sm">Issue, underwrite, collateralize, and automate debt collection across borrower accounts.</p>
         </div>
-        {activeMainTab === "loans" ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            <button 
-              onClick={handleProcessDueLoans}
-              disabled={processingCron}
-              className="flex items-center gap-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/30 px-3 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
-              title="Run automated repayment debits across all active loans"
-            >
-              <Zap size={16} className="text-indigo-400" />
-              Process Due Debits
-            </button>
-            <button 
-              onClick={handleAccrueInterest}
-              disabled={processingCron}
-              className="flex items-center gap-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 px-3 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
-              title="Calculate and add daily interest compounding"
-            >
-              <Percent size={16} className="text-amber-400" />
-              Accrue Interest
-            </button>
-            <button 
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold transition-colors cursor-pointer shadow-lg shadow-emerald-600/20"
-            >
-              <Plus size={18} />
-              Issue New Loan
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 flex-wrap">
-            {loanProducts.length > 0 && (
-              <button
-                type="button"
-                onClick={handlePurgeAllLoanProducts}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 rounded-xl transition cursor-pointer font-semibold"
-                title="Permanently remove all demo or presaved loan products"
+        <div className="flex items-center gap-2 flex-wrap">
+          {activeMainTab === "loans" && (
+            <>
+              <button 
+                onClick={handleProcessDueLoans}
+                disabled={processingCron}
+                className="flex items-center gap-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/30 px-3 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                title="Run automated repayment debits across all active loans"
               >
-                <Trash2 size={14} />
-                <span>Purge Catalog</span>
+                <Zap size={14} className="text-indigo-400" />
+                Process Due Debits
               </button>
-            )}
+              <button 
+                onClick={handleAccrueInterest}
+                disabled={processingCron}
+                className="flex items-center gap-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 px-3 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                title="Calculate and add daily interest compounding"
+              >
+                <Percent size={14} className="text-amber-400" />
+                Accrue Interest
+              </button>
+            </>
+          )}
+
+          {activeMainTab === "products" && loanProducts.length > 0 && (
             <button
               type="button"
-              onClick={openCreateProductModal}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold transition-colors cursor-pointer shadow-lg shadow-emerald-600/20"
+              onClick={handlePurgeAllLoanProducts}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 rounded-xl transition cursor-pointer font-semibold"
+              title="Permanently remove all demo or presaved loan products"
             >
-              <Plus size={18} />
-              <span>Create Loan Product</span>
+              <Trash2 size={14} />
+              <span>Purge Catalog</span>
             </button>
-          </div>
-        )}
+          )}
+
+          <button
+            type="button"
+            onClick={() => openCreateProductModal()}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl font-semibold text-xs transition cursor-pointer shadow-lg shadow-emerald-600/20"
+            title="Create a reusable loan product for citizen/portal catalog"
+          >
+            <Briefcase size={15} />
+            <span>Create Loan Product</span>
+          </button>
+
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white border border-white/15 px-3.5 py-2 rounded-xl font-semibold text-xs transition cursor-pointer"
+            title="Issue an underwritten loan directly to a specific borrower account"
+          >
+            <Plus size={15} />
+            <span>Issue Direct Loan</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Tab Navigation */}
@@ -684,19 +727,51 @@ export function BankLoans() {
       </div>
 
       {loans.length === 0 ? (
-        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-12 text-center">
-          <Landmark className="mx-auto h-12 w-12 text-white/20 mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">No loans recorded</h3>
-          <p className="text-white/60 max-w-sm mx-auto mb-6">
-            Issue loans to clients. Funds will be deposited directly to their account, and you can automate collections and accrue yield.
-          </p>
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-medium transition-colors cursor-pointer mx-auto"
-          >
-            <Plus size={18} />
-            Issue First Loan
-          </button>
+        <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-10 text-center space-y-4">
+          <Landmark className="mx-auto h-12 w-12 text-white/20" />
+          <div>
+            <h3 className="text-lg font-semibold text-white">No active borrower loans in portfolio</h3>
+            <p className="text-white/60 max-w-md mx-auto mt-1 text-xs">
+              This portfolio tracks issued borrower loans. You can issue a direct loan to an account or configure reusable lending templates in the Loan Products Catalog.
+            </p>
+          </div>
+
+          {loanProducts.length > 0 && (
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 max-w-md mx-auto flex items-center justify-between text-left">
+              <div>
+                <p className="text-xs font-bold text-emerald-300">
+                  {loanProducts.length} Loan Product{loanProducts.length === 1 ? "" : "s"} in Catalog
+                </p>
+                <p className="text-[11px] text-white/60 mt-0.5">
+                  Published catalog templates are live for citizen & customer applications.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveMainTab("products")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer"
+              >
+                View Catalog ({loanProducts.length})
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button 
+              onClick={() => openCreateProductModal()}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold text-xs transition cursor-pointer shadow-lg shadow-emerald-600/20"
+            >
+              <Briefcase size={16} />
+              <span>Create Loan Product</span>
+            </button>
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-semibold text-xs transition cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>Issue Direct Loan</span>
+            </button>
+          </div>
         </div>
       ) : filteredLoans.length === 0 ? (
         <div className="bg-[var(--bg-elevated)] border border-white/10 rounded-2xl p-12 text-center text-zinc-400">
@@ -873,6 +948,26 @@ export function BankLoans() {
                            Payment
                          </button>
                       )}
+                      <button
+                        title="Publish these loan terms as a catalog Loan Product template"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openCreateProductModal({
+                            name: `${formatLoanRate(loan.interestRate, loan.interestRateType, true)} Loan Product`,
+                            description: `Underwritten financing issued at ${formatLoanRate(loan.interestRate, loan.interestRateType, false)}.`,
+                            interestRate: loan.interestRate,
+                            interestRateType: loan.interestRateType || "weekly",
+                            termUnit: loan.termUnit || (loan.termMonths ? "months" : "weeks"),
+                            termDuration: loan.termMonths || 2,
+                            maxAmount: loan.principalAmount || 500000,
+                            repaymentFrequency: loan.termUnit === "weeks" ? "weekly" : "monthly",
+                          });
+                        }}
+                        className="text-xs bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 border border-emerald-500/30 px-2.5 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1"
+                      >
+                        <Briefcase size={12} />
+                        <span>To Product</span>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1407,6 +1502,28 @@ export function BankLoans() {
                       className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
+                </div>
+
+                {/* Publish to catalog product option */}
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/90">
+                    <input
+                      type="checkbox"
+                      checked={alsoSaveAsProduct}
+                      onChange={(e) => setAlsoSaveAsProduct(e.target.checked)}
+                      className="rounded bg-black/40 border-white/20 text-emerald-500 focus:ring-emerald-500/30"
+                    />
+                    <span>Also publish as reusable Loan Product in catalog</span>
+                  </label>
+                  {alsoSaveAsProduct && (
+                    <input
+                      type="text"
+                      value={productTitleForSave}
+                      onChange={(e) => setProductTitleForSave(e.target.value)}
+                      placeholder={`e.g. ${formatLoanRate(parseFloat(interestRate) || 4, interestRateType as any, true)} Financing Product`}
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500"
+                    />
+                  )}
                 </div>
 
                 <div className="pt-4 flex gap-3">

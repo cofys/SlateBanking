@@ -33,6 +33,52 @@ onyxRouter.get("/api/onyx/merchant/:id", async (req: express.Request, res: expre
 });
 
 
+onyxRouter.get("/api/onyx/public-stats", async (req: express.Request, res: express.Response) => {
+    const { db } = await import("../../db/index.js");
+    const { banks, transactions, onyxMerchants, onyxSettings } = await import("../../db/schema.js");
+    const { sql, eq } = await import("drizzle-orm");
+
+    try {
+      const allBanks = await db.select({
+        id: banks.id,
+        name: banks.name,
+        maintenanceMode: banks.maintenanceMode,
+        brandingColor: banks.brandingColor
+      }).from(banks);
+      const activeBankCount = allBanks.filter(b => !b.maintenanceMode).length;
+      const totalBanksCount = allBanks.length;
+
+      const allMerchants = await db.select({ id: onyxMerchants.id }).from(onyxMerchants);
+      const totalMerchantsCount = allMerchants.length;
+
+      const onyxTxSummary = await db.select({
+        onyxVolume: sql<number>`COALESCE(SUM(${transactions.amount}), 0)`,
+        onyxCount: sql<number>`COUNT(${transactions.id})`,
+      }).from(transactions).where(sql`${transactions.type} LIKE 'onyx_%'`).get();
+
+      const settings = await db.select().from(onyxSettings).where(eq(onyxSettings.id, 'global')).get();
+
+      res.json({
+        activeBankCount,
+        totalBanksCount,
+        totalMerchantsCount,
+        onyxVolumeCents: onyxTxSummary?.onyxVolume || 0,
+        onyxTransactionsCount: onyxTxSummary?.onyxCount || 0,
+        b2bApiFeePercent: settings?.b2bApiFeePercent || 200,
+        clearinghouseEnabled: settings?.clearinghouseEnabled ?? true,
+        banks: allBanks.map(b => ({
+          id: b.id,
+          name: b.name,
+          isOnline: !b.maintenanceMode,
+          brandingColor: b.brandingColor
+        })),
+      });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to load Onyx network stats" });
+    }
+});
+
 onyxRouter.get("/api/onyx/network-analytics", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index.js");
     const { banks, transactions, cityCorpLogs, onyxMerchants, saasInvoices } = await import("../../db/schema.js");
@@ -391,22 +437,103 @@ function slugifyShop(name: string): string {
   return `${base}-${crypto.randomBytes(3).toString("hex")}`;
 }
 
+async function checkMerchantAccess(req: express.Request, merchantId: string) {
+  const { db } = await import("../../db/index.js");
+  const { onyxMerchants, bankAccounts, accountMembers } = await import("../../db/schema.js");
+  const { eq, and, or, inArray } = await import("drizzle-orm");
+  const { getUserCandidateIdentifiers } = await import("../userResolver.js");
+
+  const user = (req as any).user;
+  const candidates = await getUserCandidateIdentifiers(req);
+  const loweredCandidates = candidates.map(c => c.toLowerCase());
+
+  const m = await db.select().from(onyxMerchants).where(eq(onyxMerchants.id, merchantId)).get();
+  if (!m) return { ok: false, status: 404, error: "Merchant not found" };
+
+  const dest = m.destinationAccount
+    ? await db.select().from(bankAccounts).where(eq(bankAccounts.id, m.destinationAccount)).get()
+    : null;
+
+  let isAccountOwner = false;
+  let isAccountMember = false;
+
+  if (dest) {
+    if (candidates.includes(dest.ownerDiscordId) || loweredCandidates.includes((dest.ownerDiscordId || "").toLowerCase())) {
+      isAccountOwner = true;
+    } else {
+      const mem = await db.select().from(accountMembers).where(
+        and(
+          eq(accountMembers.accountId, dest.id),
+          or(
+            inArray(accountMembers.discordId, candidates),
+            inArray(accountMembers.mcUsername, candidates)
+          )
+        )
+      ).get();
+      if (mem) isAccountMember = true;
+    }
+  }
+
+  const isOwner = (user?.mcUuid && m.ownerMcUuid === user.mcUuid)
+    || (m.ownerDiscordId && candidates.includes(m.ownerDiscordId))
+    || (m.ownerDiscordId && loweredCandidates.includes(m.ownerDiscordId.toLowerCase()))
+    || isAccountOwner
+    || isAccountMember
+    || !!user?.isGlobalAdmin;
+
+  if (!isOwner) return { ok: false, status: 403, error: "Unauthorized access to this merchant storefront" };
+  return { ok: true, merchant: m, destinationAccount: dest };
+}
+
 onyxRouter.get("/api/onyx/me", requireAuth, async (req: express.Request, res: express.Response) => {
   try {
     const { db } = await import("../../db/index");
-    const { onyxMerchants, banks, bankAccounts } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { onyxMerchants, banks, bankAccounts, accountMembers, onyxMerchantProducts, discordWebhooks } = await import("../../db/schema");
+    const { eq, and, or, inArray } = await import("drizzle-orm");
     const { getUserCandidateIdentifiers } = await import("../userResolver.js");
     const user = (req as any).user;
     const candidates = await getUserCandidateIdentifiers(req);
+    const loweredCandidates = candidates.map(c => c.toLowerCase());
     const owned = [];
     const all = await db.select().from(onyxMerchants);
     for (const m of all) {
-      const isOwner = (user.mcUuid && m.ownerMcUuid === user.mcUuid)
-        || (m.ownerDiscordId && candidates.includes(m.ownerDiscordId));
+      const dest = m.destinationAccount
+        ? await db.select().from(bankAccounts).where(eq(bankAccounts.id, m.destinationAccount)).get()
+        : null;
+
+      let isAccountOwner = false;
+      let isAccountMember = false;
+
+      if (dest) {
+        if (candidates.includes(dest.ownerDiscordId) || loweredCandidates.includes((dest.ownerDiscordId || "").toLowerCase())) {
+          isAccountOwner = true;
+        } else {
+          const mem = await db.select().from(accountMembers).where(
+            and(
+              eq(accountMembers.accountId, dest.id),
+              or(
+                inArray(accountMembers.discordId, candidates),
+                inArray(accountMembers.mcUsername, candidates)
+              )
+            )
+          ).get();
+          if (mem) isAccountMember = true;
+        }
+      }
+
+      const isOwner = (user?.mcUuid && m.ownerMcUuid === user.mcUuid)
+        || (m.ownerDiscordId && candidates.includes(m.ownerDiscordId))
+        || (m.ownerDiscordId && loweredCandidates.includes(m.ownerDiscordId.toLowerCase()))
+        || isAccountOwner
+        || isAccountMember
+        || !!user?.isGlobalAdmin;
+
       if (!isOwner) continue;
+
       const bank = await db.select().from(banks).where(eq(banks.id, m.bankId)).get();
-      const dest = await db.select().from(bankAccounts).where(eq(bankAccounts.id, m.destinationAccount)).get();
+      const products = await db.select().from(onyxMerchantProducts).where(eq(onyxMerchantProducts.merchantId, m.id));
+      const webhook = await db.select().from(discordWebhooks).where(eq(discordWebhooks.bankId, `merchant_${m.id}`)).get();
+
       owned.push({
         id: m.id,
         name: m.name,
@@ -418,6 +545,9 @@ onyxRouter.get("/api/onyx/me", requireAuth, async (req: express.Request, res: ex
         apiKeyLast4: m.apiKeyLast4,
         createdAt: m.createdAt,
         checkoutPath: `/onyx/checkout?merchantId=${m.id}`,
+        productsCount: products.length,
+        hasWebhook: !!webhook?.isActive,
+        webhookUrlMasked: webhook?.url ? `https://discord.com/api/webhooks/...` : null,
       });
     }
     res.json(owned);
@@ -444,7 +574,7 @@ onyxRouter.post("/api/onyx/register", requireAuth, async (req: express.Request, 
     const dest = await db.select().from(bankAccounts).where(eq(bankAccounts.id, destinationAccountId)).get();
     if (!dest || dest.isSystem) return res.status(404).json({ error: "That account was not found." });
     if (!(await requireOwnedAccount(req, dest, true))) {
-      return res.status(403).json({ error: "You can only receive Onyx payments into an account you own." });
+      return res.status(403).json({ error: "You can only receive Onyx payments into an account you own or operate." });
     }
     const bank = await db.select().from(banks).where(eq(banks.id, dest.bankId)).get();
     if (!bank) return res.status(404).json({ error: "Bank not found" });
@@ -452,7 +582,7 @@ onyxRouter.post("/api/onyx/register", requireAuth, async (req: express.Request, 
     const user = (req as any).user;
     const apiKey = generateMerchantApiKey();
     const merchant = {
-      id: uuidv4(),
+      id: `mch_${uuidv4().substring(0, 8)}`,
       name: shopName,
       bankId: dest.bankId,
       destinationAccount: dest.id,
@@ -484,27 +614,149 @@ onyxRouter.post("/api/onyx/register", requireAuth, async (req: express.Request, 
 
 onyxRouter.post("/api/onyx/me/:id/roll-key", requireAuth, async (req: express.Request, res: express.Response) => {
   try {
+    const auth = await checkMerchantAccess(req, req.params.id);
+    if (!auth.ok) return res.status(auth.status || 403).json({ error: auth.error });
+
     const { db } = await import("../../db/index");
     const { onyxMerchants } = await import("../../db/schema");
     const { eq } = await import("drizzle-orm");
-    const { getUserCandidateIdentifiers } = await import("../userResolver.js");
     const { hashApiKey, last4OfKey, generateMerchantApiKey } = await import("../../lib/api_keys.js");
-    const user = (req as any).user;
-    const candidates = await getUserCandidateIdentifiers(req);
-    const m = await db.select().from(onyxMerchants).where(eq(onyxMerchants.id, req.params.id)).get();
-    if (!m) return res.status(404).json({ error: "Shop not found" });
-    const isOwner = (user.mcUuid && m.ownerMcUuid === user.mcUuid) || (m.ownerDiscordId && candidates.includes(m.ownerDiscordId));
-    if (!isOwner) return res.status(403).json({ error: "Not your shop" });
+
     const apiKey = generateMerchantApiKey();
     await db.update(onyxMerchants).set({
       apiKey: `hashed:${hashApiKey(apiKey)}`,
       apiKeyHash: hashApiKey(apiKey),
       apiKeyLast4: last4OfKey(apiKey),
-    } as any).where(eq(onyxMerchants.id, m.id));
+    } as any).where(eq(onyxMerchants.id, auth.merchant!.id));
     res.json({ apiKey, apiKeyLast4: last4OfKey(apiKey) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not roll key" });
+  }
+});
+
+onyxRouter.get("/api/onyx/me/:id/products", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const auth = await checkMerchantAccess(req, req.params.id);
+    if (!auth.ok) return res.status(auth.status || 403).json({ error: auth.error });
+
+    const { db } = await import("../../db/index");
+    const { onyxMerchantProducts } = await import("../../db/schema");
+    const { eq, desc } = await import("drizzle-orm");
+
+    const products = await db.select().from(onyxMerchantProducts)
+      .where(eq(onyxMerchantProducts.merchantId, auth.merchant!.id))
+      .orderBy(desc(onyxMerchantProducts.createdAt));
+
+    res.json(products);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to fetch merchant products" });
+  }
+});
+
+onyxRouter.post("/api/onyx/me/:id/products", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const auth = await checkMerchantAccess(req, req.params.id);
+    if (!auth.ok) return res.status(auth.status || 403).json({ error: auth.error });
+
+    const { name, priceType, price, description } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: "Product name is required." });
+
+    const { db } = await import("../../db/index");
+    const { onyxMerchantProducts } = await import("../../db/schema");
+    const { v4: uuidv4 } = await import("uuid");
+
+    const priceCents = priceType === "custom_customer" ? 0 : Math.round(Math.max(0, Number(price || 0) * 100));
+    const newProduct = {
+      id: `prod_${uuidv4().substring(0, 8)}`,
+      merchantId: auth.merchant!.id,
+      name: name.trim().slice(0, 100),
+      priceType: priceType === "custom_customer" ? "custom_customer" : "fixed",
+      price: priceCents,
+      description: description ? String(description).trim().slice(0, 300) : null,
+      isActive: true,
+      createdAt: new Date(),
+    };
+
+    await db.insert(onyxMerchantProducts).values(newProduct);
+    res.json(newProduct);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to create merchant product" });
+  }
+});
+
+onyxRouter.delete("/api/onyx/me/:id/products/:prodId", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const auth = await checkMerchantAccess(req, req.params.id);
+    if (!auth.ok) return res.status(auth.status || 403).json({ error: auth.error });
+
+    const { db } = await import("../../db/index");
+    const { onyxMerchantProducts } = await import("../../db/schema");
+    const { eq, and } = await import("drizzle-orm");
+
+    await db.delete(onyxMerchantProducts).where(
+      and(
+        eq(onyxMerchantProducts.id, req.params.prodId),
+        eq(onyxMerchantProducts.merchantId, auth.merchant!.id)
+      )
+    );
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to delete product" });
+  }
+});
+
+onyxRouter.post("/api/onyx/me/:id/webhook", requireAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const auth = await checkMerchantAccess(req, req.params.id);
+    if (!auth.ok) return res.status(auth.status || 403).json({ error: auth.error });
+
+    const { url } = req.body;
+    const { db } = await import("../../db/index");
+    const { discordWebhooks } = await import("../../db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { v4: uuidv4 } = await import("uuid");
+    const { isAllowedWebhookUrl } = await import("../middleware.js");
+
+    const merchantWebhookTarget = `merchant_${auth.merchant!.id}`;
+
+    if (!url || !url.trim()) {
+      // Remove webhook
+      await db.delete(discordWebhooks).where(eq(discordWebhooks.bankId, merchantWebhookTarget));
+      return res.json({ success: true, message: "Webhook cleared." });
+    }
+
+    const cleanUrl = url.trim();
+    if (!isAllowedWebhookUrl(cleanUrl)) {
+      return res.status(400).json({ error: "Invalid Discord webhook URL. Must start with https://discord.com/api/webhooks/..." });
+    }
+
+    const existing = await db.select().from(discordWebhooks).where(eq(discordWebhooks.bankId, merchantWebhookTarget)).get();
+    if (existing) {
+      await db.update(discordWebhooks).set({
+        url: cleanUrl,
+        isActive: true,
+      }).where(eq(discordWebhooks.id, existing.id));
+    } else {
+      await db.insert(discordWebhooks).values({
+        id: uuidv4(),
+        bankId: merchantWebhookTarget,
+        name: `${auth.merchant!.name} Discord Notifications`,
+        url: cleanUrl,
+        events: JSON.stringify(["merchant_payment", "invoice_paid"]),
+        isActive: true,
+        createdAt: new Date(),
+      });
+    }
+
+    res.json({ success: true, message: "Discord webhook saved successfully." });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to update webhook" });
   }
 });
 
