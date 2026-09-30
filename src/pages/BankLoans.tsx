@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { Landmark, Plus, RefreshCw, AlertCircle, Banknote, Calendar, FileText, X, Percent, CheckCircle2, ShieldAlert, ArrowUpRight, DollarSign, ShieldCheck, Zap, AlertTriangle, Calculator, Clock, Briefcase, Trash2, Edit3, Search, Layers, Filter, Check, Eye } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown, convertTermToDays, LoanInterestType, LoanTermUnit } from "../lib/loan_utils";
+import { formatLoanRate, getEquivalentApr, calculateLoanBreakdown, convertTermToDays, normalizeRatePercent, LoanInterestType, LoanTermUnit } from "../lib/loan_utils";
 import { formatMoney } from "../lib/utils";
 
 export function BankLoans() {
@@ -14,6 +14,7 @@ export function BankLoans() {
   const [selectedProductId, setSelectedProductId] = useState("");
   const [loading, setLoading] = useState(true);
   const [processingCron, setProcessingCron] = useState(false);
+  const [syncingProducts, setSyncingProducts] = useState(false);
   const [filterTab, setFilterTab] = useState<"all" | "pending" | "active" | "delinquent" | "defaulted" | "paid">("all");
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -144,7 +145,7 @@ export function BankLoans() {
     setProdDescription(prefill?.description || "");
     setProdCategory(prefill?.category || "personal");
     setProdInterestRateType(prefill?.interestRateType || "weekly");
-    setProdInterestRate(prefill?.interestRate != null ? Number(prefill.interestRate) : 4.0);
+    setProdInterestRate(prefill?.interestRate != null ? normalizeRatePercent(prefill.interestRate) : 4.0);
     setProdTermUnit(prefill?.termUnit || "weeks");
     setProdTermDuration(prefill?.termDuration || 2);
     setProdMinAmount(prefill?.minAmount ? prefill.minAmount / 100 : 100);
@@ -166,7 +167,7 @@ export function BankLoans() {
     setProdDescription(p.description || "");
     setProdCategory(p.category || "personal");
     setProdInterestRateType((p.interestRateType || "apr") as LoanInterestType);
-    setProdInterestRate(p.interestRate != null ? p.interestRate : 2.0);
+    setProdInterestRate(p.interestRate != null ? normalizeRatePercent(p.interestRate) : 2.0);
     const u = (p.termUnit || (p.termDays && p.termDays % 7 === 0 && p.termDays <= 28 ? "weeks" : p.termDays && p.termDays % 30 === 0 ? "months" : "days")) as LoanTermUnit;
     setProdTermUnit(u);
     if (u === "weeks" && p.termDays) setProdTermDuration(Math.round(p.termDays / 7));
@@ -287,6 +288,24 @@ export function BankLoans() {
       if (res.ok) fetchData();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleSyncLoansToProducts = async () => {
+    setSyncingProducts(true);
+    try {
+      const res = await fetch(`/api/banks/${bankId}/products/sync-loans`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        flash(`Successfully reconciled ${data.count || 0} catalog loan products from issued loans.`);
+        fetchData();
+      } else {
+        flash(data.error || "Failed to synchronize loans into catalog");
+      }
+    } catch {
+      flash("Network error synchronizing loans");
+    } finally {
+      setSyncingProducts(false);
     }
   };
 
@@ -568,6 +587,17 @@ export function BankLoans() {
               </button>
             </>
           )}
+
+          <button
+            type="button"
+            onClick={handleSyncLoansToProducts}
+            disabled={syncingProducts}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 border border-indigo-500/20 rounded-xl transition cursor-pointer font-semibold"
+            title="Scan all bank loans and generate matching catalog products for any missing"
+          >
+            <RefreshCw size={14} className={syncingProducts ? "animate-spin" : ""} />
+            <span>Sync Catalog from Loans</span>
+          </button>
 
           {activeMainTab === "products" && loanProducts.length > 0 && (
             <button

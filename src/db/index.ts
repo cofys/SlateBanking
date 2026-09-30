@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import * as schema from "./schema";
 import path from "path";
 import fs from "fs";
+import { isTable, getTableColumns } from "drizzle-orm";
 
 const dataDir = path.join(process.cwd(), "data");
 if (!fs.existsSync(dataDir)) {
@@ -47,6 +48,41 @@ function ensureDatabaseSchemaSynced() {
       }
     } catch (err) {
       console.error(`[DB Auto-Migrate Error] Failed to check/add ${columnName} to ${tableName}:`, err);
+    }
+  };
+
+  const autoSyncSchemaColumns = () => {
+    try {
+      for (const [key, val] of Object.entries(schema)) {
+        if (isTable(val)) {
+          const tableName = (val as any)[Symbol.for("drizzle:Name")] || (val as any)._?.name;
+          if (!tableName) continue;
+          try {
+            const tableInfo = sqlite.pragma(`table_info(${tableName})`) as any[];
+            const existingCols = new Set(tableInfo.map((c: any) => c.name));
+            const cols = getTableColumns(val);
+            for (const [colKey, col] of Object.entries(cols)) {
+              if (!existingCols.has(col.name)) {
+                let sqlDef = "TEXT";
+                if (col.dataType === "number") sqlDef = "INTEGER DEFAULT 0";
+                else if (col.dataType === "boolean") sqlDef = "INTEGER DEFAULT 0";
+                else if (col.dataType === "date") sqlDef = "INTEGER";
+                else if (col.dataType === "string") sqlDef = "TEXT";
+                try {
+                  sqlite.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${sqlDef}`).run();
+                  console.log(`[DB Auto-Migrate] Automatically added missing column '${col.name}' (${sqlDef}) to table '${tableName}'`);
+                } catch (e) {
+                  console.error(`[DB Auto-Migrate Error] Failed to add '${col.name}' to '${tableName}':`, e);
+                }
+              }
+            }
+          } catch (tErr) {
+            console.error(`[DB Auto-Migrate Error] Table check failed for '${tableName}':`, tErr);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[DB Auto-Migrate Error] Schema column auto-sync failed:", e);
     }
   };
 
@@ -501,6 +537,9 @@ function ensureDatabaseSchemaSynced() {
   createIndexIfNotExists("idx_idempotency_expires_at", "idempotency_keys", "expires_at");
   createIndexIfNotExists("idx_banks_api_key_last4", "banks", "api_key_last4");
   createIndexIfNotExists("idx_onyx_merchants_api_key_last4", "onyx_merchants", "api_key_last4");
+
+  // Perform full dynamic column synchronization across all schema tables
+  autoSyncSchemaColumns();
 }
 
 try {

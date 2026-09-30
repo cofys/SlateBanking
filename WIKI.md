@@ -1816,6 +1816,30 @@ The Customer Portal incorporates a dedicated **Onyx Hub** (`view === "onyx"`), g
     - Generates instant shareable checkout links (`/onyx/checkout?merchantId=...&amount=...&memo=...`) for one-off payments, invoices, or Discord community purchases.
     - Embeddable Discord markdown formatting for instant channel distribution.
 
+---
+
+## 🏛️ Automated Loan Product Reconciliation & Dual-Sync Engine
+
+### 1. Loan Product Auto-Hydration (`ensureAndReconcileLoanProducts`)
+To prevent catalogs from ever becoming desynchronized with active portfolios or showing empty lists when loans exist:
+- **Zero-Drop Reconciler**: When staff accesses `/api/banks/:bankId/products` or customer portal loads `/api/portal/:bankId/catalog`, the backend executes an automatic reconciliation routine:
+  - Scans all originated, migrated, or imported loans in `loans` table.
+  - Matches each loan to its corresponding catalog template in `loan_products` by ID or rate & term tenor (`interestRate`, `interestRateType`, and `termUnit`).
+  - For any orphan loans lacking a catalog counterpart, synthesizes a clean, fully-formed `loan_products` record with human-readable rate labeling, appropriate min/max brackets, and repayment frequency.
+  - Updates the loan's `productId` foreign key so analytics and portfolio metrics link directly.
+- **Institutional Starter Seeding**:
+  - If a bank has an empty loan product catalog, the system automatically initializes standard institutional loan products:
+    1. **Personal Micro-Credit Line** (2.00%/wk, 2 weeks, $100 - $2,500 cap).
+    2. **Commercial Expansion Facility** (12.50% Fixed APR, 6 months, $1,000 - $50,000 cap).
+    3. **Short-Term Working Capital** (4.50%/wk, 4 weeks, $500 - $10,000 cap).
+  - Guarantees citizen borrowing catalogs and staff underwriting panels are never empty.
+
+### 2. Live Synchronization Controls (`POST /api/banks/:bankId/products/sync-loans`)
+- **One-Click Staff Sync Action**: Both the staff **Product Catalog & Underwriting** page (`BankProducts.tsx`) and the **Loans & Credit Portfolio** page (`BankLoans.tsx`) feature a high-priority `"Sync from Issued Loans"` action.
+- Triggers instant recalculation, product synthesis, and updates live telemetry metrics across originated books, active borrower counts, and repayment rates.
+- Normalizes interest rate math between decimal percentages (e.g. `2.0%`) and integer basis points (e.g. `200 bps`), preventing NaN input failures and UI misalignments.
+
+
 
 
 

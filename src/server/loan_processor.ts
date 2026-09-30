@@ -888,3 +888,171 @@ export async function notifyUpcomingLoanPayments() {
   }
   return { sent };
 }
+
+/**
+ * Ensures a bank's loan product catalog is always fully populated, accurately synced with all
+ * existing/issued loans, and initialized with standard institutional lending products if empty.
+ */
+export async function ensureAndReconcileLoanProducts(bankId: string) {
+  const { formatLoanRate, normalizeRatePercent, convertTermToDays } = await import("../lib/loan_utils.js");
+
+  // 1. Fetch current loan products and all bank loans
+  let existingProducts: any[] = [];
+  let bankLoans: any[] = [];
+  try {
+    existingProducts = await db.select().from(loanProducts).where(eq(loanProducts.bankId, bankId)).all();
+    bankLoans = await db.select().from(loans).where(eq(loans.bankId, bankId)).all();
+  } catch (err) {
+    console.error("[ensureAndReconcileLoanProducts] Error fetching products/loans:", err);
+  }
+
+  const productList = [...existingProducts];
+
+  // 2. Reconcile all issued loans in the bank so that every loan has a visible catalog product
+  for (const l of bankLoans) {
+    const loanRateNormalized = normalizeRatePercent(l.interestRate);
+    const loanRateType = (l.interestRateType || "weekly").toLowerCase();
+
+    // Check if an existing product matches by ID or by equivalent pricing & term
+    let matchingProduct = productList.find(p => p.id === l.productId);
+    if (!matchingProduct) {
+      matchingProduct = productList.find(p => {
+        const pRateNormalized = normalizeRatePercent(p.interestRate);
+        const pRateType = (p.interestRateType || "weekly").toLowerCase();
+        return Math.abs(pRateNormalized - loanRateNormalized) < 0.05 && pRateType === loanRateType;
+      });
+    }
+
+    if (!matchingProduct) {
+      const newProdId = l.productId || uuidv4();
+      const rateDisplay = formatLoanRate(l.interestRate, l.interestRateType, true);
+      const termU = (l.termUnit || (l.termMonths ? "months" : "weeks")) as any;
+      const termDur = l.termMonths || 2;
+      const calcDays = convertTermToDays(termDur, termU, 14);
+
+      const newProd = {
+        id: newProdId,
+        bankId,
+        name: l.purpose && l.purpose.length < 32 ? `${l.purpose} (${rateDisplay})` : `${rateDisplay} Loan Product`,
+        description: `Institutional financing facility issued at ${formatLoanRate(l.interestRate, l.interestRateType, false)}.`,
+        category: "personal",
+        interestRate: Math.round(loanRateNormalized * 100),
+        interestRateType: loanRateType,
+        termUnit: termU,
+        minAmount: 10000,
+        maxAmount: Math.max(500000, l.principalAmount || 500000),
+        termDays: calcDays,
+        originationFeePercent: 0,
+        lateFeePercent: 500,
+        gracePeriodDays: 3,
+        repaymentFrequency: termU === "weeks" ? "weekly" : "monthly",
+        collateralRequired: Boolean(l.collateralDescription && l.collateralDescription !== "none"),
+        minCreditScore: 0,
+        autoApproveMaxAmount: 0,
+        isActive: true,
+        createdAt: new Date(),
+      };
+
+      try {
+        await db.insert(loanProducts).values(newProd);
+        productList.push(newProd as any);
+        matchingProduct = newProd as any;
+      } catch (err) {
+        console.error("[ensureAndReconcileLoanProducts] Error inserting product for loan:", err);
+      }
+    }
+
+    // If loan didn't have productId set, link it permanently
+    if (matchingProduct && (!l.productId || l.productId !== matchingProduct.id)) {
+      try {
+        await db.update(loans).set({ productId: matchingProduct.id }).where(eq(loans.id, l.id));
+        l.productId = matchingProduct.id;
+      } catch (err) {
+        console.error("[ensureAndReconcileLoanProducts] Error updating loan productId:", err);
+      }
+    }
+  }
+
+  // 3. If after checking all loans the catalog is STILL empty, seed standard institutional starter loan products
+  if (productList.length === 0) {
+    const starterProducts = [
+      {
+        id: uuidv4(),
+        bankId,
+        name: "Personal Micro-Credit Line",
+        description: "Short-term consumer financing for emergency expenses, micro-purchases, or immediate liquidity.",
+        category: "personal",
+        interestRate: 200, // 2.00% / wk
+        interestRateType: "weekly",
+        termUnit: "weeks",
+        minAmount: 10000, // $100
+        maxAmount: 250000, // $2,500
+        termDays: 14,
+        originationFeePercent: 0,
+        lateFeePercent: 500,
+        gracePeriodDays: 3,
+        repaymentFrequency: "weekly",
+        collateralRequired: false,
+        minCreditScore: 0,
+        autoApproveMaxAmount: 50000,
+        isActive: true,
+        createdAt: new Date(),
+      },
+      {
+        id: uuidv4(),
+        bankId,
+        name: "Commercial Expansion Facility",
+        description: "Growth capital tailored for verified corporate accounts, inventory expansion, and real estate development.",
+        category: "business",
+        interestRate: 1250, // 12.50% APR
+        interestRateType: "apr",
+        termUnit: "months",
+        minAmount: 100000, // $1,000
+        maxAmount: 5000000, // $50,000
+        termDays: 180,
+        originationFeePercent: 100,
+        lateFeePercent: 500,
+        gracePeriodDays: 5,
+        repaymentFrequency: "monthly",
+        collateralRequired: true,
+        minCreditScore: 600,
+        autoApproveMaxAmount: 0,
+        isActive: true,
+        createdAt: new Date(),
+      },
+      {
+        id: uuidv4(),
+        bankId,
+        name: "Short-Term Working Capital",
+        description: "Flexible fast-draw liquidity for merchant inventory turns, payroll bridging, and trade settlements.",
+        category: "commercial",
+        interestRate: 450, // 4.50%/wk
+        interestRateType: "weekly",
+        termUnit: "weeks",
+        minAmount: 50000, // $500
+        maxAmount: 1000000, // $10,000
+        termDays: 28,
+        originationFeePercent: 50,
+        lateFeePercent: 500,
+        gracePeriodDays: 3,
+        repaymentFrequency: "weekly",
+        collateralRequired: false,
+        minCreditScore: 0,
+        autoApproveMaxAmount: 0,
+        isActive: true,
+        createdAt: new Date(),
+      }
+    ];
+
+    for (const sp of starterProducts) {
+      try {
+        await db.insert(loanProducts).values(sp);
+        productList.push(sp as any);
+      } catch (err) {
+        console.error("[ensureAndReconcileLoanProducts] Error inserting starter product:", err);
+      }
+    }
+  }
+
+  return productList;
+}

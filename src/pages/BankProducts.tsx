@@ -275,6 +275,25 @@ export function BankProducts() {
     }
   };
 
+  // Sync Products from Issued Loans
+  const handleSyncLoansToProducts = async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch(`/api/banks/${bank.id}/products/sync-loans`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        flash(`Successfully reconciled ${data.count || 0} loan products into the catalog.`);
+        fetchProducts();
+      } else {
+        flash(data.error || "Failed to synchronize loans into catalog");
+      }
+    } catch {
+      flash("Error synchronizing loans into catalog");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   // Toggle Active State
   const handleToggleActive = async (product: any, type: ProductType) => {
     const nextState = !product.isActive;
@@ -721,6 +740,15 @@ export function BankProducts() {
               <span className="text-xs text-white/40">({filteredLoans.length})</span>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSyncLoansToProducts}
+                disabled={refreshing}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1.5 transition cursor-pointer"
+                title="Scan all bank loans and generate matching catalog products for any missing"
+              >
+                <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} /> Sync from Issued Loans
+              </button>
               {loans.length > 0 && (
                 <button
                   type="button"

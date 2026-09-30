@@ -1512,12 +1512,10 @@ portalRouter.post("/api/portal/:bankId/request-card", requireAuth, async (req, r
 
 // Portal Loan Request API
 portalRouter.get("/api/portal/:bankId/loan-products", requireAuth, async (req: express.Request, res: express.Response) => {
-  const { db } = await import("../../db/index");
-  const { loanProducts } = await import("../../db/schema");
-  const { eq, and } = await import("drizzle-orm");
   try {
-    const products = await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, req.params.bankId), eq(loanProducts.isActive, true)));
-    res.json(products);
+    const { ensureAndReconcileLoanProducts } = await import("../loan_processor.js");
+    const products = await ensureAndReconcileLoanProducts(req.params.bankId);
+    res.json(products.filter((p: any) => p.isActive !== false && p.isActive !== 0));
   } catch (e: any) {
     res.status(500).json({ error: e.message || "Failed to load loan products" });
   }
@@ -1667,51 +1665,15 @@ portalRouter.get("/api/portal/:bankId/catalog", requireAuth, async (req: express
   try {
     const bankId = req.params.bankId;
     const settings = await db.select().from(bankSettings).where(eq(bankSettings.bankId, bankId)).get();
-    let loans = settings?.enableLoans === false ? [] : await db.select().from(loanProducts).where(and(eq(loanProducts.bankId, bankId), eq(loanProducts.isActive, true)));
     
-    // If no catalog products exist yet, but loans have been issued by staff, auto-sync them into catalog
-    if (loans.length === 0 && settings?.enableLoans !== false) {
-      const { loans: loansTable } = await import("../../db/schema.js");
-      const { v4: uuidv4 } = await import("uuid");
-      const existingLoans = await db.select().from(loansTable).where(eq(loansTable.bankId, bankId));
-      for (const al of existingLoans) {
-        const autoProdId = uuidv4();
-        const rateBps = al.interestRate || 400;
-        const rateType = al.interestRateType || "weekly";
-        const termUnit = al.termUnit || (al.termMonths ? "months" : "weeks");
-        const termDays = termUnit === "weeks" ? ((al.termMonths || 2) * 7) : ((al.termMonths || 1) * 30);
-        const rateDisplay = rateType === "weekly" ? `${(rateBps / 100).toFixed(2)}%/week` : `${(rateBps / 100).toFixed(2)}% APR`;
-        const newProd = {
-          id: autoProdId,
-          bankId,
-          name: `${rateDisplay} Loan Product`,
-          description: `Institutional financing issued at ${rateDisplay}.`,
-          category: "personal",
-          interestRate: rateBps,
-          interestRateType: rateType,
-          termUnit,
-          minAmount: 10000,
-          maxAmount: Math.max(500000, al.principalAmount || 500000),
-          termDays,
-          originationFeePercent: 0,
-          lateFeePercent: 500,
-          gracePeriodDays: 3,
-          repaymentFrequency: termUnit === "weeks" ? "weekly" : "monthly",
-          collateralRequired: false,
-          minCreditScore: 0,
-          autoApproveMaxAmount: 0,
-          isActive: true,
-          createdAt: new Date(),
-        };
-        try {
-          await db.insert(loanProducts).values(newProd);
-          loans.push(newProd as any);
-          await db.update(loansTable).set({ productId: autoProdId }).where(eq(loansTable.id, al.id));
-        } catch (err) {}
-      }
+    const { ensureAndReconcileLoanProducts } = await import("../loan_processor.js");
+    let loans: any[] = [];
+    if (settings?.enableLoans !== false) {
+      loans = await ensureAndReconcileLoanProducts(bankId);
+      loans = loans.filter((p: any) => p.isActive !== false && p.isActive !== 0);
     }
 
-    const cards = settings?.enableCards === false ? [] : await db.select().from(creditProducts).where(and(eq(creditProducts.bankId, bankId), eq(creditProducts.isActive, true)));
+    const cards = settings?.enableCards === false ? [] : await db.select().from(creditProducts).where(and(eq(creditProducts.bankId, bankId), eq(creditProducts.isActive, true))).catch(() => []);
     const isDefaultDummyVaultTiers = (tiers: any[]): boolean => {
       if (!Array.isArray(tiers) || tiers.length !== 5) return false;
       const dummyDays = [7, 30, 90, 180, 365];
