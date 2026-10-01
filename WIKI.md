@@ -506,9 +506,9 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
     - Extracts pledged collateral items (`collateralDescription`, `collateralValue`) into an official Collateral Asset Register.
     - Zero Mock Rows: If the bank has zero active loans or zero pledged collateral, the report accurately displays genuine empty registers rather than fictional dummy rows.
   - **Comprehensive Income Statement**:
-    - **Interest Income**: Queries the `interest_revenue` GL pool and active loan amortizations.
-    - **Fee Income**: Queries the `fee_revenue` GL clearing pool, account maintenance fees, transaction transfer/service fees, and assessed late fees.
-    - **Trading & PSP Gains**: Merchant interchange and payment gateway processing gains.
+    - **Interest Income**: Queries active loan portfolio amortizations and interest payments.
+    - **Fee Income (Transactional Basis)**: Aggregates actual fee income generated from transactions (account maintenance fees, transfer & deposit fees, wire fees, service charges, and assessed late penalties) rather than confusing period revenue with cumulative balance sheet vault GL balances.
+    - **Trading & PSP Gains**: Merchant interchange, Onyx payment processing, and gateway fees.
     - **Operating Expenses**: Queries `payroll_expense` GL balances, staff salaries, infrastructure costs, and the bank's active Slate platform subscription tier.
     - **Taxes**: Remitted civic and government transit fee withholding.
     - **Net Income**: Gross Income - (Operating Expenses + Taxes).

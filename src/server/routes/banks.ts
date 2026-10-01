@@ -3490,31 +3490,45 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
       let txServiceFeesCents = 0;
       let txAccountFeesCents = 0;
       let txLateFeesCents = 0;
+      let txTradingGainsCents = 0;
       let txWithdrawalTaxCents = 0;
       let txOperationsExpenseCents = 0;
+      let txInterestOtherCents = 0;
 
       for (const t of txs) {
-        if (t.type === "fee") {
-          if (t.feeType === "account_fee" || t.feeType === "maintenance_fee") {
-            txAccountFeesCents += t.amount;
-          } else if (t.feeType === "late_fee") {
-            txLateFeesCents += t.amount;
+        const amt = Math.abs(t.amount || 0);
+        const desc = (t.description || "").toLowerCase();
+        const cat = (t.category || "").toLowerCase();
+        const fType = t.feeType || "";
+        const isFee = t.type === "fee" || fType || cat.includes("fee") || desc.includes("fee") || desc.includes("surcharge");
+
+        if (isFee || fType) {
+          if (fType === "account_fee" || fType === "maintenance_fee" || (fType === "service_fee" && (desc.includes("account") || desc.includes("maintenance") || desc.includes("tier")))) {
+            txAccountFeesCents += amt;
+          } else if (fType === "late_fee" || desc.includes("late fee") || desc.includes("penalty")) {
+            txLateFeesCents += amt;
+          } else if (fType === "onyx_fee" || desc.includes("onyx") || desc.includes("merchant")) {
+            txTradingGainsCents += amt;
+          } else if (fType === "in_game_tax" || fType === "government_fee" || desc.includes("tax") || (t.feeBreakdown && t.feeBreakdown.includes("civic"))) {
+            txWithdrawalTaxCents += amt;
           } else {
-            txServiceFeesCents += t.amount;
+            txServiceFeesCents += amt;
           }
         }
-        if (t.feeType === "government_fee" || (t.feeBreakdown && t.feeBreakdown.includes("civic"))) {
-          txWithdrawalTaxCents += (t.amount || 0);
+
+        if (t.type === "interest" || fType === "loan_payment" || cat.includes("interest") || desc.includes("interest")) {
+          txInterestOtherCents += amt;
         }
-        if (t.category === "Services" || t.category === "Operations" || t.description?.toLowerCase().includes("hosting") || t.description?.toLowerCase().includes("server")) {
-          txOperationsExpenseCents += (t.amount || 0);
+
+        if (t.category === "Services" || t.category === "Operations" || desc.includes("hosting") || desc.includes("server") || desc.includes("payroll")) {
+          txOperationsExpenseCents += amt;
         }
       }
 
-      // Resolve income numbers accurately
-      const feeServiceTotalCents = Math.max(feeRevenueCents, txServiceFeesCents);
-      const feeLateTotalCents = Math.max(totalLateFeesCents, txLateFeesCents);
-      const interestOtherCents = Math.max(0, interestRevenueCents - (businessLoanInterestMonthlyCents + personalLoanInterestMonthlyCents + mortgageInterestMonthlyCents));
+      // If no late fee transactions were logged directly in ledger, fallback to active loans ledger penalties
+      if (txLateFeesCents === 0 && totalLateFeesCents > 0) {
+        txLateFeesCents = totalLateFeesCents;
+      }
 
       // Operating expenses: platform fee + recorded payroll expense GL + tx operating expenses
       const platformFeeMonthlyCents = bank.flatMonthlyRate || 15000;
@@ -3553,24 +3567,41 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
           interestBusinessLoans: Number((businessLoanInterestMonthlyCents / 100).toFixed(2)),
           interestPersonalLoans: Number((personalLoanInterestMonthlyCents / 100).toFixed(2)),
           interestMortgages: Number((mortgageInterestMonthlyCents / 100).toFixed(2)),
-          interestOther: Number((interestOtherCents / 100).toFixed(2)),
+          interestOther: Number((txInterestOtherCents / 100).toFixed(2)),
           feeAccount: Number((txAccountFeesCents / 100).toFixed(2)),
-          feeService: Number((feeServiceTotalCents / 100).toFixed(2)),
-          feeLate: Number((feeLateTotalCents / 100).toFixed(2)),
-          tradingGains: 0,
-          expOperations: Number((totalExpensesCents / 100).toFixed(2)),
+          feeService: Number((txServiceFeesCents / 100).toFixed(2)),
+          feeLate: Number((txLateFeesCents / 100).toFixed(2)),
+          feeOther: 0,
+          tradingGains: Number((txTradingGainsCents / 100).toFixed(2)),
+          otherIncome: 0,
+          expInterest: 0,
+          expSalaries: Number((payrollExpenseCents / 100).toFixed(2)),
+          expOperations: Number((txOperationsExpenseCents / 100).toFixed(2)),
+          expMarketing: 0,
+          expTechnology: Number((platformFeeMonthlyCents / 100).toFixed(2)),
+          expLegal: 0,
+          expOther: 0,
           taxWithdrawal: Number((txWithdrawalTaxCents / 100).toFixed(2))
         },
         balanceSheet: {
-          cashBankBalance: Number(((vaultCashCents + (clearinghouseCents > 0 ? clearinghouseCents : 0)) / 100).toFixed(2)),
+          cashBankBalance: Number(((vaultCashCents + feeRevenueCents + interestRevenueCents + (clearinghouseCents > 0 ? clearinghouseCents : 0)) / 100).toFixed(2)),
           cashDepositsHeld: Number((totalDepositsCents / 100).toFixed(2)),
           assetBusinessLoans: Number((businessLoanRemainingCents / 100).toFixed(2)),
           assetPersonalLoans: Number((personalLoanRemainingCents / 100).toFixed(2)),
           assetMortgages: Number((mortgageRemainingCents / 100).toFixed(2)),
           assetCollateralPlots: Number((totalCollateralValueCents / 100).toFixed(2)),
+          assetCollateralItems: 0,
+          assetRealEstatePlots: 0,
+          assetInventory: 0,
+          assetReceivables: 0,
+          assetOther: 0,
           liabPersonalDeposits: Number((personalDepositsCents / 100).toFixed(2)),
           liabBusinessDeposits: Number((businessDepositsCents / 100).toFixed(2)),
-          liabClearinghouseDebt: Number((clearinghouseCents < 0 ? Math.abs(clearinghouseCents) / 100 : 0).toFixed(2))
+          liabCDs: 0,
+          liabPendingPayments: 0,
+          liabLoansOwed: Number((clearinghouseCents < 0 ? Math.abs(clearinghouseCents) / 100 : 0).toFixed(2)),
+          liabTaxesWithheld: 0,
+          liabOther: 0
         },
         loanRegister,
         collateralRegister,
