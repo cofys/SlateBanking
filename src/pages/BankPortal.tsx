@@ -1775,37 +1775,17 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                 </div>
               </div>
             )}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="rounded-[32px] p-6 sm:p-8 relative overflow-hidden border shadow-2xl backdrop-blur-xl"
+            <div
+              className="rounded-[32px] p-6 sm:p-8 relative overflow-hidden border shadow-2xl"
               style={{
-                background: `linear-gradient(145deg, ${withAlpha(brand, 0.28)} 0%, rgba(18, 18, 28, 0.92) 50%, var(--bg-elevated) 100%)`,
-                borderColor: withAlpha(brand, 0.4)
+                background: `linear-gradient(145deg, ${withAlpha(brand, 0.22)} 0%, rgba(18, 18, 28, 0.96) 50%, var(--bg-elevated) 100%)`,
+                borderColor: withAlpha(brand, 0.35)
               }}
             >
-              {/* Ambient High-Tech Glow Elements */}
-              <div 
-                className="absolute -top-24 -right-24 w-80 h-80 rounded-full blur-3xl opacity-25 pointer-events-none"
-                style={{ background: brand }}
-              />
-              <div 
-                className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full blur-3xl opacity-20 pointer-events-none"
-                style={{ background: "#6366f1" }}
-              />
-              <div 
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-[100px] opacity-10 pointer-events-none"
-                style={{ background: "#f59e0b" }}
-              />
-
               {/* Greeting & Top Status Bar */}
               <div className="flex flex-wrap items-center justify-between gap-3 relative z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="relative flex items-center justify-center">
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                    <div className="absolute w-4 h-4 rounded-full bg-emerald-400/40 animate-ping" />
-                  </div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                   <p className="text-xs sm:text-sm font-medium" style={{ color: "var(--fg-muted)" }}>
                     {greet()}, <strong className="text-white font-semibold tracking-tight">{displayName}</strong>
                   </p>
@@ -1815,11 +1795,11 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   <button
                     type="button"
                     onClick={() => setView("onyx")}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 transition shadow-sm group cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 transition-colors shadow-sm cursor-pointer"
                   >
-                    <Zap size={12} className="text-amber-400 group-hover:scale-110 transition-transform fill-amber-400" />
+                    <Zap size={12} className="text-amber-400 fill-amber-400" />
                     <span>Onyx PSP Network</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   </button>
                   <span className="text-[10px] sm:text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full border bg-white/5 text-white/70" style={{ borderColor: "var(--border)" }}>
                     {accounts.length} Account{accounts.length === 1 ? "" : "s"}
@@ -1843,7 +1823,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   )}
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-2 mt-1.5">
-                  <p className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight tabular-nums text-white drop-shadow-sm" style={{ letterSpacing: "-0.035em" }}>
+                  <p className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight tabular-nums text-white" style={{ letterSpacing: "-0.035em" }}>
                     {formatMoney(selectedAccountId === "all" ? netWorth : activeAccount?.balance || 0)}
                   </p>
                   
@@ -1876,25 +1856,25 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       if (a.id === "send") setTransferSuccess(null);
                       setView(a.id);
                     }}
-                    className={`group relative flex flex-col items-center justify-center gap-2 py-3.5 px-2 rounded-2xl border transition-all duration-200 cursor-pointer ${
+                    className={`group relative flex flex-col items-center justify-center gap-2 py-3.5 px-2 rounded-2xl border transition-all duration-150 cursor-pointer ${
                       view === a.id
-                        ? "bg-white/20 border-white/50 text-white shadow-xl shadow-black/50 scale-[1.03]"
-                        : "bg-black/40 hover:bg-white/10 text-white/80 hover:text-white border-white/10 hover:border-white/25 hover:shadow-lg active:scale-95"
+                        ? "bg-white/20 border-white/50 text-white shadow-lg"
+                        : "bg-black/40 hover:bg-white/10 text-white/80 hover:text-white border-white/10 hover:border-white/25 active:scale-95"
                     }`}
                   >
                     {a.badge && (
-                      <span className="absolute -top-2 -right-1.5 text-[9px] font-black font-mono px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 text-black shadow-md uppercase tracking-wider animate-pulse">
+                      <span className="absolute -top-2 -right-1.5 text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-amber-400 text-black shadow-sm uppercase tracking-wider">
                         {a.badge}
                       </span>
                     )}
-                    <div className={`p-2.5 rounded-xl bg-white/5 transition-all duration-200 ${a.bg} ${a.color}`}>
+                    <div className={`p-2.5 rounded-xl bg-white/5 transition-colors duration-150 ${a.bg} ${a.color}`}>
                       <a.icon size={19} className={a.id === "onyx" ? "fill-current" : ""} />
                     </div>
                     <span className="text-xs font-semibold tracking-tight text-center">{a.label}</span>
                   </button>
                 ))}
               </div>
-            </motion.div>
+            </div>
 
             {user.linkedDiscordId ? (
               <div

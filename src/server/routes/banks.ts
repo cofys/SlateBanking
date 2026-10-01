@@ -4447,12 +4447,14 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
         termMonths = null,
       } = req.body;
 
-      if (!discordId || !principalAmount || interestRate === undefined || !depositAccountId) {
-        return res.status(400).json({ error: "Missing fields" });
+      if (!principalAmount || interestRate === undefined || !depositAccountId) {
+        return res.status(400).json({ error: "Missing required fields (principalAmount, interestRate, depositAccountId)" });
       }
 
       const acc = await db.select().from(bankAccounts).where(and(eq(bankAccounts.id, depositAccountId), eq(bankAccounts.bankId, req.params.bankId))).get();
       if (!acc) return res.status(404).json({ error: "Deposit account not found" });
+
+      const resolvedDiscordId = discordId || acc.ownerDiscordId || "borrower";
 
       const { loadLoanPolicy, productAprToLoanRate } = await import("../loan_processor");
       const policy = await loadLoanPolicy(req.params.bankId);
@@ -4563,7 +4565,7 @@ banksRouter.post("/api/banks/:bankId/loans", requireBankStaff, async (req: expre
       const result = await db.insert(loans).values({
         id: newLoanId,
         bankId: req.params.bankId,
-        discordId,
+        discordId: resolvedDiscordId,
         accountId: depositAccountId,
         principalAmount: parsedPrincipal,
         remainingAmount: calculatedRemaining,

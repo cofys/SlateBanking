@@ -68,6 +68,8 @@ export function BankLoans() {
   const [termUnit, setTermUnit] = useState<string>("weeks");
   const [termDuration, setTermDuration] = useState<string>("2");
   const [depositAccountId, setDepositAccountId] = useState("");
+  const [accountSearch, setAccountSearch] = useState("");
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
   const [collateralDescription, setCollateralDescription] = useState("");
   const [collateralValue, setCollateralValue] = useState("");
 
@@ -434,15 +436,17 @@ export function BankLoans() {
 
   const handleCreateLoan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!discordId || !principalAmount || !interestRate || !depositAccountId) return;
+    if (!depositAccountId || !principalAmount || !interestRate) return;
     
     try {
       const dur = parseFloat(termDuration) || 2;
       const totalDays = convertTermToDays(dur, termUnit, 30);
       const computedMonths = Math.max(1, Math.round(totalDays / 30));
+      const targetAcc = accounts.find((a: any) => a.id === depositAccountId);
+      const targetDiscordId = discordId || targetAcc?.ownerDiscordId || targetAcc?.ownerMcUsername || "borrower";
 
       const payload: any = { 
-        discordId,
+        discordId: targetDiscordId,
         depositAccountId,
         principalAmount: Math.round(parseFloat(principalAmount) * 100), 
         interestRate: Math.round(parseFloat(interestRate) * 100),
@@ -1311,16 +1315,136 @@ export function BankLoans() {
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-sm font-medium text-white/80 mb-1.5">Borrower Discord ID</label>
-                  <input
-                    type="text"
-                    value={discordId}
-                    onChange={(e) => setCityCorpId(e.target.value)}
-                    className="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="e.g. 129031023901"
-                    required
-                  />
+                {/* Searchable Account Selector */}
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium text-white/80">
+                      {isOffSystem ? "Linked Borrower Account (For Servicing)" : "Borrower Account (Deposit Destination)"} *
+                    </label>
+                    {depositAccountId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDepositAccountId("");
+                          setAccountSearch("");
+                          setAccountDropdownOpen(true);
+                        }}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
+                      >
+                        Change Account
+                      </button>
+                    )}
+                  </div>
+
+                  {(() => {
+                    const selectedAcc = accounts.find((a: any) => a.id === depositAccountId);
+                    const filteredAccounts = accounts.filter((a: any) => {
+                      if (!accountSearch.trim()) return true;
+                      const q = accountSearch.toLowerCase();
+                      return (
+                        a.accountName?.toLowerCase().includes(q) ||
+                        a.ownerDiscordId?.toLowerCase().includes(q) ||
+                        a.ownerMcUsername?.toLowerCase().includes(q) ||
+                        a.id?.toLowerCase().includes(q) ||
+                        a.accountType?.toLowerCase().includes(q)
+                      );
+                    });
+
+                    if (selectedAcc && !accountDropdownOpen) {
+                      const isCorp = selectedAcc.accountType?.includes("business") || selectedAcc.accountType?.includes("corp");
+                      return (
+                        <div className="p-3.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isCorp ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"}`}>
+                              {isCorp ? <Briefcase size={16} /> : <Landmark size={16} />}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-white text-sm truncate">{selectedAcc.accountName}</span>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${isCorp ? "bg-amber-500/20 text-amber-300" : "bg-white/10 text-white/70"}`}>
+                                  {isCorp ? "Corporate" : "Personal"}
+                                </span>
+                              </div>
+                              <p className="text-xs text-white/50 font-mono truncate mt-0.5">
+                                Owner: <strong className="text-white/80">{selectedAcc.ownerMcUsername || selectedAcc.ownerDiscordId}</strong> · Bal: <strong className="text-emerald-400">{formatMoney(selectedAcc.balance)}</strong>
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAccountDropdownOpen(true)}
+                            className="text-xs px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white transition shrink-0"
+                          >
+                            Switch
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-1.5">
+                        <div className="relative">
+                          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={accountSearch}
+                            onChange={(e) => {
+                              setAccountSearch(e.target.value);
+                              setAccountDropdownOpen(true);
+                            }}
+                            onFocus={() => setAccountDropdownOpen(true)}
+                            placeholder="Search by account name, MC username, or Discord ID..."
+                            className="w-full bg-slate-800 border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+
+                        {accountDropdownOpen && (
+                          <div className="rounded-xl border border-white/15 bg-[#14141e] shadow-2xl p-1.5 max-h-52 overflow-y-auto space-y-1 z-30 relative animate-in fade-in zoom-in-95 duration-150">
+                            {filteredAccounts.length === 0 ? (
+                              <div className="p-3 text-center text-xs text-white/40">
+                                No accounts found matching "{accountSearch}".
+                              </div>
+                            ) : (
+                              filteredAccounts.map((acc: any) => {
+                                const isCorp = acc.accountType?.includes("business") || acc.accountType?.includes("corp");
+                                const isSelected = depositAccountId === acc.id;
+                                return (
+                                  <button
+                                    key={acc.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setDepositAccountId(acc.id);
+                                      setCityCorpId(acc.ownerDiscordId || acc.ownerMcUsername || "borrower");
+                                      setAccountSearch(acc.accountName);
+                                      setAccountDropdownOpen(false);
+                                    }}
+                                    className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between gap-2 text-xs transition cursor-pointer ${
+                                      isSelected ? "bg-emerald-500/20 text-white font-bold" : "hover:bg-white/5 text-white/80 hover:text-white"
+                                    }`}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-semibold text-white truncate">{acc.accountName}</span>
+                                        <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded font-bold ${isCorp ? "bg-amber-500/20 text-amber-300" : "bg-white/10 text-white/60"}`}>
+                                          {isCorp ? "Corp" : "Personal"}
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] font-mono text-white/40 truncate mt-0.5">
+                                        Owner: {acc.ownerMcUsername || acc.ownerDiscordId} · ID: {acc.id.slice(0, 8)}…
+                                      </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <span className="font-mono font-bold text-emerald-400">{formatMoney(acc.balance)}</span>
+                                    </div>
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {!isOffSystem && loanProducts.length > 0 && (
@@ -1352,28 +1476,6 @@ export function BankLoans() {
                     </select>
                   </div>
                 )}
-
-                <div>
-                  <label className="block text-sm font-medium text-white/80 mb-1.5">
-                    {isOffSystem ? "Linked Customer Account (For Repayments)" : "Deposit To Account"}
-                  </label>
-                  <select 
-                    value={depositAccountId}
-                    onChange={(e) => setDepositAccountId(e.target.value)}
-                    className="w-full bg-slate-800 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
-                  >
-                    <option value="">Select account...</option>
-                    {accounts.filter(a => a.ownerDiscordId === discordId).length > 0 
-                      ? accounts.filter(a => a.ownerDiscordId === discordId).map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName}</option>
-                      )) 
-                      : accounts.map(acc => (
-                         <option key={acc.id} value={acc.id}>{acc.accountName} ({acc.ownerDiscordId})</option>
-                      ))
-                    }
-                  </select>
-                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -1628,7 +1730,7 @@ export function BankLoans() {
                   </button>
                   <button
                     type="submit"
-                    disabled={!discordId || !principalAmount || !depositAccountId}
+                    disabled={!depositAccountId || !principalAmount || !interestRate}
                     className={`flex-1 px-4 py-2.5 rounded-lg font-medium text-white transition-colors ${
                       isOffSystem 
                         ? "bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50" 
