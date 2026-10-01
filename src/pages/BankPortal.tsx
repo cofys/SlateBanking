@@ -11,7 +11,7 @@ import {
   Users, Repeat, Play, Pause, Trash2, Calendar, UserPlus, LifeBuoy, HelpCircle, MessageSquare,
   ShieldAlert, ExternalLink, Bell, BellRing, Info, Terminal, ArrowRight, ChevronDown, CheckCircle,
   Layers, Zap, Key, Store, Globe, RefreshCw, ShoppingBag, Filter, QrCode,
-  Sliders, DollarSign, Shield, ArrowUpDown, Activity, Ban
+  Sliders, DollarSign, Shield, ArrowUpDown, Activity, Ban, Tag, ArrowLeftRight, Percent, Bot
 } from "lucide-react";
 import { accentForeground, hexOr, withAlpha } from "../lib/theme";
 import { BrandMark, PrimaryButton, ScreenLoader } from "../components/ui/chrome";
@@ -168,6 +168,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
   const [quickPayLinkAmount, setQuickPayLinkAmount] = useState("");
   const [quickPayLinkMemo, setQuickPayLinkMemo] = useState("");
   const [rolledKeyModal, setRolledKeyModal] = useState<{ merchantName: string; apiKey: string } | null>(null);
+  const [botInviteModalOpen, setBotInviteModalOpen] = useState(false);
 
   // Split Bill State
   const [splitBillModalOpen, setSplitBillModalOpen] = useState(false);
@@ -350,7 +351,6 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
         } else {
           setQuote(d.quote);
           setDestHint(d.destination ? `${d.destination.accountName}${d.destination.bankName ? " · " + d.destination.bankName : ""}` : "");
-          if (d.destination?.id && d.destination.id !== sendTo) setSendTo(d.destination.id);
           setDestMatches([]);
         }
       } catch {
@@ -1558,10 +1558,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
               {accountPickerOpen && (
                 <>
-                  <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm sm:bg-black/20" onClick={() => setAccountPickerOpen(false)} />
+                  <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" onClick={() => setAccountPickerOpen(false)} />
                   <div
-                    className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto top-full mt-2 w-[calc(100vw-2rem)] max-w-[340px] rounded-2xl border shadow-2xl p-3 z-50 space-y-1 backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[80vh] overflow-y-auto"
-                    style={{ background: "rgba(18, 18, 26, 0.98)", borderColor: "var(--border)" }}
+                    className="fixed inset-x-3 top-16 sm:inset-auto sm:absolute sm:left-1/2 sm:-translate-x-1/2 sm:top-full sm:mt-2 w-auto sm:w-[360px] max-w-[400px] mx-auto rounded-3xl border border-white/15 shadow-2xl p-3.5 z-50 space-y-1.5 backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[80vh] overflow-y-auto"
+                    style={{ background: "rgba(18, 18, 26, 0.98)" }}
                   >
                     <div className="px-2 py-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-white/40">
                       <span>Select Account</span>
@@ -1572,12 +1572,12 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <button
                       type="button"
                       onClick={() => { setSelectedAccountId("all"); setAccountPickerOpen(false); }}
-                      className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between text-xs transition ${
+                      className={`w-full text-left px-3 py-2.5 rounded-2xl flex items-center justify-between text-xs transition ${
                         selectedAccountId === "all" ? "bg-white/10 text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                        <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/70 shrink-0">
+                        <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-white/70 shrink-0">
                           <Layers size={14} />
                         </div>
                         <div className="min-w-0">
@@ -1594,14 +1594,14 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     <div className="my-1 border-t border-white/5" />
 
                     {/* Individual Account Options */}
-                    <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
+                    <div className="max-h-64 overflow-y-auto space-y-1 pr-0.5">
                       {accounts.map((acc: any) => {
                         const isCorp = acc.accountType?.includes("business") || acc.accountType?.includes("corp");
                         const isSelected = selectedAccountId === acc.id;
                         return (
                           <div
                             key={acc.id}
-                            className={`group rounded-xl p-2 flex items-center justify-between transition ${
+                            className={`group rounded-2xl p-2.5 flex items-center justify-between transition ${
                               isSelected ? "bg-white/10 text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                             }`}
                           >
@@ -1610,10 +1610,10 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               onClick={() => { setSelectedAccountId(acc.id); setAccountPickerOpen(false); }}
                               className="flex-1 min-w-0 text-left flex items-center gap-2.5 mr-2"
                             >
-                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
                                 isCorp ? "bg-amber-500/15 text-amber-300 border border-amber-500/25" : "bg-white/5 text-white/70"
                               }`}>
-                                {isCorp ? <Building2 size={13} /> : <Wallet size={13} />}
+                                {isCorp ? <Building2 size={14} /> : <Wallet size={14} />}
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 min-w-0">
@@ -1630,7 +1630,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                               </div>
                             </button>
 
-                            <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex items-center gap-2 shrink-0">
                               <span className="font-mono text-xs font-bold tabular-nums">
                                 {formatMoney(acc.balance)}
                               </span>
@@ -1645,7 +1645,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                                   }}
                                   className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition"
                                 >
-                                  <Users size={12} />
+                                  <Users size={13} />
                                 </button>
                               )}
                               {isSelected && <Check size={13} className="text-emerald-400" />}
@@ -2312,89 +2312,122 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
           </div>
         )}
 
+        {/* VIEW: SEND & TRANSFER */}
         {view === "send" && transferSuccess && (
-          <div className="max-w-lg space-y-6">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="max-w-xl mx-auto space-y-6"
+          >
+            {/* Header Status */}
             <div className="text-center space-y-2 pt-2">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
-                <CheckCircle2 size={32} />
+              <div className="w-16 h-16 rounded-3xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-xl shadow-emerald-500/10">
+                <CheckCircle2 size={36} />
               </div>
-              <h2 className="text-2xl font-black text-white">Transfer Confirmed</h2>
-              <p className="text-xs text-white/50">Your funds have been transferred successfully via CityCorp.</p>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono inline-block">
+                Settlement Cleared · CityCorp Verified
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Transfer Confirmed</h2>
+              <p className="text-xs text-white/50 max-w-sm mx-auto">
+                Funds have settled instantly into the recipient account with zero hold time.
+              </p>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-4">
-              <div className="text-center py-2 border-b border-white/5">
-                <span className="text-xs font-semibold text-white/40 uppercase tracking-wider">Total Sent</span>
-                <div className="text-3xl font-black font-mono text-white mt-1">
+            {/* Official Digital Ledger Receipt Card */}
+            <div className="rounded-3xl border border-white/15 bg-gradient-to-b from-white/[0.06] to-white/[0.01] p-6 sm:p-7 space-y-5 shadow-2xl relative overflow-hidden backdrop-blur-md">
+              {/* Watermark brand gradient */}
+              <div
+                className="absolute -top-24 -right-24 w-60 h-60 rounded-full blur-3xl opacity-20 pointer-events-none"
+                style={{ background: brand }}
+              />
+
+              {/* Amount Display */}
+              <div className="text-center py-3 border-b border-white/10">
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Amount Transferred</span>
+                <div className="text-3xl sm:text-4xl font-black font-mono text-white mt-1 tracking-tight">
                   {formatMoney(transferSuccess.submittedCents)}
                 </div>
+                <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs font-mono font-bold text-emerald-300">
+                  <ArrowDownLeft size={13} className="text-emerald-400" />
+                  <span>Recipient Receives: {formatMoney(transferSuccess.receivedCents)}</span>
+                </div>
               </div>
 
-              <div className="flex items-center justify-between py-2.5 px-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm">
-                <span className="text-emerald-200/80 font-medium">Recipient Receives</span>
-                <span className="font-mono font-bold text-emerald-300">
-                  {formatMoney(transferSuccess.receivedCents)}
-                </span>
+              {/* Transfer Flow Diagram */}
+              <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-black/40 border border-white/5">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center gap-1">
+                    <Wallet size={11} className="text-indigo-400" /> From
+                  </span>
+                  <p className="font-bold text-sm text-white truncate">{transferSuccess.fromAccountName}</p>
+                </div>
+                <div className="space-y-1 text-right">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center justify-end gap-1">
+                    <Building2 size={11} className="text-amber-400" /> To
+                  </span>
+                  <p className="font-bold text-sm text-white truncate">{transferSuccess.toAccountName}</p>
+                </div>
               </div>
 
-              <div className="space-y-2.5 text-sm pt-1">
-                <div className="flex justify-between">
-                  <span className="text-white/40">To</span>
-                  <span className="font-semibold text-white">{transferSuccess.toAccountName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-white/40">From</span>
-                  <span className="font-semibold text-white/80">{transferSuccess.fromAccountName}</span>
-                </div>
+              {/* Meta details */}
+              <div className="space-y-2.5 text-xs text-white/70">
                 {transferSuccess.memo && (
-                  <div className="flex justify-between">
-                    <span className="text-white/40">Memo</span>
-                    <span className="text-white/80 italic">"{transferSuccess.memo}"</span>
+                  <div className="flex justify-between items-center py-1 border-b border-white/5">
+                    <span className="text-white/40 flex items-center gap-1">
+                      <FileText size={12} /> Memo
+                    </span>
+                    <span className="font-medium text-white italic">"{transferSuccess.memo}"</span>
                   </div>
                 )}
-                <div className="flex justify-between text-xs">
-                  <span className="text-white/40">Fee Policy</span>
-                  <span className="text-white/70 font-medium">
-                    {transferSuccess.feeMode === "sender_covers" ? "Sender Covered Fees" : "Fees Deducted from Payment"}
+                <div className="flex justify-between items-center py-1 border-b border-white/5">
+                  <span className="text-white/40 flex items-center gap-1">
+                    <Percent size={12} /> Fee Policy
+                  </span>
+                  <span className="text-white/90 font-medium">
+                    {transferSuccess.feeMode === "sender_covers" ? "Sender Covered Fees (0% deducted)" : "Deducted from Payment"}
                   </span>
                 </div>
               </div>
 
+              {/* Itemized Fee Breakdown */}
               {transferSuccess.lines && transferSuccess.lines.length > 0 && (
-                <div className="pt-3 border-t border-white/5 space-y-1.5">
-                  <span className="text-[11px] font-bold text-white/40 uppercase tracking-wider">Fee Breakdown</span>
+                <div className="pt-2 border-t border-white/10 space-y-2">
+                  <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block">Settlement Breakdown</span>
                   {transferSuccess.lines.map((l: any) => (
                     <div key={l.code} className="flex justify-between text-xs">
-                      <span className="text-white/40">{l.label} ({Number((l.rate * 100).toFixed(2))}%)</span>
-                      <span className="font-mono text-white/60">{formatMoney(l.amountCents)}</span>
+                      <span className="text-white/50">{l.label} ({Number((l.rate * 100).toFixed(2))}%)</span>
+                      <span className="font-mono text-white/80">{formatMoney(l.amountCents)}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between text-xs pt-1 border-t border-white/5 font-medium">
-                    <span className="text-white/50">Total Fees</span>
-                    <span className="font-mono text-amber-300/80">{formatMoney(transferSuccess.totalFeeCents)}</span>
+                  <div className="flex justify-between text-xs pt-1.5 border-t border-white/5 font-bold">
+                    <span className="text-amber-300/80">Total Transaction Fees</span>
+                    <span className="font-mono text-amber-300">{formatMoney(transferSuccess.totalFeeCents)}</span>
                   </div>
                 </div>
               )}
 
-              <div className="pt-3 border-t border-white/5 space-y-2 text-xs">
+              {/* Audit Reference */}
+              <div className="pt-3 border-t border-white/10 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-white/40">Reference</span>
+                  <span className="text-white/40 font-mono">Ledger Ref:</span>
                   <button
                     type="button"
                     onClick={() => copy(transferSuccess.txId, "conf_tx")}
-                    className="flex items-center gap-1.5 font-mono text-[11px] text-white/70 hover:text-white bg-white/5 px-2.5 py-1 rounded-lg border border-white/10 transition-colors"
+                    className="flex items-center gap-1.5 font-mono text-[11px] text-white/80 hover:text-white bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-lg border border-white/10 transition"
                   >
-                    <span>{transferSuccess.txId.slice(0, 16)}…</span>
+                    <span>{transferSuccess.txId}</span>
                     {copied === "conf_tx" ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <div className="flex justify-between text-white/35">
-                  <span>Timestamp</span>
-                  <span>{format(new Date(transferSuccess.timestamp), "MMM d, yyyy · h:mm a")}</span>
+                <div className="flex justify-between text-white/40 text-[11px]">
+                  <span>Settled Timestamp</span>
+                  <span>{format(new Date(transferSuccess.timestamp), "MMM d, yyyy · h:mm:ss a")}</span>
                 </div>
               </div>
             </div>
 
+            {/* Actions */}
             <div className="space-y-2.5">
               <button
                 type="button"
@@ -2402,20 +2435,21 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   setTransferSuccess(null);
                   setView("home");
                 }}
-                className="w-full py-3.5 rounded-2xl font-bold text-white shadow-lg transition-opacity hover:opacity-95"
+                className="w-full py-3.5 rounded-2xl font-bold text-sm text-white shadow-xl transition-all hover:opacity-95 cursor-pointer"
                 style={btnBrand}
               >
                 Return to Dashboard
               </button>
-              <div className="flex gap-2.5">
+              <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
                   onClick={() => {
                     setTransferSuccess(null);
                   }}
-                  className="flex-1 py-3 rounded-2xl font-semibold text-sm bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white flex items-center justify-center gap-2 transition-colors"
+                  className="py-3 rounded-2xl font-semibold text-xs sm:text-sm bg-white/5 border border-white/10 text-white/90 hover:bg-white/10 hover:text-white flex items-center justify-center gap-2 transition cursor-pointer"
                 >
-                  <Send size={14} /> Send Another
+                  <Send size={14} />
+                  <span>Send Another</span>
                 </button>
                 <button
                   type="button"
@@ -2423,84 +2457,501 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     setTransferSuccess(null);
                     setView("activity");
                   }}
-                  className="flex-1 py-3 rounded-2xl font-semibold text-sm bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white flex items-center justify-center gap-2 transition-colors"
+                  className="py-3 rounded-2xl font-semibold text-xs sm:text-sm bg-white/5 border border-white/10 text-white/90 hover:bg-white/10 hover:text-white flex items-center justify-center gap-2 transition cursor-pointer"
                 >
-                  <FileText size={14} /> View Activity
+                  <FileText size={14} />
+                  <span>View Activity</span>
                 </button>
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {view === "send" && !transferSuccess && (
-          <form onSubmit={sendNow} className="max-w-lg space-y-5">
-            <h2 className="text-2xl font-black">Send money</h2>
-            <label className="block text-xs font-bold text-white/40 uppercase">From</label>
-            <select value={sendFrom} onChange={(e) => setSendFrom(e.target.value)} className="w-full bg-[#18181c] border border-white/10 rounded-2xl px-4 py-3 text-sm text-[#f4f4f5] [&>option]:bg-[#18181c] [&>option]:text-[#f4f4f5]">
-              {accounts.map((a: any) => <option key={a.id} value={a.id} className="bg-[#18181c] text-[#f4f4f5]">{a.accountName} · {formatMoney(a.balance)}</option>)}
-            </select>
-            <label className="block text-xs font-bold text-white/40 uppercase">To</label>
-            <input
-              value={sendTo}
-              onChange={(e) => {
-                const v = e.target.value;
-                setSendTo(v);
-                setDestHint("");
-                fetch(`/api/portal/${bankId}/payees?q=${encodeURIComponent(v)}`)
-                  .then((r) => r.json())
-                  .then((d) => setDestMatches(Array.isArray(d) ? d : []))
-                  .catch(() => {});
-              }}
-              onFocus={() => {
-                fetch(`/api/portal/${bankId}/payees`)
-                  .then((r) => r.json())
-                  .then((d) => setDestMatches(Array.isArray(d) ? d : []))
-                  .catch(() => {});
-              }}
-              placeholder="Exact account name (in-game)"
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm"
-              required
-              autoComplete="off"
-            />
-            <p className="text-[11px] text-white/35 -mt-3">Suggestions are only people you have already sent money to or received from at this bank. To pay someone new, type their exact account name. Cross-bank payments use Onyx.</p>
-            {destHint && <p className="text-xs text-emerald-300 -mt-3">{destHint}</p>}
-            {destMatches.length > 0 && (
-              <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden -mt-2">
-                {destMatches.map((m: any) => (
-                  <button type="button" key={m.id} onClick={() => { setSendTo(m.id); setDestHint(`${m.accountName}${m.bankName ? " · " + m.bankName : ""}`); setDestMatches([]); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-white/5">
-                    <span className="font-semibold">{m.accountName}</span>
+          <div className="space-y-6">
+            {/* Header banner */}
+            <div className="rounded-[28px] p-6 sm:p-7 relative overflow-hidden border border-white/10 bg-gradient-to-r from-indigo-950/40 via-[#101018] to-purple-950/30">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
+                      <Zap size={11} className="fill-indigo-300" />
+                      <span>CityCorp Instant Clearing</span>
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span>Zero Hold Time</span>
+                    </span>
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    Send & Wire Funds
+                  </h2>
+                  <p className="text-xs sm:text-sm text-white/60 max-w-xl">
+                    Instant peer-to-peer and corporate transfers settled in real time via CityCorp & Onyx PSP clearinghouse.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (accounts[0]) setSplitFromAccountId(accounts[0].id);
+                      setSplitBillModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 text-xs font-bold px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition shadow-sm"
+                  >
+                    <Users size={14} />
+                    <span>Split a Bill</span>
                   </button>
-                ))}
+                </div>
               </div>
-            )}
-            <label className="block text-xs font-bold text-white/40 uppercase">Amount</label>
-            <input value={sendAmt} onChange={(e) => setSendAmt(e.target.value)} type="number" step="0.01" min="0.01" placeholder="0.00" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-2xl font-black tabular-nums" required />
-            <div className="flex rounded-2xl bg-white/5 p-1 text-xs font-bold">
-              <button type="button" onClick={() => setFeeMode("from_payment")} className={`flex-1 py-2 rounded-xl ${feeMode === "from_payment" ? "bg-white/10 text-white" : "text-white/40"}`}>Fees from payment</button>
-              <button type="button" onClick={() => setFeeMode("sender_covers")} className={`flex-1 py-2 rounded-xl ${feeMode === "sender_covers" ? "bg-white/10 text-white" : "text-white/40"}`}>I cover fees</button>
             </div>
-            <div className="rounded-2xl border border-white/10 p-4 text-sm space-y-1.5 min-h-[96px]">
-              {quoting && <p className="text-white/40 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Quoting…</p>}
-              {quoteErr && <p className="text-rose-300 text-xs">{quoteErr}</p>}
-              {quote && (
-                <>
-                  <div className="flex justify-between"><span className="text-white/40">You send</span><span className="font-mono font-bold">{formatMoney(quote.submittedCents)}</span></div>
-                  <div className="flex justify-between"><span className="text-white/40">They receive</span><span className="font-mono font-bold text-emerald-300">{formatMoney(quote.receivedCents)}</span></div>
-                  {quote.lines?.map((l: any) => (
-                    <div key={l.code} className="flex justify-between text-xs"><span className="text-white/35">{l.label} ({Number((l.rate * 100).toFixed(2))}%)</span><span className="font-mono text-white/60">{formatMoney(l.amountCents)}</span></div>
-                  ))}
-                  {quote.lines && quote.lines.length > 1 && (
-                    <div className="flex justify-between text-xs pt-1 border-t border-white/5 font-medium"><span className="text-white/50">Total Fees</span><span className="font-mono text-amber-300/80">{formatMoney(quote.totalFeeCents)}</span></div>
-                  )}
-                </>
-              )}
-              {!quoting && !quote && !quoteErr && <p className="text-white/30 text-xs">Enter an amount to see city tax and bank fees before you confirm.</p>}
+
+            {/* Split Layout: Composer on Left, Real-Time Ledger on Right */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+              {/* LEFT COLUMN: The Transfer Composer */}
+              <div className="lg:col-span-7 space-y-6">
+                <form onSubmit={sendNow} className="rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-7 space-y-6 shadow-xl backdrop-blur-sm">
+                  {/* 1. Source Account Card */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <Wallet size={13} className="text-indigo-400" />
+                        <span>1. Select Source Account</span>
+                      </label>
+                      {(() => {
+                        const srcAcc = accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id));
+                        return srcAcc ? (
+                          <span className="text-xs font-mono text-white/50">
+                            Available: <strong className="text-emerald-400 font-bold">{formatMoney(srcAcc.balance)}</strong>
+                          </span>
+                        ) : null;
+                      })()}
+                    </div>
+
+                    <div className="relative">
+                      <select
+                        value={sendFrom || accounts[0]?.id || ""}
+                        onChange={(e) => setSendFrom(e.target.value)}
+                        className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition appearance-none cursor-pointer"
+                      >
+                        {accounts.map((a: any) => {
+                          const isCorp = a.accountType?.includes("business") || a.accountType?.includes("corp");
+                          return (
+                            <option key={a.id} value={a.id} className="bg-[#14141e] text-white py-2">
+                              {a.accountName} {isCorp ? "[CORP]" : ""} — {formatMoney(a.balance)}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* 2. Destination Recipient & Quick Switchers */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <Building2 size={13} className="text-amber-400" />
+                        <span>2. Recipient Account</span>
+                      </label>
+                      <span className="text-[10px] text-white/40">Enter account name or tag</span>
+                    </div>
+
+                    {/* Self-Account Quick Transfer Shortcuts */}
+                    {accounts.length > 1 && (
+                      <div className="flex items-center gap-1.5 flex-wrap p-2 rounded-xl bg-black/30 border border-white/5 text-xs">
+                        <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider flex items-center gap-1">
+                          <ArrowLeftRight size={10} className="text-indigo-400" />
+                          <span>My Other Accounts:</span>
+                        </span>
+                        {accounts
+                          .filter((a: any) => a.id !== (sendFrom || accounts[0]?.id))
+                          .map((a: any) => (
+                            <button
+                              key={a.id}
+                              type="button"
+                              onClick={() => {
+                                setSendTo(a.accountName);
+                                setDestHint(`Internal Transfer → ${a.accountName}`);
+                                setDestMatches([]);
+                              }}
+                              className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border transition ${
+                                sendTo === a.accountName
+                                  ? "bg-indigo-600/30 border-indigo-500/50 text-indigo-200 font-bold"
+                                  : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                              }`}
+                            >
+                              {a.accountName}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* Recipient Input */}
+                    <div className="relative">
+                      <input
+                        value={sendTo}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSendTo(v);
+                          setDestHint("");
+                          fetch(`/api/portal/${bankId}/payees?q=${encodeURIComponent(v)}`)
+                            .then((r) => r.json())
+                            .then((d) => setDestMatches(Array.isArray(d) ? d : []))
+                            .catch(() => {});
+                        }}
+                        onFocus={() => {
+                          fetch(`/api/portal/${bankId}/payees`)
+                            .then((r) => r.json())
+                            .then((d) => setDestMatches(Array.isArray(d) ? d : []))
+                            .catch(() => {});
+                        }}
+                        placeholder="Search account name (e.g. ACC-Notch or CORP-Acme)"
+                        className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition font-medium"
+                        required
+                        autoComplete="off"
+                      />
+                      {sendTo && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSendTo("");
+                            setDestHint("");
+                            setDestMatches([]);
+                          }}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Verified Match Hint Badge */}
+                    {destHint && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-xs"
+                      >
+                        <span className="text-emerald-300 font-medium flex items-center gap-1.5">
+                          <CheckCircle2 size={13} className="text-emerald-400" />
+                          <span>Verified Counterparty: <strong className="text-white font-mono">{destHint}</strong></span>
+                        </span>
+                        <span className="text-[10px] font-mono text-emerald-400/80 bg-emerald-500/20 px-2 py-0.5 rounded">
+                          0% Same Bank
+                        </span>
+                      </motion.div>
+                    )}
+
+                    {/* Autocomplete Dropdown List */}
+                    {destMatches.length > 0 && (
+                      <div className="rounded-2xl border border-white/15 bg-[#12121a] shadow-2xl divide-y divide-white/5 overflow-hidden">
+                        <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-white/40 tracking-wider bg-white/[0.02]">
+                          Recent Counterparties & Suggestions
+                        </div>
+                        {destMatches.map((m: any) => (
+                          <button
+                            type="button"
+                            key={m.id}
+                            onClick={() => {
+                              setSendTo(m.accountName || m.id);
+                              setDestHint(`${m.accountName}${m.bankName ? " · " + m.bankName : ""}`);
+                              setDestMatches([]);
+                            }}
+                            className="w-full text-left px-4 py-3 text-xs hover:bg-white/10 flex items-center justify-between text-white/90 transition"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center text-indigo-300 font-bold shrink-0">
+                                {m.accountName ? m.accountName.slice(0, 2).toUpperCase() : "AC"}
+                              </div>
+                              <div className="truncate">
+                                <span className="font-semibold text-white block truncate">{m.accountName}</span>
+                                {m.bankName && <span className="text-[10px] text-white/40 truncate block">{m.bankName}</span>}
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded font-mono">Select</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Transfer Amount & Quick Presets */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <DollarSign size={13} className="text-emerald-400" />
+                        <span>3. Transfer Amount</span>
+                      </label>
+                      <span className="text-[11px] text-white/40 font-mono">Instant Settlement</span>
+                    </div>
+
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl sm:text-3xl font-black text-white/30 font-mono">$</span>
+                      <input
+                        value={sendAmt}
+                        onChange={(e) => setSendAmt(e.target.value)}
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="0.00"
+                        className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl pl-11 pr-4 py-3.5 text-2xl sm:text-3xl font-black font-mono text-white focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition placeholder:text-white/20 tabular-nums"
+                        required
+                      />
+                    </div>
+
+                    {/* Quick Preset Buttons */}
+                    {(() => {
+                      const srcAcc = accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id));
+                      const maxBalDol = srcAcc ? srcAcc.balance / 100 : 0;
+                      return (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] text-white/40 uppercase tracking-wider mr-1">Presets:</span>
+                          {[10, 25, 50, 100, 250, 500].filter(val => maxBalDol === 0 || val <= maxBalDol).map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setSendAmt(String(val))}
+                              className={`text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border transition ${
+                                sendAmt === String(val)
+                                  ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm"
+                                  : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                              }`}
+                            >
+                              ${val}
+                            </button>
+                          ))}
+                          {maxBalDol > 0 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setSendAmt((maxBalDol * 0.5).toFixed(2))}
+                                className="text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition"
+                              >
+                                50%
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSendAmt(maxBalDol.toFixed(2))}
+                                className="text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition"
+                              >
+                                Max (${maxBalDol.toFixed(2)})
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* 4. Fee Deduction Policy */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <Percent size={13} className="text-cyan-400" />
+                        <span>4. Fee Deduction Policy</span>
+                      </label>
+                      <span className="text-[10px] text-white/40">Select payer</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-2xl border border-white/10 text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setFeeMode("from_payment")}
+                        className={`py-3 px-3 rounded-xl transition flex flex-col items-center justify-center gap-0.5 ${
+                          feeMode === "from_payment"
+                            ? "bg-white/15 text-white shadow-sm border border-white/20"
+                            : "text-white/50 hover:text-white"
+                        }`}
+                      >
+                        <span className="font-bold">Deduct from Payment</span>
+                        <span className="text-[10px] text-white/40 font-normal">Receiver pays fees</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeeMode("sender_covers")}
+                        className={`py-3 px-3 rounded-xl transition flex flex-col items-center justify-center gap-0.5 ${
+                          feeMode === "sender_covers"
+                            ? "bg-white/15 text-white shadow-sm border border-white/20"
+                            : "text-white/50 hover:text-white"
+                        }`}
+                      >
+                        <span className="font-bold">I Cover All Fees</span>
+                        <span className="text-[10px] text-white/40 font-normal">Receiver gets full amount</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 5. Transfer Memo with Category Presets */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                        <FileText size={13} className="text-white/50" />
+                        <span>5. Transfer Memo (Optional)</span>
+                      </label>
+                      <span className="text-[10px] text-white/40">Public on ledger</span>
+                    </div>
+
+                    <input
+                      value={sendMemo}
+                      onChange={(e) => setSendMemo(e.target.value)}
+                      placeholder="e.g. Invoice #104 payment, goods delivery, or rent"
+                      className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition font-medium"
+                    />
+
+                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                      {["🛒 Purchase", "🏠 Rent", "💼 Services", "⚡ Repayment", "🎁 Gift"].map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setSendMemo(tag)}
+                          className="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 transition"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 6. Primary Action Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={actionPending || suspended || !sendAmt || !sendTo}
+                    className="w-full py-4 rounded-2xl font-bold text-sm sm:text-base text-white shadow-xl transition-all hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.99]"
+                    style={btnBrand}
+                  >
+                    {actionPending ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        <span>Executing Settlement…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Confirm & Authorize Transfer</span>
+                        <ArrowRight size={18} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              {/* RIGHT COLUMN: Real-Time Live Settlement Ledger & Route Preview */}
+              <div className="lg:col-span-5 space-y-6">
+                {/* Live Settlement Card */}
+                <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.01] p-6 space-y-5 shadow-xl backdrop-blur-sm sticky top-6">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 font-mono flex items-center gap-1">
+                        <Activity size={12} />
+                        <span>Live Ledger Engine</span>
+                      </span>
+                      <h3 className="font-bold text-base text-white">Settlement Preview</h3>
+                    </div>
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span>Ready</span>
+                    </span>
+                  </div>
+
+                  {/* Visual Route */}
+                  <div className="p-4 rounded-2xl bg-black/40 border border-white/5 space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="space-y-0.5 max-w-[45%]">
+                        <span className="text-[10px] font-bold text-white/40 uppercase block">Source</span>
+                        <p className="font-bold text-white truncate">
+                          {accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id))?.accountName || "Your Account"}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-center px-2">
+                        <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                          <ArrowRight size={12} />
+                        </div>
+                        <span className="text-[9px] font-mono text-white/40 mt-1">Instant</span>
+                      </div>
+                      <div className="space-y-0.5 max-w-[45%] text-right">
+                        <span className="text-[10px] font-bold text-white/40 uppercase block">Recipient</span>
+                        <p className="font-bold text-indigo-300 truncate">
+                          {sendTo || "Enter recipient"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Real-time Calculation */}
+                  <div className="space-y-3 text-xs">
+                    {quoting && (
+                      <div className="flex items-center gap-2 py-4 justify-center text-white/50">
+                        <Loader2 size={16} className="animate-spin text-indigo-400" />
+                        <span>Calculating settlement quote…</span>
+                      </div>
+                    )}
+
+                    {quoteErr && (
+                      <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+                        {quoteErr}
+                      </div>
+                    )}
+
+                    {quote && (
+                      <div className="space-y-2.5">
+                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                          <span className="text-white/60">Debited from Sender</span>
+                          <span className="font-mono font-black text-white text-base">
+                            {formatMoney(quote.submittedCents)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                          <span className="text-white/60">Credited to Recipient</span>
+                          <span className="font-mono font-bold text-emerald-400 text-base">
+                            {formatMoney(quote.receivedCents)}
+                          </span>
+                        </div>
+
+                        {quote.lines?.map((l: any) => (
+                          <div key={l.code} className="flex justify-between text-[11px] text-white/40">
+                            <span>{l.label} ({Number((l.rate * 100).toFixed(2))}%)</span>
+                            <span className="font-mono text-white/70">{formatMoney(l.amountCents)}</span>
+                          </div>
+                        ))}
+
+                        <div className="flex justify-between text-xs pt-2 border-t border-white/10 font-bold">
+                          <span className="text-amber-300/90">Total Transaction Fees</span>
+                          <span className="font-mono text-amber-300">{formatMoney(quote.totalFeeCents)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {!quoting && !quote && !quoteErr && (
+                      <div className="text-center py-6 text-white/40 space-y-1">
+                        <DollarSign size={24} className="mx-auto text-white/20 mb-2" />
+                        <p className="font-medium text-xs text-white/60">Live Breakdown</p>
+                        <p className="text-[11px] text-white/40 max-w-xs mx-auto">
+                          Enter recipient account and transfer amount to generate dynamic settlement calculations.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Security Guarantees */}
+                  <div className="pt-4 border-t border-white/10 space-y-2.5">
+                    <div className="flex items-start gap-2.5 text-xs text-white/60">
+                      <ShieldCheck size={16} className="text-emerald-400 shrink-0 mt-0.5" />
+                      <span>Zero-hold immediate clearing into recipient balance.</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 text-xs text-white/60">
+                      <Lock size={16} className="text-indigo-400 shrink-0 mt-0.5" />
+                      <span>Cryptographically signed CityCorp transaction ledger.</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 text-xs text-white/60">
+                      <Landmark size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                      <span>Free 0% fees on transfers between accounts at the same bank.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <input value={sendMemo} onChange={(e) => setSendMemo(e.target.value)} placeholder="Memo (optional)" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm" />
-            <button disabled={actionPending || suspended} className="w-full py-3.5 rounded-2xl font-bold text-white disabled:opacity-50" style={btnBrand}>
-              {actionPending ? "Sending…" : "Confirm send"}
-            </button>
-          </form>
+          </div>
         )}
 
         {view === "activity" && (
@@ -4724,7 +5175,15 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setBotInviteModalOpen(true)}
+                    className="flex items-center gap-2 text-xs font-bold px-3.5 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white transition shadow-lg shadow-[#5865F2]/25 active:scale-95 cursor-pointer"
+                  >
+                    <Bot size={14} />
+                    <span>Invite Onyx Bot</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -4734,7 +5193,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                       }
                       setRegisterMerchantOpen(true);
                     }}
-                    className="flex items-center gap-2 text-xs font-bold px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-lg shadow-indigo-600/30 active:scale-95"
+                    className="flex items-center gap-2 text-xs font-bold px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-lg shadow-indigo-600/30 active:scale-95 cursor-pointer"
                   >
                     <Store size={14} />
                     <span>Setup Corp Storefront</span>
@@ -4743,7 +5202,7 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                     type="button"
                     onClick={loadOnyxData}
                     title="Refresh Onyx network telemetry"
-                    className="p-2.5 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 text-white/70 hover:text-white transition"
+                    className="p-2.5 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 text-white/70 hover:text-white transition cursor-pointer"
                   >
                     <RefreshCw size={14} className={loadingOnyx ? "animate-spin" : ""} />
                   </button>
@@ -4817,12 +5276,61 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             {/* SUBTAB: OVERVIEW & DISCORD SETUP GUIDE */}
             {onyxSubTab === "overview" && (
               <div className="space-y-6">
-                <div className="grid sm:grid-cols-3 gap-4">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
-                      <Store size={16} />
+                {/* Discord Bot Setup & Invite Banner */}
+                <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-[#5865F2]/15 via-indigo-950/30 to-purple-950/20 p-5 sm:p-6 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#5865F2]/20 text-indigo-200 border border-[#5865F2]/30 flex items-center gap-1.5">
+                          <Bot size={11} className="text-indigo-300" />
+                          <span>Official Discord Bot</span>
+                        </span>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>Slash Commands Ready</span>
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-black text-white tracking-tight">Add Onyx Bot to Your Discord Server</h3>
+                      <p className="text-xs text-white/60 max-w-xl leading-relaxed">
+                        Invite the official Onyx Discord Bot to enable 1-click payment buttons, corporate store checkout commands, and automated customer receipt webhooks across your community channels.
+                      </p>
                     </div>
-                    <h3 className="font-bold text-white text-base">1. Register Storefront</h3>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setBotInviteModalOpen(true)}
+                        className="flex items-center gap-2 text-xs font-bold px-4 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white transition shadow-lg shadow-[#5865F2]/30 active:scale-95 cursor-pointer"
+                      >
+                        <Bot size={15} />
+                        <span>Invite Bot to Server</span>
+                        <ExternalLink size={12} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <div
+                    onClick={() => {
+                      if (accounts.length > 0 && !newMerchantAccountId) {
+                        const corpAcc = accounts.find((a: any) => a.accountType?.includes("business") || a.accountType?.includes("corp"));
+                        setNewMerchantAccountId(corpAcc ? corpAcc.id : accounts[0].id);
+                      }
+                      setRegisterMerchantOpen(true);
+                    }}
+                    className="rounded-2xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-indigo-500/40 p-5 space-y-2.5 transition cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center group-hover:scale-110 transition">
+                        <Store size={16} />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 group-hover:bg-indigo-500/20 transition">
+                        <span>Launch</span>
+                        <ArrowRight size={10} />
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-white text-base group-hover:text-indigo-200 transition">1. Register Storefront</h3>
                     <p className="text-xs text-white/50 leading-relaxed">
                       Link your Corporate Bank Account to an Onyx Merchant ID. Funds paid by players will settle directly into your balance.
                     </p>
@@ -6664,6 +7172,755 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
                   style={btnBrand}
                 >
                   Go to Dashboard
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ONYX: Register Storefront Modal (Touch-friendly & Mobile Responsive) */}
+      <AnimatePresence>
+        {registerMerchantOpen && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 30, scale: 0.98 }}
+              className="bg-[#121218] border border-white/15 rounded-t-[32px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-lg space-y-6 shadow-2xl relative max-h-[92vh] overflow-y-auto text-left"
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                      <Store size={16} />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 rounded-full">
+                      Onyx Merchant PSP
+                    </span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">Register Storefront</h3>
+                  <p className="text-xs text-white/50">
+                    Create a merchant terminal to accept 1-click Discord & web payments directly into your account.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRegisterMerchantOpen(false)}
+                  className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleRegisterMerchant} className="space-y-5">
+                {/* Storefront Name */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/70 uppercase tracking-wider block">
+                    Storefront / Business Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newMerchantName}
+                    onChange={(e) => setNewMerchantName(e.target.value)}
+                    placeholder="e.g. Acme Corporation, Skyblock Shop, or Apex Armory"
+                    className="w-full bg-[#161622] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition font-medium"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Settlement Account Selector */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-white/70 uppercase tracking-wider block">
+                      Settlement Bank Account *
+                    </label>
+                    <span className="text-[11px] text-emerald-400 font-mono">0% Same-Bank Fee</span>
+                  </div>
+                  <div className="relative">
+                    <select
+                      required
+                      value={newMerchantAccountId || (accounts[0]?.id || "")}
+                      onChange={(e) => setNewMerchantAccountId(e.target.value)}
+                      className="w-full bg-[#161622] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition appearance-none cursor-pointer"
+                    >
+                      {accounts.map((a: any) => {
+                        const isCorp = a.accountType?.includes("business") || a.accountType?.includes("corp");
+                        return (
+                          <option key={a.id} value={a.id} className="bg-[#161622] text-white">
+                            {a.accountName} {isCorp ? "[CORP / RECOMMENDED]" : ""} — {formatMoney(a.balance)}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                  </div>
+                  <p className="text-[11px] text-white/40">
+                    All player checkouts will automatically settle directly into this account in real time.
+                  </p>
+                </div>
+
+                {/* Info Card */}
+                <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 space-y-1 text-xs">
+                  <p className="font-bold text-indigo-300 flex items-center gap-1.5">
+                    <Zap size={13} />
+                    <span>Instant Discord Integration</span>
+                  </p>
+                  <p className="text-white/60">
+                    Once registered, you'll receive a live API Key and Discord slash command syntax to drop buttons in your server.
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setRegisterMerchantOpen(false)}
+                    className="flex-1 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs sm:text-sm transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={registeringMerchant || !newMerchantName.trim()}
+                    className="flex-[2] py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-indigo-600/30 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {registeringMerchant ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Registering Storefront…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Store size={16} />
+                        <span>Register Storefront</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ONYX: New Merchant Success Modal */}
+      <AnimatePresence>
+        {newMerchantSuccess && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#121218] border border-white/15 rounded-t-[32px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-lg space-y-5 shadow-2xl relative max-h-[92vh] overflow-y-auto text-left"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-lg">
+                <CheckCircle2 size={30} />
+              </div>
+
+              <div className="text-center space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full font-mono">
+                  Storefront Operational
+                </span>
+                <h3 className="text-xl font-black text-white mt-1">"{newMerchantSuccess.name}" Created</h3>
+                <p className="text-xs text-white/50 max-w-xs mx-auto">
+                  Your Onyx merchant terminal is active and ready to process payments.
+                </p>
+              </div>
+
+              {/* API Key Box */}
+              {newMerchantSuccess.apiKey && (
+                <div className="p-4 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                      <Key size={13} />
+                      <span>Live Merchant API Key (Copy Now)</span>
+                    </span>
+                    <span className="text-[10px] text-white/40">Only shown once</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 p-2.5 bg-black/60 border border-white/5 rounded-xl font-mono text-xs text-amber-200">
+                    <span className="truncate select-all">{newMerchantSuccess.apiKey}</span>
+                    <button
+                      type="button"
+                      onClick={() => copy(newMerchantSuccess.apiKey, "new_mch_key")}
+                      className="shrink-0 flex items-center gap-1 text-[11px] font-sans font-bold text-black bg-amber-400 hover:bg-amber-300 px-2.5 py-1 rounded transition"
+                    >
+                      {copied === "new_mch_key" ? <Check size={12} /> : <Copy size={12} />}
+                      <span>{copied === "new_mch_key" ? "Copied" : "Copy Key"}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Discord Slash Command Bar */}
+              <div className="p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/20 space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 block">
+                  Discord Slash Command:
+                </span>
+                <div className="flex items-center justify-between gap-2 p-2.5 bg-black/60 border border-white/5 rounded-xl font-mono text-xs text-indigo-200 overflow-x-auto">
+                  <code className="truncate">
+                    /onyx checkout merchant:{newMerchantSuccess.slug || newMerchantSuccess.id} amount:25.00
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copy(`/onyx checkout merchant:${newMerchantSuccess.slug || newMerchantSuccess.id} amount:25.00`, "new_mch_cmd")}
+                    className="shrink-0 flex items-center gap-1 text-[11px] font-sans font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-2.5 py-1 rounded transition"
+                  >
+                    {copied === "new_mch_cmd" ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copied === "new_mch_cmd" ? "Copied" : "Copy"}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setNewMerchantSuccess(null)}
+                  className="w-full py-3.5 rounded-2xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-lg"
+                >
+                  Done & View Storefronts
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ONYX: Manage Products Modal */}
+      <AnimatePresence>
+        {managingProductsMerchant && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 30, scale: 0.98 }}
+              className="bg-[#121218] border border-white/15 rounded-t-[32px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-xl space-y-6 shadow-2xl relative max-h-[92vh] overflow-y-auto text-left"
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                      <ShoppingBag size={16} />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 rounded-full">
+                      Product Catalog
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-black text-white">{managingProductsMerchant.name} · Catalog</h3>
+                  <p className="text-xs text-white/50">
+                    Define predefined products so players can buy specific items via Discord commands or checkout links.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManagingProductsMerchant(null)}
+                  className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Add Product Form */}
+              <form onSubmit={handleAddMerchantProduct} className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
+                <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Plus size={13} className="text-indigo-400" />
+                  <span>Add New Product to Catalog</span>
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    type="text"
+                    required
+                    value={newProductName}
+                    onChange={(e) => setNewProductName(e.target.value)}
+                    placeholder="Product Name (e.g. VIP Rank)"
+                    className="w-full bg-[#161622] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-indigo-400"
+                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required={newProductPriceType === "fixed"}
+                      disabled={newProductPriceType === "custom_customer"}
+                      value={newProductPrice}
+                      onChange={(e) => setNewProductPrice(e.target.value)}
+                      placeholder={newProductPriceType === "custom_customer" ? "Custom Amount" : "Price ($)"}
+                      className="w-full bg-[#161622] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 disabled:opacity-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewProductPriceType(prev => prev === "fixed" ? "custom_customer" : "fixed")}
+                      className={`px-2.5 py-2.5 rounded-xl text-[10px] font-bold uppercase shrink-0 border transition ${
+                        newProductPriceType === "custom_customer"
+                          ? "bg-indigo-600 text-white border-indigo-500"
+                          : "bg-white/5 text-white/60 border-white/10"
+                      }`}
+                      title="Allow buyer to enter custom amount (e.g. donation)"
+                    >
+                      {newProductPriceType === "custom_customer" ? "Variable" : "Fixed"}
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  value={newProductDesc}
+                  onChange={(e) => setNewProductDesc(e.target.value)}
+                  placeholder="Short Description (optional)"
+                  className="w-full bg-[#161622] border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-indigo-400"
+                />
+                <button
+                  type="submit"
+                  disabled={addingProduct || !newProductName.trim()}
+                  className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {addingProduct ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                  <span>Add Product</span>
+                </button>
+              </form>
+
+              {/* Products List */}
+              <div className="space-y-2.5">
+                <span className="text-xs font-bold text-white/60 uppercase tracking-wider block">
+                  Active Products ({merchantProductsList.length})
+                </span>
+                {loadingProducts ? (
+                  <div className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-xs">Loading product catalog…</span>
+                  </div>
+                ) : merchantProductsList.length === 0 ? (
+                  <div className="p-6 rounded-2xl border border-white/5 bg-white/[0.01] text-center text-xs text-white/40">
+                    No products added yet. Use the form above to add your first catalog item.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/5 rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
+                    {merchantProductsList.map((p: any) => (
+                      <div key={p.id} className="p-3.5 flex items-center justify-between gap-3 hover:bg-white/[0.02] transition">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h5 className="font-bold text-xs text-white">{p.name}</h5>
+                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.2 rounded font-bold">
+                              {p.priceType === "custom_customer" ? "Custom $" : formatMoney(p.priceCents || p.price)}
+                            </span>
+                          </div>
+                          {p.description && <p className="text-[11px] text-white/40 mt-0.5">{p.description}</p>}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMerchantProduct(p.id)}
+                          className="p-1.5 rounded-lg text-white/30 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                          title="Delete product"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setManagingProductsMerchant(null)}
+                  className="w-full py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs transition"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ONYX: Webhook Setup Modal */}
+      <AnimatePresence>
+        {managingWebhookMerchant && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 30, scale: 0.98 }}
+              className="bg-[#121218] border border-white/15 rounded-t-[32px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-lg space-y-6 shadow-2xl relative max-h-[92vh] overflow-y-auto text-left"
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                      <Bell size={16} />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 rounded-full">
+                      Discord Webhook
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-black text-white">{managingWebhookMerchant.name} · Alerts</h3>
+                  <p className="text-xs text-white/50">
+                    Receive instant Discord embed alerts in your staff or logs channel when a customer completes a checkout.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManagingWebhookMerchant(null)}
+                  className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveWebhook} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/70 uppercase tracking-wider block">
+                    Discord Channel Webhook URL
+                  </label>
+                  <input
+                    type="url"
+                    value={webhookUrlInput}
+                    onChange={(e) => setWebhookUrlInput(e.target.value)}
+                    placeholder="https://discord.com/api/webhooks/..."
+                    className="w-full bg-[#161622] border border-white/15 rounded-2xl px-4 py-3.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 font-mono"
+                  />
+                  <p className="text-[11px] text-white/40">
+                    Leave blank and submit to remove active webhook notifications.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setManagingWebhookMerchant(null)}
+                    className="flex-1 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingWebhook}
+                    className="flex-[2] py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {savingWebhook ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    <span>Save Webhook</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ONYX: Rolled Key Modal */}
+      <AnimatePresence>
+        {rolledKeyModal && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#121218] border border-white/15 rounded-t-[32px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-md space-y-5 shadow-2xl relative text-left"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
+                <Key size={24} />
+              </div>
+
+              <div className="text-center space-y-1">
+                <h3 className="text-lg font-black text-white">New API Key Generated</h3>
+                <p className="text-xs text-white/50">
+                  Please copy and store this API key securely. It will not be shown again.
+                </p>
+              </div>
+
+              <div className="p-3 bg-black/60 border border-white/10 rounded-xl space-y-2">
+                <div className="flex items-center justify-between gap-2 overflow-x-auto font-mono text-xs text-amber-200">
+                  <span className="truncate select-all">{rolledKeyModal.apiKey}</span>
+                  <button
+                    type="button"
+                    onClick={() => copy(rolledKeyModal.apiKey, "rolled_key_copy")}
+                    className="shrink-0 flex items-center gap-1 text-[11px] font-sans font-bold text-black bg-amber-400 hover:bg-amber-300 px-2.5 py-1 rounded transition"
+                  >
+                    {copied === "rolled_key_copy" ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copied === "rolled_key_copy" ? "Copied" : "Copy"}</span>
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setRolledKeyModal(null)}
+                className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs transition"
+              >
+                Done
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SPLIT BILL MODAL */}
+      <AnimatePresence>
+        {splitBillModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 30, scale: 0.98 }}
+              className="bg-[#121218] border border-white/15 rounded-t-[32px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-lg space-y-6 shadow-2xl relative max-h-[92vh] overflow-y-auto text-left"
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                      <Users size={16} />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 rounded-full">
+                      Split Settlement
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-black text-white">Split a Bill</h3>
+                  <p className="text-xs text-white/50">
+                    Split an expense evenly. Invoices will be dispatched directly to each participant's portal.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSplitBillModalOpen(false)}
+                  className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSendSplit} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/70 uppercase tracking-wider block">
+                    Total Amount to Split ($) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={splitTotalAmount}
+                    onChange={(e) => setSplitTotalAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-[#161622] border border-white/15 rounded-2xl px-4 py-3 text-lg font-mono font-bold text-white focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/70 uppercase tracking-wider block">
+                    Receiving Account *
+                  </label>
+                  <select
+                    value={splitFromAccountId || accounts[0]?.id || ""}
+                    onChange={(e) => setSplitFromAccountId(e.target.value)}
+                    className="w-full bg-[#161622] border border-white/15 rounded-2xl px-4 py-3 text-xs font-semibold text-white focus:outline-none focus:border-indigo-400"
+                  >
+                    {accounts.map((a: any) => (
+                      <option key={a.id} value={a.id}>
+                        {a.accountName} — {formatMoney(a.balance)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/70 uppercase tracking-wider block">
+                    Description / Bill Purpose
+                  </label>
+                  <input
+                    type="text"
+                    value={splitDescription}
+                    onChange={(e) => setSplitDescription(e.target.value)}
+                    placeholder="e.g. Dinner, Clan Base Rent, Materials Order"
+                    className="w-full bg-[#161622] border border-white/15 rounded-2xl px-4 py-3 text-xs text-white focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-white/70 uppercase tracking-wider block">
+                      Participants (Account Names or Discord IDs)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setSplitParticipants(prev => [...prev, ""])}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1"
+                    >
+                      <Plus size={12} /> Add Person
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {splitParticipants.map((p, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          required
+                          value={p}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSplitParticipants(prev => {
+                              const copy = [...prev];
+                              copy[idx] = val;
+                              return copy;
+                            });
+                          }}
+                          placeholder={`Participant #${idx + 1} account name`}
+                          className="flex-1 bg-[#161622] border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-400"
+                        />
+                        {splitParticipants.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setSplitParticipants(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-2 rounded-lg text-white/30 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {splitTotalAmount && parseFloat(splitTotalAmount) > 0 && (
+                    <p className="text-[11px] text-indigo-300 font-mono mt-1">
+                      Each person pays: <strong className="text-white font-bold">{formatMoney(Math.round((parseFloat(splitTotalAmount) / (splitParticipants.filter(Boolean).length + 1)) * 100))}</strong> (including you)
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setSplitBillModalOpen(false)}
+                    className="flex-1 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={splitSubmitting || !splitTotalAmount || parseFloat(splitTotalAmount) <= 0}
+                    className="flex-[2] py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {splitSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                    <span>Send Split Requests</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ONYX: Bot Invite Modal */}
+      <AnimatePresence>
+        {botInviteModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 30, scale: 0.98 }}
+              className="bg-[#121218] border border-white/15 rounded-t-[32px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-lg space-y-6 shadow-2xl relative max-h-[92vh] overflow-y-auto text-left"
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-[#5865F2]/20 text-[#5865F2] flex items-center justify-center">
+                      <Bot size={18} />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 rounded-full">
+                      Discord Integration
+                    </span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">Invite Onyx Bot</h3>
+                  <p className="text-xs text-white/50">
+                    Authorize the official Onyx Payment Bot on your Discord server to enable slash commands and checkout buttons.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBotInviteModalOpen(false)}
+                  className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Action / Invite Link */}
+              {onyxStats?.botInviteUrl ? (
+                <div className="space-y-3">
+                  <a
+                    href={onyxStats.botInviteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-4 rounded-2xl bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold text-sm shadow-xl shadow-[#5865F2]/30 transition flex items-center justify-center gap-2"
+                  >
+                    <Bot size={18} />
+                    <span>Authorize & Add to Server</span>
+                    <ExternalLink size={14} />
+                  </a>
+
+                  <div className="p-3 bg-black/50 border border-white/10 rounded-xl space-y-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 block">Direct OAuth Link:</span>
+                    <div className="flex items-center justify-between gap-2 font-mono text-xs text-indigo-200 overflow-x-auto">
+                      <span className="truncate select-all">{onyxStats.botInviteUrl}</span>
+                      <button
+                        type="button"
+                        onClick={() => copy(onyxStats.botInviteUrl, "bot_invite_url")}
+                        className="shrink-0 flex items-center gap-1 font-sans text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-2.5 py-1 rounded transition"
+                      >
+                        {copied === "bot_invite_url" ? <Check size={12} /> : <Copy size={12} />}
+                        <span>{copied === "bot_invite_url" ? "Copied" : "Copy"}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-2">
+                  <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <AlertTriangle size={14} />
+                    <span>Discord Bot Configuration</span>
+                  </p>
+                  <p className="text-white/70 leading-relaxed">
+                    The Onyx bot token or <code className="text-amber-200">DISCORD_CLIENT_ID</code> can be configured in Onyx System Settings by platform administrators.
+                  </p>
+                </div>
+              )}
+
+              {/* Unlocked Commands Feature List */}
+              <div className="space-y-2.5 pt-1">
+                <span className="text-xs font-bold text-white/70 uppercase tracking-wider block">
+                  Features Unlocked in Your Server
+                </span>
+                <div className="space-y-2 text-xs text-white/70">
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-start gap-2.5">
+                    <Terminal size={14} className="text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-white font-mono block">/onyx checkout</strong>
+                      <span className="text-white/50 text-[11px]">Spawn interactive 1-click checkout buttons with instant settlement into your bank account.</span>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-start gap-2.5">
+                    <Terminal size={14} className="text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-white font-mono block">/onyx quote</strong>
+                      <span className="text-white/50 text-[11px]">Instant settlement quotes across inter-bank and same-bank accounts.</span>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-start gap-2.5">
+                    <BellRing size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-white font-mono block">Channel Webhook Embeds</strong>
+                      <span className="text-white/50 text-[11px]">Post instant receipts and transaction audit logs directly in your staff channels.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setBotInviteModalOpen(false)}
+                  className="w-full py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs transition"
+                >
+                  Close
                 </button>
               </div>
             </motion.div>

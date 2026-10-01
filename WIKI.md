@@ -46,8 +46,17 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
       - Real-time in-game ID and deposit command preview that dynamically reacts to naming preference toggles.
     - **Customer Portal Hero & Onyx PSP Showcase**:
       - Upgraded glassmorphic dashboard hero card featuring high-contrast typography, live portfolio metrics, and an integrated **Onyx PSP Quick Action & Network Status** trigger.
-      - Fully responsive mobile account selector dropdown designed to prevent clipping across viewport widths.
+      - **Zero-Clipping Mobile Account Selector**: Centered, responsive viewport-bounded popover (`fixed inset-x-3 top-16 sm:absolute`) ensuring that account names, corporate badges, and balances remain 100% visible on all mobile screens without horizontal truncation.
       - Optimized layout with zero-repaint static badges and hardware-accelerated gradients for smooth 60fps interaction.
+    - **Onyx Storefront Registration & Discord Bot Invite Suite**:
+      - **Instant Discord Bot Authorization**: 1-click **"Invite Onyx Bot"** flow with pre-configured Discord OAuth permission scopes (`/api/onyx/bot-invite`), direct links, and full slash command references (`/onyx checkout`, `/onyx quote`).
+      - Fully mobile-responsive, touch-optimized dialogs for storefront registration (`/api/onyx/register`), product catalog management, Discord webhook alerts, and API key lifecycle management.
+      - Interactive 1-tap setup cards on the Onyx Overview tab and high-visibility actions allowing mobile citizens to provision corporate merchant terminals with real-time settlement into their chosen bank account.
+    - **Revamped Send & Wire Transfer Terminal**:
+      - Luxury fintech two-column transfer terminal featuring a high-fidelity interactive composer on the left and a live real-time settlement ledger preview on the right.
+      - Interactive counterparty search with instant autocomplete, "My Other Accounts" instant self-transfer pills, recent payees, and verified account badges with bank identifiers.
+      - Real-time quote visualizer with dynamic fee calculation, intra-bank 0% fee highlighting, and clear fee deduction policy toggles (Deduct from Payment vs Sender Covers Fees).
+      - Official digital transaction receipt slip with copyable reference IDs, itemized fee breakdown, and seamless navigation.
   - **Direct Loan Issuance & Account Autocomplete**:
     - Staff issuing direct loans in the staff dashboard are provided with an instant search-as-you-type **Borrower Account Picker** supporting account names, Minecraft handles, Discord IDs, and account types.
     - Eliminates manual Discord ID entry by automatically resolving borrower account metadata and linked identities.

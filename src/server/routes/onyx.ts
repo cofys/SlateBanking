@@ -58,6 +58,25 @@ onyxRouter.get("/api/onyx/public-stats", async (req: express.Request, res: expre
 
       const settings = await db.select().from(onyxSettings).where(eq(onyxSettings.id, 'global')).get();
 
+      let botClientId: string | null = null;
+      if (settings?.botToken) {
+        try {
+          const raw = Buffer.from(settings.botToken.split('.')[0], 'base64').toString('utf-8');
+          if (/^\d{16,21}$/.test(raw)) botClientId = raw;
+        } catch {}
+      }
+      if (!botClientId) {
+        const onyxClient = botManager.getOnyxClient();
+        if (onyxClient?.user?.id) {
+          botClientId = onyxClient.user.id;
+        } else if (process.env.DISCORD_CLIENT_ID && /^\d{16,21}$/.test(process.env.DISCORD_CLIENT_ID)) {
+          botClientId = process.env.DISCORD_CLIENT_ID;
+        }
+      }
+      const botInviteUrl = botClientId
+        ? `https://discord.com/oauth2/authorize?client_id=${botClientId}&permissions=2147485696&scope=bot%20applications.commands`
+        : null;
+
       res.json({
         activeBankCount,
         totalBanksCount,
@@ -66,6 +85,9 @@ onyxRouter.get("/api/onyx/public-stats", async (req: express.Request, res: expre
         onyxTransactionsCount: onyxTxSummary?.onyxCount || 0,
         b2bApiFeePercent: settings?.b2bApiFeePercent || 200,
         clearinghouseEnabled: settings?.clearinghouseEnabled ?? true,
+        botInviteUrl,
+        botClientId,
+        botStatus: botManager.getOnyxBotStatus(),
         banks: allBanks.map(b => ({
           id: b.id,
           name: b.name,
@@ -77,6 +99,44 @@ onyxRouter.get("/api/onyx/public-stats", async (req: express.Request, res: expre
       console.error(e);
       res.status(500).json({ error: "Failed to load Onyx network stats" });
     }
+});
+
+onyxRouter.get("/api/onyx/bot-invite", async (req: express.Request, res: express.Response) => {
+  try {
+    const { db } = await import("../../db/index.js");
+    const { onyxSettings } = await import("../../db/schema.js");
+    const { eq } = await import("drizzle-orm");
+
+    const settings = await db.select().from(onyxSettings).where(eq(onyxSettings.id, 'global')).get();
+    let botClientId: string | null = null;
+    if (settings?.botToken) {
+      try {
+        const raw = Buffer.from(settings.botToken.split('.')[0], 'base64').toString('utf-8');
+        if (/^\d{16,21}$/.test(raw)) botClientId = raw;
+      } catch {}
+    }
+    if (!botClientId) {
+      const onyxClient = botManager.getOnyxClient();
+      if (onyxClient?.user?.id) {
+        botClientId = onyxClient.user.id;
+      } else if (process.env.DISCORD_CLIENT_ID && /^\d{16,21}$/.test(process.env.DISCORD_CLIENT_ID)) {
+        botClientId = process.env.DISCORD_CLIENT_ID;
+      }
+    }
+    const inviteUrl = botClientId
+      ? `https://discord.com/oauth2/authorize?client_id=${botClientId}&permissions=2147485696&scope=bot%20applications.commands`
+      : null;
+
+    res.json({
+      inviteUrl,
+      botClientId,
+      status: botManager.getOnyxBotStatus(),
+      hasBotToken: !!settings?.botToken,
+    });
+  } catch (e) {
+    console.error("Failed to fetch bot invite info", e);
+    res.status(500).json({ error: "Failed to fetch bot invite info" });
+  }
 });
 
 onyxRouter.get("/api/onyx/network-analytics", requireGlobalAdmin, async (req: express.Request, res: express.Response) => {
