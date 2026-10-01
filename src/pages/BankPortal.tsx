@@ -2508,449 +2508,471 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
             </div>
 
             {/* Split Layout: Composer on Left, Real-Time Ledger on Right */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-              {/* LEFT COLUMN: The Transfer Composer */}
-              <div className="lg:col-span-7 space-y-6">
-                <form onSubmit={sendNow} className="rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-7 space-y-6 shadow-xl backdrop-blur-sm">
-                  {/* 1. Source Account Card */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
-                        <Wallet size={13} className="text-indigo-400" />
-                        <span>1. Select Source Account</span>
-                      </label>
-                      {(() => {
-                        const srcAcc = accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id));
-                        return srcAcc ? (
-                          <span className="text-xs font-mono text-white/50">
-                            Available: <strong className="text-emerald-400 font-bold">{formatMoney(srcAcc.balance)}</strong>
+            <form onSubmit={sendNow}>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+                {/* LEFT COLUMN: The Transfer Composer */}
+                <div className="lg:col-span-7 space-y-6">
+                  <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-7 space-y-6 shadow-xl backdrop-blur-sm">
+                    {/* 1. Source Account Card */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                          <Wallet size={13} className="text-indigo-400" />
+                          <span>1. Select Source Account</span>
+                        </label>
+                        {(() => {
+                          const srcAcc = accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id));
+                          return srcAcc ? (
+                            <span className="text-xs font-mono text-white/50">
+                              Available: <strong className="text-emerald-400 font-bold">{formatMoney(srcAcc.balance)}</strong>
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
+
+                      <div className="relative">
+                        <select
+                          value={sendFrom || accounts[0]?.id || ""}
+                          onChange={(e) => setSendFrom(e.target.value)}
+                          className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition appearance-none cursor-pointer"
+                        >
+                          {accounts.map((a: any) => {
+                            const isCorp = a.accountType?.includes("business") || a.accountType?.includes("corp");
+                            return (
+                              <option key={a.id} value={a.id} className="bg-[#14141e] text-white py-2">
+                                {a.accountName} {isCorp ? "[CORP]" : ""} — {formatMoney(a.balance)}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* 2. Destination Recipient & Quick Switchers */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                          <Building2 size={13} className="text-amber-400" />
+                          <span>2. Recipient Account</span>
+                        </label>
+                        <span className="text-[10px] text-white/40">Enter account name or tag</span>
+                      </div>
+
+                      {/* Self-Account Quick Transfer Shortcuts */}
+                      {accounts.length > 1 && (
+                        <div className="flex items-center gap-1.5 flex-wrap p-2 rounded-xl bg-black/30 border border-white/5 text-xs">
+                          <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider flex items-center gap-1">
+                            <ArrowLeftRight size={10} className="text-indigo-400" />
+                            <span>My Other Accounts:</span>
                           </span>
-                        ) : null;
-                      })()}
-                    </div>
+                          {accounts
+                            .filter((a: any) => a.id !== (sendFrom || accounts[0]?.id))
+                            .map((a: any) => (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => {
+                                  setSendTo(a.accountName);
+                                  setDestHint(`Internal Transfer → ${a.accountName}`);
+                                  setDestMatches([]);
+                                }}
+                                className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border transition ${
+                                  sendTo === a.accountName
+                                    ? "bg-indigo-600/30 border-indigo-500/50 text-indigo-200 font-bold"
+                                    : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                                }`}
+                              >
+                                {a.accountName}
+                              </button>
+                            ))}
+                        </div>
+                      )}
 
-                    <div className="relative">
-                      <select
-                        value={sendFrom || accounts[0]?.id || ""}
-                        onChange={(e) => setSendFrom(e.target.value)}
-                        className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition appearance-none cursor-pointer"
-                      >
-                        {accounts.map((a: any) => {
-                          const isCorp = a.accountType?.includes("business") || a.accountType?.includes("corp");
-                          return (
-                            <option key={a.id} value={a.id} className="bg-[#14141e] text-white py-2">
-                              {a.accountName} {isCorp ? "[CORP]" : ""} — {formatMoney(a.balance)}
-                            </option>
-                          );
-                        })}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
-                    </div>
-                  </div>
+                      {/* Recipient Input */}
+                      <div className="relative">
+                        <input
+                          value={sendTo}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setSendTo(v);
+                            setDestHint("");
+                            fetch(`/api/portal/${bankId}/payees?q=${encodeURIComponent(v)}`)
+                              .then((r) => r.json())
+                              .then((d) => setDestMatches(Array.isArray(d) ? d : []))
+                              .catch(() => {});
+                          }}
+                          onFocus={() => {
+                            fetch(`/api/portal/${bankId}/payees`)
+                              .then((r) => r.json())
+                              .then((d) => setDestMatches(Array.isArray(d) ? d : []))
+                              .catch(() => {});
+                          }}
+                          placeholder="Search account name (e.g. ACC-Notch or CORP-Acme)"
+                          className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition font-medium"
+                          required
+                          autoComplete="off"
+                        />
+                        {sendTo && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSendTo("");
+                              setDestHint("");
+                              setDestMatches([]);
+                            }}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
 
-                  {/* 2. Destination Recipient & Quick Switchers */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
-                        <Building2 size={13} className="text-amber-400" />
-                        <span>2. Recipient Account</span>
-                      </label>
-                      <span className="text-[10px] text-white/40">Enter account name or tag</span>
-                    </div>
+                      {/* Verified Match Hint Badge */}
+                      {destHint && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-xs"
+                        >
+                          <span className="text-emerald-300 font-medium flex items-center gap-1.5">
+                            <CheckCircle2 size={13} className="text-emerald-400" />
+                            <span>Verified Counterparty: <strong className="text-white font-mono">{destHint}</strong></span>
+                          </span>
+                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                            quote && quote.totalFeeCents > 0
+                              ? "text-amber-300/90 bg-amber-500/20"
+                              : "text-emerald-400/80 bg-emerald-500/20"
+                          }`}>
+                            {quote ? (quote.totalFeeCents === 0 ? "0% Same Bank" : "Clearing Route") : "Verified"}
+                          </span>
+                        </motion.div>
+                      )}
 
-                    {/* Self-Account Quick Transfer Shortcuts */}
-                    {accounts.length > 1 && (
-                      <div className="flex items-center gap-1.5 flex-wrap p-2 rounded-xl bg-black/30 border border-white/5 text-xs">
-                        <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider flex items-center gap-1">
-                          <ArrowLeftRight size={10} className="text-indigo-400" />
-                          <span>My Other Accounts:</span>
-                        </span>
-                        {accounts
-                          .filter((a: any) => a.id !== (sendFrom || accounts[0]?.id))
-                          .map((a: any) => (
+                      {/* Autocomplete Dropdown List */}
+                      {destMatches.length > 0 && (
+                        <div className="rounded-2xl border border-white/15 bg-[#12121a] shadow-2xl divide-y divide-white/5 overflow-hidden">
+                          <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-white/40 tracking-wider bg-white/[0.02]">
+                            Recent Counterparties & Suggestions
+                          </div>
+                          {destMatches.map((m: any) => (
                             <button
-                              key={a.id}
                               type="button"
+                              key={m.id}
                               onClick={() => {
-                                setSendTo(a.accountName);
-                                setDestHint(`Internal Transfer → ${a.accountName}`);
+                                setSendTo(m.accountName || m.id);
+                                setDestHint(`${m.accountName}${m.bankName ? " · " + m.bankName : ""}`);
                                 setDestMatches([]);
                               }}
-                              className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border transition ${
-                                sendTo === a.accountName
-                                  ? "bg-indigo-600/30 border-indigo-500/50 text-indigo-200 font-bold"
-                                  : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
-                              }`}
+                              className="w-full text-left px-4 py-3 text-xs hover:bg-white/10 flex items-center justify-between text-white/90 transition"
                             >
-                              {a.accountName}
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center text-indigo-300 font-bold shrink-0">
+                                  {m.accountName ? m.accountName.slice(0, 2).toUpperCase() : "AC"}
+                                </div>
+                                <div className="truncate">
+                                  <span className="font-semibold text-white block truncate">{m.accountName}</span>
+                                  {m.bankName && <span className="text-[10px] text-white/40 truncate block">{m.bankName}</span>}
+                                </div>
+                              </div>
+                              <span className="text-[10px] text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded font-mono">Select</span>
                             </button>
                           ))}
-                      </div>
-                    )}
-
-                    {/* Recipient Input */}
-                    <div className="relative">
-                      <input
-                        value={sendTo}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setSendTo(v);
-                          setDestHint("");
-                          fetch(`/api/portal/${bankId}/payees?q=${encodeURIComponent(v)}`)
-                            .then((r) => r.json())
-                            .then((d) => setDestMatches(Array.isArray(d) ? d : []))
-                            .catch(() => {});
-                        }}
-                        onFocus={() => {
-                          fetch(`/api/portal/${bankId}/payees`)
-                            .then((r) => r.json())
-                            .then((d) => setDestMatches(Array.isArray(d) ? d : []))
-                            .catch(() => {});
-                        }}
-                        placeholder="Search account name (e.g. ACC-Notch or CORP-Acme)"
-                        className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition font-medium"
-                        required
-                        autoComplete="off"
-                      />
-                      {sendTo && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSendTo("");
-                            setDestHint("");
-                            setDestMatches([]);
-                          }}
-                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
-                        >
-                          <X size={14} />
-                        </button>
+                        </div>
                       )}
                     </div>
 
-                    {/* Verified Match Hint Badge */}
-                    {destHint && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-xs"
-                      >
-                        <span className="text-emerald-300 font-medium flex items-center gap-1.5">
-                          <CheckCircle2 size={13} className="text-emerald-400" />
-                          <span>Verified Counterparty: <strong className="text-white font-mono">{destHint}</strong></span>
-                        </span>
-                        <span className="text-[10px] font-mono text-emerald-400/80 bg-emerald-500/20 px-2 py-0.5 rounded">
-                          0% Same Bank
-                        </span>
-                      </motion.div>
-                    )}
+                    {/* 3. Transfer Amount & Quick Presets */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                          <DollarSign size={13} className="text-emerald-400" />
+                          <span>3. Transfer Amount</span>
+                        </label>
+                        <span className="text-[11px] text-white/40 font-mono">Instant Settlement</span>
+                      </div>
 
-                    {/* Autocomplete Dropdown List */}
-                    {destMatches.length > 0 && (
-                      <div className="rounded-2xl border border-white/15 bg-[#12121a] shadow-2xl divide-y divide-white/5 overflow-hidden">
-                        <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-white/40 tracking-wider bg-white/[0.02]">
-                          Recent Counterparties & Suggestions
-                        </div>
-                        {destMatches.map((m: any) => (
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl sm:text-3xl font-black text-white/30 font-mono">$</span>
+                        <input
+                          value={sendAmt}
+                          onChange={(e) => setSendAmt(e.target.value)}
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="0.00"
+                          className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl pl-11 pr-4 py-3.5 text-2xl sm:text-3xl font-black font-mono text-white focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition placeholder:text-white/20 tabular-nums"
+                          required
+                        />
+                      </div>
+
+                      {/* Quick Preset Buttons */}
+                      {(() => {
+                        const srcAcc = accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id));
+                        const maxBalDol = srcAcc ? srcAcc.balance / 100 : 0;
+                        return (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] text-white/40 uppercase tracking-wider mr-1">Presets:</span>
+                            {[10, 25, 50, 100, 250, 500].filter(val => maxBalDol === 0 || val <= maxBalDol).map((val) => (
+                              <button
+                                key={val}
+                                type="button"
+                                onClick={() => setSendAmt(String(val))}
+                                className={`text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border transition ${
+                                  sendAmt === String(val)
+                                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm"
+                                    : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                                }`}
+                              >
+                                ${val}
+                              </button>
+                            ))}
+                            {maxBalDol > 0 && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setSendAmt((maxBalDol * 0.5).toFixed(2))}
+                                  className="text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition"
+                                >
+                                  50%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSendAmt(maxBalDol.toFixed(2))}
+                                  className="text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition"
+                                >
+                                  Max (${maxBalDol.toFixed(2)})
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* 4. Fee Deduction Policy */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                          <Percent size={13} className="text-cyan-400" />
+                          <span>4. Fee Deduction Policy</span>
+                        </label>
+                        <span className="text-[10px] text-white/40">Select payer</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-2xl border border-white/10 text-xs font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setFeeMode("from_payment")}
+                          className={`py-3 px-3 rounded-xl transition flex flex-col items-center justify-center gap-0.5 ${
+                            feeMode === "from_payment"
+                              ? "bg-white/15 text-white shadow-sm border border-white/20"
+                              : "text-white/50 hover:text-white"
+                          }`}
+                        >
+                          <span className="font-bold">Deduct from Payment</span>
+                          <span className="text-[10px] text-white/40 font-normal">Receiver pays fees</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFeeMode("sender_covers")}
+                          className={`py-3 px-3 rounded-xl transition flex flex-col items-center justify-center gap-0.5 ${
+                            feeMode === "sender_covers"
+                              ? "bg-white/15 text-white shadow-sm border border-white/20"
+                              : "text-white/50 hover:text-white"
+                          }`}
+                        >
+                          <span className="font-bold">I Cover All Fees</span>
+                          <span className="text-[10px] text-white/40 font-normal">Receiver gets full amount</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 5. Transfer Memo with Category Presets */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                          <FileText size={13} className="text-white/50" />
+                          <span>5. Transfer Memo (Optional)</span>
+                        </label>
+                        <span className="text-[10px] text-white/40">Public on ledger</span>
+                      </div>
+
+                      <input
+                        value={sendMemo}
+                        onChange={(e) => setSendMemo(e.target.value)}
+                        placeholder="e.g. Invoice #104 payment, goods delivery, or rent"
+                        className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition font-medium"
+                      />
+
+                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                        {["🛒 Purchase", "🏠 Rent", "💼 Services", "⚡ Repayment", "🎁 Gift"].map((tag) => (
                           <button
+                            key={tag}
                             type="button"
-                            key={m.id}
-                            onClick={() => {
-                              setSendTo(m.accountName || m.id);
-                              setDestHint(`${m.accountName}${m.bankName ? " · " + m.bankName : ""}`);
-                              setDestMatches([]);
-                            }}
-                            className="w-full text-left px-4 py-3 text-xs hover:bg-white/10 flex items-center justify-between text-white/90 transition"
+                            onClick={() => setSendMemo(tag)}
+                            className="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 transition"
                           >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center text-indigo-300 font-bold shrink-0">
-                                {m.accountName ? m.accountName.slice(0, 2).toUpperCase() : "AC"}
-                              </div>
-                              <div className="truncate">
-                                <span className="font-semibold text-white block truncate">{m.accountName}</span>
-                                {m.bankName && <span className="text-[10px] text-white/40 truncate block">{m.bankName}</span>}
-                              </div>
-                            </div>
-                            <span className="text-[10px] text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded font-mono">Select</span>
+                            {tag}
                           </button>
                         ))}
                       </div>
-                    )}
-                  </div>
-
-                  {/* 3. Transfer Amount & Quick Presets */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
-                        <DollarSign size={13} className="text-emerald-400" />
-                        <span>3. Transfer Amount</span>
-                      </label>
-                      <span className="text-[11px] text-white/40 font-mono">Instant Settlement</span>
-                    </div>
-
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl sm:text-3xl font-black text-white/30 font-mono">$</span>
-                      <input
-                        value={sendAmt}
-                        onChange={(e) => setSendAmt(e.target.value)}
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        placeholder="0.00"
-                        className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl pl-11 pr-4 py-3.5 text-2xl sm:text-3xl font-black font-mono text-white focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition placeholder:text-white/20 tabular-nums"
-                        required
-                      />
-                    </div>
-
-                    {/* Quick Preset Buttons */}
-                    {(() => {
-                      const srcAcc = accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id));
-                      const maxBalDol = srcAcc ? srcAcc.balance / 100 : 0;
-                      return (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] text-white/40 uppercase tracking-wider mr-1">Presets:</span>
-                          {[10, 25, 50, 100, 250, 500].filter(val => maxBalDol === 0 || val <= maxBalDol).map((val) => (
-                            <button
-                              key={val}
-                              type="button"
-                              onClick={() => setSendAmt(String(val))}
-                              className={`text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border transition ${
-                                sendAmt === String(val)
-                                  ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm"
-                                  : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
-                              }`}
-                            >
-                              ${val}
-                            </button>
-                          ))}
-                          {maxBalDol > 0 && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => setSendAmt((maxBalDol * 0.5).toFixed(2))}
-                                className="text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition"
-                              >
-                                50%
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSendAmt(maxBalDol.toFixed(2))}
-                                className="text-xs font-mono font-semibold px-2.5 py-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition"
-                              >
-                                Max (${maxBalDol.toFixed(2)})
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* 4. Fee Deduction Policy */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
-                        <Percent size={13} className="text-cyan-400" />
-                        <span>4. Fee Deduction Policy</span>
-                      </label>
-                      <span className="text-[10px] text-white/40">Select payer</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-2xl border border-white/10 text-xs font-bold">
-                      <button
-                        type="button"
-                        onClick={() => setFeeMode("from_payment")}
-                        className={`py-3 px-3 rounded-xl transition flex flex-col items-center justify-center gap-0.5 ${
-                          feeMode === "from_payment"
-                            ? "bg-white/15 text-white shadow-sm border border-white/20"
-                            : "text-white/50 hover:text-white"
-                        }`}
-                      >
-                        <span className="font-bold">Deduct from Payment</span>
-                        <span className="text-[10px] text-white/40 font-normal">Receiver pays fees</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFeeMode("sender_covers")}
-                        className={`py-3 px-3 rounded-xl transition flex flex-col items-center justify-center gap-0.5 ${
-                          feeMode === "sender_covers"
-                            ? "bg-white/15 text-white shadow-sm border border-white/20"
-                            : "text-white/50 hover:text-white"
-                        }`}
-                      >
-                        <span className="font-bold">I Cover All Fees</span>
-                        <span className="text-[10px] text-white/40 font-normal">Receiver gets full amount</span>
-                      </button>
                     </div>
                   </div>
+                </div>
 
-                  {/* 5. Transfer Memo with Category Presets */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
-                        <FileText size={13} className="text-white/50" />
-                        <span>5. Transfer Memo (Optional)</span>
-                      </label>
-                      <span className="text-[10px] text-white/40">Public on ledger</span>
-                    </div>
-
-                    <input
-                      value={sendMemo}
-                      onChange={(e) => setSendMemo(e.target.value)}
-                      placeholder="e.g. Invoice #104 payment, goods delivery, or rent"
-                      className="w-full bg-[#14141e] border border-white/15 hover:border-white/25 rounded-2xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition font-medium"
-                    />
-
-                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                      {["🛒 Purchase", "🏠 Rent", "💼 Services", "⚡ Repayment", "🎁 Gift"].map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => setSendMemo(tag)}
-                          className="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 transition"
-                        >
-                          {tag}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 6. Primary Action Submit Button */}
-                  <button
-                    type="submit"
-                    disabled={actionPending || suspended || !sendAmt || !sendTo}
-                    className="w-full py-4 rounded-2xl font-bold text-sm sm:text-base text-white shadow-xl transition-all hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.99]"
-                    style={btnBrand}
-                  >
-                    {actionPending ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        <span>Executing Settlement…</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Confirm & Authorize Transfer</span>
-                        <ArrowRight size={18} />
-                      </>
-                    )}
-                  </button>
-                </form>
-              </div>
-
-              {/* RIGHT COLUMN: Real-Time Live Settlement Ledger & Route Preview */}
-              <div className="lg:col-span-5 space-y-6">
-                {/* Live Settlement Card */}
-                <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.01] p-6 space-y-5 shadow-xl backdrop-blur-sm sticky top-6">
-                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 font-mono flex items-center gap-1">
-                        <Activity size={12} />
-                        <span>Live Ledger Engine</span>
+                {/* RIGHT COLUMN: Real-Time Live Settlement Ledger & Route Preview */}
+                <div className="lg:col-span-5 space-y-6">
+                  {/* Live Settlement Card */}
+                  <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.01] p-6 space-y-5 shadow-xl backdrop-blur-sm sticky top-6">
+                    <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 font-mono flex items-center gap-1">
+                          <Activity size={12} />
+                          <span>Live Ledger Engine</span>
+                        </span>
+                        <h3 className="font-bold text-base text-white">Settlement Preview</h3>
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span>Ready</span>
                       </span>
-                      <h3 className="font-bold text-base text-white">Settlement Preview</h3>
                     </div>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      <span>Ready</span>
-                    </span>
-                  </div>
 
-                  {/* Visual Route */}
-                  <div className="p-4 rounded-2xl bg-black/40 border border-white/5 space-y-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="space-y-0.5 max-w-[45%]">
-                        <span className="text-[10px] font-bold text-white/40 uppercase block">Source</span>
-                        <p className="font-bold text-white truncate">
-                          {accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id))?.accountName || "Your Account"}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-center px-2">
-                        <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
-                          <ArrowRight size={12} />
+                    {/* Visual Route */}
+                    <div className="p-4 rounded-2xl bg-black/40 border border-white/5 space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="space-y-0.5 max-w-[45%]">
+                          <span className="text-[10px] font-bold text-white/40 uppercase block">Source</span>
+                          <p className="font-bold text-white truncate">
+                            {accounts.find((a: any) => a.id === (sendFrom || accounts[0]?.id))?.accountName || "Your Account"}
+                          </p>
                         </div>
-                        <span className="text-[9px] font-mono text-white/40 mt-1">Instant</span>
-                      </div>
-                      <div className="space-y-0.5 max-w-[45%] text-right">
-                        <span className="text-[10px] font-bold text-white/40 uppercase block">Recipient</span>
-                        <p className="font-bold text-indigo-300 truncate">
-                          {sendTo || "Enter recipient"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Real-time Calculation */}
-                  <div className="space-y-3 text-xs">
-                    {quoting && (
-                      <div className="flex items-center gap-2 py-4 justify-center text-white/50">
-                        <Loader2 size={16} className="animate-spin text-indigo-400" />
-                        <span>Calculating settlement quote…</span>
-                      </div>
-                    )}
-
-                    {quoteErr && (
-                      <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
-                        {quoteErr}
-                      </div>
-                    )}
-
-                    {quote && (
-                      <div className="space-y-2.5">
-                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                          <span className="text-white/60">Debited from Sender</span>
-                          <span className="font-mono font-black text-white text-base">
-                            {formatMoney(quote.submittedCents)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                          <span className="text-white/60">Credited to Recipient</span>
-                          <span className="font-mono font-bold text-emerald-400 text-base">
-                            {formatMoney(quote.receivedCents)}
-                          </span>
-                        </div>
-
-                        {quote.lines?.map((l: any) => (
-                          <div key={l.code} className="flex justify-between text-[11px] text-white/40">
-                            <span>{l.label} ({Number((l.rate * 100).toFixed(2))}%)</span>
-                            <span className="font-mono text-white/70">{formatMoney(l.amountCents)}</span>
+                        <div className="flex flex-col items-center px-2">
+                          <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                            <ArrowRight size={12} />
                           </div>
-                        ))}
-
-                        <div className="flex justify-between text-xs pt-2 border-t border-white/10 font-bold">
-                          <span className="text-amber-300/90">Total Transaction Fees</span>
-                          <span className="font-mono text-amber-300">{formatMoney(quote.totalFeeCents)}</span>
+                          <span className="text-[9px] font-mono text-white/40 mt-1">Instant</span>
+                        </div>
+                        <div className="space-y-0.5 max-w-[45%] text-right">
+                          <span className="text-[10px] font-bold text-white/40 uppercase block">Recipient</span>
+                          <p className="font-bold text-indigo-300 truncate">
+                            {sendTo || "Enter recipient"}
+                          </p>
                         </div>
                       </div>
-                    )}
+                    </div>
 
-                    {!quoting && !quote && !quoteErr && (
-                      <div className="text-center py-6 text-white/40 space-y-1">
-                        <DollarSign size={24} className="mx-auto text-white/20 mb-2" />
-                        <p className="font-medium text-xs text-white/60">Live Breakdown</p>
-                        <p className="text-[11px] text-white/40 max-w-xs mx-auto">
-                          Enter recipient account and transfer amount to generate dynamic settlement calculations.
-                        </p>
+                    {/* Real-time Calculation */}
+                    <div className="space-y-3 text-xs">
+                      {quoting && (
+                        <div className="flex items-center gap-2 py-4 justify-center text-white/50">
+                          <Loader2 size={16} className="animate-spin text-indigo-400" />
+                          <span>Calculating settlement quote…</span>
+                        </div>
+                      )}
+
+                      {quoteErr && (
+                        <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+                          {quoteErr}
+                        </div>
+                      )}
+
+                      {quote && (
+                        <div className="space-y-2.5">
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                            <span className="text-white/60">Debited from Sender</span>
+                            <span className="font-mono font-black text-white text-base">
+                              {formatMoney(quote.submittedCents)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                            <span className="text-white/60">Credited to Recipient</span>
+                            <span className="font-mono font-bold text-emerald-400 text-base">
+                              {formatMoney(quote.receivedCents)}
+                            </span>
+                          </div>
+
+                          {quote.lines?.map((l: any) => (
+                            <div key={l.code} className="flex justify-between text-[11px] text-white/40">
+                              <span>{l.label} ({Number((l.rate * 100).toFixed(2))}%)</span>
+                              <span className="font-mono text-white/70">{formatMoney(l.amountCents)}</span>
+                            </div>
+                          ))}
+
+                          <div className="flex justify-between text-xs pt-2 border-t border-white/10 font-bold">
+                            <span className="text-amber-300/90">Total Transaction Fees</span>
+                            <span className="font-mono text-amber-300">{formatMoney(quote.totalFeeCents)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {!quoting && !quote && !quoteErr && (
+                        <div className="text-center py-6 text-white/40 space-y-1">
+                          <DollarSign size={24} className="mx-auto text-white/20 mb-2" />
+                          <p className="font-medium text-xs text-white/60">Live Breakdown</p>
+                          <p className="text-[11px] text-white/40 max-w-xs mx-auto">
+                            Enter recipient account and transfer amount to generate dynamic settlement calculations.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Security & Policy Guarantees */}
+                    <div className="pt-4 border-t border-white/10 space-y-2.5">
+                      <div className="flex items-start gap-2.5 text-xs text-white/60">
+                        <ShieldCheck size={16} className="text-emerald-400 shrink-0 mt-0.5" />
+                        <span>Zero-hold immediate clearing into recipient balance.</span>
                       </div>
-                    )}
-                  </div>
+                      <div className="flex items-start gap-2.5 text-xs text-white/60">
+                        <Lock size={16} className="text-indigo-400 shrink-0 mt-0.5" />
+                        <span>Cryptographically signed CityCorp transaction ledger.</span>
+                      </div>
+                      {quote ? (
+                        quote.totalFeeCents > 0 ? (
+                          <div className="flex items-start gap-2.5 text-xs text-amber-300/80">
+                            <Receipt size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                            <span>Itemized clearing fees computed in accordance with institutional policy.</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-2.5 text-xs text-emerald-300/90">
+                            <CheckCircle2 size={16} className="text-emerald-400 shrink-0 mt-0.5" />
+                            <span>0% Zero-Fee transfer between accounts at the same bank.</span>
+                          </div>
+                        )
+                      ) : (
+                        <div className="flex items-start gap-2.5 text-xs text-white/60">
+                          <Landmark size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                          <span>Dynamic fee calculation based on clearing route & institutional policy.</span>
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Security Guarantees */}
-                  <div className="pt-4 border-t border-white/10 space-y-2.5">
-                    <div className="flex items-start gap-2.5 text-xs text-white/60">
-                      <ShieldCheck size={16} className="text-emerald-400 shrink-0 mt-0.5" />
-                      <span>Zero-hold immediate clearing into recipient balance.</span>
-                    </div>
-                    <div className="flex items-start gap-2.5 text-xs text-white/60">
-                      <Lock size={16} className="text-indigo-400 shrink-0 mt-0.5" />
-                      <span>Cryptographically signed CityCorp transaction ledger.</span>
-                    </div>
-                    <div className="flex items-start gap-2.5 text-xs text-white/60">
-                      <Landmark size={16} className="text-amber-400 shrink-0 mt-0.5" />
-                      <span>Free 0% fees on transfers between accounts at the same bank.</span>
+                    {/* 6. Primary Action Submit Button (Located Below Preview) */}
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={actionPending || suspended || !sendAmt || !sendTo}
+                        className="w-full py-4 rounded-2xl font-bold text-sm sm:text-base text-white shadow-xl transition-all hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.99]"
+                        style={btnBrand}
+                      >
+                        {actionPending ? (
+                          <>
+                            <Loader2 size={18} className="animate-spin" />
+                            <span>Executing Settlement…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>Confirm & Authorize Transfer</span>
+                            <ArrowRight size={18} />
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </form>
           </div>
         )}
 

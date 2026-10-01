@@ -54,6 +54,8 @@ A single deployment of Slate supports an unlimited number of Banks. Each Bank re
       - Interactive 1-tap setup cards on the Onyx Overview tab and high-visibility actions allowing mobile citizens to provision corporate merchant terminals with real-time settlement into their chosen bank account.
     - **Revamped Send & Wire Transfer Terminal**:
       - Luxury fintech two-column transfer terminal featuring a high-fidelity interactive composer on the left and a live real-time settlement ledger preview on the right.
+      - **Responsive Action Placement**: On both mobile and desktop views, the primary **Confirm & Authorize Transfer** button is positioned directly below the **Settlement Preview** ledger breakdown, ensuring users review their debited totals, credited amounts, and itemized fees before finalizing settlement.
+      - **Dynamic Institutional Policy & Fee Status**: Live fee badge dynamically reflects the actual settlement calculation—displaying `0% Zero-Fee Intra-Bank Transfer` when no fees apply, or transparent itemized fee summaries when external clearing or withdrawal surcharges are assessed, eliminating contradictory 0% fee claims.
       - Interactive counterparty search with instant autocomplete, "My Other Accounts" instant self-transfer pills, recent payees, and verified account badges with bank identifiers.
       - Real-time quote visualizer with dynamic fee calculation, intra-bank 0% fee highlighting, and clear fee deduction policy toggles (Deduct from Payment vs Sender Covers Fees).
       - Official digital transaction receipt slip with copyable reference IDs, itemized fee breakdown, and seamless navigation.
