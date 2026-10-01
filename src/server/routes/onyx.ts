@@ -13,16 +13,17 @@ export const onyxRouter = express.Router();
 onyxRouter.get("/api/onyx/merchant/:id", async (req: express.Request, res: express.Response) => {
     const { db } = await import("../../db/index");
     const { onyxMerchants, banks } = await import("../../db/schema");
-    const { eq } = await import("drizzle-orm");
+    const { eq, or } = await import("drizzle-orm");
     try {
         const merchants = await db.select({
             id: onyxMerchants.id,
             name: onyxMerchants.name,
+            slug: onyxMerchants.slug,
             bankName: banks.name
         })
         .from(onyxMerchants)
         .leftJoin(banks, eq(onyxMerchants.bankId, banks.id))
-        .where(eq(onyxMerchants.id, req.params.id));
+        .where(or(eq(onyxMerchants.id, req.params.id), eq(onyxMerchants.slug, req.params.id)));
         
         if (merchants.length === 0) return res.status(404).json({ error: "Merchant not found" });
         res.json(merchants[0]);

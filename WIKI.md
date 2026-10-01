@@ -1835,8 +1835,12 @@ The Customer Portal incorporates a dedicated **Onyx Hub** (`view === "onyx"`), g
     - 1-click mandate controls to pause, resume, or cancel direct debits.
     - Built-in "Create Direct Debit Mandate" creator.
   - **Payment Links & Instant Terminal Generator**:
-    - Generates instant shareable checkout links (`/onyx/checkout?merchantId=...&amount=...&memo=...`) for one-off payments, invoices, or Discord community purchases.
-    - Embeddable Discord markdown formatting for instant channel distribution.
+    - Generates instant shareable checkout links (`/onyx/checkout?merchantId=...&amount=...&memo=...`) for one-off payments, custom storefront goods, invoices, or Discord community purchases.
+    - **Exact Currency Scaling**: Fixed monetary string-to-cents parsing on `/onyx/checkout`, ensuring entered dollar values (e.g. `$5,000.00`) accurately resolve to 500,000 cents rather than dividing down.
+    - **Order Memo & Item Name Preservation**: Displays dedicated high-contrast item summary banners for all parameter aliases (`memo`, `itemName`, `orderMemo`, `item`, `description`, `note`).
+    - **Interactive Open-Amount Input**: For open-amount checkout links, allows customers to specify their desired contribution with real-time numeric validation and quick preset chips ($10, $25, $50, $100, $500, $1,000, $5,000).
+    - **Direct Settlement Digital Receipt**: Seamlessly executes payment via `/api/citizen/pay-merchant` (for direct web links) or `/api/citizen/onyx-token` (for 3rd-party OAuth redirect flows), rendering an immutable digital transaction receipt with reference IDs, item descriptions, and timestamps.
+    - **Rich Discord Markdown Embeds**: Generates copyable Discord embeds with item names and formatted currency (e.g., `[💳 Pay $5,000.00 for VIP Subscription](<url>)`).
 
 ---
 

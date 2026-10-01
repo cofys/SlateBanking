@@ -5692,10 +5692,15 @@ export function BankPortal({ overrideBankId }: { overrideBankId?: string }) {
 
                   {(() => {
                     const targetMchId = quickPayLinkMerchantId || myMerchants[0]?.id || "merchant_id";
-                    const amtParam = quickPayLinkAmount ? `&amount=${parseFloat(quickPayLinkAmount).toFixed(2)}` : "";
-                    const memoParam = quickPayLinkMemo ? `&memo=${encodeURIComponent(quickPayLinkMemo)}` : "";
+                    const parsedAmt = quickPayLinkAmount ? parseFloat(quickPayLinkAmount) : 0;
+                    const amtParam = parsedAmt > 0 ? `&amount=${parsedAmt.toFixed(2)}` : "";
+                    const memoParam = quickPayLinkMemo ? `&memo=${encodeURIComponent(quickPayLinkMemo.trim())}` : "";
                     const fullUrl = `${window.location.origin}/onyx/checkout?merchantId=${targetMchId}${amtParam}${memoParam}`;
-                    const discordMarkdown = `[💳 Click here to pay ${quickPayLinkAmount ? `$${quickPayLinkAmount}` : "via Onyx"}](<${fullUrl}>)`;
+                    const formattedDollar = parsedAmt > 0 ? `$${parsedAmt.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "";
+                    const label = quickPayLinkMemo.trim() 
+                      ? `Pay ${formattedDollar ? `${formattedDollar} for ` : ""}${quickPayLinkMemo.trim()}`
+                      : (formattedDollar ? `Pay ${formattedDollar} via Onyx` : "Pay via Onyx");
+                    const discordMarkdown = `[💳 ${label}](<${fullUrl}>)`;
 
                     return (
                       <div className="space-y-3 pt-2 border-t border-white/5">
