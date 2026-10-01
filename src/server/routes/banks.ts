@@ -3486,7 +3486,19 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
         }
       }
 
-      // Transactions breakdown (fee income, taxes, operating expenses)
+      // 1. Sync fresh in-game corp transactions if CityCorp is configured
+      if (bank.corpId && bank.corpApiKey && bank.corpApiUuid) {
+        try {
+          const { syncInGameCorpTransactions } = await import("../feeService");
+          await syncInGameCorpTransactions(db, bankId);
+        } catch (e: any) {
+          console.warn("[MEA Report] Background corp tx sync skipped:", e.message);
+        }
+      }
+
+      const freshTxs = await db.select().from(transactions).where(eq(transactions.bankId, bankId));
+
+      // Transactions breakdown (monthly in-game fee income, taxes, operating expenses)
       let txServiceFeesCents = 0;
       let txAccountFeesCents = 0;
       let txLateFeesCents = 0;
@@ -3495,33 +3507,61 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
       let txOperationsExpenseCents = 0;
       let txInterestOtherCents = 0;
 
-      for (const t of txs) {
-        const amt = Math.abs(t.amount || 0);
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+      for (const t of freshTxs) {
+        const txDate = t.timestamp ? new Date(t.timestamp) : null;
+        // Count monthly fees for the current reporting period
+        const inMonthlyPeriod = !txDate || isNaN(txDate.getTime()) || (txDate >= startOfMonth && txDate <= endOfMonth);
+        if (!inMonthlyPeriod) continue;
+
         const desc = (t.description || "").toLowerCase();
         const cat = (t.category || "").toLowerCase();
         const fType = t.feeType || "";
-        const isFee = t.type === "fee" || fType || cat.includes("fee") || desc.includes("fee") || desc.includes("surcharge");
+        
+        // Customer withdrawals/deposits/transfers are principal movements, NOT fee income.
+        const isPrincipalTx = t.type === "withdraw" || t.type === "deposit" || t.type === "transfer";
+        
+        // Accurately isolate genuine in-game corp fees (withdraw fees, account fees, service charges)
+        let feeAmt = 0;
+        if (t.type === "fee") {
+          feeAmt = Math.abs(t.amount || 0);
+        } else if (t.feeBreakdown) {
+          try {
+            const parsedBreakdown = JSON.parse(t.feeBreakdown);
+            if (typeof parsedBreakdown.bankFee === "number") feeAmt = Math.abs(parsedBreakdown.bankFee);
+            else if (typeof parsedBreakdown.totalFee === "number") feeAmt = Math.abs(parsedBreakdown.totalFee);
+          } catch (_) {}
+        } else if (!isPrincipalTx && (fType === "withdraw_fee" || fType === "deposit_fee" || fType === "transfer_fee" || fType === "service_fee" || fType === "account_fee" || fType === "late_fee" || fType === "onyx_fee")) {
+          feeAmt = Math.abs(t.amount || 0);
+        } else if (!isPrincipalTx && (desc.includes("withdrawal fee") || desc.includes("withdraw fee") || desc.includes("account fee") || desc.includes("maintenance fee") || desc.includes("late fee") || desc.includes("transfer fee"))) {
+          feeAmt = Math.abs(t.amount || 0);
+        }
 
-        if (isFee || fType) {
+        if (feeAmt > 0) {
           if (fType === "account_fee" || fType === "maintenance_fee" || (fType === "service_fee" && (desc.includes("account") || desc.includes("maintenance") || desc.includes("tier")))) {
-            txAccountFeesCents += amt;
+            txAccountFeesCents += feeAmt;
           } else if (fType === "late_fee" || desc.includes("late fee") || desc.includes("penalty")) {
-            txLateFeesCents += amt;
+            txLateFeesCents += feeAmt;
           } else if (fType === "onyx_fee" || desc.includes("onyx") || desc.includes("merchant")) {
-            txTradingGainsCents += amt;
+            txTradingGainsCents += feeAmt;
           } else if (fType === "in_game_tax" || fType === "government_fee" || desc.includes("tax") || (t.feeBreakdown && t.feeBreakdown.includes("civic"))) {
-            txWithdrawalTaxCents += amt;
+            txWithdrawalTaxCents += feeAmt;
           } else {
-            txServiceFeesCents += amt;
+            // In-game withdrawal fees, teller fees, transfer fees
+            txServiceFeesCents += feeAmt;
           }
         }
 
+        // Interest income
         if (t.type === "interest" || fType === "loan_payment" || cat.includes("interest") || desc.includes("interest")) {
-          txInterestOtherCents += amt;
+          txInterestOtherCents += Math.abs(t.amount || 0);
         }
 
+        // Operating expenses
         if (t.category === "Services" || t.category === "Operations" || desc.includes("hosting") || desc.includes("server") || desc.includes("payroll")) {
-          txOperationsExpenseCents += amt;
+          txOperationsExpenseCents += Math.abs(t.amount || 0);
         }
       }
 

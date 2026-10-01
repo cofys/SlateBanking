@@ -123,11 +123,11 @@ export function parseInGameFeeType(tx: any): {
   if (nativeType === "AccountTransaction") {
     const isCredit = tx.deposit === true || tx.type === "credit";
     return {
-      feeType: isCredit ? "deposit_fee" : "withdraw_fee",
+      feeType: "other_fee",
       label: isCredit ? "Account Credit" : "Account Debit",
       category: "Account Operations",
       cleanedDescription: `${isCredit ? "Deposit into" : "Withdrawal from"} ${accName || "account"}`,
-      isFeeOrInflow: isCredit
+      isFeeOrInflow: false
     };
   }
 
@@ -466,17 +466,19 @@ export async function calculateTreasuryFees(db: any, bankId: string) {
       resolvedFeeType = parsed.feeType;
       label = parsed.label;
 
-      // Retroactively stamp feeType on transaction record
-      await db.update(transactions).set({
-        type: "fee",
-        feeType: resolvedFeeType,
-        category: parsed.category,
-        toAccountId: null
-      }).where(eq(transactions.id, tx.id));
+      if (parsed.isFeeOrInflow) {
+        // Retroactively stamp feeType on transaction record ONLY if it is an actual fee
+        await db.update(transactions).set({
+          type: "fee",
+          feeType: resolvedFeeType,
+          category: parsed.category,
+          toAccountId: null
+        }).where(eq(transactions.id, tx.id));
+      }
     }
 
-    // Only accumulate positive inflows to the bank corp account
-    if (tx.amount > 0) {
+    // Only accumulate positive inflows to the bank corp account for genuine fee transactions
+    if (tx.amount > 0 && (tx.type === "fee" || resolvedFeeType === "withdraw_fee" || resolvedFeeType === "deposit_fee" || resolvedFeeType === "transfer_fee" || resolvedFeeType === "service_fee" || resolvedFeeType === "late_fee" || resolvedFeeType === "onyx_fee")) {
       breakdownMap[resolvedFeeType].amount += tx.amount;
       breakdownMap[resolvedFeeType].count += 1;
       totalFeesCollected += tx.amount;

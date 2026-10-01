@@ -507,7 +507,7 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
     - Zero Mock Rows: If the bank has zero active loans or zero pledged collateral, the report accurately displays genuine empty registers rather than fictional dummy rows.
   - **Comprehensive Income Statement**:
     - **Interest Income**: Queries active loan portfolio amortizations and interest payments.
-    - **Fee Income (Transactional Basis)**: Aggregates actual fee income generated from transactions (account maintenance fees, transfer & deposit fees, wire fees, service charges, and assessed late penalties) rather than confusing period revenue with cumulative balance sheet vault GL balances.
+    - **Fee Income (Monthly In-Game Corp Basis)**: Aggregates genuine monthly fee revenue from in-game corporate transactions and bank records (principally in-game withdrawal fees, account maintenance fees, teller fees, transfer fees, and assessed late penalties) filtered strictly to the monthly reporting period. Strictly separates customer withdrawal principal from assessed fee revenue to ensure accurate figures (e.g. ~$15k monthly average) rather than gross customer volume.
     - **Trading & PSP Gains**: Merchant interchange, Onyx payment processing, and gateway fees.
     - **Operating Expenses**: Queries `payroll_expense` GL balances, staff salaries, infrastructure costs, and the bank's active Slate platform subscription tier.
     - **Taxes**: Remitted civic and government transit fee withholding.
