@@ -514,8 +514,12 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
     - **Net Income**: Gross Income - (Operating Expenses + Taxes).
 - **Unified Dollar Precision**:
   All financial figures in the MEA reporting engine are represented and edited in whole dollars with 2 decimal places (cents / 100 on load, unified dollar inputs, and formatted currency outputs), eliminating division discrepancies or display scaling bugs.
-- **Dynamic Period & Regulatory Disclosures**:
-  - Automatically defaults the reporting period to the current month and year (e.g., "September 2026") with current published dates and authenticated signatory credentials.
+- **Dynamic Period Selection & Historical Regulatory Audits**:
+  - **Custom & Historical Month Navigation**: Bank compliance officers can seamlessly file reports for previous months (e.g., filing September 2026's completed report on October 6th) or audit past quarters via a dedicated Month Navigation panel.
+  - **Automated Default Recommendation**: Automatically detects early-month filings (<= 15th of the month) and defaults to the completed previous calendar month (e.g. September on Oct 6), highlighting it with a "Last Month (Recommended)" badge.
+  - **Interactive Controls**: Includes quick-toggle buttons (`← Prev Month`, `Last Month`, `Current Month`, `Next Month →`) and a 24-month calendar dropdown. Selecting a month dynamically recalculates in-game corporate withdrawal fees, interest revenues, loan registers, and operating expenses for that exact filing window.
+  - **Epoch Timestamp Resiliency**: Employs robust epoch timestamp normalization (`parseTimestampMillis`) that seamlessly handles SQLite unix epoch seconds, milliseconds, ISO strings, and Date objects, preventing historical transaction filtering failures.
+  - **Tailored Regulatory Disclosures**: Automatically syncs the document's Page 1 Reporting Period table and published dates, while retaining full editable inputs and standardized Markdown and print PDF exports.
   - Includes tailored regulatory responses to MEA Consumer Financial Protection requirements (clear fee disclosure, AES-256 data privacy, 24-48 hr ticket dispute SLAs, vulnerable borrower caps, and transparent advertising).
 - **Interactive Review & Export Formats**:
   - Staff retain full ability to review, edit, or override any figure directly on the canvas prior to submission, with live reactive recalculations of all gross, net, asset, liability, and equity subtotals.

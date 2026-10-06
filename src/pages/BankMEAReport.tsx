@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import { 
   Printer, RefreshCw, Check, Copy, Plus, Trash2, 
-  Sparkles, Info, CheckCircle2
+  Sparkles, Info, CheckCircle2, Calendar, Clock, History
 } from "lucide-react";
 
 interface LoanRow {
@@ -56,6 +56,37 @@ export function BankMEAReport() {
   const [autoFilled, setAutoFilled] = useState(false);
   const [copiedMd, setCopiedMd] = useState(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+
+  // Audit month selection state (defaults to previous month if day <= 15, e.g. September on Oct 6)
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const currentMonthName = now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
+  const lastMonthName = lastMonthDate.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    return now.getDate() <= 15 ? lastMonthKey : currentMonthKey;
+  });
+
+  const monthOptions = useMemo(() => {
+    const options: { key: string; label: string }[] = [];
+    const base = new Date();
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(base.getFullYear(), base.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const fullMonthName = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      let label = fullMonthName;
+      if (key === lastMonthKey) {
+        label = `${fullMonthName} (Last Month - Recommended)`;
+      } else if (key === currentMonthKey) {
+        label = `${fullMonthName} (Current Month)`;
+      }
+      options.push({ key, label });
+    }
+    return options;
+  }, [currentMonthKey, lastMonthKey]);
 
   // General Metadata
   const [reportPeriod, setReportPeriod] = useState("");
@@ -142,15 +173,30 @@ export function BankMEAReport() {
 
   useEffect(() => {
     if (bank?.id) {
-      loadLiveData();
+      loadLiveData(selectedMonth);
     }
   }, [bank?.id]);
 
-  const loadLiveData = async () => {
+  const handleSelectMonth = (newMonth: string) => {
+    setSelectedMonth(newMonth);
+    loadLiveData(newMonth);
+  };
+
+  const handleStepMonth = (delta: number) => {
+    const [yStr, mStr] = selectedMonth.split("-");
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10);
+    const targetDate = new Date(y, m - 1 + delta, 1);
+    const newKey = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    handleSelectMonth(newKey);
+  };
+
+  const loadLiveData = async (monthKey?: string) => {
     if (!bank?.id) return;
     setSyncing(true);
+    const targetMonth = monthKey || selectedMonth;
     try {
-      const res = await fetch(`/api/banks/${bank.id}/mea-report/data`);
+      const res = await fetch(`/api/banks/${bank.id}/mea-report/data?month=${targetMonth}`);
       if (!res.ok) throw new Error("Failed to load MEA Report live data from server");
       const data = await res.json();
 
@@ -235,7 +281,7 @@ export function BankMEAReport() {
       setCertDate(data.certification?.certDate || `${monthStr}-${dayStr}-${yrStr}`);
 
       setAutoFilled(true);
-      setSyncToast("Ledger Synchronized: Report template filled from live database.");
+      setSyncToast(`Ledger Synchronized: ${data.metadata?.reportPeriod || targetMonth} live financial figures loaded.`);
       setTimeout(() => setSyncToast(null), 4000);
     } catch (e: any) {
       console.error("Failed to load MEA Report live data:", e);
@@ -467,10 +513,10 @@ Date: ${certDate}
 
         <div className="flex items-center gap-2.5 w-full md:w-auto">
           <button
-            onClick={loadLiveData}
+            onClick={() => loadLiveData(selectedMonth)}
             disabled={syncing}
             className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold border border-white/10 transition-colors disabled:opacity-50 cursor-pointer"
-            title="Re-sync database figures"
+            title="Re-sync database figures for selected month"
           >
             <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
             {syncing ? "Syncing..." : "Sync Ledger"}
@@ -499,6 +545,89 @@ Date: ${certDate}
           <span>{syncToast}</span>
         </div>
       )}
+
+      {/* Month Selection & Historical Period Navigation Panel */}
+      <div className="print:hidden mb-6 bg-[var(--bg-elevated)] border border-indigo-500/30 rounded-2xl p-5 shadow-xl">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Calendar size={18} className="text-indigo-400 shrink-0" />
+              <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">
+                Reporting Month & Historical Audit Period
+              </h3>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                <Clock size={11} /> {reportPeriod || selectedMonth}
+              </span>
+            </div>
+            <p className="text-zinc-400 text-xs leading-relaxed max-w-2xl">
+              Select the reporting month for this regulatory submission. In-game corporate withdrawal fees, interest revenues, loan registers, and operations will automatically recalculate for that chosen calendar window.
+            </p>
+          </div>
+
+          {/* Controls: Quick step buttons & Month select */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 shrink-0">
+            {/* Quick step buttons */}
+            <div className="inline-flex rounded-xl bg-white/5 p-1 border border-white/10">
+              <button
+                type="button"
+                onClick={() => handleStepMonth(-1)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                title="Go back 1 month"
+              >
+                ← Prev Month
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectMonth(lastMonthKey)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  selectedMonth === lastMonthKey
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-zinc-300 hover:text-white hover:bg-white/10"
+                }`}
+                title="Select Last Month (Recommended)"
+              >
+                Last Month ({lastMonthName})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectMonth(currentMonthKey)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  selectedMonth === currentMonthKey
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-zinc-300 hover:text-white hover:bg-white/10"
+                }`}
+                title="Select Current Month"
+              >
+                Current Month ({currentMonthName})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStepMonth(1)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                title="Go forward 1 month"
+              >
+                Next Month →
+              </button>
+            </div>
+
+            {/* Dropdown for any month */}
+            <div className="relative min-w-[220px]">
+              <select
+                value={selectedMonth}
+                onChange={(e) => handleSelectMonth(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-indigo-500/40 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer appearance-none pr-8"
+              >
+                {monthOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key} className="bg-zinc-900 text-white">
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <Calendar size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Instructions callout */}
       <div className="print:hidden bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 mb-6 flex items-start gap-3">

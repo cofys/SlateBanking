@@ -12,6 +12,7 @@ export type FeeType =
   | "origination_fee"
   | "loan_payment"
   | "service_fee"
+  | "account_fee"
   | "onyx_fee"
   | "in_game_tax"
   | "other_fee";
@@ -25,6 +26,7 @@ export const FEE_TYPE_LABELS: Record<FeeType, string> = {
   origination_fee: "Loan Origination Fees",
   loan_payment: "Loan Repayments / Interest",
   service_fee: "Service & Tier Fees",
+  account_fee: "Account Maintenance Fees",
   onyx_fee: "Onyx & Merchant Fees",
   in_game_tax: "In-Game Economy Taxes",
   other_fee: "Other In-Game Corp Fees"
@@ -39,6 +41,7 @@ export const FEE_TYPE_COLORS: Record<FeeType, string> = {
   origination_fee: "text-purple-400 bg-purple-500/10 border-purple-500/20",
   loan_payment: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
   service_fee: "text-teal-400 bg-teal-500/10 border-teal-500/20",
+  account_fee: "text-sky-400 bg-sky-500/10 border-sky-500/20",
   onyx_fee: "text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/20",
   in_game_tax: "text-orange-400 bg-orange-500/10 border-orange-500/20",
   other_fee: "text-slate-400 bg-slate-500/10 border-slate-500/20"
@@ -59,10 +62,11 @@ export function parseInGameFeeType(tx: any): {
   const nativeType = String(tx.type || "");
   const nativeFeeType = String(tx.feeType || tx.fee_type || "").toUpperCase();
   const accName = tx.accountName || tx.account_name || "";
+  const isFromCorpLedger = tx._origin === "corp_transactions" || (!tx.fromAccountId && !tx.toAccountId);
 
   // 1. Exact CityCorp Native Transaction Models
-  if (nativeType === "CorpAccountFeeTransaction") {
-    if (nativeFeeType === "WITHDRAW") {
+  if (nativeType === "CorpAccountFeeTransaction" || nativeType.toLowerCase().includes("accountfee") || nativeType.toLowerCase().includes("corpfee")) {
+    if (nativeFeeType === "WITHDRAW" || nativeType.toLowerCase().includes("withdraw")) {
       return {
         feeType: "withdraw_fee",
         label: "Account Withdrawal Fee",
@@ -71,7 +75,7 @@ export function parseInGameFeeType(tx: any): {
         isFeeOrInflow: true
       };
     }
-    if (nativeFeeType === "DEPOSIT") {
+    if (nativeFeeType === "DEPOSIT" || nativeType.toLowerCase().includes("deposit")) {
       return {
         feeType: "deposit_fee",
         label: "Account Deposit Fee",
@@ -81,10 +85,31 @@ export function parseInGameFeeType(tx: any): {
       };
     }
     return {
-      feeType: "other_fee",
-      label: "Account Fee Revenue",
-      category: "Corporate Fees",
+      feeType: "withdraw_fee",
+      label: "Account Withdrawal Fee",
+      category: "Withdrawal Fees",
       cleanedDescription: accName ? `Fee collected from ${accName}` : "In-Game Account Fee",
+      isFeeOrInflow: true
+    };
+  }
+
+  // Explicit fee_type on in-game records
+  if (nativeFeeType === "WITHDRAW" || nativeFeeType === "WITHDRAWAL") {
+    return {
+      feeType: "withdraw_fee",
+      label: "Account Withdrawal Fee",
+      category: "Withdrawal Fees",
+      cleanedDescription: accName ? `Withdrawal fee from ${accName}` : (tx.description || "In-Game Withdrawal Fee"),
+      isFeeOrInflow: true
+    };
+  }
+
+  if (nativeFeeType === "DEPOSIT") {
+    return {
+      feeType: "deposit_fee",
+      label: "Account Deposit Fee",
+      category: "Deposit Fees",
+      cleanedDescription: accName ? `Deposit fee from ${accName}` : (tx.description || "In-Game Deposit Fee"),
       isFeeOrInflow: true
     };
   }
@@ -120,7 +145,62 @@ export function parseInGameFeeType(tx: any): {
     };
   }
 
+  // In-Game Corp Transactions from /transactions/list or unassigned bank transactions:
+  // These represent the bank's corporate transactions (principally monthly withdrawal fees collected in-game)
+  if (isFromCorpLedger) {
+    const rawCorpText = [tx.description, tx.memo, tx.type, tx.action, tx.category, nativeFeeType].filter(Boolean).join(" ").toLowerCase();
+    if (rawCorpText.includes("withdraw")) {
+      return {
+        feeType: "withdraw_fee",
+        label: "Account Withdrawal Fee",
+        category: "Withdrawal Fees",
+        cleanedDescription: accName ? `Withdrawal fee from ${accName}` : (tx.description || "In-Game Withdrawal Fee"),
+        isFeeOrInflow: true
+      };
+    }
+    if (rawCorpText.includes("deposit") && rawCorpText.includes("fee")) {
+      return {
+        feeType: "deposit_fee",
+        label: "Account Deposit Fee",
+        category: "Deposit Fees",
+        cleanedDescription: accName ? `Deposit fee from ${accName}` : (tx.description || "In-Game Deposit Fee"),
+        isFeeOrInflow: true
+      };
+    }
+    if (rawCorpText.includes("transfer") && rawCorpText.includes("fee")) {
+      return {
+        feeType: "transfer_fee",
+        label: "Transfer Fee",
+        category: "Transfer Fees",
+        cleanedDescription: tx.description || "Transfer Fee Assessed",
+        isFeeOrInflow: true
+      };
+    }
+    // Any positive inflow on the corp ledger that is not an explicit outflow disbursement is fee income
+    const isOutflow = nativeType === "SendTransaction" || tx.type === "withdraw" || tx.type === "transfer_out" || (tx.amount < 0);
+    if (!isOutflow) {
+      return {
+        feeType: "withdraw_fee",
+        label: "Account Withdrawal Fee",
+        category: "Withdrawal Fees",
+        cleanedDescription: accName ? `Withdrawal fee from ${accName}` : (tx.description || "In-Game Withdrawal Fee"),
+        isFeeOrInflow: true
+      };
+    }
+  }
+
   if (nativeType === "AccountTransaction") {
+    // Only customer account transactions (with designated account ID and no fee indicators) are principal debits/credits
+    const hasFeeIndicator = nativeFeeType === "WITHDRAW" || nativeFeeType === "DEPOSIT" || (tx.feeAmount && tx.feeAmount > 0) || (tx.fee && tx.fee > 0);
+    if (hasFeeIndicator) {
+      return {
+        feeType: nativeFeeType === "DEPOSIT" ? "deposit_fee" : "withdraw_fee",
+        label: nativeFeeType === "DEPOSIT" ? "Account Deposit Fee" : "Account Withdrawal Fee",
+        category: nativeFeeType === "DEPOSIT" ? "Deposit Fees" : "Withdrawal Fees",
+        cleanedDescription: accName ? `Fee from ${accName}` : "In-Game Fee",
+        isFeeOrInflow: true
+      };
+    }
     const isCredit = tx.deposit === true || tx.type === "credit";
     return {
       feeType: "other_fee",
@@ -421,9 +501,33 @@ export async function syncInGameCorpTransactions(db: any, bankId: string) {
 }
 
 /**
- * Calculates accurate corporate fee totals and breakdown by parsing all potential fee types.
+ * Helper to safely parse timestamps regardless of whether they are SQLite unix epoch seconds,
+ * milliseconds, Date instances, or ISO strings.
  */
-export async function calculateTreasuryFees(db: any, bankId: string) {
+function parseTimestampMillis(ts: any): number {
+  if (!ts) return 0;
+  if (ts instanceof Date) return ts.getTime();
+  if (typeof ts === "number") {
+    return ts < 10000000000 ? ts * 1000 : ts;
+  }
+  const str = String(ts).trim();
+  const num = Number(str);
+  if (!isNaN(num) && num > 0) {
+    return num < 10000000000 ? num * 1000 : num;
+  }
+  const parsed = new Date(str).getTime();
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * Calculates accurate corporate fee totals and breakdown by parsing all potential fee types.
+ * Supports optional date window filtering (e.g. for monthly regulatory reporting).
+ */
+export async function calculateTreasuryFees(
+  db: any, 
+  bankId: string, 
+  dateFilter?: { startDate?: Date; endDate?: Date }
+) {
   // Retrieve all transactions tied to the bank that are fees or going to the native corp (toAccountId is null)
   const allTxs = await db.select().from(transactions).where(
     and(
@@ -434,7 +538,9 @@ export async function calculateTreasuryFees(db: any, bankId: string) {
         sql`${transactions.feeType} IS NOT NULL`,
         like(transactions.category, "%Fee%"),
         like(transactions.description, "%fee%"),
-        like(transactions.description, "%tax%")
+        like(transactions.description, "%tax%"),
+        // Include in-game corp transactions synced without customer account IDs
+        and(sql`${transactions.fromAccountId} IS NULL`, sql`${transactions.toAccountId} IS NULL`)
       )
     )
   ).orderBy(desc(transactions.timestamp));
@@ -448,6 +554,7 @@ export async function calculateTreasuryFees(db: any, bankId: string) {
     origination_fee: { amount: 0, count: 0 },
     loan_payment: { amount: 0, count: 0 },
     service_fee: { amount: 0, count: 0 },
+    account_fee: { amount: 0, count: 0 },
     onyx_fee: { amount: 0, count: 0 },
     in_game_tax: { amount: 0, count: 0 },
     other_fee: { amount: 0, count: 0 }
@@ -457,11 +564,21 @@ export async function calculateTreasuryFees(db: any, bankId: string) {
   const parsedTransactions: any[] = [];
 
   for (const tx of allTxs) {
+    // If a date filter is applied, skip transactions outside the specified date window
+    if (dateFilter?.startDate || dateFilter?.endDate) {
+      const txTime = parseTimestampMillis(tx.timestamp);
+      if (txTime > 0) {
+        if (dateFilter.startDate && txTime < dateFilter.startDate.getTime()) continue;
+        if (dateFilter.endDate && txTime > dateFilter.endDate.getTime()) continue;
+      }
+    }
+
     let resolvedFeeType = (tx.feeType as FeeType);
     let label = FEE_TYPE_LABELS[resolvedFeeType];
+    const isCorpTx = (!tx.fromAccountId && !tx.toAccountId);
 
-    // If feeType was not previously stamped or needs normalization
-    if (!resolvedFeeType || !FEE_TYPE_LABELS[resolvedFeeType]) {
+    // If feeType was not previously stamped, or needs normalization, or was generic other_fee on a corp transaction
+    if (!resolvedFeeType || !FEE_TYPE_LABELS[resolvedFeeType] || (resolvedFeeType === "other_fee" && isCorpTx)) {
       const parsed = parseInGameFeeType(tx);
       resolvedFeeType = parsed.feeType;
       label = parsed.label;
@@ -478,9 +595,10 @@ export async function calculateTreasuryFees(db: any, bankId: string) {
     }
 
     // Only accumulate positive inflows to the bank corp account for genuine fee transactions
-    if (tx.amount > 0 && (tx.type === "fee" || resolvedFeeType === "withdraw_fee" || resolvedFeeType === "deposit_fee" || resolvedFeeType === "transfer_fee" || resolvedFeeType === "service_fee" || resolvedFeeType === "late_fee" || resolvedFeeType === "onyx_fee")) {
-      breakdownMap[resolvedFeeType].amount += tx.amount;
-      breakdownMap[resolvedFeeType].count += 1;
+    if (tx.amount > 0 && (tx.type === "fee" || isCorpTx || (resolvedFeeType && resolvedFeeType in breakdownMap))) {
+      const targetBucket = (resolvedFeeType && resolvedFeeType in breakdownMap) ? resolvedFeeType : "withdraw_fee";
+      breakdownMap[targetBucket].amount += tx.amount;
+      breakdownMap[targetBucket].count += 1;
       totalFeesCollected += tx.amount;
     }
 
@@ -512,6 +630,7 @@ export async function calculateTreasuryFees(db: any, bankId: string) {
   return {
     totalFeesCollected,
     totalFeeCount: allTxs.length,
+    breakdownMap,
     feeBreakdown,
     recentTransactions: parsedTransactions.slice(0, 100)
   };

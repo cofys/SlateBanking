@@ -3377,10 +3377,47 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
         .filter(s => ["owner", "admin", "teller", "loan_officer"].includes(s.role))
         .map(s => `${s.resolvedName} (${s.role.toUpperCase()})`);
 
-      // Reporting period determination
+      // Reporting period determination with custom month support (?month=YYYY-MM or ?period=...)
       const now = new Date();
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const reportPeriod = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+      const monthNames = [
+        "January", "February", "March", "April", "May", "June", 
+        "July", "August", "September", "October", "November", "December"
+      ];
+
+      let targetYear = now.getFullYear();
+      let targetMonthIndex = now.getMonth(); // 0-based
+
+      const monthParam = (req.query.month as string) || (req.query.period as string) || "";
+      if (monthParam) {
+        const parts = monthParam.split("-");
+        if (parts.length === 2) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          if (!isNaN(y) && !isNaN(m) && m >= 1 && m <= 12) {
+            targetYear = y;
+            targetMonthIndex = m - 1;
+          }
+        } else {
+          const foundMonthIdx = monthNames.findIndex(mn => monthParam.toLowerCase().includes(mn.toLowerCase()));
+          const yearMatch = monthParam.match(/\b(20\d\d)\b/);
+          if (foundMonthIdx !== -1) targetMonthIndex = foundMonthIdx;
+          if (yearMatch) targetYear = parseInt(yearMatch[1], 10);
+        }
+      } else {
+        // If filing in early/mid month (<= 15th), default to the previous completed month (e.g. Sept on Oct 6)
+        if (now.getDate() <= 15) {
+          targetMonthIndex = now.getMonth() - 1;
+          if (targetMonthIndex < 0) {
+            targetMonthIndex = 11;
+            targetYear -= 1;
+          }
+        }
+      }
+
+      const reportPeriod = `${monthNames[targetMonthIndex]} ${targetYear}`;
+      const periodKey = `${targetYear}-${String(targetMonthIndex + 1).padStart(2, '0')}`;
+      const startDate = new Date(targetYear, targetMonthIndex, 1, 0, 0, 0, 0);
+      const endDate = new Date(targetYear, targetMonthIndex + 1, 0, 23, 59, 59, 999);
       const datePublished = `${monthNames[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
 
       // Requester identity for "Prepared By"
@@ -3496,63 +3533,49 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
         }
       }
 
-      const freshTxs = await db.select().from(transactions).where(eq(transactions.bankId, bankId));
+      // 2. Authoritatively audit in-game corp fees and categorized treasury revenue for the selected period
+      const { calculateTreasuryFees } = await import("../feeService");
+      const treasuryStats = await calculateTreasuryFees(db, bankId, { startDate, endDate });
+      const bMap = treasuryStats.breakdownMap || {} as any;
 
-      // Transactions breakdown (monthly in-game fee income, taxes, operating expenses)
-      let txServiceFeesCents = 0;
-      let txAccountFeesCents = 0;
-      let txLateFeesCents = 0;
-      let txTradingGainsCents = 0;
-      let txWithdrawalTaxCents = 0;
+      let txServiceFeesCents = (bMap.withdraw_fee?.amount || 0) + (bMap.transfer_fee?.amount || 0) + (bMap.wire_fee?.amount || 0) + (bMap.deposit_fee?.amount || 0) + (bMap.service_fee?.amount || 0) + (bMap.origination_fee?.amount || 0);
+      let txAccountFeesCents = (bMap.account_fee?.amount || 0);
+      let txLateFeesCents = (bMap.late_fee?.amount || 0) || totalLateFeesCents;
+      let txTradingGainsCents = (bMap.onyx_fee?.amount || 0);
+      let txWithdrawalTaxCents = (bMap.in_game_tax?.amount || 0);
+      let txOtherFeeIncomeCents = (bMap.other_fee?.amount || 0);
+
+      // If treasury fees had other miscellaneous fee revenue, allocate to service fees
+      if (txServiceFeesCents === 0 && treasuryStats.totalFeesCollected > 0) {
+        txServiceFeesCents = treasuryStats.totalFeesCollected - txLateFeesCents - txTradingGainsCents - txWithdrawalTaxCents - txAccountFeesCents;
+        if (txServiceFeesCents < 0) txServiceFeesCents = 0;
+      }
+
+      // Audit interest other and operating expenses from transaction history within the selected period
+      const parseTxTime = (ts: any): number => {
+        if (!ts) return 0;
+        if (ts instanceof Date) return ts.getTime();
+        if (typeof ts === "number") return ts < 10000000000 ? ts * 1000 : ts;
+        const num = Number(ts);
+        if (!isNaN(num) && num > 0) return num < 10000000000 ? num * 1000 : num;
+        const parsed = new Date(ts).getTime();
+        return isNaN(parsed) ? 0 : parsed;
+      };
+
+      const freshTxs = await db.select().from(transactions).where(eq(transactions.bankId, bankId));
       let txOperationsExpenseCents = 0;
       let txInterestOtherCents = 0;
 
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
       for (const t of freshTxs) {
-        const txDate = t.timestamp ? new Date(t.timestamp) : null;
-        // Count monthly fees for the current reporting period
-        const inMonthlyPeriod = !txDate || isNaN(txDate.getTime()) || (txDate >= startOfMonth && txDate <= endOfMonth);
-        if (!inMonthlyPeriod) continue;
+        const txTime = parseTxTime(t.timestamp);
+        // If transaction has timestamp, check if it falls within the target reporting window
+        if (txTime > 0 && (txTime < startDate.getTime() || txTime > endDate.getTime())) {
+          continue;
+        }
 
         const desc = (t.description || "").toLowerCase();
         const cat = (t.category || "").toLowerCase();
         const fType = t.feeType || "";
-        
-        // Customer withdrawals/deposits/transfers are principal movements, NOT fee income.
-        const isPrincipalTx = t.type === "withdraw" || t.type === "deposit" || t.type === "transfer";
-        
-        // Accurately isolate genuine in-game corp fees (withdraw fees, account fees, service charges)
-        let feeAmt = 0;
-        if (t.type === "fee") {
-          feeAmt = Math.abs(t.amount || 0);
-        } else if (t.feeBreakdown) {
-          try {
-            const parsedBreakdown = JSON.parse(t.feeBreakdown);
-            if (typeof parsedBreakdown.bankFee === "number") feeAmt = Math.abs(parsedBreakdown.bankFee);
-            else if (typeof parsedBreakdown.totalFee === "number") feeAmt = Math.abs(parsedBreakdown.totalFee);
-          } catch (_) {}
-        } else if (!isPrincipalTx && (fType === "withdraw_fee" || fType === "deposit_fee" || fType === "transfer_fee" || fType === "service_fee" || fType === "account_fee" || fType === "late_fee" || fType === "onyx_fee")) {
-          feeAmt = Math.abs(t.amount || 0);
-        } else if (!isPrincipalTx && (desc.includes("withdrawal fee") || desc.includes("withdraw fee") || desc.includes("account fee") || desc.includes("maintenance fee") || desc.includes("late fee") || desc.includes("transfer fee"))) {
-          feeAmt = Math.abs(t.amount || 0);
-        }
-
-        if (feeAmt > 0) {
-          if (fType === "account_fee" || fType === "maintenance_fee" || (fType === "service_fee" && (desc.includes("account") || desc.includes("maintenance") || desc.includes("tier")))) {
-            txAccountFeesCents += feeAmt;
-          } else if (fType === "late_fee" || desc.includes("late fee") || desc.includes("penalty")) {
-            txLateFeesCents += feeAmt;
-          } else if (fType === "onyx_fee" || desc.includes("onyx") || desc.includes("merchant")) {
-            txTradingGainsCents += feeAmt;
-          } else if (fType === "in_game_tax" || fType === "government_fee" || desc.includes("tax") || (t.feeBreakdown && t.feeBreakdown.includes("civic"))) {
-            txWithdrawalTaxCents += feeAmt;
-          } else {
-            // In-game withdrawal fees, teller fees, transfer fees
-            txServiceFeesCents += feeAmt;
-          }
-        }
 
         // Interest income
         if (t.type === "interest" || fType === "loan_payment" || cat.includes("interest") || desc.includes("interest")) {
@@ -3588,6 +3611,11 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
         },
         metadata: {
           reportPeriod,
+          periodKey,
+          targetYear,
+          targetMonth: targetMonthIndex + 1,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
           datePublished,
           preparedBy,
           registeredOwners,
@@ -3611,7 +3639,7 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
           feeAccount: Number((txAccountFeesCents / 100).toFixed(2)),
           feeService: Number((txServiceFeesCents / 100).toFixed(2)),
           feeLate: Number((txLateFeesCents / 100).toFixed(2)),
-          feeOther: 0,
+          feeOther: Number((txOtherFeeIncomeCents / 100).toFixed(2)),
           tradingGains: Number((txTradingGainsCents / 100).toFixed(2)),
           otherIncome: 0,
           expInterest: 0,
