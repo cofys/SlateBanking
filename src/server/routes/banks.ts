@@ -3453,6 +3453,52 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
 
       const totalDepositsCents = personalDepositsCents + businessDepositsCents;
 
+      // 1. Authoritative "Bank Cash Balance" Calculation: Corp Balance + Loan Pool Account Balance
+      let corpBalanceCents = 0;
+      if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey) {
+        try {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          const corpData = await client.getCorpData();
+          if (corpData && corpData.balance !== undefined && !isNaN(Number(corpData.balance))) {
+            corpBalanceCents = Math.round(Number(corpData.balance) * 100);
+          }
+        } catch (e: any) {
+          console.warn("[MEA Report] Live CityCorp corp balance check skipped:", e?.message);
+        }
+      }
+
+      if (corpBalanceCents === 0) {
+        const operatingAcc = accounts.find(a => 
+          (settings?.defaultCorpAccount && a.accountName?.toLowerCase() === settings.defaultCorpAccount.toLowerCase()) ||
+          a.systemCategory === "vault_cash"
+        );
+        corpBalanceCents = operatingAcc ? operatingAcc.balance : vaultCashCents;
+      }
+
+      let loanPoolBalanceCents = 0;
+      const loanPoolAcc = accounts.find(a => 
+        a.systemCategory === "loan_pool" ||
+        (settings?.loanPoolAccount && a.accountName?.toLowerCase() === settings.loanPoolAccount.toLowerCase())
+      );
+      if (loanPoolAcc) {
+        loanPoolBalanceCents = loanPoolAcc.balance;
+      } else if (bank?.corpId && bank?.corpApiUuid && bank?.corpApiKey && settings?.loanPoolAccount) {
+        try {
+          const { CityCorpClient } = await import("../../lib/citycorp_api");
+          const client = new CityCorpClient(bank.corpId, bank.corpApiUuid, bank.corpApiKey, bank.id);
+          const poolData = await client.getAccountDetails(settings.loanPoolAccount);
+          if (poolData && poolData.balance !== undefined && !isNaN(Number(poolData.balance))) {
+            loanPoolBalanceCents = Math.round(Number(poolData.balance) * 100);
+          }
+        } catch (e: any) {
+          console.warn("[MEA Report] CityCorp loan pool check skipped:", e?.message);
+        }
+      }
+
+      // Authoritative Bank Cash Balance taking into consideration Corp Balance + Loan Pool Account Balance
+      const totalBankCashCents = corpBalanceCents + loanPoolBalanceCents;
+
       // Loans and Collateral aggregation
       let businessLoanRemainingCents = 0;
       let personalLoanRemainingCents = 0;
@@ -3652,7 +3698,9 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
           taxWithdrawal: Number((txWithdrawalTaxCents / 100).toFixed(2))
         },
         balanceSheet: {
-          cashBankBalance: Number(((vaultCashCents + feeRevenueCents + interestRevenueCents + (clearinghouseCents > 0 ? clearinghouseCents : 0)) / 100).toFixed(2)),
+          cashBankBalance: Number((totalBankCashCents / 100).toFixed(2)),
+          corpBalance: Number((corpBalanceCents / 100).toFixed(2)),
+          loanPoolBalance: Number((loanPoolBalanceCents / 100).toFixed(2)),
           cashDepositsHeld: Number((totalDepositsCents / 100).toFixed(2)),
           assetBusinessLoans: Number((businessLoanRemainingCents / 100).toFixed(2)),
           assetPersonalLoans: Number((personalLoanRemainingCents / 100).toFixed(2)),
@@ -3673,6 +3721,20 @@ banksRouter.get("/api/banks/:bankId/mea-report/data", requireBankStaff, async (r
         },
         loanRegister,
         collateralRegister,
+        accountsAuditList: accounts
+          .filter(a => !a.isSystem && a.ownerDiscordId !== "SYSTEM")
+          .map(a => {
+            const u = userMap.get(a.ownerDiscordId);
+            const holder = u?.mcUsername || u?.rpName || (a.ownerDiscordId.startsWith("mc_") ? a.ownerDiscordId.replace("mc_", "") : `CLIENT-${a.ownerDiscordId.slice(-4)}`);
+            const rawType = (a.accountType || "checking").toLowerCase();
+            const formattedType = rawType.includes("business") ? "Business Checking" : rawType.includes("savings") ? "Savings Account" : "Personal Checking";
+            return {
+              id: a.id,
+              holder,
+              type: formattedType,
+              balance: Number((a.balance / 100).toFixed(2))
+            };
+          }),
         consumerProtections: {
           clearInfo: `All interest rates, account maintenance fees, transfer fees, and lending conditions are transparently displayed to customers in the Slate client portal and via the Discord bot (/fees command). Account agreements and loan disclosure statements are generated and acknowledged prior to disbursement.`,
           privacyData: `Financial records and account balances are strictly isolated. Employee access is gated via granular Role-Based Access Control (Owner, Admin, Teller, Auditor). All sensitive credentials are encrypted at rest with AES-256-GCM. Every account balance adjustment and transaction is permanently tracked in immutable audit logs.`,

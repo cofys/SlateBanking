@@ -499,19 +499,23 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
     - **Custodial Customer Deposits Held**: Sums all non-system customer accounts partitioned by account types:
       - Personal & Retail Deposits (`personal`, `personal_checking`, `personal_savings`).
       - Commercial & Corporate Deposits (`business`, `business_checking`, `business_savings`).
-    - **Total Assets & Liabilities Reconciliation**: Total Assets = Vault Cash + Custodial Deposits + Outstanding Loans + Pledged Collateral. Total Liabilities = Personal Deposits + Business Deposits + Clearinghouse Obligations. Total Equity = Total Assets - Total Liabilities, maintaining 100% mathematical balance.
+    - **Total Assets & Liabilities Reconciliation**:
+      - **Bank Cash Balance**: Authoritatively calculated taking into consideration **Corp Balance + Loan Pool Account Balance**. Connects to live CityCorp corporation cash (`getCorpData()`) and the designated loan pool account (`settings.loanPoolAccount` or `systemCategory = 'loan_pool'`), falling back to platform operating accounts if offline.
+      - **Total Assets**: Bank Cash Balance + Total Deposits Held + Outstanding Loans (Business + Personal + Mortgages) + Pledged Collateral + Real Estate Plots + Bank-Owned Inventory + Receivables + Other Assets.
+      - **Total Liabilities**: Personal Deposits + Business Deposits + CDs + Pending Payments + Outstanding Loans the Bank Owes + Other Liabilities.
+      - **Total Equity**: Total Assets - Total Liabilities, maintaining 100% mathematical balance.
   - **Live Loan & Collateral Registers**:
     - Aggregates active, delinquent, and defaulted loan facilities from `loans`. Dynamically categorizes loans into Business, Personal, and Mortgage classifications.
     - Accurately tracks principal origination, remaining principal liability, basis-point APR rates, loan terms, and borrower usernames.
     - Extracts pledged collateral items (`collateralDescription`, `collateralValue`) into an official Collateral Asset Register.
-    - Zero Mock Rows: If the bank has zero active loans or zero pledged collateral, the report accurately displays genuine empty registers rather than fictional dummy rows.
+    - Formatted with padding rows to match the official government layout even when registers have zero or few items.
   - **Comprehensive Income Statement**:
-    - **Interest Income**: Queries active loan portfolio amortizations and interest payments.
-    - **Fee Income (Monthly In-Game Corp Basis)**: Aggregates genuine monthly fee revenue from in-game corporate transactions and bank records (principally in-game withdrawal fees, account maintenance fees, teller fees, transfer fees, and assessed late penalties) filtered strictly to the monthly reporting period. Strictly separates customer withdrawal principal from assessed fee revenue to ensure accurate figures (e.g. ~$15k monthly average) rather than gross customer volume.
+    - **Interest Income**: Queries active loan portfolio amortizations and interest payments (Business Loans, Personal Loans, Mortgages, Other).
+    - **Fee Income (Monthly In-Game Corp Basis)**: Aggregates genuine monthly fee revenue from in-game corporate transactions and bank records (Account Fees, Service Fees / Withdrawal Fees, Late Fees, Other Fees) filtered strictly to the monthly reporting period. Strictly separates customer withdrawal principal from assessed fee revenue to ensure accurate figures.
     - **Trading & PSP Gains**: Merchant interchange, Onyx payment processing, and gateway fees.
-    - **Operating Expenses**: Queries `payroll_expense` GL balances, staff salaries, infrastructure costs, and the bank's active Slate platform subscription tier.
-    - **Taxes**: Remitted civic and government transit fee withholding.
-    - **Net Income**: Gross Income - (Operating Expenses + Taxes).
+    - **Operating Expenses**: Queries salaries, operational expenses, marketing, technology platform fees, and legal expenses.
+    - **Taxes**: Withdrawal taxes remitted.
+    - **Net Income**: Gross Income - (Expenses + Taxes).
 - **Unified Dollar Precision**:
   All financial figures in the MEA reporting engine are represented and edited in whole dollars with 2 decimal places (cents / 100 on load, unified dollar inputs, and formatted currency outputs), eliminating division discrepancies or display scaling bugs.
 - **Dynamic Period Selection & Historical Regulatory Audits**:
@@ -519,22 +523,39 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - **Automated Default Recommendation**: Automatically detects early-month filings (<= 15th of the month) and defaults to the completed previous calendar month (e.g. September on Oct 6), highlighting it with a "Last Month (Recommended)" badge.
   - **Interactive Controls**: Includes quick-toggle buttons (`← Prev Month`, `Last Month`, `Current Month`, `Next Month →`) and a 24-month calendar dropdown. Selecting a month dynamically recalculates in-game corporate withdrawal fees, interest revenues, loan registers, and operating expenses for that exact filing window.
   - **Epoch Timestamp Resiliency**: Employs robust epoch timestamp normalization (`parseTimestampMillis`) that seamlessly handles SQLite unix epoch seconds, milliseconds, ISO strings, and Date objects, preventing historical transaction filtering failures.
-  - **Tailored Regulatory Disclosures**: Automatically syncs the document's Page 1 Reporting Period table and published dates, while retaining full editable inputs and standardized Markdown and print PDF exports.
-  - Includes tailored regulatory responses to MEA Consumer Financial Protection requirements (clear fee disclosure, AES-256 data privacy, 24-48 hr ticket dispute SLAs, vulnerable borrower caps, and transparent advertising).
-- **Interactive Review & Export Formats**:
-  - Staff retain full ability to review, edit, or override any figure directly on the canvas prior to submission, with live reactive recalculations of all gross, net, asset, liability, and equity subtotals.
-  - **Dedicated One-Click 5-Page PDF Exporter (`src/lib/meaPdfExporter.ts`)**:
-    - **Full Document Completeness**: Completely eliminates the browser print limitation where "Save as PDF" via browser print dialogs cut off and only captured page 1.
-    - **Native Vector Architecture**: Built with `jsPDF` and `jspdf-autotable` to produce authentic, publication-quality letter-sized PDFs in ~150ms without client-side screenshot lags, CORS canvas halts, or font parsing bugs.
-    - **Standardized Multi-Page Structure (Pages 1 to 5)**:
-      - *Page 1*: Cover, Official Identification Table, and Regulatory Submission Attestation.
-      - *Page 2*: Corporate Information, Institution Classification, and Executive Management Governance.
-      - *Page 3*: Technical Infrastructure Disclosures and All 5 MEA Consumer Financial Protection Policies.
-      - *Page 4*: Full Income Statement (including in-game monthly withdrawal fee breakdowns), Loan Portfolio Register, and Collateral Asset Schedules.
-      - *Page 5*: Double-Entry Balance Sheet (Assets, Liabilities, Equity), Official Signed Certification Statement, and Digital Audit Hash.
-    - **Prominent Navigation & Action Controls**: Accessible via the primary **Save Full PDF (5 Pages)** action button in the top action bar and a dedicated bottom export banner following the Certification Statement.
-  - **One-Click Markdown Export**: Generates the complete, standardized MEA 5-page submission document formatted with clean tables, ready for Discord announcements or government forum posts.
-  - **Browser Print Dialog Fallback**: Clean letter-sized layout optimized for PDF generation (`@media print`) with preserved page breaks across all 5 disclosure sections.
+- **Official 5-Page Government Template Alignment (`src/lib/meaPdfExporter.ts` & `src/pages/BankMEAReport.tsx`)**:
+  - **100% Visual and Structural Parity**: Fully reconstructed to replicate the exact official MEA regulatory template across both the web preview, markdown export, and generated vector PDF:
+    - **Page 1: Official Header & Corporate Information**:
+      - Centered Header: `MEA FINANCIAL INSTITUTION REPORT` with decorative blue divider.
+      - Institution Identification Box (Institution Name, Reporting Period, Prepared By, Date Published, Registered Owners).
+      - Centered `[Company Logo - Optional]` block.
+      - Outer Bordered `CORPORATE INFORMATION` Section Box containing 3 sub-sections:
+        1. *Description of Institution* (Institution Type, Primary activities, and market focus).
+        2. *Executive Overview* (Management Team list, Legal Representation, and authorized employees list with direct balance withdrawal/alteration access).
+        3. *Technical Information* (Discord link / In-Game Location, Company In-Game Name, CEO Discord Username, CEO In-Game Name).
+    - **Page 2: Consumer Financial Protections & Credit Union Governance**:
+      - Header: `Consumer Financial Protections` with blue divider.
+      - 5 Core Protection Requirements Table (Clear & Accurate Information, Privacy & Data Protection, Complaint & Dispute Handling, New/Vulnerable Player Protections, Truthful Advertising Practices).
+      - `Governance & Compliance - Credit Unions Only` Table (Required Governance Type [President < $200k / Board >= $200k], Current Leadership, Profit Retention % [Max 10%], Profit Distribution).
+    - **Page 3: Financial Disclosures**:
+      - Header: `FINANCIAL DISCLOSURES` with blue divider.
+      - Full 19-row `Income Statement` with category, subcategory, and formatted amount.
+      - Full `Loan Register` table (Type, Borrower, Principal, Remaining Balance, Rate, Term, Collateral, Status).
+      - Full `Collateral` register table (Asset Type, Description, Borrower, Appraised Value, Date Acquired).
+    - **Page 4: Balance Sheet & Investment Products**:
+      - Header: `Balance Sheet` with blue divider.
+      - Complete `Assets` Schedule featuring authoritative **Bank Cash Balance** (Corp Balance + Loan Pool Balance breakdown), Total Deposits Held, Loans, Collateral, Real Estate, Inventory, Receivables, and Total Assets.
+      - Complete `Liabilities` Schedule (Personal Deposits, Business Deposits, CDs, Pending Payments, Loans Owed, Other, and Total Liabilities).
+      - Complete `Equity` Schedule (`Total Assets - Total Liabilities`).
+      - `Investment Products and Funds Disclosure` Table (Product / Fund Name, Type, Total Value Under Mgmt., # of Investors, Risk Level, Quarterly Return %, Notes).
+    - **Page 5: Investment Continuation, Audit Accounts List & Certification**:
+      - Top continuation rows of `Investment Products and Funds Disclosure`.
+      - `Accounts List - For Audits Only` Schedule (Customer account holder names/pseudo-anonymized IDs, Account Types, and individual balances for regulatory examination).
+      - Official Bordered `Certification Statement` Box with accuracy attestation statement, signature line, signatory name, title, and filing date.
+  - **Export Formats**:
+    - **One-Click Native Vector PDF (`exportMEAReportPDF`)**: Generates an authentic, publication-quality 5-page PDF in ~150ms using `jsPDF` and `jspdf-autotable`.
+    - **One-Click Markdown Export**: Copies formatted Markdown with complete tables and sections for Discord bulletins or forum posts.
+    - **Print Dialog Support**: Dedicated `@media print` CSS preserving exact 5-page breaks.
 
 ## Flexible Loan Rate Models & Term Units (Lending Engine)
 - **Multi-Model Loan Pricing**:

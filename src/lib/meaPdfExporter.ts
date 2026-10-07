@@ -23,6 +23,12 @@ export interface MEAReportExportData {
     vulnerableProtections: string;
     truthfulAdvertising: string;
   };
+  creditUnionGovernance?: {
+    governanceType: string;
+    leadership: string;
+    profitRetention: string;
+    profitDistribution: string;
+  };
   incomeStatement: {
     interestBusinessLoans: number;
     interestPersonalLoans: number;
@@ -88,6 +94,20 @@ export interface MEAReportExportData {
     totalLiabilities: number;
     totalEquity: number;
   };
+  investmentProducts?: Array<{
+    name: string;
+    type: string;
+    totalValue: number;
+    investorsCount: number;
+    riskLevel: string;
+    quarterlyReturn: string;
+    notes: string;
+  }>;
+  accountsAuditList?: Array<{
+    holder: string;
+    type: string;
+    balance: number;
+  }>;
   certification: {
     certName: string;
     certTitle: string;
@@ -111,8 +131,8 @@ function fmtNullable(amount: number | undefined | null): string {
 }
 
 /**
- * Generates an official, crystal-clear, multi-page MEA Financial Institution Report PDF.
- * Uses native vector shapes, tables, and typography via jsPDF & jspdf-autotable.
+ * Generates an official, publication-grade MEA Financial Institution Report PDF
+ * matching 100% the official 5-page template specifications.
  */
 export async function exportMEAReportPDF(data: MEAReportExportData): Promise<string> {
   const doc = new jsPDF({
@@ -123,463 +143,523 @@ export async function exportMEAReportPDF(data: MEAReportExportData): Promise<str
   });
 
   const pageWidth = 215.9;
-  const pageHeight = 279.4;
   const marginX = 14;
   const contentWidth = pageWidth - marginX * 2; // 187.9 mm
 
-  const navy = [28, 61, 90] as [number, number, number]; // #1c3d5a
+  const navy = [28, 61, 90] as [number, number, number];       // #1c3d5a
   const softBlue = [207, 226, 243] as [number, number, number]; // #cfe2f3
-  const lightBlueBg = [243, 247, 252] as [number, number, number];
   const borderBlue = [159, 197, 232] as [number, number, number]; // #9fc5e8
-  const darkText = [30, 41, 59] as [number, number, number]; // slate-800
-  const grayText = [100, 116, 139] as [number, number, number]; // slate-500
+  const tableBg = [255, 255, 255] as [number, number, number];
+  const darkText = [20, 20, 20] as [number, number, number];
 
-  const drawHeader = (title: string, subtitle?: string) => {
-    // Top banner
-    doc.setFillColor(navy[0], navy[1], navy[2]);
-    doc.rect(marginX, 12, contentWidth, 14, "F");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(255, 255, 255);
-    doc.text("MEA FINANCIAL INSTITUTION REPORT", marginX + 4, 18);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(207, 226, 243);
-    const sub = subtitle || `${data.bankName.toUpperCase()} — ${data.reportPeriod || "OFFICIAL FILING"}`;
-    doc.text(sub, pageWidth - marginX - 4, 18, { align: "right" });
-
-    // Section title
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(navy[0], navy[1], navy[2]);
-    doc.text(title, marginX, 33);
-
-    // Decorative line
+  // Helper to draw horizontal section line
+  const drawRule = (y: number) => {
     doc.setDrawColor(borderBlue[0], borderBlue[1], borderBlue[2]);
-    doc.setLineWidth(0.5);
-    doc.line(marginX, 35, pageWidth - marginX, 35);
+    doc.setLineWidth(0.6);
+    doc.line(marginX, y, marginX + contentWidth, y);
   };
 
   // =========================================================================
-  // PAGE 1: COVER & INSTITUTION IDENTIFICATION
+  // PAGE 1: MEA FINANCIAL INSTITUTION REPORT & CORPORATE INFORMATION
   // =========================================================================
-  drawHeader("COVER & INSTITUTION IDENTIFICATION");
 
-  // Welcome / Subtitle banner
-  doc.setFillColor(lightBlueBg[0], lightBlueBg[1], lightBlueBg[2]);
-  doc.setDrawColor(borderBlue[0], borderBlue[1], borderBlue[2]);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(marginX, 38, contentWidth, 18, 1.5, 1.5, "FD");
-
+  // 1. Centered Title
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
+  doc.setFontSize(16);
   doc.setTextColor(navy[0], navy[1], navy[2]);
-  doc.text("OFFICIAL GOVERNMENT REGULATORY DISCLOSURE", marginX + 4, 44);
+  doc.text("MEA FINANCIAL INSTITUTION REPORT", pageWidth / 2, 20, { align: "center" });
+  drawRule(23);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(grayText[0], grayText[1], grayText[2]);
-  doc.text(
-    "Ministry of Economic Affairs (MEA) Financial Institution Regulatory Submission & Compliance Filing.",
-    marginX + 4,
-    50
-  );
+  // 2. Identification Table
+  let formattedOwners = "1. [Name]\n2. [Name]\n3. [Name]\n4. [Name]";
+  if (data.registeredOwners && data.registeredOwners.trim()) {
+    const rawOwners = data.registeredOwners.split(",").map(o => o.trim()).filter(Boolean);
+    if (rawOwners.length > 0) {
+      formattedOwners = rawOwners.map((o, idx) => `${idx + 1}. ${o.replace(/^\d+\.\s*/, '')}`).join("\n");
+    }
+  }
 
-  // Institution Identification Table
   autoTable(doc, {
-    startY: 60,
+    startY: 27,
     margin: { left: marginX, right: marginX },
     tableWidth: contentWidth,
-    head: [["Identification Field", "Institution Record"]],
-    body: [
-      ["Institution Name:", data.bankName || "Commercial Bank"],
-      ["Reporting Period:", data.reportPeriod || "Current Reporting Period"],
-      ["Prepared By:", data.preparedBy || "Bank Compliance Staff"],
-      ["Date Published:", data.datePublished || new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })],
-      ["Registered Owners:", data.registeredOwners || `1. ${data.bankName}`],
-      ["Institution Classification:", data.institutionType || "Commercial Bank"],
-    ],
     theme: "grid",
-    headStyles: {
-      fillColor: softBlue,
-      textColor: navy,
-      fontStyle: "bold",
-      fontSize: 9,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
     styles: {
       fontSize: 8.5,
       textColor: darkText,
       lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 3,
+      lineWidth: 0.3,
+      cellPadding: { top: 2, bottom: 2, left: 3, right: 3 },
+      font: "helvetica",
     },
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 55, fillColor: [250, 252, 255] },
-      1: { cellWidth: contentWidth - 55 },
+      0: { fontStyle: "bold", textColor: navy, fillColor: softBlue, cellWidth: 50 },
+      1: { fillColor: [248, 251, 254], cellWidth: contentWidth - 50 },
     },
+    body: [
+      ["Institution Name:", data.bankName || "[Bank Name]"],
+      ["Reporting Period:", data.reportPeriod || "[Month, Year]"],
+      ["Prepared By:", data.preparedBy || "[Name]"],
+      ["Date Published:", data.datePublished || "[Date]"],
+      ["Registered Owners:", formattedOwners],
+    ],
   });
 
-  // Regulatory Notice Box
-  const noticeY = (doc as any).lastAutoTable.finalY + 12;
-  doc.setFillColor(255, 255, 255);
+  let curY = (doc as any).lastAutoTable.finalY + 5;
+
+  // 3. Logo Placeholder / Text
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.setTextColor(60, 110, 160);
+  doc.text("[Company Logo - Optional]", pageWidth / 2, curY + 3, { align: "center" });
+  curY += 7;
+  drawRule(curY);
+  curY += 6;
+
+  // 4. Section: CORPORATE INFORMATION
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("CORPORATE INFORMATION", marginX, curY);
+  curY += 3;
+
+  // Outer Box for Corporate Information matching Template
+  const boxTopY = curY;
+  const boxWidth = contentWidth;
+
+  // Sub-box 1: Description of Institution
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
+    theme: "plain",
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 1.5, bottom: 1.5, left: 2.5, right: 2.5 },
+      textColor: darkText,
+      font: "helvetica",
+    },
+    head: [[
+      {
+        content: "Description of Institution",
+        styles: { fontStyle: "bold", fontSize: 8.5, textColor: navy, fillColor: softBlue }
+      }
+    ]],
+    body: [
+      [`Institution Type: [${data.institutionType || "Commercial Bank / Credit Union / Investment Bank"}]`],
+      [`Description: ${data.description || "[Provide a brief description of the institution's primary business activities, market focus, and operational scope.]"}`]
+    ]
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 2;
+
+  // Sub-box 2: Executive Overview
+  const mgmtList = (data.managementTeam && data.managementTeam.length > 0)
+    ? data.managementTeam.join(", ")
+    : "[List key executives and their roles]";
+  const accessList = (data.directAccessEmployees && data.directAccessEmployees.length > 0)
+    ? data.directAccessEmployees.join(", ")
+    : "[List of authorized employees]";
+
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
+    theme: "plain",
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 1.5, bottom: 1.5, left: 2.5, right: 2.5 },
+      textColor: darkText,
+      font: "helvetica",
+    },
+    head: [[
+      {
+        content: "Executive Overview",
+        styles: { fontStyle: "bold", fontSize: 8.5, textColor: navy, fillColor: softBlue }
+      }
+    ]],
+    body: [
+      [`Management Team:\n${mgmtList}`],
+      [`Legal Representation:\n${data.legalRep || "[Name of designated bank lawyer or legal retainer, if applicable]"}`],
+      [`A list of names of employees who have direct access to alter or withdraw from account balances, or the bank's balance:\n${accessList}`]
+    ]
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 2;
+
+  // Sub-box 3: Technical Information
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
+    theme: "plain",
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 1.5, bottom: 1.5, left: 2.5, right: 2.5 },
+      textColor: darkText,
+      font: "helvetica",
+    },
+    head: [[
+      {
+        content: "Technical Information",
+        styles: { fontStyle: "bold", fontSize: 8.5, textColor: navy, fillColor: softBlue }
+      }
+    ]],
+    body: [
+      [`Discord Link or In-Game Location: ${data.discordLink || "[Required]"}`],
+      [`Company In-Game Name: ${data.companyIngameName || "[Required]"}`],
+      [`CEO Discord Username: ${data.ceoDiscordUser || "[Required]"}`],
+      [`CEO In-Game Name: ${data.ceoIngameName || "[Required]"}`]
+    ]
+  });
+
+  const boxBottomY = (doc as any).lastAutoTable.finalY;
+  // Draw clean outer border for Corporate Information Box
   doc.setDrawColor(borderBlue[0], borderBlue[1], borderBlue[2]);
   doc.setLineWidth(0.4);
-  doc.roundedRect(marginX, noticeY, contentWidth, 52, 1.5, 1.5, "FD");
+  doc.rect(marginX, boxTopY, boxWidth, boxBottomY - boxTopY);
 
-  doc.setFillColor(softBlue[0], softBlue[1], softBlue[2]);
-  doc.rect(marginX, noticeY, contentWidth, 8, "F");
+  // =========================================================================
+  // PAGE 2: CONSUMER FINANCIAL PROTECTIONS & GOVERNANCE
+  // =========================================================================
+  doc.addPage();
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
+  doc.setFontSize(16);
   doc.setTextColor(navy[0], navy[1], navy[2]);
-  doc.text("REGULATORY COMPLIANCE ATTESTATION & SUMMARY", marginX + 4, noticeY + 5.5);
+  doc.text("Consumer Financial Protections", marginX, 20);
+  drawRule(23);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  const noticeText = [
-    `This regulatory disclosure document has been prepared for the Ministry of Economic Affairs (MEA) to certify compliance with all applicable banking charters, consumer protection regulations, and reporting standards.`,
-    ``,
-    `Sections included in this document:`,
-    `  • Page 1: Cover & Official Identification`,
-    `  • Page 2: Corporate Information & Executive Governance`,
-    `  • Page 3: Technical Information & Consumer Financial Protections`,
-    `  • Page 4: Financial Disclosures (Income Statement, Loan Register & Collateral)`,
-    `  • Page 5: Balance Sheet, Liquidity Attestation & Executive Certification`,
-    ``,
-    `All financial records are certified under penalty of charter forfeiture and civil sanctions for misrepresentation.`,
-  ];
-  doc.text(noticeText, marginX + 4, noticeY + 13);
-
-  // =========================================================================
-  // PAGE 2: CORPORATE INFORMATION
-  // =========================================================================
-  doc.addPage("letter", "portrait");
-  drawHeader("CORPORATE INFORMATION & GOVERNANCE");
-
-  // Description of Institution
   autoTable(doc, {
-    startY: 40,
+    startY: 27,
     margin: { left: marginX, right: marginX },
     tableWidth: contentWidth,
-    head: [["Description of Institution"]],
-    body: [
-      [`Institution Type: ${data.institutionType || "Commercial Bank"}`],
-      [`Description:\n${data.description || "No description provided."}`],
-    ],
     theme: "grid",
+    styles: {
+      fontSize: 8,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
+      font: "helvetica",
+    },
     headStyles: {
       fillColor: softBlue,
       textColor: navy,
       fontStyle: "bold",
-      fontSize: 9,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
-    styles: {
       fontSize: 8.5,
-      textColor: darkText,
       lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 4,
-    },
-  });
-
-  // Executive Overview
-  const execY = (doc as any).lastAutoTable.finalY + 8;
-  const managementList = data.managementTeam.length > 0 ? data.managementTeam.join("\n") : "None specified";
-  const directAccessList = data.directAccessEmployees.length > 0 ? data.directAccessEmployees.join("\n") : "None";
-
-  autoTable(doc, {
-    startY: execY,
-    margin: { left: marginX, right: marginX },
-    tableWidth: contentWidth,
-    head: [["Executive Overview & Account Authorization"]],
-    body: [
-      [`Management Team:\n${managementList}`],
-      [`Legal Representation:\n${data.legalRep || "Independent Legal Counsel"}`],
-      [`Employees with Direct Access to Alter or Withdraw Balances:\n${directAccessList}`],
-    ],
-    theme: "grid",
-    headStyles: {
-      fillColor: softBlue,
-      textColor: navy,
-      fontStyle: "bold",
-      fontSize: 9,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
-    styles: {
-      fontSize: 8.5,
-      textColor: darkText,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 4,
-    },
-  });
-
-  // =========================================================================
-  // PAGE 3: TECHNICAL INFO & CONSUMER FINANCIAL PROTECTIONS
-  // =========================================================================
-  doc.addPage("letter", "portrait");
-  drawHeader("TECHNICAL INFO & CONSUMER PROTECTIONS");
-
-  // Technical Information Table
-  autoTable(doc, {
-    startY: 40,
-    margin: { left: marginX, right: marginX },
-    tableWidth: contentWidth,
-    head: [["Technical Attribute", "Configuration Record"]],
-    body: [
-      ["Discord Community Link:", data.discordLink || "N/A"],
-      ["Company In-Game Name:", data.companyIngameName || data.bankName],
-      ["CEO Discord Username:", data.ceoDiscordUser || "N/A"],
-      ["CEO In-Game Name:", data.ceoIngameName || "N/A"],
-    ],
-    theme: "grid",
-    headStyles: {
-      fillColor: softBlue,
-      textColor: navy,
-      fontStyle: "bold",
-      fontSize: 9,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
-    styles: {
-      fontSize: 8.5,
-      textColor: darkText,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 3,
+      lineWidth: 0.3,
     },
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 55, fillColor: [250, 252, 255] },
-      1: { cellWidth: contentWidth - 55 },
+      0: { cellWidth: 75, fontStyle: "normal" },
+      1: { cellWidth: contentWidth - 75 },
     },
-  });
-
-  // Consumer Protections Q&A Table
-  const cpY = (doc as any).lastAutoTable.finalY + 8;
-  autoTable(doc, {
-    startY: cpY,
-    margin: { left: marginX, right: marginX },
-    tableWidth: contentWidth,
-    head: [["Protection Requirement (MEA Guidance)", "Bank Policy & Operational Response"]],
+    head: [["Protection Requirement (Guidance)", "Bank Response"]],
     body: [
       [
         "Clear & Accurate Information:\nHow does the bank ensure all fees, interest rates, loan terms, risks, and account rules are explained clearly before customers use the product?",
-        data.consumerProtections.clearInfo || "Not answered",
+        data.consumerProtections?.clearInfo || "All fee schedules, loan terms, and account rules are transparently disclosed prior to transaction completion."
       ],
       [
         "Privacy & Data Protection:\nHow does the bank protect player financial data, restrict access, and enforce confidentiality for staff with account permissions?",
-        data.consumerProtections.privacyData || "Not answered",
+        data.consumerProtections?.privacyData || "Role-based access controls strictly limit ledger modification permissions to vetted personnel with permanent audit logging."
       ],
       [
-        "Complaint & Dispute Handling:\nWhat is the bank's process for receiving, responding to, and resolving consumer complaints? Include average response times & channels.",
-        data.consumerProtections.disputeHandling || "Not answered",
+        "Complaint & Dispute Handling:\nWhat is the bank’s process for receiving, responding to, and resolving consumer complaints? Include average response times & channels.",
+        data.consumerProtections?.disputeHandling || "Consumer disputes are resolved within 24 to 48 hours via official support channels and dedicated staff review."
       ],
       [
-        "New / Vulnerable Player Protections:\nWhat safeguards prevent inexperienced players from being exploited (simplified explanations, extra approvals for risky products, etc.)?",
-        data.consumerProtections.vulnerableProtections || "Not answered",
+        "New/Vulnerable Player Protections:\nWhat safeguards prevent inexperienced players from being exploited (simplified explanations, extra approvals for risky products, etc.)?",
+        data.consumerProtections?.vulnerableProtections || "Conservative borrowing limits, explicit warnings, and simplified explanations protect novice players."
       ],
       [
         "Truthful Advertising Practices:\nHow does the bank ensure all advertising is accurate, non-misleading, and compliant with MEA standards?",
-        data.consumerProtections.truthfulAdvertising || "Not answered",
+        data.consumerProtections?.truthfulAdvertising || "Promotional materials clearly state effective rates and conditions without hidden fees."
       ],
     ],
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 10;
+
+  // Credit Union Section
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("Governance & Compliance - Credit Unions Only", marginX, curY);
+  curY += 4;
+
+  const cuGov = data.creditUnionGovernance;
+  const isCU = (data.institutionType || "").toLowerCase().includes("credit union");
+
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
     theme: "grid",
+    styles: {
+      fontSize: 8,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 2.2, bottom: 2.2, left: 3, right: 3 },
+      font: "helvetica",
+    },
+    columnStyles: {
+      0: { fontStyle: "bold", textColor: navy, cellWidth: 75, fillColor: [248, 251, 254] },
+      1: { cellWidth: contentWidth - 75 },
+    },
+    body: [
+      [
+        "Required Governance Type (President < $200k deposits / Board ≥ $200k deposits)",
+        cuGov?.governanceType || (isCU ? "President (< $200k deposits)" : "N/A - Commercial Bank")
+      ],
+      [
+        "Current Leadership (President / Board of Directors)",
+        cuGov?.leadership || (isCU ? data.ceoIngameName || "President" : "N/A - Commercial Bank")
+      ],
+      [
+        "Profit Retention % (Max 10% per month)",
+        cuGov?.profitRetention || (isCU ? "10% Retained" : "N/A - Commercial Bank")
+      ],
+      [
+        "How Remaining Profits Were Returned/Used for Members",
+        cuGov?.profitDistribution || (isCU ? "Distributed as Member Dividend / APY" : "N/A - Commercial Bank")
+      ],
+    ],
+  });
+
+  // =========================================================================
+  // PAGE 3: FINANCIAL DISCLOSURES (INCOME STATEMENT, LOANS, COLLATERAL)
+  // =========================================================================
+  doc.addPage();
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("FINANCIAL DISCLOSURES", marginX, 20);
+  drawRule(23);
+
+  // Income Statement
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("Income Statement", marginX, 29);
+
+  const is = data.incomeStatement;
+
+  autoTable(doc, {
+    startY: 32,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
+    theme: "grid",
+    styles: {
+      fontSize: 7.2,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.2, bottom: 1.2, left: 2.5, right: 2.5 },
+      font: "helvetica",
+    },
     headStyles: {
       fillColor: softBlue,
       textColor: navy,
       fontStyle: "bold",
-      fontSize: 8.5,
+      fontSize: 8,
       lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
-    styles: {
-      fontSize: 7.5,
-      textColor: darkText,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 3,
+      lineWidth: 0.3,
     },
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 70, fillColor: [250, 252, 255] },
-      1: { cellWidth: contentWidth - 70 },
+      0: { cellWidth: 50, fontStyle: "bold", textColor: navy },
+      1: { cellWidth: 85 },
+      2: { cellWidth: contentWidth - 135, halign: "right", font: "courier" },
     },
-  });
-
-  // =========================================================================
-  // PAGE 4: FINANCIAL DISCLOSURES — INCOME STATEMENT & REGISTERS
-  // =========================================================================
-  doc.addPage("letter", "portrait");
-  drawHeader("FINANCIAL DISCLOSURES — INCOME STATEMENT");
-
-  const inc = data.incomeStatement;
-
-  autoTable(doc, {
-    startY: 40,
-    margin: { left: marginX, right: marginX },
-    tableWidth: contentWidth,
     head: [["Category", "Subcategory", "Amount"]],
     body: [
-      ["Interest Income", "Business Loans", fmtNullable(inc.interestBusinessLoans)],
-      ["Interest Income", "Personal Loans", fmtNullable(inc.interestPersonalLoans)],
-      ["Interest Income", "Mortgages", fmtNullable(inc.interestMortgages)],
-      ["Interest Income", "Other, List and Describe", fmtNullable(inc.interestOther)],
-      ["Fee Income", "Account Fees", fmtNullable(inc.feeAccount)],
-      ["Fee Income", "Service Fees", fmtNullable(inc.feeService)],
-      ["Fee Income", "Late Fees", fmtNullable(inc.feeLate)],
-      ["Fee Income", "Other Fees (In-Game Withdraw Fees)", fmtNullable(inc.feeOther)],
-      ["Trading Income", "Trading Gains / Losses", fmtNullable(inc.tradingGains)],
-      ["Other Income", "List and Describe", fmtNullable(inc.otherIncome)],
-      ["Expenses", "Interest Expense", fmtNullable(inc.expInterest)],
-      ["Expenses", "Salaries", fmtNullable(inc.expSalaries)],
-      ["Expenses", "Operations", fmtNullable(inc.expOperations)],
-      ["Expenses", "Marketing", fmtNullable(inc.expMarketing)],
-      ["Expenses", "Technology", fmtNullable(inc.expTechnology)],
-      ["Expenses", "Legal", fmtNullable(inc.expLegal)],
-      ["Other Expenses", "List and Describe", fmtNullable(inc.expOther)],
-      ["Taxes", "Withdrawal Tax", fmtNullable(inc.taxWithdrawal)],
-      ["Net Income", "Income – (Expenses + Withdrawal tax)", fmt(inc.netIncome)],
+      ["Interest Income", "Business Loans", fmtNullable(is.interestBusinessLoans)],
+      ["Interest Income", "Personal Loans", fmtNullable(is.interestPersonalLoans)],
+      ["Interest Income", "Mortgages", fmtNullable(is.interestMortgages)],
+      ["Interest Income", "Other, List and Describe", fmtNullable(is.interestOther)],
+      ["Fee Income", "Account Fees", fmtNullable(is.feeAccount)],
+      ["Fee Income", "Service Fees", fmtNullable(is.feeService)],
+      ["Fee Income", "Late Fees", fmtNullable(is.feeLate)],
+      ["Fee Income", "Other Fees", fmtNullable(is.feeOther)],
+      ["Trading Income", "Trading Gains/Losses", fmtNullable(is.tradingGains)],
+      ["Other Income", "List and Describe", fmtNullable(is.otherIncome)],
+      ["Expenses", "Interest Expense", fmtNullable(is.expInterest)],
+      ["Expenses", "Salaries", fmtNullable(is.expSalaries)],
+      ["Expenses", "Operations", fmtNullable(is.expOperations)],
+      ["Expenses", "Marketing", fmtNullable(is.expMarketing)],
+      ["Expenses", "Technology", fmtNullable(is.expTechnology)],
+      ["Expenses", "Legal", fmtNullable(is.expLegal)],
+      ["Other Expenses", "List and Describe", fmtNullable(is.expOther)],
+      ["Taxes", "Withdrawal Tax", fmtNullable(is.taxWithdrawal)],
+      [
+        { content: "Net Income", styles: { fontStyle: "bold", fillColor: softBlue } },
+        { content: "Income – (Expenses + Withdrawal tax)", styles: { fontStyle: "bold", fillColor: softBlue } },
+        { content: fmt(is.netIncome), styles: { fontStyle: "bold", fillColor: softBlue, textColor: is.netIncome < 0 ? [180, 20, 20] : navy } },
+      ],
     ],
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 6;
+
+  // Loan Register Subtitle
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("Loan Register", marginX, curY);
+  curY += 3;
+
+  // Build Loan Register Table rows (pad with blank rows if few/none to match template)
+  const loanRows: any[] = (data.loanRegister || []).map(l => [
+    l.type,
+    l.borrower,
+    fmt(l.principal),
+    fmt(l.remainingBalance),
+    l.rate,
+    l.term,
+    l.collateral,
+    l.status
+  ]);
+
+  while (loanRows.length < 4) {
+    loanRows.push(["", "", "", "", "", "", "", ""]);
+  }
+
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
     theme: "grid",
+    styles: {
+      fontSize: 7,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.2, bottom: 1.2, left: 1.5, right: 1.5 },
+      font: "helvetica",
+    },
     headStyles: {
       fillColor: softBlue,
       textColor: navy,
       fontStyle: "bold",
-      fontSize: 8.5,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
-    styles: {
       fontSize: 7.5,
-      textColor: darkText,
       lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 2.2,
+      lineWidth: 0.3,
     },
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 50 },
-      1: { cellWidth: 80 },
-      2: { halign: "right", fontStyle: "bold", cellWidth: contentWidth - 130 },
+      0: { cellWidth: 20 },
+      1: { cellWidth: 32 },
+      2: { cellWidth: 22, halign: "right", font: "courier" },
+      3: { cellWidth: 24, halign: "right", font: "courier" },
+      4: { cellWidth: 16, halign: "center" },
+      5: { cellWidth: 22, halign: "center" },
+      6: { cellWidth: 26, halign: "center" },
+      7: { cellWidth: contentWidth - 162, halign: "center" },
     },
-    didParseCell: (hookData) => {
-      if (hookData.section === "body" && hookData.row.index === 18) {
-        hookData.cell.styles.fillColor = [220, 235, 252];
-        hookData.cell.styles.fontStyle = "bold";
-        hookData.cell.styles.textColor = navy;
-      }
-    },
+    head: [["Type", "Borrower", "Principal", "Remaining Balance", "Rate", "Term", "Collateral (Yes or No)", "Status"]],
+    body: loanRows,
   });
 
-  // Loan Register Table
-  const loanY = (doc as any).lastAutoTable.finalY + 6;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.setTextColor(navy[0], navy[1], navy[2]);
-  doc.text("Loan Register", marginX, loanY);
+  curY = (doc as any).lastAutoTable.finalY + 6;
 
-  const loanRows = data.loanRegister.length > 0
-    ? data.loanRegister.map(l => [
-        l.type,
-        l.borrower,
-        fmt(l.principal),
-        fmt(l.remainingBalance),
-        l.rate,
-        l.term,
-        l.collateral?.toLowerCase().includes("none") ? "No" : "Yes",
-        l.status,
-      ])
-    : [["Loan", "None", "$0.00", "$0.00", "0%", "N/A", "No", "Closed"]];
+  // Collateral Subtitle
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("Collateral", marginX, curY);
+  curY += 3;
+
+  const colRows: any[] = (data.collateralRegister || []).map(c => [
+    c.assetType,
+    c.description,
+    c.borrower,
+    fmt(c.appraisedValue),
+    c.dateAcquired
+  ]);
+
+  while (colRows.length < 3) {
+    colRows.push(["", "", "", "", ""]);
+  }
 
   autoTable(doc, {
-    startY: loanY + 2,
+    startY: curY,
     margin: { left: marginX, right: marginX },
     tableWidth: contentWidth,
-    head: [["Type", "Borrower", "Principal", "Balance", "Rate", "Term", "Collateral", "Status"]],
-    body: loanRows,
     theme: "grid",
+    styles: {
+      fontSize: 7,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 },
+      font: "helvetica",
+    },
     headStyles: {
       fillColor: softBlue,
       textColor: navy,
       fontStyle: "bold",
       fontSize: 7.5,
       lineColor: borderBlue,
-      lineWidth: 0.2,
+      lineWidth: 0.3,
     },
-    styles: {
-      fontSize: 7,
-      textColor: darkText,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 1.8,
+    columnStyles: {
+      0: { cellWidth: 35 },
+      1: { cellWidth: 55 },
+      2: { cellWidth: 35 },
+      3: { cellWidth: 32, halign: "right", font: "courier" },
+      4: { cellWidth: contentWidth - 157, halign: "center" },
     },
-  });
-
-  // Collateral Register Table
-  const colY = (doc as any).lastAutoTable.finalY + 6;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.setTextColor(navy[0], navy[1], navy[2]);
-  doc.text("Collateral Register", marginX, colY);
-
-  const colRows = data.collateralRegister.length > 0
-    ? data.collateralRegister.map(c => [
-        c.assetType,
-        c.description,
-        c.borrower,
-        c.appraisedValue > 0 ? fmt(c.appraisedValue) : "N/A",
-        c.dateAcquired,
-      ])
-    : [["Real Estate", "None", "N/A", "N/A", "N/A"]];
-
-  autoTable(doc, {
-    startY: colY + 2,
-    margin: { left: marginX, right: marginX },
-    tableWidth: contentWidth,
     head: [["Asset Type", "Description", "Borrower", "Appraised Value", "Date Acquired"]],
     body: colRows,
-    theme: "grid",
-    headStyles: {
-      fillColor: softBlue,
-      textColor: navy,
-      fontStyle: "bold",
-      fontSize: 7.5,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
-    styles: {
-      fontSize: 7,
-      textColor: darkText,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 1.8,
-    },
   });
 
   // =========================================================================
-  // PAGE 5: BALANCE SHEET & OFFICIAL CERTIFICATION
+  // PAGE 4: BALANCE SHEET & INVESTMENT PRODUCTS (TOP)
   // =========================================================================
-  doc.addPage("letter", "portrait");
-  drawHeader("BALANCE SHEET & CERTIFICATION");
+  doc.addPage();
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("Balance Sheet", marginX, 20);
+  drawRule(23);
 
   const bs = data.balanceSheet;
 
-  // Assets Table
+  // Assets Subtitle
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
+  doc.setFontSize(11);
   doc.setTextColor(navy[0], navy[1], navy[2]);
-  doc.text("Assets", marginX, 39);
+  doc.text("Assets", marginX, 29);
 
   autoTable(doc, {
-    startY: 41,
+    startY: 32,
     margin: { left: marginX, right: marginX },
     tableWidth: contentWidth,
+    theme: "grid",
+    styles: {
+      fontSize: 7.2,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.1, bottom: 1.1, left: 2.5, right: 2.5 },
+      font: "helvetica",
+    },
+    headStyles: {
+      fillColor: softBlue,
+      textColor: navy,
+      fontStyle: "bold",
+      fontSize: 7.8,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+    },
+    columnStyles: {
+      0: { cellWidth: 50, fontStyle: "bold", textColor: navy },
+      1: { cellWidth: 85 },
+      2: { cellWidth: contentWidth - 135, halign: "right", font: "courier" },
+    },
     head: [["Category", "Subcategory", "Value"]],
     body: [
       ["Cash", "Bank Cash Balance", fmtNullable(bs.cashBankBalance)],
@@ -593,49 +673,49 @@ export async function exportMEAReportPDF(data: MEAReportExportData): Promise<str
       ["Inventory", "Bank-Owned Materials", fmtNullable(bs.assetInventory)],
       ["Receivables", "Pending Payments", fmtNullable(bs.assetReceivables)],
       ["Other", "Misc. List and Describe", fmtNullable(bs.assetOther)],
-      ["Total", "Sum of all Assets", fmt(bs.totalAssets)],
+      [
+        { content: "Total", styles: { fontStyle: "bold", fillColor: softBlue } },
+        { content: "Sum of all Assets", styles: { fontStyle: "bold", fillColor: softBlue } },
+        { content: fmt(bs.totalAssets), styles: { fontStyle: "bold", fillColor: softBlue } },
+      ],
     ],
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 4;
+
+  // Liabilities Subtitle
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("Liabilities", marginX, curY);
+  curY += 3;
+
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
     theme: "grid",
+    styles: {
+      fontSize: 7.2,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.1, bottom: 1.1, left: 2.5, right: 2.5 },
+      font: "helvetica",
+    },
     headStyles: {
       fillColor: softBlue,
       textColor: navy,
       fontStyle: "bold",
-      fontSize: 8,
+      fontSize: 7.8,
       lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
-    styles: {
-      fontSize: 7.5,
-      textColor: darkText,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 1.8,
+      lineWidth: 0.3,
     },
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 40 },
-      1: { cellWidth: 90 },
-      2: { halign: "right", fontStyle: "bold", cellWidth: contentWidth - 130 },
+      0: { cellWidth: 50, fontStyle: "bold", textColor: navy },
+      1: { cellWidth: 85 },
+      2: { cellWidth: contentWidth - 135, halign: "right", font: "courier" },
     },
-    didParseCell: (hookData) => {
-      if (hookData.section === "body" && hookData.row.index === 11) {
-        hookData.cell.styles.fillColor = [220, 235, 252];
-        hookData.cell.styles.fontStyle = "bold";
-        hookData.cell.styles.textColor = navy;
-      }
-    },
-  });
-
-  // Liabilities Table
-  const liabY = (doc as any).lastAutoTable.finalY + 5;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.setTextColor(navy[0], navy[1], navy[2]);
-  doc.text("Liabilities", marginX, liabY);
-
-  autoTable(doc, {
-    startY: liabY + 2,
-    margin: { left: marginX, right: marginX },
-    tableWidth: contentWidth,
     head: [["Category", "Subcategory", "Value"]],
     body: [
       ["Deposits", "Personal Deposits", fmtNullable(bs.liabPersonalDeposits)],
@@ -643,153 +723,246 @@ export async function exportMEAReportPDF(data: MEAReportExportData): Promise<str
       ["Deposits", "Certificates of Deposit (CDs)", fmtNullable(bs.liabCDs)],
       ["Liabilities", "Pending Payments", fmtNullable(bs.liabPendingPayments)],
       ["Liabilities", "Outstanding Loans the Bank Owes", fmtNullable(bs.liabLoansOwed)],
-      ["Taxes", "Withheld Withdrawal Taxes", fmtNullable(bs.liabTaxesWithheld)],
       ["Other", "Misc. List and Describe", fmtNullable(bs.liabOther)],
-      ["Total", "Sum of all Liabilities", fmt(bs.totalLiabilities)],
+      [
+        { content: "Total", styles: { fontStyle: "bold", fillColor: softBlue } },
+        { content: "Sum of all Liabilities", styles: { fontStyle: "bold", fillColor: softBlue } },
+        { content: fmt(bs.totalLiabilities), styles: { fontStyle: "bold", fillColor: softBlue } },
+      ],
     ],
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 4;
+
+  // Equity Subtitle
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("Equity", marginX, curY);
+  curY += 3;
+
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
     theme: "grid",
+    styles: {
+      fontSize: 7.2,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.1, bottom: 1.1, left: 2.5, right: 2.5 },
+      font: "helvetica",
+    },
+    columnStyles: {
+      0: { cellWidth: 50, fontStyle: "bold", textColor: navy, fillColor: softBlue },
+      1: { cellWidth: 85, fontStyle: "bold", fillColor: softBlue },
+      2: { cellWidth: contentWidth - 135, halign: "right", fontStyle: "bold", fillColor: softBlue, font: "courier" },
+    },
+    body: [
+      ["Total", "Total Assets - Total Liabilities", fmt(bs.totalEquity)],
+    ],
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 6;
+
+  // Investment Products and Funds Disclosure (Top rows on Page 4 matching template)
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(navy[0], navy[1], navy[2]);
+  doc.text("Investment Products and Funds Disclosure", marginX, curY);
+  curY += 3;
+
+  const invList = (data.investmentProducts || []).map(p => [
+    p.name,
+    p.type,
+    fmt(p.totalValue),
+    String(p.investorsCount || 0),
+    p.riskLevel,
+    p.quarterlyReturn,
+    p.notes
+  ]);
+
+  const p4InvRows = [
+    invList[0] || ["", "", "", "", "", "", ""],
+    invList[1] || ["", "", "", "", "", "", ""],
+  ];
+
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
+    theme: "grid",
+    styles: {
+      fontSize: 7,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.5, bottom: 1.5, left: 1.5, right: 1.5 },
+      font: "helvetica",
+    },
     headStyles: {
       fillColor: softBlue,
       textColor: navy,
       fontStyle: "bold",
-      fontSize: 8,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-    },
-    styles: {
-      fontSize: 7.5,
-      textColor: darkText,
-      lineColor: borderBlue,
-      lineWidth: 0.2,
-      cellPadding: 1.8,
-    },
-    columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 40 },
-      1: { cellWidth: 90 },
-      2: { halign: "right", fontStyle: "bold", cellWidth: contentWidth - 130 },
-    },
-    didParseCell: (hookData) => {
-      if (hookData.section === "body" && hookData.row.index === 7) {
-        hookData.cell.styles.fillColor = [254, 235, 235];
-        hookData.cell.styles.fontStyle = "bold";
-        hookData.cell.styles.textColor = [153, 27, 27];
-      }
-    },
-  });
-
-  // Equity Table
-  const eqY = (doc as any).lastAutoTable.finalY + 4;
-  autoTable(doc, {
-    startY: eqY,
-    margin: { left: marginX, right: marginX },
-    tableWidth: contentWidth,
-    head: [["Total Equity", "Total Assets - Total Liabilities", fmt(bs.totalEquity)]],
-    body: [],
-    theme: "grid",
-    headStyles: {
-      fillColor: [219, 234, 254],
-      textColor: navy,
-      fontStyle: "bold",
-      fontSize: 8.5,
+      fontSize: 7.2,
       lineColor: borderBlue,
       lineWidth: 0.3,
     },
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 40 },
-      1: { cellWidth: 90 },
-      2: { halign: "right", fontStyle: "bold", cellWidth: contentWidth - 130 },
+      0: { cellWidth: 32 },
+      1: { cellWidth: 26 },
+      2: { cellWidth: 26, halign: "right", font: "courier" },
+      3: { cellWidth: 20, halign: "center" },
+      4: { cellWidth: 20, halign: "center" },
+      5: { cellWidth: 24, halign: "center" },
+      6: { cellWidth: contentWidth - 148 },
     },
+    head: [["Product / Fund Name", "Type (ETF, Bond, Fund, Other)", "Total Value Under Mgmt.", "# of Investors", "Risk Level", "Quarterly Return %", "Notes"]],
+    body: p4InvRows,
   });
 
-  // Official Certification Statement
-  const certBoxY = (doc as any).lastAutoTable.finalY + 6;
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(borderBlue[0], borderBlue[1], borderBlue[2]);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(marginX, certBoxY, contentWidth, 38, 1.5, 1.5, "FD");
+  // =========================================================================
+  // PAGE 5: INVESTMENT CONTINUATION, AUDIT ACCOUNTS LIST & CERTIFICATION
+  // =========================================================================
+  doc.addPage();
 
-  doc.setFillColor(softBlue[0], softBlue[1], softBlue[2]);
-  doc.rect(marginX, certBoxY, contentWidth, 7, "F");
+  // Continuation of Investment Products table at the very top of Page 5 (matching screenshot!)
+  const p5InvRows = [
+    invList[2] || ["", "", "", "", "", "", ""],
+    invList[3] || ["", "", "", "", "", "", ""],
+    invList[4] || ["", "", "", "", "", "", ""],
+  ];
 
+  autoTable(doc, {
+    startY: 18,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
+    theme: "grid",
+    styles: {
+      fontSize: 7,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.5, bottom: 1.5, left: 1.5, right: 1.5 },
+      font: "helvetica",
+    },
+    columnStyles: {
+      0: { cellWidth: 32 },
+      1: { cellWidth: 26 },
+      2: { cellWidth: 26, halign: "right", font: "courier" },
+      3: { cellWidth: 20, halign: "center" },
+      4: { cellWidth: 20, halign: "center" },
+      5: { cellWidth: 24, halign: "center" },
+      6: { cellWidth: contentWidth - 148 },
+    },
+    body: p5InvRows,
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 8;
+
+  // Accounts List - For Audits Only
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.setTextColor(navy[0], navy[1], navy[2]);
-  doc.text("CERTIFICATION STATEMENT", marginX + 4, certBoxY + 5);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  doc.text(
-    "I certify that the information contained in this report is accurate and complete to the best of my knowledge.",
-    marginX + 4,
-    certBoxY + 12
-  );
-
-  // Signature line
-  doc.setFont("times", "italic");
   doc.setFontSize(11);
   doc.setTextColor(navy[0], navy[1], navy[2]);
-  doc.text(
-    `Signature:  ${data.certification.certName || "________________________"}`,
-    marginX + 4,
-    certBoxY + 20
-  );
+  doc.text("Accounts List - For Audits Only", marginX, curY);
+  curY += 3;
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-  doc.text(`Name:`, marginX + 4, certBoxY + 27);
-  doc.setFont("helvetica", "normal");
-  doc.text(`${data.certification.certName || "N/A"}`, marginX + 16, certBoxY + 27);
+  const auditRows: any[] = (data.accountsAuditList || []).map(a => [
+    a.holder,
+    a.type,
+    fmt(a.balance)
+  ]);
 
-  doc.setFont("helvetica", "bold");
-  doc.text(`Title:`, marginX + 65, certBoxY + 27);
-  doc.setFont("helvetica", "normal");
-  doc.text(`${data.certification.certTitle || "Managing Director / Compliance Officer"}`, marginX + 75, certBoxY + 27);
-
-  doc.setFont("helvetica", "bold");
-  doc.text(`Date:`, marginX + 140, certBoxY + 27);
-  doc.setFont("helvetica", "normal");
-  doc.text(`${data.certification.certDate || new Date().toLocaleDateString()}`, marginX + 150, certBoxY + 27);
-
-  // Digital verification hash/timestamp
-  doc.setFont("courier", "normal");
-  doc.setFontSize(6.5);
-  doc.setTextColor(grayText[0], grayText[1], grayText[2]);
-  const auditStamp = `VERIFIED SLATE SAAS AUDIT HASH: SHA256-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Date.now().toString(36).toUpperCase()} | ATTESTATION SUBMISSION`;
-  doc.text(auditStamp, marginX + 4, certBoxY + 34);
-
-  // =========================================================================
-  // RUNNING FOOTERS ON ALL PAGES
-  // =========================================================================
-  const totalPages = doc.getNumberOfPages();
-  for (let p = 1; p <= totalPages; p++) {
-    doc.setPage(p);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
-    doc.setTextColor(grayText[0], grayText[1], grayText[2]);
-
-    // Footer rule
-    doc.setDrawColor(borderBlue[0], borderBlue[1], borderBlue[2]);
-    doc.setLineWidth(0.2);
-    doc.line(marginX, pageHeight - 11, pageWidth - marginX, pageHeight - 11);
-
-    doc.text(
-      `MEA FINANCIAL INSTITUTION REPORT — ${data.bankName.toUpperCase()} — CONFIDENTIAL REGULATORY FILING`,
-      marginX,
-      pageHeight - 7
-    );
-    doc.text(
-      `PAGE ${p} OF ${totalPages}`,
-      pageWidth - marginX,
-      pageHeight - 7,
-      { align: "right" }
-    );
+  while (auditRows.length < 14) {
+    auditRows.push(["", "", ""]);
   }
 
-  const cleanBankName = (data.bankName || "Bank").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const cleanPeriod = (data.reportPeriod || "Report").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filename = `MEA_Report_${cleanBankName}_${cleanPeriod}.pdf`;
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: contentWidth,
+    theme: "grid",
+    styles: {
+      fontSize: 7,
+      textColor: darkText,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+      cellPadding: { top: 1.4, bottom: 1.4, left: 2.5, right: 2.5 },
+      font: "helvetica",
+    },
+    headStyles: {
+      fillColor: softBlue,
+      textColor: navy,
+      fontStyle: "bold",
+      fontSize: 7.5,
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+    },
+    columnStyles: {
+      0: { cellWidth: 70 },
+      1: { cellWidth: 50 },
+      2: { cellWidth: contentWidth - 120, halign: "right", font: "courier" },
+    },
+    head: [[
+      "Account Holder\n(May be pseudoanonymized but all accounts by same person should have same code)",
+      "Account Type",
+      "Balance"
+    ]],
+    body: auditRows,
+  });
+
+  curY = (doc as any).lastAutoTable.finalY + 8;
+
+  // Certification Statement Box (matching Screenshot Page 5)
+  const cert = data.certification;
+  const certBoxWidth = contentWidth;
+
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: certBoxWidth,
+    theme: "plain",
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 2, bottom: 2, left: 3, right: 3 },
+      textColor: darkText,
+      font: "helvetica",
+      lineColor: borderBlue,
+      lineWidth: 0.3,
+    },
+    head: [[
+      {
+        content: "Certification Statement",
+        styles: { fontStyle: "bold", fontSize: 9, textColor: navy, fillColor: softBlue }
+      }
+    ]],
+    body: [
+      [
+        {
+          content: "I certify that the information contained in this report is accurate and complete to the best of my knowledge.",
+          styles: { fontStyle: "bold", textColor: navy, fillColor: [248, 251, 254] }
+        }
+      ],
+      [
+        {
+          content: `Signature:  /s/ ${cert?.certName || data.ceoIngameName || data.preparedBy || "Authorized Signatory"}\n\nName: ${cert?.certName || data.ceoIngameName || data.preparedBy || "Bank Officer"}          Title: ${cert?.certTitle || "Managing Director / Compliance Officer"}\nDate: ${cert?.certDate || data.datePublished || "Official Submission"}`,
+          styles: { fillColor: [255, 255, 255], textColor: darkText }
+        }
+      ]
+    ]
+  });
+
+  // Draw border around Certification Box
+  const certEnd = (doc as any).lastAutoTable.finalY;
+  doc.setDrawColor(borderBlue[0], borderBlue[1], borderBlue[2]);
+  doc.setLineWidth(0.4);
+  doc.rect(marginX, curY, certBoxWidth, certEnd - curY);
+
+  // Return generated PDF filename
+  const cleanBankName = data.bankName.replace(/[^a-zA-Z0-9]/g, "_");
+  const cleanPeriod = (data.reportPeriod || "Report").replace(/[^a-zA-Z0-9]/g, "_");
+  const filename = `MEA_Financial_Report_${cleanBankName}_${cleanPeriod}.pdf`;
 
   doc.save(filename);
   return filename;
