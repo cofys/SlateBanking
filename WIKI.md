@@ -525,6 +525,13 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - **Epoch Timestamp Resiliency**: Employs robust epoch timestamp normalization (`parseTimestampMillis`) that seamlessly handles SQLite unix epoch seconds, milliseconds, ISO strings, and Date objects, preventing historical transaction filtering failures.
 - **Official 5-Page Government Template Alignment (`src/lib/meaPdfExporter.ts` & `src/pages/BankMEAReport.tsx`)**:
   - **100% Visual and Structural Parity**: Fully reconstructed to replicate the exact official MEA regulatory template across both the web preview, markdown export, and generated vector PDF:
+    - **Authoritative Bank Cash Balance Calculation**: Bank Cash Balance accurately reflects `Corporate Cash Balance + Loan Pool Account Balance`, fully integrated with CityCorp corporate accounts and internal loan pool ledgers.
+    - **Interactive Inline Table Editing & Record Deletion**:
+      - **Loan Register**: Every entry is fully editable inline (Type, Borrower, Principal, Remaining Balance, Rate, Term, Collateral, Status). Compliance officers can delete individual loans via a row delete action (`Trash2`), append new custom loans via `+ Add Loan Entry`, and automatically sync outstanding balances into the Balance Sheet Assets with one click (`Sync to Balance Sheet`).
+      - **Collateral Register**: Full inline editing of Asset Type, Description, Borrower, Appraised Value, and Date Acquired, with row deletion, `+ Add Collateral`, and automatic sync of appraised totals to Balance Sheet Assets.
+      - **Investment Products and Funds Disclosure**: Full inline editing of Product/Fund Name, Type, Total Value Under Mgmt., # of Investors, Risk Level, Quarterly Return %, and Notes, with row deletion and `+ Add Product / Fund`.
+      - **Accounts List - For Audits Only**: Full inline editing of Account Holder, Account Type, and Balance, with individual entry deletion and `+ Add Account Row`.
+      - **Clean Print & Vector PDF Parity**: All interactive action controls and delete buttons automatically conceal during browser print (`@media print` / `print:hidden`) and are cleanly excluded from the 5-page `exportMEAReportPDF` vector export, ensuring pristine regulatory filings.
     - **Page 1: Official Header & Corporate Information**:
       - Centered Header: `MEA FINANCIAL INSTITUTION REPORT` with decorative blue divider.
       - Institution Identification Box (Institution Name, Reporting Period, Prepared By, Date Published, Registered Owners).

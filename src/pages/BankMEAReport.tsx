@@ -340,6 +340,157 @@ export function BankMEAReport() {
 
   const totalEquity = totalAssets - totalLiabilities;
 
+  // Loan Register totals & mutation handlers
+  const loanRegisterTotals = useMemo(() => {
+    return loanRegister.reduce((acc, l) => {
+      const princ = Number(l.principal) || 0;
+      const rem = Number(l.remainingBalance) || 0;
+      acc.principal += princ;
+      acc.remaining += rem;
+      const typeLower = (l.type || "").toLowerCase();
+      if (typeLower.includes("business") || typeLower.includes("commercial")) {
+        acc.business += rem;
+      } else if (typeLower.includes("mortgage")) {
+        acc.mortgage += rem;
+      } else {
+        acc.personal += rem;
+      }
+      return acc;
+    }, { principal: 0, remaining: 0, business: 0, personal: 0, mortgage: 0 });
+  }, [loanRegister]);
+
+  const handleAddLoan = () => {
+    setLoanRegister(prev => [
+      ...prev,
+      {
+        type: "Commercial Loan",
+        borrower: "Client Name",
+        principal: 5000,
+        remainingBalance: 5000,
+        rate: "5.0%",
+        term: "30 days",
+        collateral: "No",
+        status: "Current"
+      }
+    ]);
+  };
+
+  const handleUpdateLoan = (index: number, field: keyof LoanRow, value: any) => {
+    setLoanRegister(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleDeleteLoan = (index: number) => {
+    setLoanRegister(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSyncLoansToBalanceSheet = () => {
+    setAssetBusinessLoans(loanRegisterTotals.business);
+    setAssetPersonalLoans(loanRegisterTotals.personal);
+    setAssetMortgages(loanRegisterTotals.mortgage);
+    setSyncToast(`Balance Sheet Assets updated: Business Loans (${formatCurrency(loanRegisterTotals.business)}), Personal Loans (${formatCurrency(loanRegisterTotals.personal)}), Mortgages (${formatCurrency(loanRegisterTotals.mortgage)}).`);
+    setTimeout(() => setSyncToast(null), 4000);
+  };
+
+  // Collateral totals & mutation handlers
+  const collateralTotal = useMemo(() => {
+    return collateralRegister.reduce((acc, c) => acc + (Number(c.appraisedValue) || 0), 0);
+  }, [collateralRegister]);
+
+  const handleAddCollateral = () => {
+    setCollateralRegister(prev => [
+      ...prev,
+      {
+        assetType: "Real Estate Plot",
+        description: "Pledged Property Plot",
+        borrower: "Borrower Name",
+        appraisedValue: 5000,
+        dateAcquired: new Date().toISOString().split('T')[0]
+      }
+    ]);
+  };
+
+  const handleUpdateCollateral = (index: number, field: keyof CollateralRow, value: any) => {
+    setCollateralRegister(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleDeleteCollateral = (index: number) => {
+    setCollateralRegister(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSyncCollateralToBalanceSheet = () => {
+    setAssetCollateralPlots(collateralTotal);
+    setSyncToast(`Balance Sheet Assets updated: Pledged Collateral set to ${formatCurrency(collateralTotal)}.`);
+    setTimeout(() => setSyncToast(null), 4000);
+  };
+
+  // Investment Products totals & mutation handlers
+  const investmentProductsTotal = useMemo(() => {
+    return investmentProducts.reduce((acc, p) => acc + (Number(p.totalValue) || 0), 0);
+  }, [investmentProducts]);
+
+  const handleAddInvestmentProduct = () => {
+    setInvestmentProducts(prev => [
+      ...prev,
+      {
+        name: "Reserve Growth Fund",
+        type: "Investment Pool",
+        totalValue: 25000,
+        investorsCount: 4,
+        riskLevel: "Low",
+        quarterlyReturn: "4.5%",
+        notes: "Capital preservation pool"
+      }
+    ]);
+  };
+
+  const handleUpdateInvestmentProduct = (index: number, field: keyof InvestmentProductRow, value: any) => {
+    setInvestmentProducts(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleDeleteInvestmentProduct = (index: number) => {
+    setInvestmentProducts(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Audit Accounts totals & mutation handlers
+  const accountsAuditTotal = useMemo(() => {
+    return accountsAuditList.reduce((acc, a) => acc + (Number(a.balance) || 0), 0);
+  }, [accountsAuditList]);
+
+  const handleAddAuditAccount = () => {
+    setAccountsAuditList(prev => [
+      ...prev,
+      {
+        holder: "Client Account #" + (prev.length + 1),
+        type: "Personal Checking",
+        balance: 1000
+      }
+    ]);
+  };
+
+  const handleUpdateAuditAccount = (index: number, field: keyof AccountAuditRow, value: any) => {
+    setAccountsAuditList(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleDeleteAuditAccount = (index: number) => {
+    setAccountsAuditList(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleExportPDF = async () => {
     setExportingPdf(true);
     setPdfProgress("Generating official 5-page PDF report matching MEA template...");
@@ -456,6 +607,14 @@ export function BankMEAReport() {
     const collateralRowsMd = collateralRegister.length > 0
       ? collateralRegister.map(c => `| ${c.assetType} | ${c.description} | ${c.borrower} | ${c.appraisedValue > 0 ? formatCurrency(c.appraisedValue) : "N/A"} | ${c.dateAcquired} |`).join('\n')
       : '| | | | | |';
+
+    const invRowsMd = investmentProducts.length > 0
+      ? investmentProducts.map(p => `| ${p.name} | ${p.type} | ${formatCurrency(p.totalValue)} | ${p.investorsCount} | ${p.riskLevel} | ${p.quarterlyReturn} | ${p.notes} |`).join('\n')
+      : '| None | | $0.00 | 0 | - | - | No active public investment funds |';
+
+    const auditRowsMd = accountsAuditList.length > 0
+      ? accountsAuditList.map(a => `| ${a.holder} | ${a.type} | ${formatCurrency(a.balance)} |`).join('\n')
+      : '| [None listed] | | |';
 
     const md = `
 # MEA FINANCIAL INSTITUTION REPORT
@@ -580,6 +739,20 @@ ${collateralRowsMd}
 
 ### Equity
 | Total | Total Assets - Total Liabilities | **${formatCurrency(totalEquity)}** |
+
+---
+
+## Investment Products and Funds Disclosure
+| Product / Fund Name | Type | Total Value Under Mgmt. | # of Investors | Risk Level | Quarterly Return % | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+${invRowsMd}
+
+---
+
+## Accounts List - For Audits Only
+| Account Holder | Account Type | Balance |
+| :--- | :--- | :--- |
+${auditRowsMd}
 
 ---
 
@@ -1459,37 +1632,150 @@ I certify that the information contained in this report is accurate and complete
 
           {/* Loan Register Table */}
           <div className="space-y-2">
-            <h3 className="font-bold text-[#1c3d5a] text-sm">Loan Register</h3>
-            <div className="border border-[#9fc5e8] text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-[#1c3d5a] text-sm">Loan Register</h3>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  ({loanRegister.length} {loanRegister.length === 1 ? 'loan' : 'loans'} · Outstanding: {formatCurrency(loanRegisterTotals.remaining)})
+                </span>
+              </div>
+              <div className="flex items-center gap-2 print:hidden">
+                {loanRegister.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSyncLoansToBalanceSheet}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition-colors cursor-pointer"
+                    title="Push loan totals into Balance Sheet Assets"
+                  >
+                    <RefreshCw size={11} /> Sync to Balance Sheet
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleAddLoan}
+                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors cursor-pointer"
+                >
+                  <Plus size={12} /> Add Loan Entry
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-[#9fc5e8] text-xs overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#cfe2f3] text-[#1c3d5a] font-bold border-b border-[#9fc5e8]">
-                    <th className="p-2 border-r border-[#9fc5e8]">Type</th>
+                    <th className="p-2 border-r border-[#9fc5e8] w-28">Type</th>
                     <th className="p-2 border-r border-[#9fc5e8]">Borrower</th>
-                    <th className="p-2 text-right border-r border-[#9fc5e8]">Principal</th>
-                    <th className="p-2 text-right border-r border-[#9fc5e8]">Remaining Balance</th>
-                    <th className="p-2 text-center border-r border-[#9fc5e8]">Rate</th>
-                    <th className="p-2 text-center border-r border-[#9fc5e8]">Term</th>
-                    <th className="p-2 text-center border-r border-[#9fc5e8]">Collateral (Yes or No)</th>
-                    <th className="p-2 text-center">Status</th>
+                    <th className="p-2 text-right border-r border-[#9fc5e8] w-28">Principal</th>
+                    <th className="p-2 text-right border-r border-[#9fc5e8] w-32">Remaining Balance</th>
+                    <th className="p-2 text-center border-r border-[#9fc5e8] w-20">Rate</th>
+                    <th className="p-2 text-center border-r border-[#9fc5e8] w-24">Term</th>
+                    <th className="p-2 text-center border-r border-[#9fc5e8] w-28">Collateral</th>
+                    <th className="p-2 text-center w-24 border-r border-[#9fc5e8] print:border-r-0">Status</th>
+                    <th className="p-2 text-center w-10 print:hidden">Del</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {loanRegister.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-3 text-center text-slate-400 italic">No loans recorded in register</td>
+                      <td colSpan={9} className="p-4 text-center text-slate-400 italic">
+                        No loans recorded in register.{" "}
+                        <button 
+                          type="button"
+                          onClick={handleAddLoan} 
+                          className="print:hidden text-indigo-600 underline font-medium hover:text-indigo-800 ml-1 cursor-pointer"
+                        >
+                          + Add a loan entry
+                        </button>
+                      </td>
                     </tr>
                   ) : (
                     loanRegister.map((loan, idx) => (
-                      <tr key={idx}>
-                        <td className="p-2 font-semibold border-r border-slate-200">{loan.type}</td>
-                        <td className="p-2 border-r border-slate-200">{loan.borrower}</td>
-                        <td className="p-2 text-right font-mono border-r border-slate-200">{formatCurrency(loan.principal)}</td>
-                        <td className="p-2 text-right font-mono border-r border-slate-200">{formatCurrency(loan.remainingBalance)}</td>
-                        <td className="p-2 text-center border-r border-slate-200">{loan.rate}</td>
-                        <td className="p-2 text-center border-r border-slate-200">{loan.term}</td>
-                        <td className="p-2 text-center border-r border-slate-200">{loan.collateral}</td>
-                        <td className="p-2 text-center">{loan.status}</td>
+                      <tr key={idx} className="hover:bg-sky-50/20 group">
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={loan.type}
+                            onChange={e => handleUpdateLoan(idx, "type", e.target.value)}
+                            placeholder="Loan Type"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 font-semibold outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={loan.borrower}
+                            onChange={e => handleUpdateLoan(idx, "borrower", e.target.value)}
+                            placeholder="Borrower name or code"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={loan.principal || ""}
+                            onChange={e => handleUpdateLoan(idx, "principal", Number(e.target.value))}
+                            placeholder="0.00"
+                            className="w-full p-1 text-right font-mono bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={loan.remainingBalance || ""}
+                            onChange={e => handleUpdateLoan(idx, "remainingBalance", Number(e.target.value))}
+                            placeholder="0.00"
+                            className="w-full p-1 text-right font-mono font-bold text-[#1c3d5a] bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={loan.rate}
+                            onChange={e => handleUpdateLoan(idx, "rate", e.target.value)}
+                            placeholder="5.0%"
+                            className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={loan.term}
+                            onChange={e => handleUpdateLoan(idx, "term", e.target.value)}
+                            placeholder="30 days"
+                            className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={loan.collateral}
+                            onChange={e => handleUpdateLoan(idx, "collateral", e.target.value)}
+                            placeholder="Yes / No"
+                            className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200 print:border-r-0">
+                          <input
+                            type="text"
+                            value={loan.status}
+                            onChange={e => handleUpdateLoan(idx, "status", e.target.value)}
+                            placeholder="Current"
+                            className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 font-medium outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 text-center print:hidden">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteLoan(idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                            title="Delete this loan entry"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -1500,31 +1786,119 @@ I certify that the information contained in this report is accurate and complete
 
           {/* Collateral Table */}
           <div className="space-y-2">
-            <h3 className="font-bold text-[#1c3d5a] text-sm">Collateral</h3>
-            <div className="border border-[#9fc5e8] text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-[#1c3d5a] text-sm">Collateral</h3>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  ({collateralRegister.length} {collateralRegister.length === 1 ? 'item' : 'items'} · Total Appraised: {formatCurrency(collateralTotal)})
+                </span>
+              </div>
+              <div className="flex items-center gap-2 print:hidden">
+                {collateralRegister.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSyncCollateralToBalanceSheet}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition-colors cursor-pointer"
+                    title="Push appraised total to Balance Sheet Assets"
+                  >
+                    <RefreshCw size={11} /> Sync to Balance Sheet
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleAddCollateral}
+                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors cursor-pointer"
+                >
+                  <Plus size={12} /> Add Collateral
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-[#9fc5e8] text-xs overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#cfe2f3] text-[#1c3d5a] font-bold border-b border-[#9fc5e8]">
-                    <th className="p-2 border-r border-[#9fc5e8]">Asset Type</th>
+                    <th className="p-2 border-r border-[#9fc5e8] w-36">Asset Type</th>
                     <th className="p-2 border-r border-[#9fc5e8]">Description</th>
-                    <th className="p-2 border-r border-[#9fc5e8]">Borrower</th>
-                    <th className="p-2 text-right border-r border-[#9fc5e8]">Appraised Value</th>
-                    <th className="p-2 text-center">Date Acquired</th>
+                    <th className="p-2 border-r border-[#9fc5e8] w-36">Borrower</th>
+                    <th className="p-2 text-right border-r border-[#9fc5e8] w-32">Appraised Value</th>
+                    <th className="p-2 text-center w-28 border-r border-[#9fc5e8] print:border-r-0">Date Acquired</th>
+                    <th className="p-2 text-center w-10 print:hidden">Del</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {collateralRegister.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-3 text-center text-slate-400 italic">No pledged collateral recorded</td>
+                      <td colSpan={6} className="p-4 text-center text-slate-400 italic">
+                        No pledged collateral recorded.{" "}
+                        <button 
+                          type="button"
+                          onClick={handleAddCollateral} 
+                          className="print:hidden text-indigo-600 underline font-medium hover:text-indigo-800 ml-1 cursor-pointer"
+                        >
+                          + Add pledged collateral
+                        </button>
+                      </td>
                     </tr>
                   ) : (
                     collateralRegister.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="p-2 font-semibold border-r border-slate-200">{item.assetType}</td>
-                        <td className="p-2 border-r border-slate-200">{item.description}</td>
-                        <td className="p-2 border-r border-slate-200">{item.borrower}</td>
-                        <td className="p-2 text-right font-mono border-r border-slate-200">{formatCurrency(item.appraisedValue)}</td>
-                        <td className="p-2 text-center">{item.dateAcquired}</td>
+                      <tr key={idx} className="hover:bg-sky-50/20 group">
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={item.assetType}
+                            onChange={e => handleUpdateCollateral(idx, "assetType", e.target.value)}
+                            placeholder="Asset Type"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 font-semibold outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={e => handleUpdateCollateral(idx, "description", e.target.value)}
+                            placeholder="Description of pledged asset"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={item.borrower}
+                            onChange={e => handleUpdateCollateral(idx, "borrower", e.target.value)}
+                            placeholder="Borrower name"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={item.appraisedValue || ""}
+                            onChange={e => handleUpdateCollateral(idx, "appraisedValue", Number(e.target.value))}
+                            placeholder="0.00"
+                            className="w-full p-1 text-right font-mono font-bold text-[#1c3d5a] bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200 print:border-r-0">
+                          <input
+                            type="text"
+                            value={item.dateAcquired}
+                            onChange={e => handleUpdateCollateral(idx, "dateAcquired", e.target.value)}
+                            placeholder="YYYY-MM-DD"
+                            className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 text-center print:hidden">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCollateral(idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                            title="Delete this collateral entry"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -1857,30 +2231,137 @@ I certify that the information contained in this report is accurate and complete
 
           {/* Investment Products (Page 4 Top rows) */}
           <div className="space-y-2 pt-2">
-            <h3 className="font-bold text-[#1c3d5a] text-sm">Investment Products and Funds Disclosure</h3>
-            <div className="border border-[#9fc5e8] text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-[#1c3d5a] text-sm">Investment Products and Funds Disclosure</h3>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  ({investmentProducts.length} {investmentProducts.length === 1 ? 'fund' : 'funds'} · Total AUM: {formatCurrency(investmentProductsTotal)})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddInvestmentProduct}
+                className="print:hidden flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors cursor-pointer"
+              >
+                <Plus size={12} /> Add Product / Fund
+              </button>
+            </div>
+
+            <div className="border border-[#9fc5e8] text-xs overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#cfe2f3] text-[#1c3d5a] font-bold border-b border-[#9fc5e8]">
                     <th className="p-2 border-r border-[#9fc5e8]">Product / Fund Name</th>
-                    <th className="p-2 border-r border-[#9fc5e8]">Type</th>
-                    <th className="p-2 text-right border-r border-[#9fc5e8]">Total Value Under Mgmt.</th>
-                    <th className="p-2 text-center border-r border-[#9fc5e8]"># of Investors</th>
-                    <th className="p-2 text-center border-r border-[#9fc5e8]">Risk Level</th>
-                    <th className="p-2 text-center border-r border-[#9fc5e8]">Quarterly Return %</th>
-                    <th className="p-2">Notes</th>
+                    <th className="p-2 border-r border-[#9fc5e8] w-28">Type</th>
+                    <th className="p-2 text-right border-r border-[#9fc5e8] w-32">Total Value Under Mgmt.</th>
+                    <th className="p-2 text-center border-r border-[#9fc5e8] w-24"># of Investors</th>
+                    <th className="p-2 text-center border-r border-[#9fc5e8] w-24">Risk Level</th>
+                    <th className="p-2 text-center border-r border-[#9fc5e8] w-28">Quarterly Return %</th>
+                    <th className="p-2 border-r border-[#9fc5e8] print:border-r-0">Notes</th>
+                    <th className="p-2 text-center w-10 print:hidden">Del</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  <tr>
-                    <td className="p-2 border-r border-slate-200 text-slate-400 italic">None</td>
-                    <td className="p-2 border-r border-slate-200"></td>
-                    <td className="p-2 border-r border-slate-200 text-right font-mono">$0.00</td>
-                    <td className="p-2 border-r border-slate-200 text-center">0</td>
-                    <td className="p-2 border-r border-slate-200 text-center">-</td>
-                    <td className="p-2 border-r border-slate-200 text-center">-</td>
-                    <td className="p-2 text-slate-500 text-[11px]">No active public investment funds</td>
-                  </tr>
+                  {investmentProducts.length === 0 ? (
+                    <tr>
+                      <td className="p-2 border-r border-slate-200 text-slate-400 italic">None</td>
+                      <td className="p-2 border-r border-slate-200 text-slate-400">-</td>
+                      <td className="p-2 border-r border-slate-200 text-right font-mono text-slate-400">$0.00</td>
+                      <td className="p-2 border-r border-slate-200 text-center text-slate-400">0</td>
+                      <td className="p-2 border-r border-slate-200 text-center text-slate-400">-</td>
+                      <td className="p-2 border-r border-slate-200 text-center text-slate-400">-</td>
+                      <td className="p-2 text-slate-500 text-[11px] border-r border-slate-200 print:border-r-0">
+                        No active public investment funds.{" "}
+                        <button
+                          type="button"
+                          onClick={handleAddInvestmentProduct}
+                          className="print:hidden text-indigo-600 underline font-medium hover:text-indigo-800 ml-1 cursor-pointer"
+                        >
+                          + Add product
+                        </button>
+                      </td>
+                      <td className="p-2 text-center print:hidden">-</td>
+                    </tr>
+                  ) : (
+                    investmentProducts.slice(0, 2).map((item, idx) => (
+                      <tr key={idx} className="hover:bg-sky-50/20 group">
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={item.name}
+                            onChange={e => handleUpdateInvestmentProduct(idx, "name", e.target.value)}
+                            placeholder="Product / Fund Name"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 font-semibold outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={item.type}
+                            onChange={e => handleUpdateInvestmentProduct(idx, "type", e.target.value)}
+                            placeholder="Type"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={item.totalValue || ""}
+                            onChange={e => handleUpdateInvestmentProduct(idx, "totalValue", Number(e.target.value))}
+                            placeholder="0.00"
+                            className="w-full p-1 text-right font-mono font-bold text-[#1c3d5a] bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="number"
+                            value={item.investorsCount || ""}
+                            onChange={e => handleUpdateInvestmentProduct(idx, "investorsCount", Number(e.target.value))}
+                            placeholder="0"
+                            className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={item.riskLevel}
+                            onChange={e => handleUpdateInvestmentProduct(idx, "riskLevel", e.target.value)}
+                            placeholder="Low / Med"
+                            className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200">
+                          <input
+                            type="text"
+                            value={item.quarterlyReturn}
+                            onChange={e => handleUpdateInvestmentProduct(idx, "quarterlyReturn", e.target.value)}
+                            placeholder="4.0%"
+                            className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200 print:border-r-0">
+                          <input
+                            type="text"
+                            value={item.notes}
+                            onChange={e => handleUpdateInvestmentProduct(idx, "notes", e.target.value)}
+                            placeholder="Notes / disclaimers"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-700 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 text-center print:hidden">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteInvestmentProduct(idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                            title="Delete this investment product"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1892,35 +2373,141 @@ I certify that the information contained in this report is accurate and complete
         {/* ===================================================================== */}
         <div data-pdf-page="5" className="mea-pdf-page print-page space-y-6 pt-6 border-t-2 border-slate-300">
           {/* Continuation table of Investment Products at top of Page 5 matching template */}
-          <div className="border border-[#9fc5e8] text-xs">
-            <table className="w-full text-left border-collapse">
-              <tbody className="divide-y divide-slate-200">
-                <tr className="h-6">
-                  <td className="p-2 border-r border-slate-200 w-1/6"></td>
-                  <td className="p-2 border-r border-slate-200 w-1/6"></td>
-                  <td className="p-2 border-r border-slate-200 w-1/6"></td>
-                  <td className="p-2 border-r border-slate-200 w-1/12"></td>
-                  <td className="p-2 border-r border-slate-200 w-1/12"></td>
-                  <td className="p-2 border-r border-slate-200 w-1/6"></td>
-                  <td className="p-2 w-1/6"></td>
-                </tr>
-                <tr className="h-6">
-                  <td className="p-2 border-r border-slate-200"></td>
-                  <td className="p-2 border-r border-slate-200"></td>
-                  <td className="p-2 border-r border-slate-200"></td>
-                  <td className="p-2 border-r border-slate-200"></td>
-                  <td className="p-2 border-r border-slate-200"></td>
-                  <td className="p-2 border-r border-slate-200"></td>
-                  <td className="p-2"></td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="space-y-2">
+            <h4 className="font-bold text-[#1c3d5a] text-xs uppercase tracking-wide">
+              Investment Products and Funds (Continuation)
+            </h4>
+            <div className="border border-[#9fc5e8] text-xs overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <tbody className="divide-y divide-slate-200">
+                  {investmentProducts.length > 2 ? (
+                    investmentProducts.slice(2).map((item, relIdx) => {
+                      const actualIdx = relIdx + 2;
+                      return (
+                        <tr key={actualIdx} className="hover:bg-sky-50/20 group">
+                          <td className="p-1 border-r border-slate-200 w-1/4">
+                            <input
+                              type="text"
+                              value={item.name}
+                              onChange={e => handleUpdateInvestmentProduct(actualIdx, "name", e.target.value)}
+                              placeholder="Product / Fund Name"
+                              className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 font-semibold outline-none text-xs"
+                            />
+                          </td>
+                          <td className="p-1 border-r border-slate-200 w-24">
+                            <input
+                              type="text"
+                              value={item.type}
+                              onChange={e => handleUpdateInvestmentProduct(actualIdx, "type", e.target.value)}
+                              placeholder="Type"
+                              className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                            />
+                          </td>
+                          <td className="p-1 border-r border-slate-200 w-28">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={item.totalValue || ""}
+                              onChange={e => handleUpdateInvestmentProduct(actualIdx, "totalValue", Number(e.target.value))}
+                              placeholder="0.00"
+                              className="w-full p-1 text-right font-mono font-bold text-[#1c3d5a] bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded outline-none text-xs"
+                            />
+                          </td>
+                          <td className="p-1 border-r border-slate-200 w-20">
+                            <input
+                              type="number"
+                              value={item.investorsCount || ""}
+                              onChange={e => handleUpdateInvestmentProduct(actualIdx, "investorsCount", Number(e.target.value))}
+                              placeholder="0"
+                              className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                            />
+                          </td>
+                          <td className="p-1 border-r border-slate-200 w-20">
+                            <input
+                              type="text"
+                              value={item.riskLevel}
+                              onChange={e => handleUpdateInvestmentProduct(actualIdx, "riskLevel", e.target.value)}
+                              placeholder="Risk"
+                              className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                            />
+                          </td>
+                          <td className="p-1 border-r border-slate-200 w-24">
+                            <input
+                              type="text"
+                              value={item.quarterlyReturn}
+                              onChange={e => handleUpdateInvestmentProduct(actualIdx, "quarterlyReturn", e.target.value)}
+                              placeholder="Return %"
+                              className="w-full p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 outline-none text-xs"
+                            />
+                          </td>
+                          <td className="p-1 border-r border-slate-200 print:border-r-0">
+                            <input
+                              type="text"
+                              value={item.notes}
+                              onChange={e => handleUpdateInvestmentProduct(actualIdx, "notes", e.target.value)}
+                              placeholder="Notes"
+                              className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-700 outline-none text-xs"
+                            />
+                          </td>
+                          <td className="p-1 text-center print:hidden w-10">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteInvestmentProduct(actualIdx)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                              title="Delete this product"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <>
+                      <tr className="h-6">
+                        <td className="p-2 border-r border-slate-200 w-1/6"></td>
+                        <td className="p-2 border-r border-slate-200 w-1/6"></td>
+                        <td className="p-2 border-r border-slate-200 w-1/6"></td>
+                        <td className="p-2 border-r border-slate-200 w-1/12"></td>
+                        <td className="p-2 border-r border-slate-200 w-1/12"></td>
+                        <td className="p-2 border-r border-slate-200 w-1/6"></td>
+                        <td className="p-2 w-1/6"></td>
+                      </tr>
+                      <tr className="h-6">
+                        <td className="p-2 border-r border-slate-200"></td>
+                        <td className="p-2 border-r border-slate-200"></td>
+                        <td className="p-2 border-r border-slate-200"></td>
+                        <td className="p-2 border-r border-slate-200"></td>
+                        <td className="p-2 border-r border-slate-200"></td>
+                        <td className="p-2 border-r border-slate-200"></td>
+                        <td className="p-2"></td>
+                      </tr>
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Accounts List - For Audits Only */}
           <div className="space-y-2">
-            <h3 className="font-bold text-[#1c3d5a] text-sm">Accounts List - For Audits Only</h3>
-            <div className="border border-[#9fc5e8] text-xs max-h-[360px] overflow-y-auto">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-[#1c3d5a] text-sm">Accounts List - For Audits Only</h3>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  ({accountsAuditList.length} accounts · Total Balances: {formatCurrency(accountsAuditTotal)})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddAuditAccount}
+                className="print:hidden flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors cursor-pointer"
+              >
+                <Plus size={12} /> Add Account Row
+              </button>
+            </div>
+
+            <div className="border border-[#9fc5e8] text-xs max-h-[380px] overflow-y-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#cfe2f3] text-[#1c3d5a] font-bold border-b border-[#9fc5e8]">
@@ -1931,22 +2518,65 @@ I certify that the information contained in this report is accurate and complete
                       </span>
                     </th>
                     <th className="p-2.5 border-r border-[#9fc5e8] w-1/4">Account Type</th>
-                    <th className="p-2.5 text-right w-1/4">Balance</th>
+                    <th className="p-2.5 text-right w-1/4 border-r border-[#9fc5e8] print:border-r-0">Balance</th>
+                    <th className="p-2.5 text-center w-10 print:hidden">Del</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-mono">
                   {accountsAuditList.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="p-4 text-center text-slate-400 italic font-sans">
-                        Audit accounts synced from bank database (client accounts list)
+                      <td colSpan={4} className="p-4 text-center text-slate-400 italic font-sans">
+                        Audit accounts synced from bank database (client accounts list).{" "}
+                        <button
+                          type="button"
+                          onClick={handleAddAuditAccount}
+                          className="print:hidden text-indigo-600 underline font-medium hover:text-indigo-800 ml-1 cursor-pointer"
+                        >
+                          + Add manual account row
+                        </button>
                       </td>
                     </tr>
                   ) : (
                     accountsAuditList.map((acc, idx) => (
-                      <tr key={idx}>
-                        <td className="p-2 border-r border-slate-200 font-sans font-medium text-slate-900">{acc.holder}</td>
-                        <td className="p-2 border-r border-slate-200 font-sans text-slate-700">{acc.type}</td>
-                        <td className="p-2 text-right font-mono font-bold text-[#1c3d5a]">{formatCurrency(acc.balance)}</td>
+                      <tr key={idx} className="hover:bg-sky-50/20 group">
+                        <td className="p-1 border-r border-slate-200 font-sans">
+                          <input
+                            type="text"
+                            value={acc.holder}
+                            onChange={e => handleUpdateAuditAccount(idx, "holder", e.target.value)}
+                            placeholder="Client Holder Name / Code"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-900 font-medium outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 border-r border-slate-200 font-sans">
+                          <input
+                            type="text"
+                            value={acc.type}
+                            onChange={e => handleUpdateAuditAccount(idx, "type", e.target.value)}
+                            placeholder="Personal / Business Checking"
+                            className="w-full p-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded text-slate-700 outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 text-right border-r border-slate-200 print:border-r-0">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={acc.balance || ""}
+                            onChange={e => handleUpdateAuditAccount(idx, "balance", Number(e.target.value))}
+                            placeholder="0.00"
+                            className="w-full p-1 text-right font-mono font-bold text-[#1c3d5a] bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded outline-none text-xs"
+                          />
+                        </td>
+                        <td className="p-1 text-center print:hidden font-sans">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAuditAccount(idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                            title="Delete account entry"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
