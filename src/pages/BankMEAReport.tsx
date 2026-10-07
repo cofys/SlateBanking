@@ -2,8 +2,10 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import { 
   Printer, RefreshCw, Check, Copy, Plus, Trash2, 
-  Sparkles, Info, CheckCircle2, Calendar, Clock, History
+  Sparkles, Info, CheckCircle2, Calendar, Clock, History,
+  Download, FileDown
 } from "lucide-react";
+import { exportMEAReportPDF } from "../lib/meaPdfExporter";
 
 interface LoanRow {
   id: string;
@@ -53,6 +55,8 @@ export function BankMEAReport() {
   const { bank } = useOutletContext<{ bank: any }>();
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState("");
   const [autoFilled, setAutoFilled] = useState(false);
   const [copiedMd, setCopiedMd] = useState(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
@@ -306,6 +310,102 @@ export function BankMEAReport() {
 
   const totalEquity = totalAssets - totalLiabilities;
 
+  const handleExportPDF = async () => {
+    setExportingPdf(true);
+    setPdfProgress("Generating official 5-page PDF report...");
+
+    try {
+      const filename = await exportMEAReportPDF({
+        bankName: bank?.name || "Commercial Bank",
+        reportPeriod: reportPeriod || selectedMonth,
+        preparedBy,
+        datePublished,
+        registeredOwners,
+        institutionType,
+        description,
+        managementTeam,
+        legalRep,
+        directAccessEmployees,
+        discordLink,
+        companyIngameName: companyIngameName || bank?.name,
+        ceoDiscordUser,
+        ceoIngameName,
+        consumerProtections: {
+          clearInfo,
+          privacyData,
+          disputeHandling,
+          vulnerableProtections,
+          truthfulAdvertising,
+        },
+        incomeStatement: {
+          interestBusinessLoans,
+          interestPersonalLoans,
+          interestMortgages,
+          interestOther,
+          feeAccount,
+          feeService,
+          feeLate,
+          feeOther,
+          tradingGains,
+          otherIncome,
+          expInterest,
+          expSalaries,
+          expOperations,
+          expMarketing,
+          expTechnology,
+          expLegal,
+          expOther,
+          taxWithdrawal,
+          totalInterestIncome,
+          totalFeeIncome,
+          totalGrossIncome,
+          totalExpenses,
+          netIncome,
+        },
+        loanRegister,
+        collateralRegister,
+        balanceSheet: {
+          cashBankBalance,
+          cashDepositsHeld,
+          assetBusinessLoans,
+          assetPersonalLoans,
+          assetMortgages,
+          assetCollateralPlots,
+          assetCollateralItems,
+          assetRealEstatePlots,
+          assetInventory,
+          assetReceivables,
+          assetOther,
+          totalAssets,
+          liabPersonalDeposits,
+          liabBusinessDeposits,
+          liabCDs,
+          liabPendingPayments,
+          liabLoansOwed,
+          liabTaxesWithheld,
+          liabOther,
+          totalLiabilities,
+          totalEquity,
+        },
+        certification: {
+          certName,
+          certTitle,
+          certDate,
+        },
+      });
+
+      setSyncToast(`PDF Export Complete: Downloaded full 5-page report (${filename}).`);
+      setTimeout(() => setSyncToast(null), 5000);
+    } catch (err: any) {
+      console.error("PDF generation error:", err);
+      setSyncToast(`Failed to export PDF: ${err.message || "Unknown error"}`);
+      setTimeout(() => setSyncToast(null), 5000);
+    } finally {
+      setExportingPdf(false);
+      setPdfProgress("");
+    }
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -459,6 +559,14 @@ Date: ${certDate}
             margin: 12mm 15mm;
             size: letter;
           }
+          html, body, #root, .flex, .flex-1, main, div {
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+          }
+          aside, header, nav, .print\\:hidden {
+            display: none !important;
+          }
           body {
             background-color: #ffffff !important;
             color: #000000 !important;
@@ -511,10 +619,10 @@ Date: ${certDate}
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
           <button
             onClick={() => loadLiveData(selectedMonth)}
-            disabled={syncing}
+            disabled={syncing || exportingPdf}
             className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold border border-white/10 transition-colors disabled:opacity-50 cursor-pointer"
             title="Re-sync database figures for selected month"
           >
@@ -524,16 +632,38 @@ Date: ${certDate}
           
           <button
             onClick={handleCopyMarkdown}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold border border-white/10 transition-colors cursor-pointer"
+            disabled={exportingPdf}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold border border-white/10 transition-colors cursor-pointer disabled:opacity-50"
           >
             {copiedMd ? <><Check size={14} className="text-emerald-400" /> Copied MD</> : <><Copy size={14} /> Copy Markdown</>}
           </button>
 
           <button
-            onClick={handlePrint}
-            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 cursor-pointer"
+            onClick={handleExportPDF}
+            disabled={exportingPdf}
+            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/30 cursor-pointer disabled:opacity-50 ring-2 ring-indigo-400/40"
+            title="Download complete 5-page PDF document"
           >
-            <Printer size={15} /> Print / Export PDF
+            {exportingPdf ? (
+              <>
+                <RefreshCw size={14} className="animate-spin" />
+                <span>{pdfProgress || "Exporting PDF..."}</span>
+              </>
+            ) : (
+              <>
+                <FileDown size={15} />
+                <span>Save Full PDF (5 Pages)</span>
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handlePrint}
+            disabled={exportingPdf}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold border border-white/10 transition-colors cursor-pointer disabled:opacity-50"
+            title="Print via browser dialog"
+          >
+            <Printer size={14} /> Print
           </button>
         </div>
       </div>
@@ -643,8 +773,8 @@ Date: ${certDate}
         className="print-container bg-white text-slate-900 shadow-2xl p-8 sm:p-12 font-sans border border-slate-300 print:shadow-none print:border-none print:p-0 print:m-0 print:text-black space-y-8"
         style={{ fontFamily: "Arial, sans-serif" }}
       >
-        {/* PAGE 1 & 2: HEADER & CORPORATE INFORMATION */}
-        <div className="print-page space-y-6">
+        {/* PAGE 1: COVER & INSTITUTION IDENTIFICATION */}
+        <div data-pdf-page="1" className="mea-pdf-page print-page space-y-6">
           {/* Header Title */}
           <div className="text-center pb-2 border-b border-[#9fc5e8]">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#1c3d5a] uppercase">
@@ -736,8 +866,10 @@ Date: ${certDate}
               )}
             </div>
           </div>
+        </div>
 
-          {/* SECTION: CORPORATE INFORMATION */}
+        {/* PAGE 2: CORPORATE INFORMATION */}
+        <div data-pdf-page="2" className="mea-pdf-page print-page space-y-6 pt-6 border-t border-slate-200">
           <div className="space-y-4">
             <h2 className="text-sm font-bold text-[#1c3d5a] uppercase tracking-wide border-b border-[#9fc5e8] pb-1">
               CORPORATE INFORMATION
@@ -814,7 +946,7 @@ Date: ${certDate}
         </div>
 
         {/* PAGE 3: TECHNICAL INFO & CONSUMER PROTECTIONS */}
-        <div className="print-page space-y-6 pt-6 border-t border-slate-200">
+        <div data-pdf-page="3" className="mea-pdf-page print-page space-y-6 pt-6 border-t border-slate-200">
           {/* Technical Information Sub-Box */}
           <div className="print-no-break border border-[#9fc5e8] text-xs">
             <div className="bg-[#d9e8f5] p-2 font-bold text-[#1c3d5a] border-b border-[#9fc5e8]">
@@ -966,7 +1098,7 @@ Date: ${certDate}
         </div>
 
         {/* PAGE 4: INCOME STATEMENT, LOAN REGISTER & COLLATERAL */}
-        <div className="print-page space-y-6 pt-6 border-t border-slate-200">
+        <div data-pdf-page="4" className="mea-pdf-page print-page space-y-6 pt-6 border-t border-slate-200">
           <div>
             <h2 className="text-base font-bold text-[#1c3d5a] uppercase tracking-wide border-b border-[#9fc5e8] pb-1">
               FINANCIAL DISCLOSURES
@@ -1502,7 +1634,7 @@ Date: ${certDate}
         </div>
 
         {/* PAGE 5: BALANCE SHEET & CERTIFICATION */}
-        <div className="space-y-6 pt-6 border-t border-slate-200">
+        <div data-pdf-page="5" className="mea-pdf-page print-page space-y-6 pt-6 border-t border-slate-200">
           <div>
             <h2 className="text-lg font-bold text-[#1c3d5a] tracking-tight border-b border-[#9fc5e8] pb-1">
               Balance Sheet
@@ -1888,6 +2020,47 @@ Date: ${certDate}
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Bottom Export & Submission Bar (Hidden in Print View) */}
+      <div className="print:hidden mt-8 bg-[var(--bg-elevated)] border border-indigo-500/30 rounded-2xl p-6 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <h4 className="text-base font-bold text-white flex items-center gap-2">
+            <FileDown className="text-indigo-400" size={18} />
+            Official MEA Regulatory PDF Export
+          </h4>
+          <p className="text-xs text-zinc-400 mt-1 max-w-xl">
+            Save the complete 5-page report with all corporate governance disclosures, income statements (including withdraw fees), loan & collateral schedules, balance sheets, and executive certification.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 w-full sm:w-auto shrink-0">
+          <button
+            onClick={handleCopyMarkdown}
+            disabled={exportingPdf}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold border border-white/10 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {copiedMd ? <><Check size={14} className="text-emerald-400" /> Copied Markdown</> : <><Copy size={14} /> Copy Markdown</>}
+          </button>
+
+          <button
+            onClick={handleExportPDF}
+            disabled={exportingPdf}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/30 cursor-pointer disabled:opacity-50 ring-2 ring-indigo-400/40"
+          >
+            {exportingPdf ? (
+              <>
+                <RefreshCw size={14} className="animate-spin" />
+                <span>{pdfProgress || "Exporting PDF..."}</span>
+              </>
+            ) : (
+              <>
+                <FileDown size={16} />
+                <span>Save Full PDF (5 Pages)</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>

@@ -193,7 +193,7 @@ export function BankAdminLayout() {
       </AnimatePresence>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 flex flex-col overflow-y-auto md:relative md:translate-x-0 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 flex flex-col overflow-y-auto md:relative md:translate-x-0 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] print:hidden ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
         style={{ background: "var(--bg-elevated)", borderRight: "1px solid var(--border)" }}
       >
         <div className="px-4 h-16 flex items-center justify-between gap-2">

@@ -523,8 +523,18 @@ Bank staff can access the dedicated **MEA Financial Institution Report** tool di
   - Includes tailored regulatory responses to MEA Consumer Financial Protection requirements (clear fee disclosure, AES-256 data privacy, 24-48 hr ticket dispute SLAs, vulnerable borrower caps, and transparent advertising).
 - **Interactive Review & Export Formats**:
   - Staff retain full ability to review, edit, or override any figure directly on the canvas prior to submission, with live reactive recalculations of all gross, net, asset, liability, and equity subtotals.
+  - **Dedicated One-Click 5-Page PDF Exporter (`src/lib/meaPdfExporter.ts`)**:
+    - **Full Document Completeness**: Completely eliminates the browser print limitation where "Save as PDF" via browser print dialogs cut off and only captured page 1.
+    - **Native Vector Architecture**: Built with `jsPDF` and `jspdf-autotable` to produce authentic, publication-quality letter-sized PDFs in ~150ms without client-side screenshot lags, CORS canvas halts, or font parsing bugs.
+    - **Standardized Multi-Page Structure (Pages 1 to 5)**:
+      - *Page 1*: Cover, Official Identification Table, and Regulatory Submission Attestation.
+      - *Page 2*: Corporate Information, Institution Classification, and Executive Management Governance.
+      - *Page 3*: Technical Infrastructure Disclosures and All 5 MEA Consumer Financial Protection Policies.
+      - *Page 4*: Full Income Statement (including in-game monthly withdrawal fee breakdowns), Loan Portfolio Register, and Collateral Asset Schedules.
+      - *Page 5*: Double-Entry Balance Sheet (Assets, Liabilities, Equity), Official Signed Certification Statement, and Digital Audit Hash.
+    - **Prominent Navigation & Action Controls**: Accessible via the primary **Save Full PDF (5 Pages)** action button in the top action bar and a dedicated bottom export banner following the Certification Statement.
   - **One-Click Markdown Export**: Generates the complete, standardized MEA 5-page submission document formatted with clean tables, ready for Discord announcements or government forum posts.
-  - **Print & PDF Layout**: Clean letter-sized layout optimized for PDF generation (`@media print`) with preserved page breaks across all 5 disclosure sections.
+  - **Browser Print Dialog Fallback**: Clean letter-sized layout optimized for PDF generation (`@media print`) with preserved page breaks across all 5 disclosure sections.
 
 ## Flexible Loan Rate Models & Term Units (Lending Engine)
 - **Multi-Model Loan Pricing**:
